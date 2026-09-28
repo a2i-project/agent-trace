@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,7 +26,33 @@ import (
 // httpClient is used for the optional --fetch-url HTTPS request. A 10-second
 // timeout is generous enough for example.com but short enough to not stall
 // tests indefinitely if the network is unavailable.
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+//
+// Go's dialer races IPv6 and IPv4 attempts against a dual-stack host (RFC 6555
+// fast fallback). The losing dial is cancelled before any ClientHello, so it
+// carries no SNI and surfaces as IP-only net_connect ground truth that no
+// trajectory entry claims. Pin every dial to one IPv4 address, as the curl
+// path does with --resolve, so exactly one connection is opened.
+var httpClient = func() *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = dialSingleIPv4
+	return &http.Client{Timeout: 10 * time.Second, Transport: tr}
+}()
+
+// dialSingleIPv4 dials one resolved IPv4 address for addr's host. TLS
+// ServerName still comes from the request URL, so the SNI is unchanged.
+func dialSingleIPv4(ctx context.Context, network, addr string) (net.Conn, error) {
+	var d net.Dialer
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	ip, err := resolveSingleIPv4(host)
+	if err != nil {
+		log.Printf("resolve %s: %v (continuing unpinned; expect extra net_connect ground truth)", host, err)
+		return d.DialContext(ctx, network, addr)
+	}
+	return d.DialContext(ctx, "tcp4", net.JoinHostPort(ip, port))
+}
 
 // resolveSingleIPv4 returns one IPv4 address for host, so the caller can pin
 // curl to a single connection target (see the --resolve use below). Mirrors
