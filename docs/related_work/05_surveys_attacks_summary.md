@@ -26,6 +26,51 @@ Does not propose a concrete mechanism.
 
 ---
 
+### Auditable Agents
+
+*Nian et al. (USC, ASU, UTK, JHU), Apr 2026, v3 Sep 2026* · position paper (24 pp.) · `TM-C`
+[arXiv 2604.05485](https://arxiv.org/abs/2604.05485)
+
+Argues that no agent system can be accountable without auditability, and separates accountability (the goal), auditability (the system property), and auditing (the process).
+Defines five jointly necessary dimensions, one per slot of an audit verdict: action recoverability (what happened), lifecycle coverage (in what context, including retries, blocks and approvals), policy checkability (is compliance decidable from the record), responsibility attribution (user, agent, skill, tool chain), and evidence integrity (an ordinal scale from none to append-only, hash-chained, and signed).
+Each dimension has an existence metric and a quality metric, for example Action Coverage Rate, the fraction of policy-relevant actions that appear in the record.
+Groups mechanisms into detect (pre-deployment static analysis), enforce (runtime mediation), and recover (post-hoc reconstruction), and proposes an Auditability Card of six disclosure questions.
+
+The supporting evidence comes from three of the authors' own tools: a static scan (Agent Audit, 617 findings over six open-source agent projects), a pre-execution tool-call firewall (Aegis, 8.3 ms median overhead, Ed25519-signed hash-chained records), and watermark-based attribution of multi-agent output when logs are missing (IET).
+
+> **Stated scope and limitations.**
+> The authors note that all evidence comes from their own tools, and that no end-to-end audit of a single deployed system was demonstrated.
+> The record is produced by the mediation layer on the agent's execution path, and the framework assumes that producer is honest: evidence integrity is defined as protection against modification after the fact, not as agreement between the record and what actually executed.
+> Action Coverage Rate presupposes knowing the set of actions that actually occurred, which the paper does not say how to obtain for a compromised agent or for actions that bypass the mediation point.
+> The paper notes that lifecycle coverage cannot distinguish "phase did not occur" from "phase occurred but was not recorded", and leaves this as an open measurement problem.
+
+---
+
+### Three Jobs, Not One: Why "Sandboxing" Cannot Contain Foreign Code or Witness Its Own Execution
+
+*Gilda (DeepThought Solutions), Aug 2026* · position paper and survey (71 pp.) · `TM-A` `TM-C`
+[Zenodo 10.5281/zenodo.21935891](https://doi.org/10.5281/zenodo.21935891)
+
+Argues that "sandboxing" conflates three jobs with different trust structures: (a) deciding what an agent may attempt, (b) containing foreign code (MCP servers, packages, extensions) behind a boundary it does not control, and (c) producing independent evidence of what execution did, as a record a distrusting reader can re-check offline.
+The agent framework can perform (a) but not (b) or (c), because it sits inside the trust domain its record describes.
+Grounded in a curated corpus of nine 2025-2026 incidents (postmark-mcp, Shai-Hulud, GlassWorm, EchoLeak, and others), seven of which the author codes as containment failures.
+
+Sorts execution-evidence architectures into five classes by observer position and signing-key custody: (1) proxy-mediator, (2) self-signed history, where the workload signs its own log, (3) silicon/TEE, (4) isolated substrate, with a host-side observer at a micro-VM cell wall, and (5) kernel-vantage observation (eBPF, e.g. Falco, Tetragon).
+Grades evidence by two degrees of independence: Degree 1, the workload cannot forge the record; Degree 2, the operator also cannot forge it or withhold unfavourable runs.
+Proposes "coverage-bounded honesty": a signed PASS means only that no violation was observed in this run, under this test set, at this boundary, on this date.
+The author's evidence format and conformance suite (agent-evidence-vectors, section 2) and a first-party Class 4 implementation, not publicly released, are cited as the concrete realisation; coverage measurements of that implementation are deposited with the paper.
+
+> **Author-stated scope and limitations.**
+> Class 2 (agent self-reported history) is treated as not evidence at all: "a compromised workload signs a valid history of events that did not happen."
+> The paper does not compare a self-report against an independent record; it argues for replacing the former with the latter.
+> Class 5, where agent-trace sits, reaches Degree 1 under the honest-host assumption; a kernel privilege escalation "collapses the observer and the observed into one trust domain", and Class 5 reaches Degree 2 for no scope.
+> No construction surveyed reaches Degree 2 for arbitrary runtime behaviour over a complete run set; the author names this an open, partly obstructed problem.
+> The incident corpus was curated and coded by the author alone, with the thesis in mind and no second rater.
+> The author's own implementation was measured against ground truth it did not author: records are emitted only on refusal, so "of the actions that did cross the boundary, the fraction that produced no record at all was 1.00, under every policy that left the mount usable."
+> The paper requires that coverage be measured against ground truth the observer cannot author or influence, a requirement that applies to the evaluation of this project.
+
+---
+
 ### Response-Path Attacks / Relay Tampering Attack
 
 *May 2026* · paper · `TM-A`
@@ -101,8 +146,14 @@ The report cannot determine which actions the agents took that were never writte
 | Signet | Signed tool-call receipts (operator or bilateral) | Operator or MCP server | B, C | Without server co-sign: operator-side trust boundary |
 | Agent Receipts | Operator-signed W3C Verifiable Credentials | Operator | C | Operator-side trust boundary |
 | Proof of Execution | Proof-carrying execution with five invariants | Gateway + Recorder (assumed honest) | C | Recorder compromise (A4); trace completeness is deployment assumption (A5) |
+| agent-evidence-vectors (Observed Effect / Self-Reported Record) | Offline-verifiable evidence format with observed-vs-reported dual values; conformance suite | Observer key anchored by consumer | B, C | No observer and no claim-to-event matching (verdicts out of scope); observer omission (A7) and undeclared second key (A1) open; filesystem only |
+| ASQAV Compliance Receipts | Hash-chained policy-decision receipts; authoritative tier via re-derivation | Source host or network proxy | C | Execution of the action; bypass by non-request; eBPF observers ruled observation-only |
+| in-toto Runtime Trace | Monitor-observed process, network, and file events for a build | Monitor (e.g. Tetragon) | C | Agents; no self-reported counterpart to compare against |
+| AgentSight | eBPF correlation of captured LLM traffic (intent) with kernel events (actions); observer-LLM risk analysis | Kernel (eBPF, SSL uprobes) on the host | A | Checking the agent's self-reported trajectory; measured coverage; detection rates (verdict is an LLM judgment) |
 | AARM / AgentBound / aiAuthZ | Pre-execution authorization and governance records | Governance layer | C, D | Governance bypass; authorized ≠ executed |
 | TraceAegis / TrajAD / Trajectory Guard / MCPShield / Forensic Traj. Sig. | Behavioral anomaly detection on trajectories | Learned/rule-based templates | — | Trajectory faithfulness (all assume faithful input) |
+| Auditable Agents | Five-dimension auditability framework, Auditability Card; runtime firewall with signed records | Mediation layer on the execution path (assumed honest) | C | Record-vs-reality agreement; actions that bypass the mediation point; a compromised producer |
+| Three Jobs, Not One | Taxonomy of evidence architectures (5 classes, 2 degrees of independence); coverage-bounded PASS | Depends on class; author favours host observer at micro-VM wall | A, C | Checking an agent's self-report against observation; Degree 2 behavioural evidence (stated open) |
 | Relay Tampering Attack | Attack demonstration (99.1% success) | N/A (attack paper) | A | N/A (documents the problem, does not solve it) |
 | HF autonomous agent intrusion | Attack with decoy traffic, partial log recovery, cross-service lateral movement | N/A (incident) | A | N/A (documents the problem, does not solve it) |
 | DSEWiki agent swarm (collusion) | Swarm collusion, sandbox bypass, anti-forensic evasion | N/A (incident report) | A | N/A (documents the problem, does not solve it) |

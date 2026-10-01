@@ -166,3 +166,95 @@ The paper provides a soundness proof: if all invariants hold, the proof correctl
 > The proof system verifies that the execution matches the plan, not that the plan is benign.
 
 ---
+
+### agent-evidence-vectors (Observed Effect and Self-Reported Record predicates)
+
+*Gilda (probityai), Jul-Sep 2026* · spec + conformance suite · `TM-B` `TM-C`
+[GitHub](https://github.com/probityai/agent-evidence-vectors) · [Zenodo 10.5281/zenodo.22758687](https://doi.org/10.5281/zenodo.22758687)
+
+A conformance test suite and stdlib-only reference verifiers (Go and Python) for in-toto attestation predicates.
+The main corpora certify the Adversarial Execution Evidence predicate (a tool or MCP server executed in a containment substrate against an attack corpus) and the AI Agent Action predicate proposed in in-toto/attestation#588 (tool calls observed by a protocol intermediary, hash-chained).
+The design goal is that a consumer who distrusts the producer can check a statement offline, from its own bytes: canonical JSON, Merkle roots, signatures, and recomputation of every derived field.
+
+Two self-hosted predicates in the repository address the closest ground to this project.
+*Observed Effect* records a mutation interval (state-tree root before and after, a path scope, an authority digest) from a declared vantage, where `below-observed` means "a layer the observed party cannot address" and is the only vantage that grades as authoritative.
+It carries per-file read and write digests, and a `dualValues` array in which each fact has an `observedValue`, a `reportedValue`, and a three-valued `agreement` (`agree`, `disagree`, `one-sided`).
+*Self-Reported Record* is the counterpart for runtimes with no such vantage: a signed record of the agent's own turns, with rules that make specific internal inconsistencies refusable (for example, two ledgers naming different change sets).
+
+The repository contains no observer and no comparison engine.
+It defines the envelope an observer's output travels in and the gates a verifier runs over that envelope.
+The `dualValues` rows are written by the producer; the verifier checks only that `agreement` is derivable from the two carried strings, and recomputes the observed side for six facts the statement determines about itself (row counts, roots, authority digest).
+Deciding which claimed action corresponds to which observed event is out of scope by design.
+
+> **Author-stated scope and limitations.**
+> "Verdicts are out of scope. They belong downstream, computed over this evidence."
+> The trust model targets a lying producer or assembler of the statement, not a lying agent under a trusted observer.
+> Attack A1 (a self-observing producer holding a second, undeclared key) is documented as open: `vantage: below-observed` is "coherent with the vantage it claims" rather than proven.
+> Attack A7 (observer omits a read it saw) is documented as open: "This attack works and there is no version of this predicate in which it does not."
+> Observed Effect covers filesystem state only; it has no process or network model.
+> The author states that the five first-party implementations share one reading of the specification and counts one independent implementation.
+
+---
+
+### ASQAV Compliance Receipts Profile
+
+*Gomes Marques, Aug 2026* · IETF Internet-Draft (-08) · `TM-C`
+[draft-marques-asqav-compliance-receipts-08](https://datatracker.ietf.org/doc/draft-marques-asqav-compliance-receipts/08/)
+
+A compliance profile for signed action receipts that record a policy decision taken before an AI agent acts, mapped to the EU AI Act, DORA, and several US regimes.
+Receipts are hash-chained and anchored with RFC 3161 or OpenTimestamps.
+Section 8 defines two attestation tiers: *observation*, where the platform signs a caller-supplied digest, and *authoritative*, where the platform re-derives the digest from independent evidence (for code, by re-fetching the diff from the source host) and fails closed if it cannot.
+Appendix C catalogues capture topologies, including an eBPF SNI observer (C.4) that records the TLS ClientHello SNI, addresses, and timestamp below the application process.
+
+> **Author-stated scope and limitations.**
+> Only re-derivation and a network proxy count as independent evidence. Section 8.3: emission topologies "(browser_extension, ebpf_observer, mcp_proxy) can never mint an authoritative attestation"; Section 8.5: "The eBPF-observer and passive-telemetry topologies catalogued in Appendix C remain observation-only evidence classes."
+> Section 8.2: "Reproducibility does NOT make the attestation unbypassable: a client that never requests an attestation bypasses it entirely."
+> Section 11.14: a receipt does not prove "That the Action was executed, completed, or produced any outcome."
+> This is the ruling agent-evidence-vectors' Observed Effect predicate is written against: it inverts the ordering and treats an observer below the agent as the strongest vantage.
+
+---
+
+### in-toto Runtime Trace predicate
+
+*Patel, Nadgowda, Yelgundhalli, v0.1.0* · attestation predicate · `TM-C`
+[spec](https://github.com/in-toto/attestation/blob/main/spec/predicates/runtime-trace.md)
+
+An in-toto predicate for system events observed during a supply-chain operation such as a build.
+A monitor (the spec names Cilium Tetragon) records a `monitorLog` of spawned processes, network activity, and file accesses with digests, identifies itself and its trace policy in `monitor`, and identifies the observed job in `monitoredProcess`.
+The stated use case is supporting SLSA requirements, for example that a build was script-invoked and ran hermetically without network access.
+
+> **Stated scope and constraints.**
+> Scoped to build and supply-chain operations, not agents; there is no self-reported counterpart to compare the trace against.
+> File digest accuracy depends on the monitoring approach: the spec notes that synchronous monitors (ptrace) give stronger guarantees than asynchronous ones (eBPF).
+
+---
+
+### AgentSight: System-Level Observability for AI Agents Using eBPF
+
+*Zheng, Hu, Yu, Quinn (UC Santa Cruz, ShanghaiTech, eunomia-bpf), Aug 2025* · paper (6 pp.) + tool · `TM-A`
+[arXiv 2508.02736](https://arxiv.org/abs/2508.02736) · [DOI 10.1145/3766882.3767169](https://doi.org/10.1145/3766882.3767169) · [GitHub](https://github.com/eunomia-bpf/agentsight)
+
+An observability framework that monitors an agent from outside its application code, at what the authors call "stable system boundaries" (*boundary tracing*).
+Two eBPF streams are captured.
+The *intent stream* comes from uprobes on `SSL_read`/`SSL_write` that recover decrypted LLM prompts and responses, with userspace reassembly of SSE streaming.
+The *action stream* comes from the `sched_process_exec` tracepoint and kprobes on `openat2`, `connect`, and `execve`, filtered in-kernel to the agent's process lineage (fork/execve tracking).
+A Rust daemon (about 6,000 lines of Rust/C) joins the two streams with three signals: process lineage, temporal proximity (a 100-500 ms window after an LLM response), and argument matching (filenames, URLs, or commands in the LLM response that reappear in syscall arguments).
+A secondary "observer" LLM then receives the correlated trace, acting as a security analyst, and returns a natural-language analysis with a confidence score.
+
+The evaluation measures runtime overhead on three Claude Code workflows (3 runs each, 0.4% to 4.9%, 2.9% on average) and presents three case studies: an indirect prompt injection that exfiltrates `/etc/passwd` (521 raw events merged into 37, flagged by the observer LLM), a CrewAI retry loop, and coordination bottlenecks among six Claude Code subagents.
+The authors state that boundary tracing "shifts the trust model from assuming a cooperative agent to enforcing observation at tamper-proof boundaries."
+The repository has since grown into a general tool (`agentsight record`, `top`, `report audit`) whose README lists "Agent-Controlled Logs: logs can be incomplete, disabled, or modified" as the gap kernel-level events close.
+
+This is the closest system to agent-trace in mechanism: the same probe classes (SSL uprobes, exec tracepoints, connect), the same lineage scoping, and a claim-to-event join over paths, URLs, and commands.
+The difference is what the kernel stream is compared against.
+AgentSight's "intent" is the LLM traffic it captures itself, not the trajectory the agent or its runtime reports, so it never checks a self-report for omitted, fabricated, or substituted entries.
+Its correlation is a heuristic time-window and argument join feeding an LLM judgment, not a verdict over a declared set of entries.
+
+> **Stated scope and constraints.**
+> The paper has no limitations or threat-model section; the constraints below follow from its stated design and evaluation.
+> "Comprehensiveness, as kernel-level monitoring ensures no system action ... goes unobserved" is asserted, not measured: there is no coverage or loss measurement against ground truth.
+> The case studies report no detection rate, false-positive rate, or baseline; the final verdict is the observer LLM's output.
+> The intent stream depends on hooking the TLS library; the README notes that agents that statically link BoringSSL or OpenSSL (Claude Code, Node.js, Gemini CLI) need binary discovery or `--binary-path`, and that IDE agents such as Cursor cannot be captured through eBPF at all.
+> Capture requires root or `CAP_BPF`/`CAP_SYS_ADMIN`, placing the observer in the operator's trust domain.
+
+---
