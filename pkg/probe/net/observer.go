@@ -115,6 +115,12 @@ type Observer struct {
 	dropped     atomic.Uint64
 	stopOnce    sync.Once
 
+	// Kernel-side counters snapshotted by Stop, before it closes the maps
+	// they live in. kernelCountersFinal is raised after the values are set.
+	finalFaulted        atomic.Uint64
+	finalRingbufDrops   atomic.Uint64
+	kernelCountersFinal atomic.Bool
+
 	bootOffsetNs int64
 
 	conns map[connKeyGo]*connection
@@ -508,21 +514,67 @@ func (o *Observer) TrackPID(pid int32) error {
 }
 
 // Coverage reports how much of the observed network activity was
-// attributed to content, per design doc section 8. Meaningful to call only
-// after Stop returns; FaultedReads is read directly from the eBPF map and
-// is zero when content capture (cfg.ExePath) was never configured.
+// attributed to content, per design doc section 8. FaultedReads and
+// RingbufDrops come from eBPF maps: they are read live while the observer
+// runs and from the snapshot Stop took before closing the maps afterwards.
+// Both are zero for the TLS side when content capture (cfg.ExePath) was
+// never configured.
 func (o *Observer) Coverage() Coverage {
 	cov := o.coverage
+	if o.kernelCountersFinal.Load() {
+		cov.FaultedReads += o.finalFaulted.Load()
+		cov.RingbufDrops += o.finalRingbufDrops.Load()
+		return cov
+	}
+	faulted, drops, err := o.kernelCounters()
+	if err != nil && o.kernelCountersFinal.Load() {
+		// Stop closed the maps between the check above and the lookup.
+		faulted, drops = o.finalFaulted.Load(), o.finalRingbufDrops.Load()
+	}
+	cov.FaultedReads += faulted
+	cov.RingbufDrops += drops
+	return cov
+}
+
+// kernelCounters sums the percpu counters the eBPF programs maintain: SSL
+// reads that faulted, and records the net and TLS ring buffers discarded
+// because they were full. An error means a map could not be read, which in
+// practice means Stop has already closed it.
+func (o *Observer) kernelCounters() (faulted, drops uint64, err error) {
+	if v, e := sumPerCPU(o.objs.DropCount); e != nil {
+		err = e
+	} else {
+		drops += v
+	}
 	if o.tlsObjs.FaultedReads != nil {
-		var perCPU []uint64
-		var zero uint32
-		if err := o.tlsObjs.FaultedReads.Lookup(&zero, &perCPU); err == nil {
-			for _, v := range perCPU {
-				cov.FaultedReads += v
-			}
+		if v, e := sumPerCPU(o.tlsObjs.FaultedReads); e != nil {
+			err = e
+		} else {
+			faulted += v
 		}
 	}
-	return cov
+	if o.tlsObjs.DropCount != nil {
+		if v, e := sumPerCPU(o.tlsObjs.DropCount); e != nil {
+			err = e
+		} else {
+			drops += v
+		}
+	}
+	return faulted, drops, err
+}
+
+// sumPerCPU returns the sum of a one-slot percpu uint64 array across CPUs.
+func sumPerCPU(m *ebpf.Map) (uint64, error) {
+	var perCPU []uint64
+	var zero uint32
+	if err := m.Lookup(&zero, &perCPU); err != nil {
+		return 0, err
+	}
+	var sum uint64
+	for _, v := range perCPU {
+		sum += v
+	}
+	return sum, nil
 }
 
 // Events returns the channel on which GroundTruthEvents are delivered. The
@@ -579,6 +631,13 @@ func (o *Observer) Stop() error {
 			_ = o.sslReader.Close()
 		}
 		<-o.stopped
+		// Snapshot the kernel counters before the maps are closed below;
+		// Coverage reads this snapshot afterwards. Order matters: the
+		// values are stored before the final flag is raised.
+		faulted, drops, _ := o.kernelCounters()
+		o.finalFaulted.Store(faulted)
+		o.finalRingbufDrops.Store(drops)
+		o.kernelCountersFinal.Store(true)
 		if o.sslWriteLink != nil {
 			_ = o.sslWriteLink.Close()
 		}

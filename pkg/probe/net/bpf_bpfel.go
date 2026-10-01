@@ -56,6 +56,7 @@ type bpfNetEventHdr struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	bpfMapConns         = "conns"
+	bpfMapDropCount     = "drop_count"
 	bpfMapHeap          = "heap"
 	bpfMapNetEvents     = "net_events"
 	bpfMapTrackedPids   = "tracked_pids"
@@ -124,6 +125,7 @@ type bpfProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
 	Conns       *ebpf.MapSpec `ebpf:"conns"`
+	DropCount   *ebpf.MapSpec `ebpf:"drop_count"`
 	Heap        *ebpf.MapSpec `ebpf:"heap"`
 	NetEvents   *ebpf.MapSpec `ebpf:"net_events"`
 	TrackedPids *ebpf.MapSpec `ebpf:"tracked_pids"`
@@ -156,6 +158,7 @@ func (o *bpfObjects) Close() error {
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
 	Conns       *ebpf.Map `ebpf:"conns"`
+	DropCount   *ebpf.Map `ebpf:"drop_count"`
 	Heap        *ebpf.Map `ebpf:"heap"`
 	NetEvents   *ebpf.Map `ebpf:"net_events"`
 	TrackedPids *ebpf.Map `ebpf:"tracked_pids"`
@@ -164,6 +167,7 @@ type bpfMaps struct {
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.Conns,
+		m.DropCount,
 		m.Heap,
 		m.NetEvents,
 		m.TrackedPids,

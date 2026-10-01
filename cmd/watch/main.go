@@ -377,14 +377,24 @@ func runWatch(opts watchOptions) error {
 	fmt.Println("\nstopping probes...")
 	stopEverything()
 
+	var ringbufDrops uint64
+	if procObs != nil {
+		n := procObs.RingbufDrops()
+		ringbufDrops += n
+		fmt.Printf("proc probe ring buffer drops=%d\n", n)
+	}
 	if netObs != nil {
 		cov := netObs.Coverage()
-		fmt.Printf("net probe coverage: connections=%d withHostname=%d withContent=%d unattributed=%d unsupported=%d faultedReads=%d\n",
+		ringbufDrops += cov.RingbufDrops
+		fmt.Printf("net probe coverage: connections=%d withHostname=%d withContent=%d unattributed=%d unsupported=%d faultedReads=%d ringbufDrops=%d\n",
 			cov.Connections, cov.WithHostname, cov.WithContent,
-			cov.FramesUnattributed, cov.ContentUnsupported, cov.FaultedReads)
+			cov.FramesUnattributed, cov.ContentUnsupported, cov.FaultedReads, cov.RingbufDrops)
 		if err := netObs.TLSAttachError(); err != nil {
 			log.Printf("net probe TLS attach warning: %v", err)
 		}
+	}
+	if ringbufDrops > 0 {
+		log.Printf("WARNING: probe ring buffers discarded %d records; %s is incomplete and a verdict built on it can report false fabrication", ringbufDrops, opts.out)
 	}
 
 	sort.Slice(ground, func(i, j int) bool { return ground[i].Timestamp.Before(ground[j].Timestamp) })

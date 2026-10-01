@@ -60,6 +60,13 @@ type Config struct {
 	// EventBufSize is the channel buffer size for emitted events.
 	// Defaults to 4096 if zero.
 	EventBufSize int
+
+	// RingbufBytes overrides the size of the kernel ring buffer that carries
+	// events to userspace. Zero keeps the compiled-in 1 MiB. It exists so
+	// tests can force a full buffer and exercise RingbufDrops; production
+	// callers should leave it zero. Must be a power-of-two multiple of the
+	// page size.
+	RingbufBytes uint32
 }
 
 // Observer watches process spawns via eBPF and emits GroundTruthEvents.
@@ -75,6 +82,11 @@ type Observer struct {
 	cfg           Config
 	dropped       atomic.Uint64
 	stopOnce      sync.Once
+
+	// finalRingbufDrops is the kernel drop counter as Stop last read it,
+	// before closing the map. ringbufDropsFinal is raised after it is set.
+	finalRingbufDrops atomic.Uint64
+	ringbufDropsFinal atomic.Bool
 
 	// bootOffsetNs converts a bpf_ktime_get_ns() reading (ns since boot) to a
 	// wall-clock UnixNano. Computed once at New() from a matched pair of
@@ -102,7 +114,14 @@ func New(cfg Config) (*Observer, error) {
 	}
 
 	var objs bpfObjects
-	if err := loadBpfObjects(&objs, nil); err != nil {
+	spec, err := loadBpf()
+	if err != nil {
+		return nil, fmt.Errorf("load bpf spec: %w", err)
+	}
+	if cfg.RingbufBytes != 0 {
+		spec.Maps["events"].MaxEntries = cfg.RingbufBytes
+	}
+	if err := spec.LoadAndAssign(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
 
@@ -203,6 +222,34 @@ func (o *Observer) Events() <-chan models.GroundTruthEvent {
 	return o.events
 }
 
+// RingbufDrops reports how many records the kernel-side ring buffer discarded
+// because it was full. Unlike Dropped, which counts the Go channel, these
+// events never reached userspace at all, so a non-zero value means the ground
+// truth for this run is incomplete and a verdict built on it is unreliable.
+// Valid while the observer runs and after Stop returns.
+func (o *Observer) RingbufDrops() uint64 {
+	if !o.ringbufDropsFinal.Load() {
+		if v, err := sumPerCPU(o.objs.DropCount); err == nil {
+			return v
+		}
+	}
+	return o.finalRingbufDrops.Load()
+}
+
+// sumPerCPU returns the sum of a one-slot percpu uint64 array across CPUs.
+func sumPerCPU(m *ebpf.Map) (uint64, error) {
+	var perCPU []uint64
+	var zero uint32
+	if err := m.Lookup(&zero, &perCPU); err != nil {
+		return 0, err
+	}
+	var sum uint64
+	for _, v := range perCPU {
+		sum += v
+	}
+	return sum, nil
+}
+
 // Dropped reports how many events were discarded because the events channel was
 // full. Check after Stop returns.
 func (o *Observer) Dropped() uint64 {
@@ -220,6 +267,11 @@ func (o *Observer) Stop() error {
 	o.stopOnce.Do(func() {
 		_ = o.reader.Close() // unblocks readLoop's Read with ErrClosed
 		<-o.stopped
+		// Snapshot the counter before objs.Close releases its map.
+		if v, err := sumPerCPU(o.objs.DropCount); err == nil {
+			o.finalRingbufDrops.Store(v)
+		}
+		o.ringbufDropsFinal.Store(true)
 		_ = o.exitLink.Close()
 		_ = o.exitGroupLink.Close()
 		_ = o.forkLink.Close()

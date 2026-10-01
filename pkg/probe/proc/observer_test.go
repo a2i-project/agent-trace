@@ -385,3 +385,54 @@ func TestObserver_StopIsIdempotent(t *testing.T) {
 		t.Fatalf("second Stop: %v", err)
 	}
 }
+
+// TestObserver_CountsRingbufDrops forces the kernel ring buffer to overflow
+// and checks the drop counter sees it. The ring is shrunk to one page and each
+// exec carries ~6 KB of argv, so the event record can never fit: every exec
+// and its paired exit record is discarded in-kernel, deterministically,
+// regardless of how fast userspace drains the buffer.
+func TestObserver_CountsRingbufDrops(t *testing.T) {
+	skipUnprivileged(t)
+
+	const bigExecs = 3
+	nonce := fmt.Sprintf("agenttrace-drop-%d", time.Now().UnixNano())
+
+	obs, err := New(Config{
+		CommandFilter: "/bin/true",
+		EventBufSize:  256,
+		RingbufBytes:  4096,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	bigArg := nonce + strings.Repeat("x", 6000)
+	for i := 0; i < bigExecs; i++ {
+		if err := exec.Command("/bin/true", bigArg).Run(); err != nil {
+			t.Fatalf("spawn true: %v", err)
+		}
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	live := obs.RingbufDrops()
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	after := obs.RingbufDrops()
+
+	// Each oversized exec drops its exec record and its exit record.
+	if live < bigExecs {
+		t.Errorf("RingbufDrops while running = %d, want >= %d", live, bigExecs)
+	}
+	if after < live {
+		t.Errorf("RingbufDrops after Stop = %d, less than the %d read while running: the Stop snapshot was lost", after, live)
+	}
+
+	for _, e := range collect(obs) {
+		if strings.Contains(e.Target, nonce) {
+			t.Errorf("event for an oversized exec reached userspace: %q", e.Target)
+		}
+	}
+}

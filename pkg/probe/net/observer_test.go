@@ -197,3 +197,19 @@ func TestObserver_UntrackedProcessIsInvisible(t *testing.T) {
 		}
 	}
 }
+
+// TestCoverage_UsesStopSnapshot checks that once Stop has snapshotted the
+// kernel counters, Coverage reports the snapshot without touching the eBPF
+// maps (which Stop has closed by then) and adds it to the userspace counts.
+func TestCoverage_UsesStopSnapshot(t *testing.T) {
+	o := &Observer{coverage: Coverage{Connections: 4, WithContent: 2}}
+	o.finalFaulted.Store(3)
+	o.finalRingbufDrops.Store(7)
+	o.kernelCountersFinal.Store(true)
+
+	got := o.Coverage()
+	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7}
+	if got != want {
+		t.Errorf("Coverage() = %+v, want %+v", got, want)
+	}
+}

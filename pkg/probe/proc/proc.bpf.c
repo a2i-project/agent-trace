@@ -90,6 +90,26 @@ struct {
 	__uint(max_entries, 1 << 20); // 1 MiB
 } events SEC(".maps");
 
+// drop_count counts bpf_ringbuf_output failures on events. A full ring
+// buffer discards the record and returns a negative errno. Without this
+// counter, an honest agent's action lost here is indistinguishable
+// downstream from one the agent never performed (a false T2 fabrication
+// verdict). Userspace sums the percpu slots and snapshots them in Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} drop_count SEC(".maps");
+
+static __always_inline void count_drop(void)
+{
+	__u32 zero = 0;
+	__u64 *count = bpf_map_lookup_elem(&drop_count, &zero);
+	if (count)
+		__sync_fetch_and_add(count, 1);
+}
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 1);
@@ -224,7 +244,8 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 	if (out_size > sizeof(struct exec_scratch))
 		out_size = sizeof(struct exec_scratch);
 
-	bpf_ringbuf_output(&events, e, out_size, 0);
+	if (bpf_ringbuf_output(&events, e, out_size, 0))
+		count_drop();
 	return 0;
 }
 
@@ -267,7 +288,8 @@ int handle_exit(struct sched_process_exit_ctx *ctx)
 		if (out_size > sizeof(struct exec_scratch))
 			out_size = sizeof(struct exec_scratch);
 		
-		bpf_ringbuf_output(&events, e, out_size, 0);
+		if (bpf_ringbuf_output(&events, e, out_size, 0))
+			count_drop();
 	}
 
 	bpf_map_delete_elem(&execs, &tgid);

@@ -46,6 +46,7 @@ type bpfProcInfo struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	bpfMapConfigMap        = "config_map"
+	bpfMapDropCount        = "drop_count"
 	bpfMapEvents           = "events"
 	bpfMapExecs            = "execs"
 	bpfMapHeap             = "heap"
@@ -110,6 +111,7 @@ type bpfProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
 	ConfigMap   *ebpf.MapSpec `ebpf:"config_map"`
+	DropCount   *ebpf.MapSpec `ebpf:"drop_count"`
 	Events      *ebpf.MapSpec `ebpf:"events"`
 	Execs       *ebpf.MapSpec `ebpf:"execs"`
 	Heap        *ebpf.MapSpec `ebpf:"heap"`
@@ -144,6 +146,7 @@ func (o *bpfObjects) Close() error {
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
 	ConfigMap   *ebpf.Map `ebpf:"config_map"`
+	DropCount   *ebpf.Map `ebpf:"drop_count"`
 	Events      *ebpf.Map `ebpf:"events"`
 	Execs       *ebpf.Map `ebpf:"execs"`
 	Heap        *ebpf.Map `ebpf:"heap"`
@@ -154,6 +157,7 @@ type bpfMaps struct {
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.ConfigMap,
+		m.DropCount,
 		m.Events,
 		m.Execs,
 		m.Heap,

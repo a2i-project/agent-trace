@@ -70,6 +70,26 @@ struct {
 	__type(value, __u64);
 } faulted_reads SEC(".maps");
 
+// drop_count counts bpf_ringbuf_output failures on ssl_events. A full ring
+// buffer discards the record and returns a negative errno. Without this
+// counter, an honest agent's action lost here is indistinguishable
+// downstream from one the agent never performed (a false T2 fabrication
+// verdict). Userspace sums the percpu slots and snapshots them in Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} drop_count SEC(".maps");
+
+static __always_inline void count_drop(void)
+{
+	__u32 zero = 0;
+	__u64 *count = bpf_map_lookup_elem(&drop_count, &zero);
+	if (count)
+		__sync_fetch_and_add(count, 1);
+}
+
 static __always_inline int is_tracked(__u32 tgid)
 {
 	return bpf_map_lookup_elem(&tracked_pids, &tgid) != NULL;
@@ -120,7 +140,8 @@ int probe_ssl_write(struct pt_regs *ctx)
 	e->hdr.tid = (__u32)id;
 	e->hdr.ts_ns = bpf_ktime_get_ns();
 	e->hdr.len = len;
-	bpf_ringbuf_output(&ssl_events, e, sizeof(e->hdr) + len, 0);
+	if (bpf_ringbuf_output(&ssl_events, e, sizeof(e->hdr) + len, 0))
+		count_drop();
 	return 0;
 }
 

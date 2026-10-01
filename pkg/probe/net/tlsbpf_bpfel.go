@@ -32,6 +32,7 @@ type tlsbpfSslFrameHdr struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
+	tlsbpfMapDropCount      = "drop_count"
 	tlsbpfMapFaultedReads   = "faulted_reads"
 	tlsbpfMapSslEvents      = "ssl_events"
 	tlsbpfMapSslHeap        = "ssl_heap"
@@ -92,6 +93,7 @@ type tlsbpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tlsbpfMapSpecs struct {
+	DropCount    *ebpf.MapSpec `ebpf:"drop_count"`
 	FaultedReads *ebpf.MapSpec `ebpf:"faulted_reads"`
 	SslEvents    *ebpf.MapSpec `ebpf:"ssl_events"`
 	SslHeap      *ebpf.MapSpec `ebpf:"ssl_heap"`
@@ -124,6 +126,7 @@ func (o *tlsbpfObjects) Close() error {
 //
 // It can be passed to loadTlsbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tlsbpfMaps struct {
+	DropCount    *ebpf.Map `ebpf:"drop_count"`
 	FaultedReads *ebpf.Map `ebpf:"faulted_reads"`
 	SslEvents    *ebpf.Map `ebpf:"ssl_events"`
 	SslHeap      *ebpf.Map `ebpf:"ssl_heap"`
@@ -132,6 +135,7 @@ type tlsbpfMaps struct {
 
 func (m *tlsbpfMaps) Close() error {
 	return _TlsbpfClose(
+		m.DropCount,
 		m.FaultedReads,
 		m.SslEvents,
 		m.SslHeap,

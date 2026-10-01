@@ -23,6 +23,7 @@ type Coverage struct {
 	FramesUnattributed int    // ssl_frame whose request could not be joined to a connection or parsed
 	ContentUnsupported int    // h2 connections (ALPN negotiated h2; content parsing skipped)
 	FaultedReads       uint64 // SSL_write calls whose plaintext read faulted in-kernel (see D5)
+	RingbufDrops       uint64 // records the net and TLS ring buffers discarded because they were full
 }
 
 // sslKey identifies the (tgid, tid) pair a run of ssl_frames belongs to.

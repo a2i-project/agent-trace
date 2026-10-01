@@ -82,6 +82,26 @@ struct {
 	__uint(max_entries, 1 << 18); // 256 KiB
 } net_events SEC(".maps");
 
+// drop_count counts bpf_ringbuf_output failures on net_events. A full ring
+// buffer discards the record and returns a negative errno. Without this
+// counter, an honest agent's action lost here is indistinguishable
+// downstream from one the agent never performed (a false T2 fabrication
+// verdict). Userspace sums the percpu slots and snapshots them in Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} drop_count SEC(".maps");
+
+static __always_inline void count_drop(void)
+{
+	__u32 zero = 0;
+	__u64 *count = bpf_map_lookup_elem(&drop_count, &zero);
+	if (count)
+		__sync_fetch_and_add(count, 1);
+}
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 1);
@@ -178,7 +198,8 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	e->hdr.family = state.family;
 	e->hdr.port = state.port;
 	__builtin_memcpy(e->hdr.addr, state.addr, sizeof(state.addr));
-	bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0);
+	if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
+		count_drop();
 	return 0;
 }
 
@@ -213,7 +234,8 @@ static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, 
 	e->hdr.port = cs->port;
 	__builtin_memcpy(e->hdr.addr, cs->addr, sizeof(cs->addr));
 	e->hdr.payload_len = len;
-	bpf_ringbuf_output(&net_events, e, sizeof(e->hdr) + len, 0);
+	if (bpf_ringbuf_output(&net_events, e, sizeof(e->hdr) + len, 0))
+		count_drop();
 
 	cs->hello_captured = 1;
 	return 0;
@@ -338,7 +360,8 @@ int trace_close(struct sys_enter_close_ctx *ctx)
 		e->hdr.family = cs->family;
 		e->hdr.port = cs->port;
 		__builtin_memcpy(e->hdr.addr, cs->addr, sizeof(cs->addr));
-		bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0);
+		if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
+			count_drop();
 	}
 
 	bpf_map_delete_elem(&conns, &key);
