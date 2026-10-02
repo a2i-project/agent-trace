@@ -583,6 +583,25 @@ func (o *Observer) Events() <-chan models.GroundTruthEvent {
 	return o.events
 }
 
+// CaptureCoverage reports the loss counters for this capture. Call after Stop.
+func (o *Observer) CaptureCoverage() models.ProbeCoverage {
+	cov := o.Coverage()
+	content := models.ContentActive
+	switch {
+	case o.cfg.ExePath == "":
+		content = models.ContentIdentityOnly
+	case o.tlsAttachErr != nil:
+		content = models.ContentAttachFailed
+	}
+	return models.ProbeCoverage{
+		Ran:          true,
+		RingbufDrops: cov.RingbufDrops,
+		ChannelDrops: o.Dropped(),
+		FaultedReads: cov.FaultedReads,
+		Content:      content,
+	}
+}
+
 // Dropped reports how many events were discarded because the events channel
 // was full. Check after Stop returns.
 func (o *Observer) Dropped() uint64 {

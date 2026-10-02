@@ -195,6 +195,14 @@ func (o *Observer) Overflow() bool {
 	return o.overflow
 }
 
+// CaptureCoverage reports the loss indicators for this capture. Call after
+// Stop. The fs probe sends on its events channel without dropping, so a slow
+// consumer shows up as backpressure and then as a kernel queue overflow, which
+// is what QueueOverflow reports.
+func (o *Observer) CaptureCoverage() models.ProbeCoverage {
+	return models.ProbeCoverage{Ran: true, QueueOverflow: o.Overflow()}
+}
+
 // Start begins reading fanotify events in a background goroutine.
 func (o *Observer) Start() {
 	if o.cfg.PathFilter != "" {

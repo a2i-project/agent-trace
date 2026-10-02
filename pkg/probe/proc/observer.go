@@ -250,6 +250,15 @@ func sumPerCPU(m *ebpf.Map) (uint64, error) {
 	return sum, nil
 }
 
+// CaptureCoverage reports the loss counters for this capture. Call after Stop.
+func (o *Observer) CaptureCoverage() models.ProbeCoverage {
+	return models.ProbeCoverage{
+		Ran:          true,
+		RingbufDrops: o.RingbufDrops(),
+		ChannelDrops: o.Dropped(),
+	}
+}
+
 // Dropped reports how many events were discarded because the events channel was
 // full. Check after Stop returns.
 func (o *Observer) Dropped() uint64 {

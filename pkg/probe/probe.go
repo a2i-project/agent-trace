@@ -16,3 +16,10 @@ type Observer interface {
 	Stop() error
 	Events() <-chan models.GroundTruthEvent
 }
+
+// CoverageReporter is implemented by observers that can say what a capture may
+// have lost. CaptureCoverage is valid after Stop returns. It is a separate
+// interface so Observer stays the minimal contract a probe must meet.
+type CoverageReporter interface {
+	CaptureCoverage() models.ProbeCoverage
+}
