@@ -109,6 +109,8 @@ With a trailing `-- <command>`, `watch` starts the command itself, records its P
 
 To watch an agent `watch` cannot be the parent of (e.g. a container entrypoint), start it separately and pass `--root-pid N` instead of a `-- <command>`; `watch` then records until Ctrl+C. This mode has an uncloseable race: anything that PID did before `--root-pid` was applied is invisible to the process probe (the fs probe, which is not ancestry-scoped, still sees it).
 
+`ground_truth.json` holds the observed events and a coverage record of what each probe may have lost (kernel ring buffer drops, dropped events, fanotify queue overflow). `verify` prints that record. When the checks pass but the record shows loss, or no record exists (an older bare-array file), the verdict is INCONCLUSIVE and `verify` exits with code 2, because lost events could be hiding an action. Exit codes: 0 FAITHFUL, 1 NOT FAITHFUL, 2 INCONCLUSIVE.
+
 This prints a FAITHFUL verdict with a per-category breakdown. To see the NOT FAITHFUL path, rerun `simagent` with `--drop-entry 0` (or any valid index) to omit a self-reported action before it's written out, then `verify` again — `Unrecorded` will be non-empty and the verdict flips.
 
 This harness is meant to grow with the project: `pkg/probe.Observer` is the interface every probe implements, and `cmd/watch`'s `probeBuilders` map is a single-entry extension point — the network probe below is one entry in that map, not a separate tool.

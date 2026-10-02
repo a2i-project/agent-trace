@@ -34,9 +34,11 @@ func main() {
 	}
 
 	tr := loadTrajectory(trajectoryPath)
-	gt := loadGroundTruth(groundTruthPath)
+	gtFile := loadGroundTruth(groundTruthPath)
+	gt := gtFile.Events
 
 	verdict := verification.Verify(tr, gt, matching.Config{Delta: delta})
+	completeness := verification.Assess(gtFile.Coverage)
 
 	fmt.Println("=== Agent-Trace Verification Report ===")
 	fmt.Printf("trajectory:   %s (%d entries)\n", trajectoryPath, len(tr))
@@ -51,14 +53,33 @@ func main() {
 	printEntries("Unwitnessed", verdict.Unwitnessed)
 	printEvents("Unrecorded", verdict.Unrecorded)
 	printMismatched(verdict.Mismatched)
+	printCompleteness(completeness)
 
+	outcome := verification.Conclude(verdict, completeness)
 	fmt.Println()
-	if verdict.Faithful {
-		fmt.Println("VERDICT: FAITHFUL")
-		return
+	fmt.Printf("VERDICT: %s\n", outcome)
+	if outcome == verification.OutcomeInconclusive {
+		fmt.Println("The checks passed, but the ground truth may have lost events, so FAITHFUL cannot be asserted.")
 	}
-	fmt.Println("VERDICT: NOT FAITHFUL")
-	os.Exit(1)
+	if outcome == verification.OutcomeNotFaithful && !completeness.Complete {
+		fmt.Println("Note: the ground truth is incomplete, so the findings above are advisory.")
+	}
+	os.Exit(outcome.ExitCode())
+}
+
+func printCompleteness(c verification.Completeness) {
+	fmt.Println()
+	if c.Complete {
+		fmt.Println("Ground truth completeness: complete (no recorded event loss)")
+	} else {
+		fmt.Println("Ground truth completeness: INCOMPLETE")
+		for _, r := range c.Reasons {
+			fmt.Printf("  - %s\n", r)
+		}
+	}
+	for _, n := range c.Notes {
+		fmt.Printf("  note: %s\n", n)
+	}
 }
 
 func loadTrajectory(path string) models.Trajectory {
@@ -73,12 +94,12 @@ func loadTrajectory(path string) models.Trajectory {
 	return tr
 }
 
-func loadGroundTruth(path string) models.GroundTruth {
+func loadGroundTruth(path string) models.GroundTruthFile {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		log.Fatalf("read %s: %v", path, err)
 	}
-	gt, err := models.ParseGroundTruth(data)
+	gt, err := models.ParseGroundTruthFile(data)
 	if err != nil {
 		log.Fatalf("parse ground truth %s: %v", path, err)
 	}

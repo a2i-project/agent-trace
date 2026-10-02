@@ -48,6 +48,7 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
 	"github.com/agent-trace/agent-trace/pkg/probe/proc"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 // watchConfig holds the flags a probe builder may need. Add fields here as
@@ -73,6 +74,11 @@ type watchConfig struct {
 	// NetCachePath is the JSON cache file for pre-computed TLS offsets.
 	// Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json when empty.
 	NetCachePath string
+
+	// ProcRingbufBytes overrides the proc probe's kernel ring buffer size.
+	// Zero keeps the default. Set from tests only, to force event loss; there
+	// is deliberately no command-line flag for it.
+	ProcRingbufBytes uint32
 }
 
 type builderFunc func(watchConfig) (probe.Observer, error)
@@ -92,6 +98,7 @@ var probeBuilders = map[string]builderFunc{
 			CommandFilter: cfg.ProcFilter,
 			EventBufSize:  cfg.EventBufSize,
 			DeferRootPID:  cfg.AncestryPending,
+			RingbufBytes:  cfg.ProcRingbufBytes,
 		})
 	},
 	// Tier 3 network probe: emits NetConnect events with resolved hostname
@@ -105,6 +112,22 @@ var probeBuilders = map[string]builderFunc{
 			CachePath:    cfg.NetCachePath,
 		})
 	},
+}
+
+// buildCoverage assembles the per-probe loss record written next to the
+// events. Every known probe gets an entry: one that was not selected is
+// recorded with Ran=false, so the file shows what was not watched instead of
+// leaving the verifier to guess. Call after every probe has stopped.
+func buildCoverage(reporters map[string]probe.CoverageReporter) models.Coverage {
+	cov := models.Coverage{Schema: models.CoverageSchema, Probes: make(map[string]models.ProbeCoverage, len(probeBuilders))}
+	for name := range probeBuilders {
+		if r, ok := reporters[name]; ok {
+			cov.Probes[name] = r.CaptureCoverage()
+		} else {
+			cov.Probes[name] = models.ProbeCoverage{Ran: false}
+		}
+	}
+	return cov
 }
 
 func availableProbes() string {
@@ -187,6 +210,7 @@ func runWatch(opts watchOptions) error {
 	// rest: their Start must be sequenced after the ancestry root PID is
 	// known so we can call TrackPID / SetRootPID first.
 	var others []probe.Observer
+	reporters := make(map[string]probe.CoverageReporter)
 	var procObs *proc.Observer
 	var netObs *probenet.Observer
 	for _, name := range strings.Split(opts.probes, ",") {
@@ -202,6 +226,13 @@ func runWatch(opts watchOptions) error {
 		if err != nil {
 			return fmt.Errorf("start %s probe: %w", name, err)
 		}
+		// A probe that cannot report what it lost would be written into the
+		// coverage record as clean. Refuse it up front.
+		rep, ok := obs.(probe.CoverageReporter)
+		if !ok {
+			return fmt.Errorf("probe %q does not implement probe.CoverageReporter", name)
+		}
+		reporters[name] = rep
 		if name == "proc" {
 			p, ok := obs.(*proc.Observer)
 			if !ok {
@@ -377,29 +408,43 @@ func runWatch(opts watchOptions) error {
 	fmt.Println("\nstopping probes...")
 	stopEverything()
 
-	var ringbufDrops uint64
-	if procObs != nil {
-		n := procObs.RingbufDrops()
-		ringbufDrops += n
-		fmt.Printf("proc probe ring buffer drops=%d\n", n)
-	}
 	if netObs != nil {
-		cov := netObs.Coverage()
-		ringbufDrops += cov.RingbufDrops
-		fmt.Printf("net probe coverage: connections=%d withHostname=%d withContent=%d unattributed=%d unsupported=%d faultedReads=%d ringbufDrops=%d\n",
-			cov.Connections, cov.WithHostname, cov.WithContent,
-			cov.FramesUnattributed, cov.ContentUnsupported, cov.FaultedReads, cov.RingbufDrops)
+		nc := netObs.Coverage()
+		fmt.Printf("net probe coverage: connections=%d withHostname=%d withContent=%d unattributed=%d unsupported=%d\n",
+			nc.Connections, nc.WithHostname, nc.WithContent, nc.FramesUnattributed, nc.ContentUnsupported)
 		if err := netObs.TLSAttachError(); err != nil {
 			log.Printf("net probe TLS attach warning: %v", err)
 		}
 	}
-	if ringbufDrops > 0 {
-		log.Printf("WARNING: probe ring buffers discarded %d records; %s is incomplete and a verdict built on it can report false fabrication", ringbufDrops, opts.out)
+
+	cov := buildCoverage(reporters)
+	names := make([]string, 0, len(cov.Probes))
+	for name := range cov.Probes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		p := cov.Probes[name]
+		if !p.Ran {
+			fmt.Printf("%s probe: not run\n", name)
+			continue
+		}
+		fmt.Printf("%s probe loss: ringbufDrops=%d channelDrops=%d faultedReads=%d queueOverflow=%v\n",
+			name, p.RingbufDrops, p.ChannelDrops, p.FaultedReads, p.QueueOverflow)
+	}
+	if c := verification.Assess(&cov); !c.Complete {
+		log.Printf("WARNING: %s is incomplete and a verdict built on it is unreliable:", opts.out)
+		for _, r := range c.Reasons {
+			log.Printf("  %s", r)
+		}
 	}
 
 	sort.Slice(ground, func(i, j int) bool { return ground[i].Timestamp.Before(ground[j].Timestamp) })
 
-	b, err := json.MarshalIndent(ground, "", "  ")
+	if ground == nil {
+		ground = models.GroundTruth{}
+	}
+	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal ground truth: %w", err)
 	}

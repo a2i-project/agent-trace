@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +9,8 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 func skipUnprivileged(t *testing.T) {
@@ -56,10 +57,17 @@ func TestRunWatch_ExecWrapSuppressesRootSeesChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v", out, err)
 	}
-	var ground models.GroundTruth
-	if err := json.Unmarshal(data, &ground); err != nil {
-		t.Fatalf("unmarshal ground truth: %v", err)
+	file, err := models.ParseGroundTruthFile(data)
+	if err != nil {
+		t.Fatalf("parse ground truth: %v", err)
 	}
+	if file.Coverage == nil {
+		t.Fatal("watch wrote no coverage record")
+	}
+	if !file.Coverage.Probes["proc"].Ran {
+		t.Errorf("proc probe not recorded as run: %+v", file.Coverage.Probes)
+	}
+	ground := file.Events
 
 	var sawRoot, sawChild bool
 	for _, e := range ground {
@@ -96,5 +104,67 @@ func TestRunWatch_RejectsRootPIDWithCommand(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("expected mutual-exclusion error, got %v", err)
+	}
+}
+
+type fakeReporter struct{ cov models.ProbeCoverage }
+
+func (f fakeReporter) CaptureCoverage() models.ProbeCoverage { return f.cov }
+
+func TestBuildCoverage_RecordsEveryKnownProbe(t *testing.T) {
+	cov := buildCoverage(map[string]probe.CoverageReporter{
+		"proc": fakeReporter{models.ProbeCoverage{Ran: true, RingbufDrops: 5}},
+	})
+	if cov.Schema != models.CoverageSchema {
+		t.Errorf("schema = %d, want %d", cov.Schema, models.CoverageSchema)
+	}
+	if len(cov.Probes) != len(probeBuilders) {
+		t.Fatalf("recorded %d probes, want all %d known", len(cov.Probes), len(probeBuilders))
+	}
+	if got := cov.Probes["proc"]; !got.Ran || got.RingbufDrops != 5 {
+		t.Errorf("proc = %+v, want ran with 5 drops", got)
+	}
+	for _, name := range []string{"fs", "net"} {
+		if cov.Probes[name].Ran {
+			t.Errorf("%s was not selected but is recorded as run", name)
+		}
+	}
+}
+
+// TestRunWatch_RecordsLossInCoverage forces the proc probe's kernel ring to
+// overflow (one-page ring, an exec whose argv alone exceeds it) and checks the
+// loss reaches the written file and makes the capture count as incomplete.
+func TestRunWatch_RecordsLossInCoverage(t *testing.T) {
+	skipUnprivileged(t)
+
+	out := filepath.Join(t.TempDir(), "ground_truth.json")
+	script := "sleep 2 && /bin/true " + strings.Repeat("x", 6000)
+
+	opts := watchOptions{
+		cfg:       watchConfig{Workspace: t.TempDir(), EventBufSize: 256, ProcRingbufBytes: 4096},
+		probes:    "proc",
+		out:       out,
+		agentArgs: []string{"/bin/sh", "-c", script},
+	}
+	if err := runWatch(opts); err != nil {
+		t.Fatalf("runWatch: %v", err)
+	}
+
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read %s: %v", out, err)
+	}
+	file, err := models.ParseGroundTruthFile(data)
+	if err != nil {
+		t.Fatalf("parse ground truth: %v", err)
+	}
+	if file.Coverage == nil {
+		t.Fatal("no coverage record written")
+	}
+	if got := file.Coverage.Probes["proc"].RingbufDrops; got == 0 {
+		t.Errorf("proc RingbufDrops = 0, want > 0 after forcing the ring to overflow")
+	}
+	if verification.Assess(file.Coverage).Complete {
+		t.Error("Assess reported a capture with ring buffer drops as complete")
 	}
 }
