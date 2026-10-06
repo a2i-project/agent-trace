@@ -118,3 +118,35 @@ func TestProbeCoverage_UntrackedChildrenRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+func TestGroundTruthFileRootPID(t *testing.T) {
+	data, err := json.Marshal(GroundTruthFile{Events: sampleEvents(), RootPID: 4242})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := ParseGroundTruthFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.RootPID != 4242 {
+		t.Errorf("RootPID round trip = %d, want 4242", f.RootPID)
+	}
+
+	// A file without the field, and the legacy array, read as no root.
+	legacyObj, _ := json.Marshal(map[string]any{"events": sampleEvents()})
+	f, err = ParseGroundTruthFile(legacyObj)
+	if err != nil || f.RootPID != 0 {
+		t.Errorf("object without root_pid: RootPID = %d, err = %v, want 0", f.RootPID, err)
+	}
+	arr, _ := json.Marshal(sampleEvents())
+	f, err = ParseGroundTruthFile(arr)
+	if err != nil || f.RootPID != 0 {
+		t.Errorf("legacy array: RootPID = %d, err = %v, want 0", f.RootPID, err)
+	}
+	// Zero is omitted rather than written, so an absent root is never
+	// mistaken for a recorded one.
+	zero, _ := json.Marshal(GroundTruthFile{Events: sampleEvents()})
+	if strings.Contains(string(zero), "root_pid") {
+		t.Errorf("zero RootPID was written: %s", zero)
+	}
+}

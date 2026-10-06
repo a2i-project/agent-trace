@@ -62,6 +62,11 @@ type Coverage struct {
 type GroundTruthFile struct {
 	Events   GroundTruth `json:"events"`
 	Coverage *Coverage   `json:"coverage"`
+	// RootPID is the agent process the capture was rooted at, the root of the
+	// process forest the verifier builds (08 V1). Zero means the capture had
+	// no root (legacy file, or host-wide recording), so no tree can be built
+	// and the verifier cannot attribute events.
+	RootPID uint32 `json:"root_pid,omitempty"`
 }
 
 // ParseGroundTruthFile reads a ground truth file in either form: the current

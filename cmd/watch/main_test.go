@@ -64,6 +64,20 @@ func TestRunWatch_ExecWrapSuppressesRootSeesChild(t *testing.T) {
 	if file.Coverage == nil {
 		t.Fatal("watch wrote no coverage record")
 	}
+	if file.RootPID == 0 {
+		t.Error("watch wrote no root_pid for a launched agent")
+	}
+	// The root pid must be the launched shell: the exec of the script's own
+	// shell names it as the parent of the echo's subshell chain.
+	var rootSeen bool
+	for _, e := range file.Events {
+		if e.PID == file.RootPID || e.PPID == file.RootPID {
+			rootSeen = true
+		}
+	}
+	if !rootSeen {
+		t.Errorf("no event names root_pid %d as pid or ppid", file.RootPID)
+	}
 	if !file.Coverage.Probes["proc"].Ran {
 		t.Errorf("proc probe not recorded as run: %+v", file.Coverage.Probes)
 	}

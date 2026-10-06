@@ -345,6 +345,10 @@ func runWatch(opts watchOptions) error {
 	defer signal.Stop(sigCh)
 
 	var agentErr error
+	// groundRoot is the pid the verifier roots the process forest at: the
+	// launched agent, or --root-pid. Zero when watch records host-wide with no
+	// agent, which the verifier reads as "no tree".
+	var groundRoot uint32
 	switch {
 	case len(opts.agentArgs) > 0:
 		// Give the fs probe a moment to be fully reading before the agent runs.
@@ -358,6 +362,7 @@ func runWatch(opts watchOptions) error {
 			stopEverything()
 			return fmt.Errorf("start agent %q: %w", opts.agentArgs[0], err)
 		}
+		groundRoot = uint32(cmd.Process.Pid)
 		// SetRootPID after Start (PID must exist) but before the proc readLoop
 		// starts, so the root's buffered execve is dropped by PID match.
 		if procObs != nil {
@@ -387,6 +392,7 @@ func runWatch(opts watchOptions) error {
 		time.Sleep(300 * time.Millisecond)
 
 	case opts.rootPID > 0:
+		groundRoot = uint32(opts.rootPID)
 		if err := procObs.SetRootPID(int32(opts.rootPID)); err != nil {
 			stopEverything()
 			return fmt.Errorf("set proc probe root pid: %w", err)
@@ -444,7 +450,7 @@ func runWatch(opts watchOptions) error {
 	if ground == nil {
 		ground = models.GroundTruth{}
 	}
-	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov}, "", "  ")
+	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal ground truth: %w", err)
 	}
