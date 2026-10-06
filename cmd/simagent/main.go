@@ -85,6 +85,8 @@ func main() {
 	flag.BoolVar(&fileOnly, "file-only", false, "Skip the subprocess step, producing a trajectory with only filesystem actions (for Tier 1, where no process probe runs)")
 	flag.StringVar(&attack, "attack", "", "Simulate an attack scenario: 'omission', 'fabrication', 'substitution-exit', 'substitution-hash', 'substitution-cmd', 'net-omission', 'net-fabrication'")
 	flag.StringVar(&fetchURL, "fetch-url", "", "If set, run `curl -s -o /dev/null -m 10 <url>` and record a NetConnect trajectory entry for the host")
+	var shellCmd string
+	flag.StringVar(&shellCmd, "shell-cmd", "", "Run this script through a child /bin/sh -c and claim only the shell invocation, not what the script spawns. {ws} in the script expands to the workspace path. Gives the process tree a level 1 (the shell) and level 2 (its children), see docs/plan/08_verification_model.md section 3.8")
 	var fetchMethod, fetchBody string
 	var emitNetRequest bool
 	var fetchViaCurl bool
@@ -212,6 +214,36 @@ func main() {
 			ExitCode:   &wcExitCode,
 		})
 
+		delay()
+	}
+
+	// 3b. Compound command (Tier 6 step 4): the way a real coding agent runs a
+	// shell tool. The agent claims one command, the shell invocation. It never
+	// claims what the script then spawns or touches: that is the shell's
+	// subtree, observed as level 2 and below, and attributed to this claim by
+	// ancestry (08 V1, D3). The claim interval comes from the format, so it
+	// carries the end the real run produced (07 D12).
+	if shellCmd != "" {
+		script := strings.ReplaceAll(shellCmd, "{ws}", workspace)
+		shArgs := []string{"-c", script}
+		// The proc probe reports the execve filename then argv[1:].
+		shCmdLine := strings.Join(append([]string{"/bin/sh"}, shArgs...), " ")
+		start := time.Now()
+		cmd := exec.Command("/bin/sh", shArgs...)
+		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+		runErr := cmd.Run()
+		if _, ok := runErr.(*exec.ExitError); runErr != nil && !ok {
+			log.Fatalf("failed to run shell command: %v", runErr)
+		}
+		end := time.Now()
+		var shExit int32
+		if cmd.ProcessState != nil {
+			shExit = int32(cmd.ProcessState.ExitCode())
+		}
+		trajectory = append(trajectory,
+			models.TrajectoryEntry{Timestamp: start, End: &end, ActionType: models.ProcessExec, Target: shCmdLine},
+			models.TrajectoryEntry{Timestamp: end, ActionType: models.ProcessExit, Target: shCmdLine, ExitCode: &shExit},
+		)
 		delay()
 	}
 
