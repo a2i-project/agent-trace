@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -897,5 +898,105 @@ func TestMaskToActionTypes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPidOf(t *testing.T) {
+	tests := []struct {
+		pid  int32
+		want uint32
+	}{{4242, 4242}, {1, 1}, {0, 0}, {-1, 0}}
+	for _, tc := range tests {
+		if got := pidOf(&rawEvent{PID: tc.pid}); got != tc.want {
+			t.Errorf("pidOf(%d) = %d, want %d (zero means not recorded)", tc.pid, got, tc.want)
+		}
+	}
+}
+
+// Every event the probe emits must carry its own causing PID (08 section 3.2),
+// including a close that is superseded by another process's close: the older
+// close keeps the pid that caused it, not the pid of whoever superseded it.
+func TestObserver_EventsCarryTheirOwnPID(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "shared.txt")
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "sha256:final", nil })
+
+	const pidA, pidB, pidC = 1111, 2222, 3333
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_MODIFY, PID: pidA, Path: target}, time.Now())
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: pidA, Path: target}, time.Now())
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: pidB, Path: target}, time.Now()) // supersedes A's close
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_DELETE, PID: pidC, Path: target}, time.Now())
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_MODIFY, PID: 0, Path: target}, time.Now()) // kernel-caused
+	obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), true)
+
+	type seen struct {
+		action models.ActionType
+		pid    uint32
+	}
+	var got []seen
+	for _, e := range drainEvents(obs) {
+		got = append(got, seen{e.ActionType, e.PID})
+	}
+	want := []seen{
+		{models.FileWrite, pidA},
+		{models.FileClose, pidA}, // A's close, superseded by B
+		{models.FileDelete, pidC},
+		{models.FileWrite, 0},
+		{models.FileClose, pidB}, // B's close, settled at the end
+	}
+	if len(got) != len(want) {
+		t.Fatalf("events = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("event %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// A file written by a child process must carry the child's PID, which is what
+// lets the verifier attribute the write to the command that caused it. No
+// PIDFilter is set, as for a real agent.
+func TestObserver_ChildProcessWriteCarriesChildPID(t *testing.T) {
+	skipUnprivileged(t)
+
+	dir := t.TempDir()
+	obs, err := New(Config{Path: dir, PathFilter: dir, EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(200 * time.Millisecond)
+
+	target := filepath.Join(dir, "child.txt")
+	// The shell opens the redirection itself, so the shell's pid causes it.
+	cmd := exec.Command("sh", "-c", "echo hi > "+target)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	childPID := uint32(cmd.Process.Pid)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	events := collectEvents(obs, 1500*time.Millisecond)
+	_ = obs.Stop()
+
+	var sawChild bool
+	for _, e := range events {
+		if e.Target != target {
+			continue
+		}
+		if e.PID == 0 {
+			t.Errorf("event %s on %s has no PID", e.ActionType, e.Target)
+		}
+		if e.PID == childPID {
+			sawChild = true
+		}
+		if e.PID == uint32(os.Getpid()) {
+			t.Errorf("event %s on %s attributed to the test process, not the child that wrote it", e.ActionType, e.Target)
+		}
+	}
+	if !sawChild {
+		t.Errorf("no event for %s carried the child's pid %d; events: %v", target, childPID, events)
 	}
 }

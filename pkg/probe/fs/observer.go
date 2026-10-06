@@ -36,8 +36,17 @@ type Config struct {
 	// working directory. Leave empty to capture all events on the filesystem.
 	PathFilter string
 
-	// PIDFilter, if > 0, restricts emitted events to this process ID.
-	// Useful in tests and when the agent's PID is known.
+	// PIDFilter, if > 0, restricts emitted events to this exact process ID.
+	// Useful in tests and for an agent that acts in its own process. It does
+	// not follow children, so for a real agent, whose file activity happens in
+	// descendants, leave it zero.
+	//
+	// The probe deliberately does not scope by the kernel tracked-PID set
+	// (08 section 3.2 first proposed that). A fanotify event is read some time
+	// after the access, a short-lived child has usually left tracked_pids by
+	// then, and a filter that consulted the set would drop that child's events
+	// silently, which is event loss nothing counts. Every event instead carries
+	// the causing PID and attribution walks the process tree in the verifier.
 	PIDFilter int32
 
 	// EventBufSize is the channel buffer size for emitted events.
@@ -126,6 +135,7 @@ type Observer struct {
 // than mutating one in place.
 type pendingClose struct {
 	ts        time.Time
+	pid       uint32
 	ambiguous bool
 	pathFD    int
 }
@@ -360,6 +370,16 @@ func (o *Observer) drainNonBlocking(buf []byte) {
 	}
 }
 
+// pidOf returns the causing process of a raw event, or zero (not recorded)
+// when the kernel reported none, as it does for events caused by the kernel
+// itself.
+func pidOf(e *rawEvent) uint32 {
+	if e.PID <= 0 {
+		return 0
+	}
+	return uint32(e.PID)
+}
+
 func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	if e.Mask&unix.FAN_Q_OVERFLOW != 0 {
 		o.overflow = true
@@ -417,13 +437,14 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 
 	for _, actionType := range maskToActionTypes(e.Mask) {
 		if actionType == models.FileClose {
-			o.registerClose(e.Path, ts, e.Ambiguous, e.HandleType, e.HandleData)
+			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, e.HandleType, e.HandleData)
 		} else {
 			event := models.GroundTruthEvent{
 				Timestamp:       ts,
 				ActionType:      actionType,
 				Target:          e.Path,
 				PathIsAmbiguous: e.Ambiguous,
+				PID:             pidOf(e),
 			}
 			if actionType == models.FileOpen {
 				hash := o.lookupShadowHash(e.Path, e.HandleType, e.HandleData)
@@ -515,7 +536,7 @@ func inodeKeyFromFD(fd int) (inodeKey, bool) {
 // This, not pathGeneration, is what actually guarantees a hash the observer
 // does attach reflects the eventual final content: a close is never hashed
 // until it has survived a full settle cycle with nothing superseding it.
-func (o *Observer) registerClose(path string, ts time.Time, ambiguous bool, handleType int32, handleData []byte) {
+func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguous bool, handleType int32, handleData []byte) {
 	o.mu.Lock()
 	if o.pendingCloses == nil {
 		o.pendingCloses = make(map[string]*pendingClose)
@@ -528,7 +549,7 @@ func (o *Observer) registerClose(path string, ts time.Time, ambiguous bool, hand
 	} else if o.mountFD == -1 {
 		pathFD, _ = unix.Open(path, unix.O_RDONLY|unix.O_PATH, 0)
 	}
-	o.pendingCloses[path] = &pendingClose{ts: ts, ambiguous: ambiguous, pathFD: pathFD}
+	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD}
 	o.mu.Unlock()
 
 	if existed {
@@ -542,6 +563,7 @@ func (o *Observer) registerClose(path string, ts time.Time, ambiguous bool, hand
 			// No OutputHash: a newer close for this path arrived before
 			// this one was ever judged settled.
 			PathIsAmbiguous: superseded.ambiguous,
+			PID:             superseded.pid,
 		}
 	}
 }
@@ -601,6 +623,7 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 			// through registerClose's supersession above, or held this
 			// close back via the quiet check.
 			PathIsAmbiguous: entry.ambiguous,
+			PID:             entry.pid,
 		}
 		if ok {
 			event.OutputHash = &digest
