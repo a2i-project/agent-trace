@@ -106,7 +106,7 @@ func (Adapter) Detect(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for n := 0; n < 20 && sc.Scan(); n++ {
@@ -164,7 +164,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		sc := bufio.NewScanner(f)
 		sc.Buffer(make([]byte, 1<<20), 64<<20)
 		line := 0
@@ -236,12 +236,12 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			base.BlockID = u.messageID
 		}
 		entries, why := claimsFor(u, base)
-		switch {
-		case why == "":
+		switch why {
+		case "":
 			tr = append(tr, entries...)
-		case why == reasonNonEffectful:
+		case reasonNonEffectful:
 			rep.Count(u.name)
-		case why == reasonUnknown:
+		case reasonUnknown:
 			rep.Count(u.name)
 			unknown[u.name] = true
 		default:
