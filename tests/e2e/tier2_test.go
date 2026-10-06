@@ -128,6 +128,32 @@ func logVerdict(t *testing.T, v verification.Verdict) {
 	t.Logf("Outside interval: %d", len(v.OutsideInterval))
 	t.Logf("Unexplained subtrees: %d, unplaced events: %d, outside the tree: %d",
 		len(v.Coverage.UnexplainedSubtrees), len(v.Coverage.Unknown), len(v.Coverage.Outside))
+	for _, c := range v.Coverage.UnexplainedSubtrees {
+		target := "(never exec'd)"
+		if c.Exec != nil {
+			target = c.Exec.Target
+		}
+		t.Logf("  unexplained subtree: pid %d ppid %d %s, %d events beneath", c.Process.PID, c.Process.PPID, target, len(c.Content))
+	}
+	// The edit script of every lane, so a position-based disagreement can be
+	// read off: the observed order is the order of the match, substitution and
+	// deletion lines, and the claim order is that of the match, substitution
+	// and insertion lines.
+	for _, la := range v.Alignments {
+		t.Logf("lane %s (optimal alignments: %d)", la.Lane, la.Optimal)
+		for _, e := range la.Edits {
+			switch {
+			case e.Claim != nil && e.Event != nil:
+				t.Logf("  %-12s claim %s %s | event %s %s pid=%d ambiguous=%v at %s", e.Kind, e.Claim.ActionType, e.Claim.Target,
+					e.Event.ActionType, e.Event.Target, e.Event.PID, e.Event.PathIsAmbiguous, e.Event.Timestamp.Format("15:04:05.000000"))
+			case e.Claim != nil:
+				t.Logf("  %-12s claim %s %s", e.Kind, e.Claim.ActionType, e.Claim.Target)
+			default:
+				t.Logf("  %-12s event %s %s pid=%d ambiguous=%v at %s", e.Kind, e.Event.ActionType, e.Event.Target,
+					e.Event.PID, e.Event.PathIsAmbiguous, e.Event.Timestamp.Format("15:04:05.000000"))
+			}
+		}
+	}
 }
 
 func TestTier2_E2E_Faithful(t *testing.T) {

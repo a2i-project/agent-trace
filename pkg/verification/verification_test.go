@@ -9,7 +9,6 @@ import (
 )
 
 func sp(s string) *string { return &s }
-func ip(n int32) *int32   { return &n }
 
 // completeCov is a capture that lost nothing on the three probes.
 func completeCov() *models.Coverage {
