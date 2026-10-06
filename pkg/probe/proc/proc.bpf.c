@@ -31,6 +31,7 @@ static __always_inline int filename_is_shell(const char *fn) {
 
 struct event_hdr {
 	__u32 pid;
+	__u32 ppid; // parent tgid when the process exec'd, from the task struct
 	__u32 kind;
 	__u32 nargs;
 	__s64 ts_ns;
@@ -242,6 +243,11 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 		return 0;
 
 	e->hdr.pid = pid;
+	// The parent as the kernel sees it now, so it is correct whether or not
+	// tracked_pids is in use. An exit record is a copy of this exec record and
+	// keeps this value even if the process was reparented later.
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	e->hdr.ppid = BPF_CORE_READ(task, real_parent, tgid);
 	e->hdr.kind = KIND_EXEC;
 	e->hdr.ts_ns = bpf_ktime_get_ns();
 	e->hdr.exit_code = 0;

@@ -421,6 +421,8 @@ func (o *Observer) readLoop() {
 			ActionType: actionType,
 			Target:     target,
 			IsTopLevel: &isTopLevel,
+			PID:        hdr.Pid,
+			PPID:       hdr.Ppid,
 		}
 		if hdr.HasExitCode != 0 {
 			code := hdr.ExitCode

@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -320,11 +321,15 @@ func TestEmitListener(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			o := &Observer{events: make(chan models.GroundTruthEvent, 1)}
 			ts := time.Unix(100, 0)
+			tc.hdr.Tgid = 777
 			o.emitListener(tc.typ, tc.hdr, tc.payload, ts)
 			select {
 			case e := <-o.events:
 				if e.ActionType != tc.typ || e.Target != tc.target || !e.Timestamp.Equal(ts) {
 					t.Errorf("event = %+v, want %s %q at %v", e, tc.typ, tc.target, ts)
+				}
+				if e.PID != 777 {
+					t.Errorf("PID = %d, want the causing tgid 777", e.PID)
 				}
 				if e.IsTopLevel != nil {
 					t.Errorf("IsTopLevel = %v, want nil: the net probe assigns no level", *e.IsTopLevel)
@@ -401,6 +406,7 @@ func TestObserver_ObservesListeners(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	events := drainEvents(t, obs)
+	assertAllFrom(t, events, uint32(os.Getpid()), models.NetBind, models.NetListen)
 	wantLo := "127.0.0.1:" + strconv.Itoa(loPort)
 	wantAny := "0.0.0.0:" + strconv.Itoa(anyPort)
 	for _, at := range []models.ActionType{models.NetBind, models.NetListen} {
@@ -423,8 +429,7 @@ func TestObserver_ObservesListeners(t *testing.T) {
 // attributing the old address to the new socket would be a wrong event.
 func TestObserver_ListenersFromChildAreVisible(t *testing.T) {
 	skipUnprivileged(t)
-	py, err := exec.LookPath("python3")
-	if err != nil {
+	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available")
 	}
 
@@ -450,12 +455,11 @@ assert b.fileno() == fd, 'fd was not reused, the test cannot check stale state'
 b.listen(1)
 b.close()
 `, port)
-	if out, err := exec.Command(py, "-c", script).CombinedOutput(); err != nil {
-		t.Fatalf("python listener: %v\n%s", err, out)
-	}
+	pyPID := runPython(t, script)
 	time.Sleep(300 * time.Millisecond)
 
 	events := drainEvents(t, obs)
+	assertAllFrom(t, events, pyPID, models.NetBind, models.NetListen)
 	want := "127.0.0.1:" + strconv.Itoa(port)
 	if got := listenerTargets(events, models.NetBind); !slices.Equal(got, []string{want}) {
 		t.Errorf("bind targets = %v, want [%s]", got, want)
@@ -521,8 +525,11 @@ func TestUnixTarget(t *testing.T) {
 
 func TestEmitUnixConnect(t *testing.T) {
 	o := &Observer{events: make(chan models.GroundTruthEvent, 2)}
-	o.handleNetRecord(netRecord{hdr: bpfNetEventHdr{Type: netUnixConnect, Family: afUnix}, payload: []byte("/run/docker.sock")})
+	o.handleNetRecord(netRecord{hdr: bpfNetEventHdr{Type: netUnixConnect, Family: afUnix, Tgid: 4321}, payload: []byte("/run/docker.sock")})
 	e := <-o.events
+	if e.PID != 4321 {
+		t.Errorf("PID = %d, want 4321", e.PID)
+	}
 	if e.ActionType != models.NetUnixConnect || e.Target != "unix:/run/docker.sock" {
 		t.Errorf("event = %+v", e)
 	}
@@ -534,15 +541,35 @@ func TestEmitUnixConnect(t *testing.T) {
 	}
 }
 
-// runPython runs a script with python3, skipping the test when it is absent.
-func runPython(t *testing.T, script string) {
+// runPython runs a script with python3, skipping the test when it is absent,
+// and returns the interpreter's pid: the script runs in that process, so it is
+// the pid every socket event from the script must carry.
+func runPython(t *testing.T, script string) uint32 {
 	t.Helper()
 	py, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not available")
 	}
-	if out, err := exec.Command(py, "-c", script).CombinedOutput(); err != nil {
-		t.Fatalf("python: %v\n%s", err, out)
+	cmd := exec.Command(py, "-c", script)
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("python: %v", err)
+	}
+	pid := uint32(cmd.Process.Pid)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("python: %v\n%s", err, out.String())
+	}
+	return pid
+}
+
+// assertAllFrom fails for any event of the given types not caused by pid.
+func assertAllFrom(t *testing.T, events []models.GroundTruthEvent, pid uint32, types ...models.ActionType) {
+	t.Helper()
+	for _, e := range events {
+		if slices.Contains(types, e.ActionType) && e.PID != pid {
+			t.Errorf("%s %q has PID %d, want the script's pid %d", e.ActionType, e.Target, e.PID, pid)
+		}
 	}
 }
 
@@ -566,7 +593,7 @@ func TestObserver_ObservesUnixSockets(t *testing.T) {
 	obs.Start()
 	time.Sleep(150 * time.Millisecond)
 
-	runPython(t, fmt.Sprintf(`
+	pyPID := runPython(t, fmt.Sprintf(`
 import socket
 srv = socket.socket(socket.AF_UNIX)
 srv.bind(%q)
@@ -591,6 +618,7 @@ except OSError:
 	time.Sleep(300 * time.Millisecond)
 
 	events := drainEvents(t, obs)
+	assertAllFrom(t, events, pyPID, models.NetUnixConnect, models.NetBind, models.NetListen)
 	pathT, absT, missT := "unix:"+sock, "unix:@"+abstract, "unix:"+missing
 	if got := listenerTargets(events, models.NetUnixConnect); !slices.Equal(got, []string{pathT, absT, missT}) {
 		t.Errorf("unix connect targets = %v, want [%s %s %s] in order", got, pathT, absT, missT)

@@ -111,6 +111,7 @@ func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts tim
 		Target:      target,
 		RequestHash: reqHash,
 		IsTopLevel:  &isTopLevel,
+		PID:         tgid,
 	}
 
 	o.coverage.WithContent++

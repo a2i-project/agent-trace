@@ -941,7 +941,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		o.emitListener(models.NetListen, hdr, rec.payload, ts)
 
 	case netUnixConnect:
-		o.emitGroundTruthOnly(models.NetUnixConnect, unixTarget(rec.payload), ts)
+		o.emitGroundTruthOnly(models.NetUnixConnect, hdr.Tgid, unixTarget(rec.payload), ts)
 
 	case netBind:
 		// No-op: the write-bracket join this event existed for is
@@ -969,12 +969,12 @@ func (o *Observer) emitListener(t models.ActionType, hdr bpfNetEventHdr, payload
 	} else if target = peerAddrPort(hdr.Family, hdr.Addr, hdr.Port); target == "" {
 		target = models.UnboundListenTarget
 	}
-	o.emitGroundTruthOnly(t, target, ts)
+	o.emitGroundTruthOnly(t, hdr.Tgid, target, ts)
 }
 
 // emitGroundTruthOnly sends an event of an unclaimable type.
-func (o *Observer) emitGroundTruthOnly(t models.ActionType, target string, ts time.Time) {
-	event := models.GroundTruthEvent{Timestamp: ts, ActionType: t, Target: target}
+func (o *Observer) emitGroundTruthOnly(t models.ActionType, pid uint32, target string, ts time.Time) {
+	event := models.GroundTruthEvent{Timestamp: ts, ActionType: t, Target: target, PID: pid}
 	select {
 	case o.events <- event:
 	default:
@@ -1029,6 +1029,7 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 		ActionType: models.NetConnect,
 		Target:     target,
 		IsTopLevel: &isTopLevel,
+		PID:        uint32(tgid),
 	}
 
 	select {

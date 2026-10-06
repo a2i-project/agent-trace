@@ -16,9 +16,9 @@ import (
 type bpfEventHdr struct {
 	_           structs.HostLayout
 	Pid         uint32
+	Ppid        uint32
 	Kind        uint32
 	Nargs       uint32
-	_           [4]byte
 	TsNs        int64
 	ExitCode    int32
 	HasExitCode uint8

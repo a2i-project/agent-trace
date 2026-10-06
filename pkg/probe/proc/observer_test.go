@@ -690,3 +690,69 @@ func TestObserver_NoStateMapFullWhenMapFits(t *testing.T) {
 	for range obs.Events() {
 	}
 }
+
+// TestObserver_EventsCarryProcessIdentity checks that exec and exit events name
+// the process that caused them and its parent, which is the tree the verifier
+// walks (08 V1). A shell running two commands gives a chain: test -> sh ->
+// two children. The ppid comes from the kernel task struct at exec time, so the
+// test checks it against pids the test itself observed, not against anything
+// the probe reports.
+func TestObserver_EventsCarryProcessIdentity(t *testing.T) {
+	skipUnprivileged(t)
+
+	nonce := fmt.Sprintf("agenttrace-ident-%d", time.Now().UnixNano())
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	// The trailing builtin keeps the shell from exec'ing its last command
+	// (dash and bash both do), which would reuse the shell's pid.
+	cmd := exec.Command("/bin/sh", "-c", "/bin/echo "+nonce+" a; /bin/echo "+nonce+" b; :")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	shPID := uint32(cmd.Process.Pid)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	var shells, echoes int
+	childPIDs := map[uint32]bool{}
+	for _, e := range collect(obs) {
+		switch {
+		case e.ActionType == models.ProcessExec && e.PID == shPID:
+			shells++
+			if e.PPID != uint32(os.Getpid()) {
+				t.Errorf("shell exec PPID = %d, want the test process %d", e.PPID, os.Getpid())
+			}
+		case strings.Contains(e.Target, nonce) && strings.HasPrefix(e.Target, "/bin/echo "):
+			echoes++
+			childPIDs[e.PID] = true
+			if e.PID == 0 || e.PID == shPID {
+				t.Errorf("%s of %q has PID %d, want the echo's own pid (shell is %d)", e.ActionType, e.Target, e.PID, shPID)
+			}
+			if e.PPID != shPID {
+				t.Errorf("%s of %q has PPID %d, want the shell %d", e.ActionType, e.Target, e.PPID, shPID)
+			}
+		}
+	}
+	if shells == 0 {
+		t.Error("no shell exec event carried the shell's pid")
+	}
+	if echoes < 4 { // two echoes, each with an exec and an exit record
+		t.Errorf("saw %d echo events, want exec and exit for both", echoes)
+	}
+	if len(childPIDs) != 2 {
+		t.Errorf("echo events came from %d distinct pids, want 2", len(childPIDs))
+	}
+}
