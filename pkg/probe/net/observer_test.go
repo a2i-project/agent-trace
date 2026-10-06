@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -733,6 +734,70 @@ func TestObserver_NoStateMapFullWhenMapFits(t *testing.T) {
 	}
 	if got := obs.Coverage().StateMapFull; got != 0 {
 		t.Errorf("StateMapFull = %d, want 0 with the default map capacity", got)
+	}
+	for range obs.Events() {
+	}
+}
+
+// TestObserver_ThreadsAreNotTracked pins the CLONE_THREAD fix in net.bpf.c: a
+// thread shares its process's tgid, which is already tracked, and its tid is
+// never removed on exit, so tracking tids leaks map slots and eventually
+// tracks an unrelated process that recycles the number. With an 8-slot map and
+// 64 live threads the unfixed code overflows. The tls program carries the same
+// check but is only loaded with content capture, so it has no test of its own.
+func TestObserver_ThreadsAreNotTracked(t *testing.T) {
+	skipUnprivileged(t)
+
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256, TrackedPIDsMax: 8})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	release := make(chan struct{})
+	started := make(chan struct{}, 64)
+	for i := 0; i < 64; i++ {
+		go func() {
+			runtime.LockOSThread()
+			started <- struct{}{}
+			<-release
+		}()
+	}
+	for i := 0; i < 64; i++ {
+		<-started
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	tasks, err := os.ReadDir("/proc/self/task")
+	if err != nil {
+		t.Fatalf("read /proc/self/task: %v", err)
+	}
+	if len(tasks) < 32 {
+		t.Fatalf("only %d threads exist, the test did not create the load it needs", len(tasks))
+	}
+	keys := map[uint32]bool{}
+	var k uint32
+	var v uint8
+	it := obs.objs.TrackedPids.Iterate()
+	for it.Next(&k, &v) {
+		keys[k] = true
+	}
+	if err := it.Err(); err != nil {
+		t.Fatalf("iterate tracked_pids: %v", err)
+	}
+	for _, task := range tasks {
+		tid, _ := strconv.Atoi(task.Name())
+		if tid != os.Getpid() && keys[uint32(tid)] {
+			t.Errorf("thread %d is in tracked_pids: threads must not be tracked as processes", tid)
+		}
+	}
+	if got := obs.Coverage().UntrackedChildren; got != 0 {
+		t.Errorf("UntrackedChildren = %d, want 0: threads must not consume tracked_pids slots", got)
+	}
+	close(release)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
 	}
 	for range obs.Events() {
 	}
