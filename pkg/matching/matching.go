@@ -55,6 +55,15 @@ func targetsMatch(actionType models.ActionType, tTarget, gTarget string, gPathIs
 	}
 }
 
+// TargetsMatch reports whether a claim and an observed event name the same
+// resource, applying the per-action-type normalization of targetsMatch. It
+// is the target half of Match with no timestamp condition and no requirement
+// that the two share an action type, so the verifier can pair by position and
+// then ask whether the targets agree (08 V4).
+func TargetsMatch(t models.TrajectoryEntry, g models.GroundTruthEvent) bool {
+	return targetsMatch(t.ActionType, t.Target, g.Target, g.PathIsAmbiguous)
+}
+
 // Match reports whether a trajectory entry and a ground-truth event refer to
 // the same action: same action_type, same normalized target, and timestamps
 // within delta of each other.

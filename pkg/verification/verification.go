@@ -77,6 +77,58 @@ func requestHashesAgree(a, b *string) bool {
 	return *a == *b
 }
 
+// Names of the fields a content comparison can find different.
+const (
+	DiffTarget      = "target"
+	DiffInputHash   = "input_hash"
+	DiffOutputHash  = "output_hash"
+	DiffExitCode    = "exit_code"
+	DiffRequestHash = "request_hash"
+)
+
+// contentDiffs compares the content fields of a claim and an observed event of
+// the same action type and returns the names of those that disagree. It does
+// not look at the target: pairing is a separate question from comparing.
+//
+// The general nil-agreement rule is correct when the ground truth side is nil
+// (the probe could not capture it, so a probe limitation gets the benefit of
+// the doubt). It must not extend to the agent's own trajectory choosing not to
+// report a value the ground truth actually captured: that is the agent opting
+// out of a check, not a probe gap, and must not read as agreement. Scoped to
+// the three fields with complete round-trip support today (OutputHash on
+// FileClose, ExitCode on ProcessExit, RequestHash on NetRequest); do not
+// extend this to InputHash until Tier 4.2 implements it on both sides. Tier 6
+// step 7 replaces the nil handling with the three-valued rule, and this is the
+// one place it changes.
+func contentDiffs(entry models.TrajectoryEntry, event models.GroundTruthEvent) []string {
+	var diffs []string
+	if !hashesAgree(entry.InputHash, event.InputHash) {
+		diffs = append(diffs, DiffInputHash)
+	}
+	outputOK := hashesAgree(entry.OutputHash, event.OutputHash)
+	if entry.ActionType == models.FileClose && entry.OutputHash == nil && event.OutputHash != nil {
+		outputOK = false
+	}
+	if !outputOK {
+		diffs = append(diffs, DiffOutputHash)
+	}
+	exitOK := exitCodesAgree(entry.ExitCode, event.ExitCode)
+	if entry.ActionType == models.ProcessExit && entry.ExitCode == nil && event.ExitCode != nil {
+		exitOK = false
+	}
+	if !exitOK {
+		diffs = append(diffs, DiffExitCode)
+	}
+	requestOK := requestHashesAgree(entry.RequestHash, event.RequestHash)
+	if entry.ActionType == models.NetRequest && entry.RequestHash == nil && event.RequestHash != nil {
+		requestOK = false
+	}
+	if !requestOK {
+		diffs = append(diffs, DiffRequestHash)
+	}
+	return diffs
+}
+
 // Verify compares a self-reported trajectory T against an independently
 // observed ground truth G and classifies every entry/event into one of
 // four sets: Corroborated, Unwitnessed, Unrecorded, or Mismatched.
@@ -127,34 +179,9 @@ func Verify(t models.Trajectory, g models.GroundTruth, cfg matching.Config) Verd
 		matched[bestIdx] = true
 		pair := MatchedPair{Entry: entry, Event: g[bestIdx]}
 
-		inputOK := hashesAgree(entry.InputHash, g[bestIdx].InputHash)
-		outputOK := hashesAgree(entry.OutputHash, g[bestIdx].OutputHash)
-		exitOK := exitCodesAgree(entry.ExitCode, g[bestIdx].ExitCode)
-		requestOK := requestHashesAgree(entry.RequestHash, g[bestIdx].RequestHash)
+		diffs := contentDiffs(entry, g[bestIdx])
 
-		// The general nil-agreement rule above is correct when the ground
-		// truth side is nil (the probe couldn't capture it, benefit of the
-		// doubt goes to a probe limitation). It must not extend to the
-		// agent's own trajectory choosing not to report a value the ground
-		// truth actually captured: that is the agent opting out of a check,
-		// not a probe gap, and must not read as agreement. Scoped to the two
-		// fields with complete round-trip support today (OutputHash on
-		// FileClose, ExitCode on ProcessExit); do not extend this to
-		// InputHash until Tier 4.2 implements it on both sides.
-		if entry.ActionType == models.FileClose &&
-			entry.OutputHash == nil && g[bestIdx].OutputHash != nil {
-			outputOK = false
-		}
-		if entry.ActionType == models.ProcessExit &&
-			entry.ExitCode == nil && g[bestIdx].ExitCode != nil {
-			exitOK = false
-		}
-		if entry.ActionType == models.NetRequest &&
-			entry.RequestHash == nil && g[bestIdx].RequestHash != nil {
-			requestOK = false
-		}
-
-		if inputOK && outputOK && exitOK && requestOK {
+		if len(diffs) == 0 {
 			v.Corroborated = append(v.Corroborated, pair)
 		} else {
 			v.Mismatched = append(v.Mismatched, pair)
