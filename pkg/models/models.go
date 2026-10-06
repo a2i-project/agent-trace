@@ -37,6 +37,11 @@ type TrajectoryEntry struct {
 	// BlockID groups claims the format issued in one parallel block (V2).
 	// Entries sharing a non-empty BlockID have no order among themselves.
 	BlockID string `json:"block_id,omitempty"`
+	// Tool names the agent tool the claim came from (for example Claude Code's
+	// Edit or Write). It is provenance for the adapter's per-tool declaration of
+	// which content fields the format can state, and is supplied by the agent
+	// being verified, so it is a hint and never a basis for trust.
+	Tool string `json:"tool,omitempty"`
 }
 
 // GroundTruthEvent is an independently observed action from the host-level probes.
