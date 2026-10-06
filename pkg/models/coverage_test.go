@@ -87,6 +87,16 @@ func TestParseGroundTruth_RejectsObjectForm(t *testing.T) {
 // write and read.
 func TestProbeCoverage_UntrackedChildrenRoundTrips(t *testing.T) {
 	for _, n := range []uint64{0, 7} {
+		for _, field := range []string{"state_map_full"} {
+			data, _ := json.Marshal(ProbeCoverage{Ran: true, StateMapFull: n})
+			if !strings.Contains(string(data), `"`+field+`":`) {
+				t.Errorf("n=%d: %s missing from %s", n, field, data)
+			}
+			var back ProbeCoverage
+			if err := json.Unmarshal(data, &back); err != nil || back.StateMapFull != n {
+				t.Errorf("n=%d: state_map_full round trip = %d, %v", n, back.StateMapFull, err)
+			}
+		}
 		data, err := json.Marshal(GroundTruthFile{
 			Events: sampleEvents(),
 			Coverage: &Coverage{Schema: CoverageSchema, Probes: map[string]ProbeCoverage{

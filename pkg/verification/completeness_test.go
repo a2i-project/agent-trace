@@ -25,6 +25,7 @@ func TestAssess(t *testing.T) {
 		{name: "ring buffer drops", cov: cov(map[string]models.ProbeCoverage{"proc": {Ran: true, RingbufDrops: 2}}), wantReason: "proc probe: kernel ring buffer discarded 2"},
 		{name: "untracked children", cov: cov(map[string]models.ProbeCoverage{"proc": {Ran: true, UntrackedChildren: 3}}), wantReason: "proc probe: tracked_pids map was full, 3 descendant(s)"},
 		{name: "untracked children on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"proc": {Ran: false, UntrackedChildren: 3}}), wantComplete: true},
+		{name: "state map full", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, StateMapFull: 2}}), wantReason: "net probe: a kernel state map was full, 2 record(s) lost"},
 		{name: "channel drops", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, ChannelDrops: 1}}), wantReason: "net probe: events channel discarded 1"},
 		{name: "fanotify overflow", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, QueueOverflow: true}}), wantReason: "fs probe: kernel fanotify queue overflowed"},
 		{name: "counters on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, RingbufDrops: 9}}), wantComplete: true},
@@ -106,6 +107,13 @@ func TestConclude_UntrackedChildrenAloneIsInconclusive(t *testing.T) {
 	}))
 	got := Conclude(Verdict{Faithful: true}, c)
 	if got != OutcomeInconclusive || got.ExitCode() != 2 {
+		t.Errorf("Conclude = %v (exit %d), want INCONCLUSIVE (exit 2)", got, got.ExitCode())
+	}
+}
+
+func TestConclude_StateMapFullAloneIsInconclusive(t *testing.T) {
+	c := Assess(cov(map[string]models.ProbeCoverage{"proc": {Ran: true, StateMapFull: 1}}))
+	if got := Conclude(Verdict{Faithful: true}, c); got != OutcomeInconclusive || got.ExitCode() != 2 {
 		t.Errorf("Conclude = %v (exit %d), want INCONCLUSIVE (exit 2)", got, got.ExitCode())
 	}
 }

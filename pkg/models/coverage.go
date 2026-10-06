@@ -33,6 +33,10 @@ type ProbeCoverage struct {
 	// this is event loss. One increment can stand for a whole subtree: a
 	// lower bound, meaningful only as zero versus non-zero.
 	UntrackedChildren uint64 `json:"untracked_children"`
+	// StateMapFull counts records lost because a per-process (proc: exit
+	// records) or per-connection (net: connections) kernel state map was
+	// full, so the entry could not be stored. Event loss. A lower bound.
+	StateMapFull uint64 `json:"state_map_full"`
 	// ChannelDrops counts events userspace discarded because the Go events
 	// channel was full.
 	ChannelDrops uint64 `json:"channel_drops"`

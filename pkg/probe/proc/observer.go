@@ -73,6 +73,11 @@ type Config struct {
 	// overflow and exercise UntrackedChildren; production callers should
 	// leave it zero.
 	TrackedPIDsMax uint32
+
+	// ExecsMax overrides the capacity of the kernel execs map, which holds
+	// one entry per live exec until its exit record is written. Zero keeps
+	// the compiled-in 4096. Test only, to force StateMapFull.
+	ExecsMax uint32
 }
 
 // Observer watches process spawns via eBPF and emits GroundTruthEvents.
@@ -97,6 +102,10 @@ type Observer struct {
 	// finalUntracked is the untracked_count snapshot, same protocol.
 	finalUntracked   atomic.Uint64
 	untrackedIsFinal atomic.Bool
+
+	// finalStateFull is the state_lost_count snapshot, same protocol.
+	finalStateFull   atomic.Uint64
+	stateFullIsFinal atomic.Bool
 
 	// bootOffsetNs converts a bpf_ktime_get_ns() reading (ns since boot) to a
 	// wall-clock UnixNano. Computed once at New() from a matched pair of
@@ -133,6 +142,9 @@ func New(cfg Config) (*Observer, error) {
 	}
 	if cfg.TrackedPIDsMax != 0 {
 		spec.Maps["tracked_pids"].MaxEntries = cfg.TrackedPIDsMax
+	}
+	if cfg.ExecsMax != 0 {
+		spec.Maps["execs"].MaxEntries = cfg.ExecsMax
 	}
 	if err := spec.LoadAndAssign(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
@@ -264,6 +276,19 @@ func (o *Observer) UntrackedChildren() uint64 {
 	return o.finalUntracked.Load()
 }
 
+// StateMapFull reports how many exit records were lost because the kernel
+// execs map was full when the process started. Each is an exit and exit code
+// missing from the ground truth. A lower bound. Valid while the observer runs
+// and after Stop returns.
+func (o *Observer) StateMapFull() uint64 {
+	if !o.stateFullIsFinal.Load() {
+		if v, err := sumPerCPU(o.objs.StateLostCount); err == nil {
+			return v
+		}
+	}
+	return o.finalStateFull.Load()
+}
+
 // sumPerCPU returns the sum of a one-slot percpu uint64 array across CPUs.
 func sumPerCPU(m *ebpf.Map) (uint64, error) {
 	var perCPU []uint64
@@ -285,6 +310,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		RingbufDrops:      o.RingbufDrops(),
 		ChannelDrops:      o.Dropped(),
 		UntrackedChildren: o.UntrackedChildren(),
+		StateMapFull:      o.StateMapFull(),
 	}
 }
 
@@ -314,6 +340,10 @@ func (o *Observer) Stop() error {
 			o.finalUntracked.Store(v)
 		}
 		o.untrackedIsFinal.Store(true)
+		if v, err := sumPerCPU(o.objs.StateLostCount); err == nil {
+			o.finalStateFull.Store(v)
+		}
+		o.stateFullIsFinal.Store(true)
 		_ = o.exitLink.Close()
 		_ = o.exitGroupLink.Close()
 		_ = o.forkLink.Close()

@@ -133,6 +133,25 @@ static __always_inline void count_untracked(void)
 		__sync_fetch_and_add(count, 1);
 }
 
+// state_lost_count counts records this program lost because a state map it
+// writes per process or per connection was full (execs). Unlike a ring buffer
+// drop the failure happens in a map update, so it is easy to miss: a process whose entry could not be stored never gets its exit record, so its exit and exit code vanish from the ground truth.
+// Userspace sums the percpu slots and snapshots them in Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} state_lost_count SEC(".maps");
+
+static __always_inline void count_state_lost(void)
+{
+	__u32 zero = 0;
+	__u64 *count = bpf_map_lookup_elem(&state_lost_count, &zero);
+	if (count)
+		__sync_fetch_and_add(count, 1);
+}
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 1);
@@ -271,7 +290,8 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 	e->hdr.args_size = args_size;
 	e->hdr.nargs = nargs;
 
-	bpf_map_update_elem(&execs, &pid, e, BPF_ANY);
+	if (bpf_map_update_elem(&execs, &pid, e, BPF_ANY))
+		count_state_lost();
 
 	__u32 out_size = sizeof(struct event_hdr) + FILENAME_LEN + args_size;
 	if (out_size > sizeof(struct exec_scratch))

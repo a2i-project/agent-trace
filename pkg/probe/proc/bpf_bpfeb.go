@@ -51,6 +51,7 @@ const (
 	bpfMapExecs            = "execs"
 	bpfMapHeap             = "heap"
 	bpfMapRootPidMap       = "root_pid_map"
+	bpfMapStateLostCount   = "state_lost_count"
 	bpfMapTrackedPids      = "tracked_pids"
 	bpfMapUntrackedCount   = "untracked_count"
 	bpfProgHandleExecve    = "handle_execve"
@@ -117,6 +118,7 @@ type bpfMapSpecs struct {
 	Execs          *ebpf.MapSpec `ebpf:"execs"`
 	Heap           *ebpf.MapSpec `ebpf:"heap"`
 	RootPidMap     *ebpf.MapSpec `ebpf:"root_pid_map"`
+	StateLostCount *ebpf.MapSpec `ebpf:"state_lost_count"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
@@ -153,6 +155,7 @@ type bpfMaps struct {
 	Execs          *ebpf.Map `ebpf:"execs"`
 	Heap           *ebpf.Map `ebpf:"heap"`
 	RootPidMap     *ebpf.Map `ebpf:"root_pid_map"`
+	StateLostCount *ebpf.Map `ebpf:"state_lost_count"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
@@ -165,6 +168,7 @@ func (m *bpfMaps) Close() error {
 		m.Execs,
 		m.Heap,
 		m.RootPidMap,
+		m.StateLostCount,
 		m.TrackedPids,
 		m.UntrackedCount,
 	)

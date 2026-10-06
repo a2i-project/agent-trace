@@ -47,6 +47,9 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.UntrackedChildren > 0 {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: tracked_pids map was full, %d descendant(s) (and their subtrees) went untracked", name, p.UntrackedChildren))
 		}
+		if p.StateMapFull > 0 {
+			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: a kernel state map was full, %d record(s) lost", name, p.StateMapFull))
+		}
 		if p.ChannelDrops > 0 {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: events channel discarded %d event(s)", name, p.ChannelDrops))
 		}

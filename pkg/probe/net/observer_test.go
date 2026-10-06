@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -210,10 +211,11 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	o.finalFaulted.Store(3)
 	o.finalRingbufDrops.Store(7)
 	o.finalUntracked.Store(5)
+	o.finalStateFull.Store(6)
 	o.kernelCountersFinal.Store(true)
 
 	got := o.Coverage()
-	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, UntrackedChildren: 5}
+	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, UntrackedChildren: 5, StateMapFull: 6}
 	if got != want {
 		t.Errorf("Coverage() = %+v, want %+v", got, want)
 	}
@@ -632,5 +634,106 @@ except OSError:
 		if e.ActionType == models.NetUnixConnect {
 			t.Errorf("untracked process's unix connect was observed: %+v", e)
 		}
+	}
+}
+
+// holdConnections opens n TCP connections to a local listener and keeps them
+// open until the returned release func is called.
+func holdConnections(t *testing.T, n int) (release func()) {
+	t.Helper()
+	ln, err := stdnet.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	var accepted []stdnet.Conn
+	var mu sync.Mutex
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			accepted = append(accepted, c)
+			mu.Unlock()
+		}
+	}()
+	var dialed []stdnet.Conn
+	for i := 0; i < n; i++ {
+		c, err := stdnet.Dial("tcp4", ln.Addr().String())
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		dialed = append(dialed, c)
+	}
+	return func() {
+		for _, c := range dialed {
+			_ = c.Close()
+		}
+		_ = ln.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range accepted {
+			_ = c.Close()
+		}
+	}
+}
+
+// TestObserver_CountsStateMapFull overflows a two-slot conns map with more
+// concurrently open connections than it holds. A connection whose state is not
+// stored gets no hello capture and no close record, so it never reaches the
+// ground truth. The counter must see it, live and after Stop.
+func TestObserver_CountsStateMapFull(t *testing.T) {
+	skipUnprivileged(t)
+
+	const capacity, conns = 2, 10
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256, ConnsMax: capacity})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	release := holdConnections(t, conns)
+	defer release()
+	time.Sleep(300 * time.Millisecond)
+
+	live := obs.Coverage().StateMapFull
+	if live < conns-capacity {
+		t.Errorf("StateMapFull while running = %d, want >= %d", live, conns-capacity)
+	}
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if after := obs.Coverage().StateMapFull; after < live {
+		t.Errorf("StateMapFull after Stop = %d, less than the %d read while running: the Stop snapshot was lost", after, live)
+	}
+	if obs.CaptureCoverage().StateMapFull == 0 {
+		t.Error("CaptureCoverage().StateMapFull = 0, want the loss reported")
+	}
+	for range obs.Events() {
+	}
+}
+
+// TestObserver_NoStateMapFullWhenMapFits is the control.
+func TestObserver_NoStateMapFullWhenMapFits(t *testing.T) {
+	skipUnprivileged(t)
+
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	release := holdConnections(t, 10)
+	time.Sleep(300 * time.Millisecond)
+	release()
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := obs.Coverage().StateMapFull; got != 0 {
+		t.Errorf("StateMapFull = %d, want 0 with the default map capacity", got)
+	}
+	for range obs.Events() {
 	}
 }

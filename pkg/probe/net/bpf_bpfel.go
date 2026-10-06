@@ -70,6 +70,7 @@ const (
 	bpfMapDropCount      = "drop_count"
 	bpfMapHeap           = "heap"
 	bpfMapNetEvents      = "net_events"
+	bpfMapStateLostCount = "state_lost_count"
 	bpfMapTrackedPids    = "tracked_pids"
 	bpfMapUntrackedCount = "untracked_count"
 	bpfProgHandleExit    = "handle_exit"
@@ -145,6 +146,7 @@ type bpfMapSpecs struct {
 	DropCount      *ebpf.MapSpec `ebpf:"drop_count"`
 	Heap           *ebpf.MapSpec `ebpf:"heap"`
 	NetEvents      *ebpf.MapSpec `ebpf:"net_events"`
+	StateLostCount *ebpf.MapSpec `ebpf:"state_lost_count"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
@@ -180,6 +182,7 @@ type bpfMaps struct {
 	DropCount      *ebpf.Map `ebpf:"drop_count"`
 	Heap           *ebpf.Map `ebpf:"heap"`
 	NetEvents      *ebpf.Map `ebpf:"net_events"`
+	StateLostCount *ebpf.Map `ebpf:"state_lost_count"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
@@ -191,6 +194,7 @@ func (m *bpfMaps) Close() error {
 		m.DropCount,
 		m.Heap,
 		m.NetEvents,
+		m.StateLostCount,
 		m.TrackedPids,
 		m.UntrackedCount,
 	)

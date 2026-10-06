@@ -604,3 +604,89 @@ func TestObserver_ThreadsAreNotTracked(t *testing.T) {
 	for range obs.Events() {
 	}
 }
+
+// TestObserver_CountsStateMapFull shrinks the execs map and keeps more
+// children alive at once than it can hold. A process whose entry cannot be
+// stored never gets an exit record, so its exit and exit code silently vanish
+// from the ground truth. The counter must see that, live and after Stop.
+func TestObserver_CountsStateMapFull(t *testing.T) {
+	skipUnprivileged(t)
+
+	const capacity, children = 2, 10
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true, ExecsMax: capacity})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	var procs []*exec.Cmd
+	for i := 0; i < children; i++ {
+		c := exec.Command("/bin/sleep", "2")
+		if err := c.Start(); err != nil {
+			t.Fatalf("spawn sleep: %v", err)
+		}
+		procs = append(procs, c)
+	}
+	t.Cleanup(func() {
+		for _, c := range procs {
+			_ = c.Process.Kill()
+			_ = c.Wait()
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+
+	live := obs.StateMapFull()
+	if live < children-capacity {
+		t.Errorf("StateMapFull while running = %d, want >= %d", live, children-capacity)
+	}
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if after := obs.StateMapFull(); after < live {
+		t.Errorf("StateMapFull after Stop = %d, less than the %d read while running: the Stop snapshot was lost", after, live)
+	}
+	if obs.CaptureCoverage().StateMapFull == 0 {
+		t.Error("CaptureCoverage().StateMapFull = 0, want the loss reported")
+	}
+	for range obs.Events() {
+	}
+}
+
+// TestObserver_NoStateMapFullWhenMapFits is the control.
+func TestObserver_NoStateMapFullWhenMapFits(t *testing.T) {
+	skipUnprivileged(t)
+
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	var procs []*exec.Cmd
+	for i := 0; i < 10; i++ {
+		c := exec.Command("/bin/sleep", "1")
+		if err := c.Start(); err != nil {
+			t.Fatalf("spawn sleep: %v", err)
+		}
+		procs = append(procs, c)
+	}
+	for _, c := range procs {
+		_ = c.Wait()
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := obs.StateMapFull(); got != 0 {
+		t.Errorf("StateMapFull = %d, want 0 with the default map capacity", got)
+	}
+	for range obs.Events() {
+	}
+}

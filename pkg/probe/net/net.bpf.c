@@ -157,6 +157,25 @@ static __always_inline void count_untracked(void)
 		__sync_fetch_and_add(count, 1);
 }
 
+// state_lost_count counts records this program lost because a state map it
+// writes per process or per connection was full (conns). Unlike a ring buffer
+// drop the failure happens in a map update, so it is easy to miss: a connection whose state could not be stored gets no hello capture and no close record, and userspace emits a connection only at hello or close, so the connection itself vanishes from the ground truth.
+// Userspace sums the percpu slots and snapshots them in Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} state_lost_count SEC(".maps");
+
+static __always_inline void count_state_lost(void)
+{
+	__u32 zero = 0;
+	__u64 *count = bpf_map_lookup_elem(&state_lost_count, &zero);
+	if (count)
+		__sync_fetch_and_add(count, 1);
+}
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 1);
@@ -308,7 +327,8 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 		// We always read 28 bytes above, so offset 8+16=24 is in bounds.
 		__builtin_memcpy(state.addr, sa + 8, 16);
 	}
-	bpf_map_update_elem(&conns, &key, &state, BPF_ANY);
+	if (bpf_map_update_elem(&conns, &key, &state, BPF_ANY))
+		count_state_lost();
 
 	struct net_event *e = reserve_event();
 	if (!e)

@@ -80,6 +80,11 @@ type Config struct {
 	// should leave it zero.
 	TrackedPIDsMax uint32
 
+	// ConnsMax overrides the capacity of the kernel conns map, which holds
+	// one entry per open tracked connection. Zero keeps the compiled-in 8192.
+	// Test only, to force StateMapFull.
+	ConnsMax uint32
+
 	// ExePath, if set, is the executable to attach the SSL_write uprobe to
 	// for content capture (S5). Without it, Observer runs identity-only,
 	// exactly as in S3: NetConnect events with a resolved hostname, no
@@ -135,6 +140,7 @@ type Observer struct {
 	finalFaulted        atomic.Uint64
 	finalRingbufDrops   atomic.Uint64
 	finalUntracked      atomic.Uint64
+	finalStateFull      atomic.Uint64
 	kernelCountersFinal atomic.Bool
 
 	bootOffsetNs int64
@@ -204,6 +210,9 @@ func New(cfg Config) (*Observer, error) {
 	}
 	if cfg.TrackedPIDsMax != 0 {
 		spec.Maps["tracked_pids"].MaxEntries = cfg.TrackedPIDsMax
+	}
+	if cfg.ConnsMax != 0 {
+		spec.Maps["conns"].MaxEntries = cfg.ConnsMax
 	}
 	if err := spec.LoadAndAssign(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
@@ -583,61 +592,59 @@ func (o *Observer) TrackPID(pid int32) error {
 // never configured.
 func (o *Observer) Coverage() Coverage {
 	cov := o.coverage
+	snapshot := func() kernelCounts {
+		return kernelCounts{
+			faulted:   o.finalFaulted.Load(),
+			drops:     o.finalRingbufDrops.Load(),
+			untracked: o.finalUntracked.Load(),
+			stateFull: o.finalStateFull.Load(),
+		}
+	}
+	var k kernelCounts
 	if o.kernelCountersFinal.Load() {
-		cov.FaultedReads += o.finalFaulted.Load()
-		cov.RingbufDrops += o.finalRingbufDrops.Load()
-		cov.UntrackedChildren += o.finalUntracked.Load()
-		return cov
+		k = snapshot() // Stop closed the maps, so they cannot be read again
+	} else {
+		var err error
+		if k, err = o.kernelCounters(); err != nil && o.kernelCountersFinal.Load() {
+			// Stop closed the maps between the check above and the lookup.
+			k = snapshot()
+		}
 	}
-	faulted, drops, untracked, err := o.kernelCounters()
-	if err != nil && o.kernelCountersFinal.Load() {
-		// Stop closed the maps between the check above and the lookup.
-		faulted, drops, untracked = o.finalFaulted.Load(), o.finalRingbufDrops.Load(), o.finalUntracked.Load()
-	}
-	cov.FaultedReads += faulted
-	cov.RingbufDrops += drops
-	cov.UntrackedChildren += untracked
+	cov.FaultedReads += k.faulted
+	cov.RingbufDrops += k.drops
+	cov.UntrackedChildren += k.untracked
+	cov.StateMapFull += k.stateFull
 	return cov
 }
 
-// kernelCounters sums the percpu counters the eBPF programs maintain: SSL
-// reads that faulted, records the net and TLS ring buffers discarded because
-// they were full, and descendants that could not be added to a tracked_pids
-// map. An error means a map could not be read, which in practice means Stop
-// has already closed it.
-func (o *Observer) kernelCounters() (faulted, drops, untracked uint64, err error) {
-	if v, e := sumPerCPU(o.objs.DropCount); e != nil {
-		err = e
-	} else {
-		drops += v
-	}
-	if v, e := sumPerCPU(o.objs.UntrackedCount); e != nil {
-		err = e
-	} else {
-		untracked += v
-	}
-	if o.tlsObjs.FaultedReads != nil {
-		if v, e := sumPerCPU(o.tlsObjs.FaultedReads); e != nil {
+// kernelCounts are the percpu counters the eBPF programs maintain, summed.
+type kernelCounts struct {
+	faulted   uint64 // SSL reads that faulted
+	drops     uint64 // records the net and TLS ring buffers discarded because they were full
+	untracked uint64 // descendants that could not be added to a tracked_pids map
+	stateFull uint64 // connections lost because the conns map was full
+}
+
+// kernelCounters sums the counters above. An error means a map could not be
+// read, which in practice means Stop has already closed it.
+func (o *Observer) kernelCounters() (k kernelCounts, err error) {
+	add := func(dst *uint64, m *ebpf.Map) {
+		if m == nil {
+			return
+		}
+		if v, e := sumPerCPU(m); e != nil {
 			err = e
 		} else {
-			faulted += v
+			*dst += v
 		}
 	}
-	if o.tlsObjs.DropCount != nil {
-		if v, e := sumPerCPU(o.tlsObjs.DropCount); e != nil {
-			err = e
-		} else {
-			drops += v
-		}
-	}
-	if o.tlsObjs.UntrackedCount != nil {
-		if v, e := sumPerCPU(o.tlsObjs.UntrackedCount); e != nil {
-			err = e
-		} else {
-			untracked += v
-		}
-	}
-	return faulted, drops, untracked, err
+	add(&k.drops, o.objs.DropCount)
+	add(&k.untracked, o.objs.UntrackedCount)
+	add(&k.stateFull, o.objs.StateLostCount)
+	add(&k.faulted, o.tlsObjs.FaultedReads)
+	add(&k.drops, o.tlsObjs.DropCount)
+	add(&k.untracked, o.tlsObjs.UntrackedCount)
+	return k, err
 }
 
 // sumPerCPU returns the sum of a one-slot percpu uint64 array across CPUs.
@@ -675,6 +682,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		RingbufDrops:      cov.RingbufDrops,
 		ChannelDrops:      o.Dropped(),
 		UntrackedChildren: cov.UntrackedChildren,
+		StateMapFull:      cov.StateMapFull,
 		FaultedReads:      cov.FaultedReads,
 		Content:           content,
 	}
@@ -731,10 +739,11 @@ func (o *Observer) Stop() error {
 		// Snapshot the kernel counters before the maps are closed below;
 		// Coverage reads this snapshot afterwards. Order matters: the
 		// values are stored before the final flag is raised.
-		faulted, drops, untracked, _ := o.kernelCounters()
-		o.finalFaulted.Store(faulted)
-		o.finalRingbufDrops.Store(drops)
-		o.finalUntracked.Store(untracked)
+		k, _ := o.kernelCounters()
+		o.finalFaulted.Store(k.faulted)
+		o.finalRingbufDrops.Store(k.drops)
+		o.finalUntracked.Store(k.untracked)
+		o.finalStateFull.Store(k.stateFull)
 		o.kernelCountersFinal.Store(true)
 		if o.sslWriteLink != nil {
 			_ = o.sslWriteLink.Close()
