@@ -13,6 +13,14 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type bpfBindState struct {
+	_      structs.HostLayout
+	Family uint8
+	Addr   [16]uint8
+	_      [1]byte
+	Port   uint16
+}
+
 type bpfConnKey struct {
 	_    structs.HostLayout
 	Tgid uint32
@@ -55,6 +63,7 @@ type bpfNetEventHdr struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
+	bpfMapBinds          = "binds"
 	bpfMapConns          = "conns"
 	bpfMapDropCount      = "drop_count"
 	bpfMapHeap           = "heap"
@@ -63,8 +72,10 @@ const (
 	bpfMapUntrackedCount = "untracked_count"
 	bpfProgHandleExit    = "handle_exit"
 	bpfProgHandleFork    = "handle_fork"
+	bpfProgTraceBind     = "trace_bind"
 	bpfProgTraceClose    = "trace_close"
 	bpfProgTraceConnect  = "trace_connect"
+	bpfProgTraceListen   = "trace_listen"
 	bpfProgTraceSendmsg  = "trace_sendmsg"
 	bpfProgTraceSendto   = "trace_sendto"
 	bpfProgTraceWrite    = "trace_write"
@@ -114,8 +125,10 @@ type bpfSpecs struct {
 type bpfProgramSpecs struct {
 	HandleExit   *ebpf.ProgramSpec `ebpf:"handle_exit"`
 	HandleFork   *ebpf.ProgramSpec `ebpf:"handle_fork"`
+	TraceBind    *ebpf.ProgramSpec `ebpf:"trace_bind"`
 	TraceClose   *ebpf.ProgramSpec `ebpf:"trace_close"`
 	TraceConnect *ebpf.ProgramSpec `ebpf:"trace_connect"`
+	TraceListen  *ebpf.ProgramSpec `ebpf:"trace_listen"`
 	TraceSendmsg *ebpf.ProgramSpec `ebpf:"trace_sendmsg"`
 	TraceSendto  *ebpf.ProgramSpec `ebpf:"trace_sendto"`
 	TraceWrite   *ebpf.ProgramSpec `ebpf:"trace_write"`
@@ -125,6 +138,7 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
+	Binds          *ebpf.MapSpec `ebpf:"binds"`
 	Conns          *ebpf.MapSpec `ebpf:"conns"`
 	DropCount      *ebpf.MapSpec `ebpf:"drop_count"`
 	Heap           *ebpf.MapSpec `ebpf:"heap"`
@@ -159,6 +173,7 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
+	Binds          *ebpf.Map `ebpf:"binds"`
 	Conns          *ebpf.Map `ebpf:"conns"`
 	DropCount      *ebpf.Map `ebpf:"drop_count"`
 	Heap           *ebpf.Map `ebpf:"heap"`
@@ -169,6 +184,7 @@ type bpfMaps struct {
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
+		m.Binds,
 		m.Conns,
 		m.DropCount,
 		m.Heap,
@@ -190,8 +206,10 @@ type bpfVariables struct {
 type bpfPrograms struct {
 	HandleExit   *ebpf.Program `ebpf:"handle_exit"`
 	HandleFork   *ebpf.Program `ebpf:"handle_fork"`
+	TraceBind    *ebpf.Program `ebpf:"trace_bind"`
 	TraceClose   *ebpf.Program `ebpf:"trace_close"`
 	TraceConnect *ebpf.Program `ebpf:"trace_connect"`
+	TraceListen  *ebpf.Program `ebpf:"trace_listen"`
 	TraceSendmsg *ebpf.Program `ebpf:"trace_sendmsg"`
 	TraceSendto  *ebpf.Program `ebpf:"trace_sendto"`
 	TraceWrite   *ebpf.Program `ebpf:"trace_write"`
@@ -201,8 +219,10 @@ func (p *bpfPrograms) Close() error {
 	return _BpfClose(
 		p.HandleExit,
 		p.HandleFork,
+		p.TraceBind,
 		p.TraceClose,
 		p.TraceConnect,
+		p.TraceListen,
 		p.TraceSendmsg,
 		p.TraceSendto,
 		p.TraceWrite,

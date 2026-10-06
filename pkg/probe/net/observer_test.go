@@ -7,10 +7,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"fmt"
 	"math/big"
 	stdnet "net"
 	"os"
 	"os/exec"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -286,5 +289,203 @@ func TestObserver_NoUntrackedChildrenWhenMapFits(t *testing.T) {
 		t.Errorf("UntrackedChildren = %d, want 0 with the default map capacity", got)
 	}
 	for range obs.Events() {
+	}
+}
+
+func TestEmitListener(t *testing.T) {
+	var v6 [16]byte
+	v6[15] = 1
+	tests := []struct {
+		name   string
+		typ    models.ActionType
+		hdr    bpfNetEventHdr
+		target string
+	}{
+		{"bind ipv4 loopback", models.NetBind, bpfNetEventHdr{Family: afInet, Port: 8080, Addr: [16]byte{127, 0, 0, 1}}, "127.0.0.1:8080"},
+		{"listen ipv4 wildcard", models.NetListen, bpfNetEventHdr{Family: afInet, Port: 9, Addr: [16]byte{}}, "0.0.0.0:9"},
+		{"listen ipv6 loopback", models.NetListen, bpfNetEventHdr{Family: afInet6, Port: 443, Addr: v6}, "[::1]:443"},
+		{"listen ipv6 wildcard", models.NetListen, bpfNetEventHdr{Family: afInet6, Port: 443}, "[::]:443"},
+		{"listen with no bound address", models.NetListen, bpfNetEventHdr{}, models.UnboundListenTarget},
+		{"bind port zero keeps the requested port", models.NetBind, bpfNetEventHdr{Family: afInet, Addr: [16]byte{10, 0, 0, 2}}, "10.0.0.2:0"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := &Observer{events: make(chan models.GroundTruthEvent, 1)}
+			ts := time.Unix(100, 0)
+			o.emitListener(tc.typ, tc.hdr, ts)
+			select {
+			case e := <-o.events:
+				if e.ActionType != tc.typ || e.Target != tc.target || !e.Timestamp.Equal(ts) {
+					t.Errorf("event = %+v, want %s %q at %v", e, tc.typ, tc.target, ts)
+				}
+				if e.IsTopLevel != nil {
+					t.Errorf("IsTopLevel = %v, want nil: the net probe assigns no level", *e.IsTopLevel)
+				}
+			default:
+				t.Fatal("no event emitted")
+			}
+		})
+	}
+}
+
+func TestEmitListener_FullChannelCountsDrop(t *testing.T) {
+	o := &Observer{events: make(chan models.GroundTruthEvent)} // unbuffered, nobody reading
+	o.emitListener(models.NetListen, bpfNetEventHdr{Family: afInet, Port: 1}, time.Now())
+	if got := o.Dropped(); got != 1 {
+		t.Errorf("Dropped = %d, want 1: a lost listener event must be counted", got)
+	}
+}
+
+// drainEvents stops the observer and returns every event it emitted.
+func drainEvents(t *testing.T, obs *Observer) []models.GroundTruthEvent {
+	t.Helper()
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	return collect(obs)
+}
+
+// freePort returns a TCP port that was free a moment ago on 127.0.0.1.
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := stdnet.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve port: %v", err)
+	}
+	defer l.Close()
+	return l.Addr().(*stdnet.TCPAddr).Port
+}
+
+func listenerTargets(events []models.GroundTruthEvent, at models.ActionType) []string {
+	var out []string
+	for _, e := range events {
+		if e.ActionType == at {
+			out = append(out, e.Target)
+		}
+	}
+	return out
+}
+
+// TestObserver_ObservesListeners checks bind and listen from the tracked
+// process itself, with an exposure distinction between a loopback and a
+// wildcard listener, and the bind-to-listen address join.
+func TestObserver_ObservesListeners(t *testing.T) {
+	skipUnprivileged(t)
+
+	loPort, anyPort := freePort(t), freePort(t)
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	lo, err := stdnet.Listen("tcp4", stdnet.JoinHostPort("127.0.0.1", strconv.Itoa(loPort)))
+	if err != nil {
+		t.Fatalf("listen loopback: %v", err)
+	}
+	defer lo.Close()
+	wild, err := stdnet.Listen("tcp4", stdnet.JoinHostPort("0.0.0.0", strconv.Itoa(anyPort)))
+	if err != nil {
+		t.Fatalf("listen wildcard: %v", err)
+	}
+	defer wild.Close()
+	time.Sleep(300 * time.Millisecond)
+
+	events := drainEvents(t, obs)
+	wantLo := "127.0.0.1:" + strconv.Itoa(loPort)
+	wantAny := "0.0.0.0:" + strconv.Itoa(anyPort)
+	for _, at := range []models.ActionType{models.NetBind, models.NetListen} {
+		got := listenerTargets(events, at)
+		for _, want := range []string{wantLo, wantAny} {
+			if !slices.Contains(got, want) {
+				t.Errorf("%s targets = %v, missing %s", at, got, want)
+			}
+		}
+	}
+	if models.ClassifyBindTarget(wantLo) == models.ClassifyBindTarget(wantAny) {
+		t.Error("loopback and wildcard listeners classified identically")
+	}
+}
+
+// TestObserver_ListenersFromChildAreVisible covers the acceptance case: a
+// listener opened by a descendant of the tracked process. The script also
+// closes a bound fd and then listens on a fresh unbound socket that reuses the
+// fd number, which must report an unknown address: a stale bind record
+// attributing the old address to the new socket would be a wrong event.
+func TestObserver_ListenersFromChildAreVisible(t *testing.T) {
+	skipUnprivileged(t)
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+
+	// Reserved before the observer starts: the reservation is itself a
+	// listener in the tracked process and would pollute the events.
+	port := freePort(t)
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	script := fmt.Sprintf(`
+import socket
+a = socket.socket()
+a.bind(('127.0.0.1', %d))
+a.listen(1)
+fd = a.fileno()
+a.close()
+b = socket.socket()
+assert b.fileno() == fd, 'fd was not reused, the test cannot check stale state'
+b.listen(1)
+b.close()
+`, port)
+	if out, err := exec.Command(py, "-c", script).CombinedOutput(); err != nil {
+		t.Fatalf("python listener: %v\n%s", err, out)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	events := drainEvents(t, obs)
+	want := "127.0.0.1:" + strconv.Itoa(port)
+	if got := listenerTargets(events, models.NetBind); !slices.Equal(got, []string{want}) {
+		t.Errorf("bind targets = %v, want [%s]", got, want)
+	}
+	got := listenerTargets(events, models.NetListen)
+	if !slices.Equal(got, []string{want, models.UnboundListenTarget}) {
+		t.Errorf("listen targets = %v, want [%s %s] in order", got, want, models.UnboundListenTarget)
+	}
+}
+
+// TestObserver_UntrackedListenerIsInvisible is the gate control: a listener
+// outside the tracked set must not surface.
+func TestObserver_UntrackedListenerIsInvisible(t *testing.T) {
+	skipUnprivileged(t)
+
+	decoy := exec.Command("sleep", "5")
+	if err := decoy.Start(); err != nil {
+		t.Fatalf("start decoy: %v", err)
+	}
+	t.Cleanup(func() { _ = decoy.Process.Kill(); _ = decoy.Wait() })
+
+	obs, err := New(Config{TrackedPID: int32(decoy.Process.Pid), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	l, err := stdnet.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+	time.Sleep(300 * time.Millisecond)
+
+	for _, e := range drainEvents(t, obs) {
+		if e.ActionType == models.NetBind || e.ActionType == models.NetListen {
+			t.Errorf("untracked process's listener was observed: %+v", e)
+		}
 	}
 }

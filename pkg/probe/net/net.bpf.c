@@ -26,6 +26,11 @@ enum net_event_type {
 	NET_HELLO   = 2,
 	NET_BIND    = 3, // reserved: emitted only once tls.bpf.c exists (S5)
 	NET_CLOSE   = 4,
+	// Listener capability evidence (09_observer_hardening_todo.md item 2).
+	// Ground truth only: no trajectory format can claim these, and the
+	// verifier never aligns them. See 08_verification_model.md D3.
+	NET_SOCK_BIND   = 5,
+	NET_SOCK_LISTEN = 6,
 };
 
 struct net_event_hdr {
@@ -65,6 +70,24 @@ struct {
 	__type(key, struct conn_key);
 	__type(value, struct conn_state);
 } conns SEC(".maps");
+
+// binds remembers the address a tracked process passed to bind(), keyed like
+// conns, so a later listen(fd) event can carry the address it listens on (the
+// listen syscall itself has none). It is a content aid, not an event source:
+// if it is full, a listen event is still emitted, with an unknown address.
+// Entries are removed on close(fd).
+struct bind_state {
+	__u8  family;
+	__u8  addr[16];
+	__u16 port;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 4096);
+	__type(key, struct conn_key);
+	__type(value, struct bind_state);
+} binds SEC(".maps");
 
 // tracked_pids gates every program in this file. Section 10 of the design
 // doc has this pinned and populated by pkg/probe/proc once both probes run
@@ -226,6 +249,118 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	return 0;
 }
 
+// --- sys_enter_bind / sys_enter_listen: listener evidence -----------------
+//
+// Both fire at syscall entry, so they record attempts, including a bind that
+// then fails with EADDRINUSE. That matches how this project's proc probe
+// treats execve. A bind is not always a listener (a client may bind a source
+// address before connect), so userspace reports NET_SOCK_BIND and
+// NET_SOCK_LISTEN as distinct events and listen is the one that means the
+// process accepts connections. AF_UNIX is not read here, see item 5 part 2.
+
+struct sys_enter_bind_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 fd;
+	__u64 umyaddr;
+	__u64 addrlen;
+};
+
+SEC("tracepoint/syscalls/sys_enter_bind")
+int trace_bind(struct sys_enter_bind_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+
+	// Constant-size reads only, see trace_connect for why.
+	__u16 family;
+	if (bpf_probe_read_user(&family, sizeof(family), (void *)ctx->umyaddr))
+		return 0;
+	if (family != AF_INET && family != AF_INET6)
+		return 0;
+
+	// The kernel rejects a bind whose addrlen is shorter than the struct
+	// (EINVAL), so there is nothing to observe and the bytes past addrlen
+	// are not the caller's address.
+	__u8 sa[28] = {};
+	if (family == AF_INET) {
+		if (ctx->addrlen < 16)
+			return 0;
+		if (bpf_probe_read_user(sa, 16, (void *)ctx->umyaddr))
+			return 0;
+	} else {
+		if (ctx->addrlen < 28)
+			return 0;
+		if (bpf_probe_read_user(sa, 28, (void *)ctx->umyaddr))
+			return 0;
+	}
+
+	__u16 port_be = *(__u16 *)(sa + 2);
+	__u16 port = ((port_be & 0xff) << 8) | (port_be >> 8);
+
+	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
+	struct bind_state bs = {0};
+	bs.family = (__u8)family;
+	bs.port = port;
+	if (family == AF_INET)
+		__builtin_memcpy(bs.addr, sa + 4, 4);
+	else
+		__builtin_memcpy(bs.addr, sa + 8, 16);
+	bpf_map_update_elem(&binds, &key, &bs, BPF_ANY);
+
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 0;
+	fill_common(&e->hdr, NET_SOCK_BIND, tgid, key.fd);
+	e->hdr.family = bs.family;
+	e->hdr.port = bs.port;
+	__builtin_memcpy(e->hdr.addr, bs.addr, sizeof(bs.addr));
+	if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
+		count_drop();
+	return 0;
+}
+
+struct sys_enter_listen_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 fd;
+	__u64 backlog;
+};
+
+SEC("tracepoint/syscalls/sys_enter_listen")
+int trace_listen(struct sys_enter_listen_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 0;
+
+	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
+	fill_common(&e->hdr, NET_SOCK_LISTEN, tgid, key.fd);
+	// reserve_event returns per-CPU scratch that holds the previous event,
+	// so every address field is set explicitly. family 0 means the socket
+	// was never bound through bind() (an ephemeral port, or an AF_UNIX
+	// socket), so the address is unknown.
+	e->hdr.family = 0;
+	e->hdr.port = 0;
+	__builtin_memset(e->hdr.addr, 0, sizeof(e->hdr.addr));
+	struct bind_state *bs = bpf_map_lookup_elem(&binds, &key);
+	if (bs) {
+		e->hdr.family = bs->family;
+		e->hdr.port = bs->port;
+		__builtin_memcpy(e->hdr.addr, bs->addr, sizeof(bs->addr));
+	}
+	if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
+		count_drop();
+	return 0;
+}
+
 // --- first-write hello capture (write / sendto / sendmsg) ----------------
 
 static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, __u32 len)
@@ -373,6 +508,7 @@ int trace_close(struct sys_enter_close_ctx *ctx)
 		return 0;
 
 	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
+	bpf_map_delete_elem(&binds, &key);
 	struct conn_state *cs = bpf_map_lookup_elem(&conns, &key);
 	if (!cs)
 		return 0; // close() on an fd we never saw connect() on (a file, a pipe, ...)

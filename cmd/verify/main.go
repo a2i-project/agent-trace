@@ -50,8 +50,11 @@ func main() {
 	fmt.Printf("Unrecorded:   %d  (observed, never claimed)\n", len(verdict.Unrecorded))
 	fmt.Printf("Mismatched:   %d  (claimed and observed, details disagree)\n", len(verdict.Mismatched))
 
+	fmt.Printf("Capability:   %d  (listeners observed, never claimable, not part of the verdict)\n", len(verdict.Capability))
+
 	printEntries("Unwitnessed", verdict.Unwitnessed)
 	printEvents("Unrecorded", verdict.Unrecorded)
+	printEvents("Capability", verdict.Capability)
 	printMismatched(verdict.Mismatched)
 	printCompleteness(completeness)
 

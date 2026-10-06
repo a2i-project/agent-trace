@@ -59,6 +59,9 @@ func (e *TrajectoryEntry) Validate() error {
 	if !e.ActionType.IsValid() {
 		return errors.New("invalid action type: " + string(e.ActionType))
 	}
+	if !e.ActionType.IsClaimable() {
+		return errors.New("action type cannot be claimed by a trajectory: " + string(e.ActionType))
+	}
 	if e.Target == "" {
 		return errors.New("target is required")
 	}

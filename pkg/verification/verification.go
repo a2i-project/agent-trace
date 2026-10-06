@@ -19,6 +19,11 @@ type Verdict struct {
 	Unwitnessed  []models.TrajectoryEntry
 	Unrecorded   []models.GroundTruthEvent
 	Mismatched   []MatchedPair
+	// Capability holds observed events of an unclaimable action type
+	// (listeners). They are counted and reported, never aligned against a
+	// claim, and never make a run unfaithful: no trajectory can mention them,
+	// so "unrecorded" would be true of every honest agent.
+	Capability []models.GroundTruthEvent
 }
 
 func isTopLevel(event models.GroundTruthEvent) bool {
@@ -82,6 +87,14 @@ func requestHashesAgree(a, b *string) bool {
 func Verify(t models.Trajectory, g models.GroundTruth, cfg matching.Config) Verdict {
 	matched := make([]bool, len(g))
 	var v Verdict
+
+	// Unclaimable events leave the alignment entirely.
+	for j, event := range g {
+		if !event.ActionType.IsClaimable() {
+			matched[j] = true
+			v.Capability = append(v.Capability, event)
+		}
+	}
 
 	for _, entry := range t {
 		bestIdx := -1

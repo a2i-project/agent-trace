@@ -46,6 +46,11 @@ const (
 	netHello   uint8 = 2
 	netBind    uint8 = 3 // unused until tls.bpf.c exists (S5)
 	netClose   uint8 = 4
+
+	// Listener evidence, mirroring NET_SOCK_BIND and NET_SOCK_LISTEN. Distinct
+	// from netBind above, which is the reserved, never-emitted write join.
+	netSockBind   uint8 = 5
+	netSockListen uint8 = 6
 )
 
 const (
@@ -114,6 +119,8 @@ type Observer struct {
 	closeLink   link.Link
 	forkLink    link.Link
 	exitLink    link.Link
+	bindLink    link.Link
+	listenLink  link.Link
 	reader      *ringbuf.Reader
 	events      chan models.GroundTruthEvent
 	stopped     chan struct{}
@@ -268,8 +275,36 @@ func New(cfg Config) (*Observer, error) {
 		return nil, fmt.Errorf("attach sched_process_exit: %w", err)
 	}
 
+	bindLink, err := link.Tracepoint("syscalls", "sys_enter_bind", objs.TraceBind, nil)
+	if err != nil {
+		_ = exitLink.Close()
+		_ = forkLink.Close()
+		_ = closeLink.Close()
+		_ = sendmsgLink.Close()
+		_ = sendtoLink.Close()
+		_ = writeLink.Close()
+		_ = connectLink.Close()
+		_ = objs.Close()
+		return nil, fmt.Errorf("attach sys_enter_bind: %w", err)
+	}
+	listenLink, err := link.Tracepoint("syscalls", "sys_enter_listen", objs.TraceListen, nil)
+	if err != nil {
+		_ = bindLink.Close()
+		_ = exitLink.Close()
+		_ = forkLink.Close()
+		_ = closeLink.Close()
+		_ = sendmsgLink.Close()
+		_ = sendtoLink.Close()
+		_ = writeLink.Close()
+		_ = connectLink.Close()
+		_ = objs.Close()
+		return nil, fmt.Errorf("attach sys_enter_listen: %w", err)
+	}
+
 	reader, err := ringbuf.NewReader(objs.NetEvents)
 	if err != nil {
+		_ = listenLink.Close()
+		_ = bindLink.Close()
 		_ = exitLink.Close()
 		_ = forkLink.Close()
 		_ = closeLink.Close()
@@ -290,6 +325,8 @@ func New(cfg Config) (*Observer, error) {
 		closeLink:    closeLink,
 		forkLink:     forkLink,
 		exitLink:     exitLink,
+		bindLink:     bindLink,
+		listenLink:   listenLink,
 		reader:       reader,
 		events:       make(chan models.GroundTruthEvent, cfg.EventBufSize),
 		stopped:      make(chan struct{}),
@@ -303,6 +340,8 @@ func New(cfg Config) (*Observer, error) {
 	if cfg.ExePath != "" {
 		if err := o.prepareTLS(cfg); err != nil {
 			_ = reader.Close()
+			_ = listenLink.Close()
+			_ = bindLink.Close()
 			_ = closeLink.Close()
 			_ = sendmsgLink.Close()
 			_ = sendtoLink.Close()
@@ -712,6 +751,8 @@ func (o *Observer) Stop() error {
 		_ = o.connectLink.Close()
 		_ = o.forkLink.Close()
 		_ = o.exitLink.Close()
+		_ = o.bindLink.Close()
+		_ = o.listenLink.Close()
 		_ = o.objs.Close()
 	})
 	return nil
@@ -882,6 +923,12 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		}
 		o.emit(key, conn, int32(hdr.Tgid), ts)
 
+	case netSockBind:
+		o.emitListener(models.NetBind, hdr, ts)
+
+	case netSockListen:
+		o.emitListener(models.NetListen, hdr, ts)
+
 	case netBind:
 		// No-op: the write-bracket join this event existed for is
 		// abandoned (D1, design doc section 13); net.bpf.c never emits it.
@@ -893,6 +940,24 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			o.emit(key, conn, int32(hdr.Tgid), ts)
 		}
 		delete(o.conns, key)
+	}
+}
+
+// emitListener sends a NetBind or NetListen event. They carry no hostname and
+// need no connection state, so they bypass the connection correlator. They
+// are ground truth only, never claimable (models.ActionType.IsClaimable), and
+// the net probe assigns no level, so IsTopLevel stays nil and the verifier
+// keys on the action type instead.
+func (o *Observer) emitListener(t models.ActionType, hdr bpfNetEventHdr, ts time.Time) {
+	target := peerAddrPort(hdr.Family, hdr.Addr, hdr.Port)
+	if target == "" {
+		target = models.UnboundListenTarget
+	}
+	event := models.GroundTruthEvent{Timestamp: ts, ActionType: t, Target: target}
+	select {
+	case o.events <- event:
+	default:
+		o.dropped.Add(1)
 	}
 }
 
