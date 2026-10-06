@@ -52,6 +52,7 @@ const (
 	bpfMapHeap             = "heap"
 	bpfMapRootPidMap       = "root_pid_map"
 	bpfMapTrackedPids      = "tracked_pids"
+	bpfMapUntrackedCount   = "untracked_count"
 	bpfProgHandleExecve    = "handle_execve"
 	bpfProgHandleExit      = "handle_exit"
 	bpfProgHandleExitGroup = "handle_exit_group"
@@ -110,13 +111,14 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	ConfigMap   *ebpf.MapSpec `ebpf:"config_map"`
-	DropCount   *ebpf.MapSpec `ebpf:"drop_count"`
-	Events      *ebpf.MapSpec `ebpf:"events"`
-	Execs       *ebpf.MapSpec `ebpf:"execs"`
-	Heap        *ebpf.MapSpec `ebpf:"heap"`
-	RootPidMap  *ebpf.MapSpec `ebpf:"root_pid_map"`
-	TrackedPids *ebpf.MapSpec `ebpf:"tracked_pids"`
+	ConfigMap      *ebpf.MapSpec `ebpf:"config_map"`
+	DropCount      *ebpf.MapSpec `ebpf:"drop_count"`
+	Events         *ebpf.MapSpec `ebpf:"events"`
+	Execs          *ebpf.MapSpec `ebpf:"execs"`
+	Heap           *ebpf.MapSpec `ebpf:"heap"`
+	RootPidMap     *ebpf.MapSpec `ebpf:"root_pid_map"`
+	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
+	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
 
 // bpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -145,13 +147,14 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	ConfigMap   *ebpf.Map `ebpf:"config_map"`
-	DropCount   *ebpf.Map `ebpf:"drop_count"`
-	Events      *ebpf.Map `ebpf:"events"`
-	Execs       *ebpf.Map `ebpf:"execs"`
-	Heap        *ebpf.Map `ebpf:"heap"`
-	RootPidMap  *ebpf.Map `ebpf:"root_pid_map"`
-	TrackedPids *ebpf.Map `ebpf:"tracked_pids"`
+	ConfigMap      *ebpf.Map `ebpf:"config_map"`
+	DropCount      *ebpf.Map `ebpf:"drop_count"`
+	Events         *ebpf.Map `ebpf:"events"`
+	Execs          *ebpf.Map `ebpf:"execs"`
+	Heap           *ebpf.Map `ebpf:"heap"`
+	RootPidMap     *ebpf.Map `ebpf:"root_pid_map"`
+	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
+	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
 
 func (m *bpfMaps) Close() error {
@@ -163,6 +166,7 @@ func (m *bpfMaps) Close() error {
 		m.Heap,
 		m.RootPidMap,
 		m.TrackedPids,
+		m.UntrackedCount,
 	)
 }
 

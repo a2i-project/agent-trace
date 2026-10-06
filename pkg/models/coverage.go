@@ -27,6 +27,12 @@ type ProbeCoverage struct {
 	// RingbufDrops counts records the kernel ring buffer discarded because it
 	// was full. Those events never reached userspace.
 	RingbufDrops uint64 `json:"ringbuf_drops"`
+	// UntrackedChildren counts descendants of the tracked tree that the
+	// kernel could not add to its tracked_pids map because it was full. Each
+	// is invisible to the probe along with everything it forks afterwards, so
+	// this is event loss. One increment can stand for a whole subtree: a
+	// lower bound, meaningful only as zero versus non-zero.
+	UntrackedChildren uint64 `json:"untracked_children"`
 	// ChannelDrops counts events userspace discarded because the Go events
 	// channel was full.
 	ChannelDrops uint64 `json:"channel_drops"`

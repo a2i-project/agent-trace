@@ -67,6 +67,12 @@ type Config struct {
 	// callers should leave it zero. Must be a power-of-two multiple of the
 	// page size.
 	RingbufBytes uint32
+
+	// TrackedPIDsMax overrides the capacity of the kernel tracked_pids map.
+	// Zero keeps the compiled-in 16384. It exists so tests can force an
+	// overflow and exercise UntrackedChildren; production callers should
+	// leave it zero.
+	TrackedPIDsMax uint32
 }
 
 // Observer watches process spawns via eBPF and emits GroundTruthEvents.
@@ -87,6 +93,10 @@ type Observer struct {
 	// before closing the map. ringbufDropsFinal is raised after it is set.
 	finalRingbufDrops atomic.Uint64
 	ringbufDropsFinal atomic.Bool
+
+	// finalUntracked is the untracked_count snapshot, same protocol.
+	finalUntracked   atomic.Uint64
+	untrackedIsFinal atomic.Bool
 
 	// bootOffsetNs converts a bpf_ktime_get_ns() reading (ns since boot) to a
 	// wall-clock UnixNano. Computed once at New() from a matched pair of
@@ -120,6 +130,9 @@ func New(cfg Config) (*Observer, error) {
 	}
 	if cfg.RingbufBytes != 0 {
 		spec.Maps["events"].MaxEntries = cfg.RingbufBytes
+	}
+	if cfg.TrackedPIDsMax != 0 {
+		spec.Maps["tracked_pids"].MaxEntries = cfg.TrackedPIDsMax
 	}
 	if err := spec.LoadAndAssign(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
@@ -236,6 +249,21 @@ func (o *Observer) RingbufDrops() uint64 {
 	return o.finalRingbufDrops.Load()
 }
 
+// UntrackedChildren reports how many descendants of the tracked tree could not
+// be added to the kernel tracked_pids map because it was full. Each such
+// process, and everything it forks, is invisible to this probe, so a non-zero
+// value means the ground truth is incomplete. One increment can stand for a
+// whole subtree: treat the value as a lower bound. Valid while the observer
+// runs and after Stop returns.
+func (o *Observer) UntrackedChildren() uint64 {
+	if !o.untrackedIsFinal.Load() {
+		if v, err := sumPerCPU(o.objs.UntrackedCount); err == nil {
+			return v
+		}
+	}
+	return o.finalUntracked.Load()
+}
+
 // sumPerCPU returns the sum of a one-slot percpu uint64 array across CPUs.
 func sumPerCPU(m *ebpf.Map) (uint64, error) {
 	var perCPU []uint64
@@ -253,9 +281,10 @@ func sumPerCPU(m *ebpf.Map) (uint64, error) {
 // CaptureCoverage reports the loss counters for this capture. Call after Stop.
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 	return models.ProbeCoverage{
-		Ran:          true,
-		RingbufDrops: o.RingbufDrops(),
-		ChannelDrops: o.Dropped(),
+		Ran:               true,
+		RingbufDrops:      o.RingbufDrops(),
+		ChannelDrops:      o.Dropped(),
+		UntrackedChildren: o.UntrackedChildren(),
 	}
 }
 
@@ -281,6 +310,10 @@ func (o *Observer) Stop() error {
 			o.finalRingbufDrops.Store(v)
 		}
 		o.ringbufDropsFinal.Store(true)
+		if v, err := sumPerCPU(o.objs.UntrackedCount); err == nil {
+			o.finalUntracked.Store(v)
+		}
+		o.untrackedIsFinal.Store(true)
 		_ = o.exitLink.Close()
 		_ = o.exitGroupLink.Close()
 		_ = o.forkLink.Close()

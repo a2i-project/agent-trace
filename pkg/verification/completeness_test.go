@@ -23,6 +23,8 @@ func TestAssess(t *testing.T) {
 		{name: "clean run", cov: cov(map[string]models.ProbeCoverage{"proc": {Ran: true}, "fs": {Ran: true}}), wantComplete: true},
 		{name: "no probes recorded is complete", cov: cov(nil), wantComplete: true},
 		{name: "ring buffer drops", cov: cov(map[string]models.ProbeCoverage{"proc": {Ran: true, RingbufDrops: 2}}), wantReason: "proc probe: kernel ring buffer discarded 2"},
+		{name: "untracked children", cov: cov(map[string]models.ProbeCoverage{"proc": {Ran: true, UntrackedChildren: 3}}), wantReason: "proc probe: tracked_pids map was full, 3 descendant(s)"},
+		{name: "untracked children on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"proc": {Ran: false, UntrackedChildren: 3}}), wantComplete: true},
 		{name: "channel drops", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, ChannelDrops: 1}}), wantReason: "net probe: events channel discarded 1"},
 		{name: "fanotify overflow", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, QueueOverflow: true}}), wantReason: "fs probe: kernel fanotify queue overflowed"},
 		{name: "counters on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, RingbufDrops: 9}}), wantComplete: true},
@@ -91,5 +93,19 @@ func TestConclude(t *testing.T) {
 				t.Errorf("ExitCode = %d, want %d", got.ExitCode(), tc.wantExit)
 			}
 		})
+	}
+}
+
+// Requirement (08 section 3.9): any loss counter above zero makes FAITHFUL
+// unavailable. A run whose only defect is a full tracked_pids map must come
+// out INCONCLUSIVE with exit code 2, never FAITHFUL.
+func TestConclude_UntrackedChildrenAloneIsInconclusive(t *testing.T) {
+	c := Assess(cov(map[string]models.ProbeCoverage{
+		"proc": {Ran: true},
+		"net":  {Ran: true, UntrackedChildren: 1},
+	}))
+	got := Conclude(Verdict{Faithful: true}, c)
+	if got != OutcomeInconclusive || got.ExitCode() != 2 {
+		t.Errorf("Conclude = %v (exit %d), want INCONCLUSIVE (exit 2)", got, got.ExitCode())
 	}
 }

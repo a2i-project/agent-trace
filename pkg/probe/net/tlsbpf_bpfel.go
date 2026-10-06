@@ -37,6 +37,7 @@ const (
 	tlsbpfMapSslEvents      = "ssl_events"
 	tlsbpfMapSslHeap        = "ssl_heap"
 	tlsbpfMapTrackedPids    = "tracked_pids"
+	tlsbpfMapUntrackedCount = "untracked_count"
 	tlsbpfProgHandleExit    = "handle_exit"
 	tlsbpfProgHandleFork    = "handle_fork"
 	tlsbpfProgProbeSslWrite = "probe_ssl_write"
@@ -93,11 +94,12 @@ type tlsbpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tlsbpfMapSpecs struct {
-	DropCount    *ebpf.MapSpec `ebpf:"drop_count"`
-	FaultedReads *ebpf.MapSpec `ebpf:"faulted_reads"`
-	SslEvents    *ebpf.MapSpec `ebpf:"ssl_events"`
-	SslHeap      *ebpf.MapSpec `ebpf:"ssl_heap"`
-	TrackedPids  *ebpf.MapSpec `ebpf:"tracked_pids"`
+	DropCount      *ebpf.MapSpec `ebpf:"drop_count"`
+	FaultedReads   *ebpf.MapSpec `ebpf:"faulted_reads"`
+	SslEvents      *ebpf.MapSpec `ebpf:"ssl_events"`
+	SslHeap        *ebpf.MapSpec `ebpf:"ssl_heap"`
+	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
+	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
 
 // tlsbpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -126,11 +128,12 @@ func (o *tlsbpfObjects) Close() error {
 //
 // It can be passed to loadTlsbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tlsbpfMaps struct {
-	DropCount    *ebpf.Map `ebpf:"drop_count"`
-	FaultedReads *ebpf.Map `ebpf:"faulted_reads"`
-	SslEvents    *ebpf.Map `ebpf:"ssl_events"`
-	SslHeap      *ebpf.Map `ebpf:"ssl_heap"`
-	TrackedPids  *ebpf.Map `ebpf:"tracked_pids"`
+	DropCount      *ebpf.Map `ebpf:"drop_count"`
+	FaultedReads   *ebpf.Map `ebpf:"faulted_reads"`
+	SslEvents      *ebpf.Map `ebpf:"ssl_events"`
+	SslHeap        *ebpf.Map `ebpf:"ssl_heap"`
+	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
+	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
 
 func (m *tlsbpfMaps) Close() error {
@@ -140,6 +143,7 @@ func (m *tlsbpfMaps) Close() error {
 		m.SslEvents,
 		m.SslHeap,
 		m.TrackedPids,
+		m.UntrackedCount,
 	)
 }
 

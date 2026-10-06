@@ -44,6 +44,9 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.RingbufDrops > 0 {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: kernel ring buffer discarded %d record(s)", name, p.RingbufDrops))
 		}
+		if p.UntrackedChildren > 0 {
+			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: tracked_pids map was full, %d descendant(s) (and their subtrees) went untracked", name, p.UntrackedChildren))
+		}
 		if p.ChannelDrops > 0 {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: events channel discarded %d event(s)", name, p.ChannelDrops))
 		}

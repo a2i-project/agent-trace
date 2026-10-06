@@ -205,11 +205,86 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	o := &Observer{coverage: Coverage{Connections: 4, WithContent: 2}}
 	o.finalFaulted.Store(3)
 	o.finalRingbufDrops.Store(7)
+	o.finalUntracked.Store(5)
 	o.kernelCountersFinal.Store(true)
 
 	got := o.Coverage()
-	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7}
+	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, UntrackedChildren: 5}
 	if got != want {
 		t.Errorf("Coverage() = %+v, want %+v", got, want)
+	}
+}
+
+// TestObserver_CountsUntrackedChildren is the net probe's counterpart: a tiny
+// tracked_pids map, more concurrently live children than it can hold, and the
+// overflow must show in Coverage live and after Stop.
+func TestObserver_CountsUntrackedChildren(t *testing.T) {
+	skipUnprivileged(t)
+
+	const capacity, children = 4, 24
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256, TrackedPIDsMax: capacity})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	var procs []*exec.Cmd
+	for i := 0; i < children; i++ {
+		c := exec.Command("/bin/sleep", "2")
+		if err := c.Start(); err != nil {
+			t.Fatalf("spawn sleep: %v", err)
+		}
+		procs = append(procs, c)
+	}
+	t.Cleanup(func() {
+		for _, c := range procs {
+			_ = c.Process.Kill()
+			_ = c.Wait()
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+
+	live := obs.Coverage().UntrackedChildren
+	if live < children-capacity+1 { // the root occupies one of the slots
+		t.Errorf("UntrackedChildren while running = %d, want >= %d", live, children-capacity+1)
+	}
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if after := obs.Coverage().UntrackedChildren; after < live {
+		t.Errorf("UntrackedChildren after Stop = %d, less than the %d read while running: the Stop snapshot was lost", after, live)
+	}
+	if got := obs.CaptureCoverage().UntrackedChildren; got == 0 {
+		t.Error("CaptureCoverage().UntrackedChildren = 0, want the overflow reported")
+	}
+	for range obs.Events() {
+	}
+}
+
+// TestObserver_NoUntrackedChildrenWhenMapFits is the control for the test
+// above, against the default capacity.
+func TestObserver_NoUntrackedChildrenWhenMapFits(t *testing.T) {
+	skipUnprivileged(t)
+
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	for i := 0; i < 24; i++ {
+		if err := exec.Command("/bin/true").Run(); err != nil {
+			t.Fatalf("spawn true: %v", err)
+		}
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := obs.Coverage().UntrackedChildren; got != 0 {
+		t.Errorf("UntrackedChildren = %d, want 0 with the default map capacity", got)
+	}
+	for range obs.Events() {
 	}
 }

@@ -90,6 +90,29 @@ static __always_inline void count_drop(void)
 		__sync_fetch_and_add(count, 1);
 }
 
+// untracked_count counts descendants that could not be added to tracked_pids
+// because the map was full. Such a process, and every process it forks
+// afterwards, is silently outside the tracked tree: its events never reach
+// the ground truth, which downstream reads as the agent never acting (or as
+// fabrication when the agent claimed it). One increment can stand for a whole
+// lost subtree, so the value is a lower bound and only zero versus non-zero
+// is meaningful. Kept apart from drop_count so a report can tell ring loss
+// from tree loss. Userspace sums the percpu slots and snapshots them in Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} untracked_count SEC(".maps");
+
+static __always_inline void count_untracked(void)
+{
+	__u32 zero = 0;
+	__u64 *count = bpf_map_lookup_elem(&untracked_count, &zero);
+	if (count)
+		__sync_fetch_and_add(count, 1);
+}
+
 static __always_inline int is_tracked(__u32 tgid)
 {
 	return bpf_map_lookup_elem(&tracked_pids, &tgid) != NULL;
@@ -158,6 +181,10 @@ struct task_newtask_ctx {
 SEC("tracepoint/task/task_newtask")
 int handle_fork(struct task_newtask_ctx *ctx)
 {
+	// Threads share the tracked tgid; see proc.bpf.c handle_fork.
+	if (ctx->clone_flags & CLONE_THREAD)
+		return 0;
+
 	__u32 parent_pid = bpf_get_current_pid_tgid() >> 32;
 	__u32 child_pid = ctx->pid;
 
@@ -166,7 +193,8 @@ int handle_fork(struct task_newtask_ctx *ctx)
 		return 0;
 
 	__u8 one = 1;
-	bpf_map_update_elem(&tracked_pids, &child_pid, &one, BPF_ANY);
+	if (bpf_map_update_elem(&tracked_pids, &child_pid, &one, BPF_ANY))
+		count_untracked();
 	return 0;
 }
 

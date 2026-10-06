@@ -429,8 +429,8 @@ func runWatch(opts watchOptions) error {
 			fmt.Printf("%s probe: not run\n", name)
 			continue
 		}
-		fmt.Printf("%s probe loss: ringbufDrops=%d channelDrops=%d faultedReads=%d queueOverflow=%v\n",
-			name, p.RingbufDrops, p.ChannelDrops, p.FaultedReads, p.QueueOverflow)
+		fmt.Printf("%s probe loss: ringbufDrops=%d untrackedChildren=%d channelDrops=%d faultedReads=%d queueOverflow=%v\n",
+			name, p.RingbufDrops, p.UntrackedChildren, p.ChannelDrops, p.FaultedReads, p.QueueOverflow)
 	}
 	if c := verification.Assess(&cov); !c.Complete {
 		log.Printf("WARNING: %s is incomplete and a verdict built on it is unreliable:", opts.out)

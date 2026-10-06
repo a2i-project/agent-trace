@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -434,5 +436,171 @@ func TestObserver_CountsRingbufDrops(t *testing.T) {
 		if strings.Contains(e.Target, nonce) {
 			t.Errorf("event for an oversized exec reached userspace: %q", e.Target)
 		}
+	}
+}
+
+// trackedKeys lists the keys currently in the kernel tracked_pids map.
+func trackedKeys(t *testing.T, obs *Observer) map[uint32]bool {
+	t.Helper()
+	keys := map[uint32]bool{}
+	var k uint32
+	var v bpfProcInfo
+	it := obs.objs.TrackedPids.Iterate()
+	for it.Next(&k, &v) {
+		keys[k] = true
+	}
+	if err := it.Err(); err != nil {
+		t.Fatalf("iterate tracked_pids: %v", err)
+	}
+	return keys
+}
+
+// TestObserver_CountsUntrackedChildren overflows a tiny tracked_pids map with
+// concurrently live children and checks the kernel counter sees it, both while
+// running and after Stop (the snapshot must survive the map closing). A
+// descendant that cannot be tracked is invisible, which downstream reads as
+// the agent never acting, so the loss has to be countable.
+func TestObserver_CountsUntrackedChildren(t *testing.T) {
+	skipUnprivileged(t)
+
+	const capacity, children = 4, 24
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true, TrackedPIDsMax: capacity})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	// All children stay alive together, so their entries cannot be reclaimed
+	// by exits and the map must fill.
+	var procs []*exec.Cmd
+	for i := 0; i < children; i++ {
+		c := exec.Command("/bin/sleep", "2")
+		if err := c.Start(); err != nil {
+			t.Fatalf("spawn sleep: %v", err)
+		}
+		procs = append(procs, c)
+	}
+	t.Cleanup(func() {
+		for _, c := range procs {
+			_ = c.Process.Kill()
+			_ = c.Wait()
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+
+	live := obs.UntrackedChildren()
+	if live < children-capacity {
+		t.Errorf("UntrackedChildren while running = %d, want >= %d (capacity %d, %d live children)",
+			live, children-capacity, capacity, children)
+	}
+	if n := len(trackedKeys(t, obs)); n > capacity {
+		t.Errorf("tracked_pids holds %d entries, capacity %d", n, capacity)
+	}
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if after := obs.UntrackedChildren(); after < live {
+		t.Errorf("UntrackedChildren after Stop = %d, less than the %d read while running: the Stop snapshot was lost", after, live)
+	}
+	cov := obs.CaptureCoverage()
+	if cov.UntrackedChildren == 0 {
+		t.Error("CaptureCoverage().UntrackedChildren = 0, want the overflow reported")
+	}
+	for range obs.Events() {
+	}
+}
+
+// TestObserver_NoUntrackedChildrenWhenMapFits is the control: the same shape
+// of workload against the default capacity must report zero, so a non-zero
+// count means a real overflow and not a counter that always fires.
+func TestObserver_NoUntrackedChildrenWhenMapFits(t *testing.T) {
+	skipUnprivileged(t)
+
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	for i := 0; i < 24; i++ {
+		if err := exec.Command("/bin/true").Run(); err != nil {
+			t.Fatalf("spawn true: %v", err)
+		}
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := obs.UntrackedChildren(); got != 0 {
+		t.Errorf("UntrackedChildren = %d, want 0 with the default map capacity", got)
+	}
+	for range obs.Events() {
+	}
+}
+
+// TestObserver_ThreadsAreNotTracked pins the CLONE_THREAD fix. A thread shares
+// its process's tgid, which is already tracked, and its tid is never removed by
+// the exit handler (it only deletes on tid == tgid). Tracking tids would leak
+// one entry per thread and, once a tid number is reused as an unrelated
+// process's pid, track a stranger. With a map of 8 slots and 64 live threads,
+// the unfixed code overflows and reports untracked children.
+func TestObserver_ThreadsAreNotTracked(t *testing.T) {
+	skipUnprivileged(t)
+
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true, TrackedPIDsMax: 8})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	// Each goroutine pins an OS thread and blocks, forcing one clone per
+	// goroutine that stays alive until release is closed.
+	release := make(chan struct{})
+	started := make(chan struct{}, 64)
+	for i := 0; i < 64; i++ {
+		go func() {
+			runtime.LockOSThread()
+			started <- struct{}{}
+			<-release
+		}()
+	}
+	for i := 0; i < 64; i++ {
+		<-started
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	tasks, err := os.ReadDir("/proc/self/task")
+	if err != nil {
+		t.Fatalf("read /proc/self/task: %v", err)
+	}
+	if len(tasks) < 32 {
+		t.Fatalf("only %d threads exist, the test did not create the load it needs", len(tasks))
+	}
+	keys := trackedKeys(t, obs)
+	for _, task := range tasks {
+		tid, _ := strconv.Atoi(task.Name())
+		if tid != os.Getpid() && keys[uint32(tid)] {
+			t.Errorf("thread %d is in tracked_pids: threads must not be tracked as processes", tid)
+		}
+	}
+	if got := obs.UntrackedChildren(); got != 0 {
+		t.Errorf("UntrackedChildren = %d, want 0: threads must not consume tracked_pids slots", got)
+	}
+	close(release)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	for range obs.Events() {
 	}
 }

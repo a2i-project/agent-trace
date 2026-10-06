@@ -55,18 +55,19 @@ type bpfNetEventHdr struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	bpfMapConns         = "conns"
-	bpfMapDropCount     = "drop_count"
-	bpfMapHeap          = "heap"
-	bpfMapNetEvents     = "net_events"
-	bpfMapTrackedPids   = "tracked_pids"
-	bpfProgHandleExit   = "handle_exit"
-	bpfProgHandleFork   = "handle_fork"
-	bpfProgTraceClose   = "trace_close"
-	bpfProgTraceConnect = "trace_connect"
-	bpfProgTraceSendmsg = "trace_sendmsg"
-	bpfProgTraceSendto  = "trace_sendto"
-	bpfProgTraceWrite   = "trace_write"
+	bpfMapConns          = "conns"
+	bpfMapDropCount      = "drop_count"
+	bpfMapHeap           = "heap"
+	bpfMapNetEvents      = "net_events"
+	bpfMapTrackedPids    = "tracked_pids"
+	bpfMapUntrackedCount = "untracked_count"
+	bpfProgHandleExit    = "handle_exit"
+	bpfProgHandleFork    = "handle_fork"
+	bpfProgTraceClose    = "trace_close"
+	bpfProgTraceConnect  = "trace_connect"
+	bpfProgTraceSendmsg  = "trace_sendmsg"
+	bpfProgTraceSendto   = "trace_sendto"
+	bpfProgTraceWrite    = "trace_write"
 )
 
 // loadBpf returns the embedded CollectionSpec for bpf.
@@ -124,11 +125,12 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	Conns       *ebpf.MapSpec `ebpf:"conns"`
-	DropCount   *ebpf.MapSpec `ebpf:"drop_count"`
-	Heap        *ebpf.MapSpec `ebpf:"heap"`
-	NetEvents   *ebpf.MapSpec `ebpf:"net_events"`
-	TrackedPids *ebpf.MapSpec `ebpf:"tracked_pids"`
+	Conns          *ebpf.MapSpec `ebpf:"conns"`
+	DropCount      *ebpf.MapSpec `ebpf:"drop_count"`
+	Heap           *ebpf.MapSpec `ebpf:"heap"`
+	NetEvents      *ebpf.MapSpec `ebpf:"net_events"`
+	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
+	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
 
 // bpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -157,11 +159,12 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	Conns       *ebpf.Map `ebpf:"conns"`
-	DropCount   *ebpf.Map `ebpf:"drop_count"`
-	Heap        *ebpf.Map `ebpf:"heap"`
-	NetEvents   *ebpf.Map `ebpf:"net_events"`
-	TrackedPids *ebpf.Map `ebpf:"tracked_pids"`
+	Conns          *ebpf.Map `ebpf:"conns"`
+	DropCount      *ebpf.Map `ebpf:"drop_count"`
+	Heap           *ebpf.Map `ebpf:"heap"`
+	NetEvents      *ebpf.Map `ebpf:"net_events"`
+	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
+	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
 
 func (m *bpfMaps) Close() error {
@@ -171,6 +174,7 @@ func (m *bpfMaps) Close() error {
 		m.Heap,
 		m.NetEvents,
 		m.TrackedPids,
+		m.UntrackedCount,
 	)
 }
 

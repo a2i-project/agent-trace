@@ -81,3 +81,30 @@ func TestParseGroundTruth_RejectsObjectForm(t *testing.T) {
 		t.Error("json.Unmarshal into GroundTruth accepted the object form")
 	}
 }
+
+// The counter is a loss counter, so an explicit zero must stay in the file
+// (measured zero, not "not measured"), and a non-zero value must survive a
+// write and read.
+func TestProbeCoverage_UntrackedChildrenRoundTrips(t *testing.T) {
+	for _, n := range []uint64{0, 7} {
+		data, err := json.Marshal(GroundTruthFile{
+			Events: sampleEvents(),
+			Coverage: &Coverage{Schema: CoverageSchema, Probes: map[string]ProbeCoverage{
+				"net": {Ran: true, UntrackedChildren: n},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), `"untracked_children":`) {
+			t.Errorf("n=%d: untracked_children missing from %s", n, data)
+		}
+		f, err := ParseGroundTruthFile(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.Coverage.Probes["net"].UntrackedChildren; got != n {
+			t.Errorf("round trip = %d, want %d", got, n)
+		}
+	}
+}
