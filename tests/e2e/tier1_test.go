@@ -141,9 +141,12 @@ func TestTier1_E2E_NotFaithful_Omission(t *testing.T) {
 	if verdict.Outcome != verification.OutcomeNotFaithful {
 		t.Fatalf("outcome = %s, want NOT FAITHFUL due to omission", verdict.Outcome)
 	}
+	// The create is reported by the kernel as a write on the directory (a
+	// DFID-only record that covers the file), so the unrecorded event may name
+	// the file or its directory.
 	found := false
 	for _, e := range verdict.Unrecorded {
-		if e.ActionType == dropped.ActionType && e.Target == dropped.Target {
+		if e.ActionType == dropped.ActionType && (e.Target == dropped.Target || e.Target == filepath.Dir(dropped.Target)) {
 			found = true
 		}
 	}
@@ -233,5 +236,6 @@ func TestTier1_E2E_NotFaithful_FilenameSwap(t *testing.T) {
 	if len(verdict.Unwitnessed) != 0 || len(verdict.Unrecorded) != 0 {
 		t.Errorf("a substitution must not also read as a fabrication and an omission: unwitnessed=%d unrecorded=%d",
 			len(verdict.Unwitnessed), len(verdict.Unrecorded))
+		logVerdict(t, verdict)
 	}
 }
