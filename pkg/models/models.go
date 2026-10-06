@@ -64,7 +64,8 @@ type GroundTruthEvent struct {
 	// the tracked root process or one of its direct children. A nil value is
 	// legacy data and is treated as top-level for backward compatibility.
 	//
-	// Deprecated: a lossy one-bit summary of the structure PID and PPID now
+	// Legacy (to be removed, not tagged Deprecated so staticcheck does not flag
+	// the probes and verifier that still use it): a lossy one-bit summary of the structure PID and PPID now
 	// carry (08 section 3.1). Kept only because pkg/verification still reads
 	// it until the forest rewrite (Tier 6 step 5) replaces its consumer.
 	IsTopLevel *bool `json:"is_top_level,omitempty"`
