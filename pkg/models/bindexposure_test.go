@@ -18,6 +18,9 @@ func TestClassifyBindTarget(t *testing.T) {
 		{"[::]:8080", ExposureWildcard},
 		{"10.1.2.3:22", ExposureInterface},
 		{"[2001:db8::1]:443", ExposureInterface},
+		{"unix:/var/run/docker.sock", ExposureLocalSocket},
+		{"unix:@abstract", ExposureLocalSocket},
+		{"unix:<unknown>", ExposureLocalSocket},
 		{UnboundListenTarget, ExposureUnknown},
 		{"", ExposureUnknown},
 		{"example.com:80", ExposureUnknown},
@@ -31,7 +34,7 @@ func TestClassifyBindTarget(t *testing.T) {
 }
 
 func TestListenerActionTypes(t *testing.T) {
-	for _, at := range []ActionType{NetBind, NetListen} {
+	for _, at := range []ActionType{NetBind, NetListen, NetUnixConnect} {
 		if !at.IsValid() {
 			t.Errorf("%s must be a valid ground truth action type", at)
 		}
@@ -52,7 +55,7 @@ func TestListenerActionTypes(t *testing.T) {
 
 func TestListenerEventsAreValidGroundTruthButInvalidClaims(t *testing.T) {
 	ts := time.Now()
-	for _, at := range []ActionType{NetBind, NetListen} {
+	for _, at := range []ActionType{NetBind, NetListen, NetUnixConnect} {
 		ev := GroundTruthEvent{Timestamp: ts, ActionType: at, Target: "127.0.0.1:80"}
 		if err := ev.Validate(); err != nil {
 			t.Errorf("ground truth %s rejected: %v", at, err)

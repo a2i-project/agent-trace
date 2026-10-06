@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -98,4 +99,57 @@ func listenTCP4() (*reservedPort, error) {
 		return nil, err
 	}
 	return &reservedPort{port: ln.Addr().(*net.TCPAddr).Port, close: func() { _ = ln.Close() }}, nil
+}
+
+// TestTier3_E2E_UnixConnectIsCapabilityEvidence is the spec test for item 5
+// part 2. A command in the watched tree connects to a Unix socket, the way an
+// agent reaches the Docker daemon, which runs outside the tracked tree. The
+// connect must be recorded with the socket path and counted as capability
+// evidence, and it must not make an honest run unfaithful.
+func TestTier3_E2E_UnixConnectIsCapabilityEvidence(t *testing.T) {
+	skipUnprivileged(t)
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+
+	sock := filepath.Join(t.TempDir(), "docker.sock")
+	obs, err := probenet.New(probenet.Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("probenet.New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(200 * time.Millisecond)
+
+	// The client connects to a socket nobody serves: a connect attempt is
+	// evidence whether or not the daemon answers.
+	script := fmt.Sprintf("import socket; s=socket.socket(socket.AF_UNIX)\ntry:\n s.connect(%q)\nexcept OSError:\n pass\n", sock)
+	if out, err := exec.Command(py, "-c", script).CombinedOutput(); err != nil {
+		t.Fatalf("client command: %v\n%s", err, out)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	var g models.GroundTruth
+	for e := range obs.Events() {
+		g = append(g, e)
+	}
+
+	var seen bool
+	for _, e := range g {
+		if e.ActionType == models.NetUnixConnect && e.Target == "unix:"+sock {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("no net_unix_connect for %s; events: %v", sock, g)
+	}
+	v := verification.Verify(models.Trajectory{}, g, matching.Config{Delta: 10 * time.Second})
+	if !v.Faithful || len(v.Unrecorded) != 0 {
+		t.Errorf("a unix connect made the run unfaithful: unrecorded = %v", v.Unrecorded)
+	}
+	if len(v.Capability) == 0 {
+		t.Error("the unix connect was not counted as capability evidence")
+	}
 }

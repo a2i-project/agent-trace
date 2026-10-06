@@ -14,11 +14,13 @@ import (
 )
 
 type bpfBindState struct {
-	_      structs.HostLayout
-	Family uint8
-	Addr   [16]uint8
-	_      [1]byte
-	Port   uint16
+	_        structs.HostLayout
+	Family   uint8
+	Addr     [16]uint8
+	_        [1]byte
+	Port     uint16
+	UnixLen  uint32
+	UnixPath [108]uint8
 }
 
 type bpfConnKey struct {

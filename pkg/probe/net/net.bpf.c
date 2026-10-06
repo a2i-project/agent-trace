@@ -17,8 +17,10 @@
 
 char LICENSE[] SEC("license") = "GPL";
 
+#define AF_UNIX  1
 #define AF_INET  2
 #define AF_INET6 10
+#define UNIX_PATH_LEN 108 // sizeof(((struct sockaddr_un *)0)->sun_path)
 #define HELLO_CAP_LEN 1024
 
 enum net_event_type {
@@ -31,6 +33,11 @@ enum net_event_type {
 	// verifier never aligns them. See 08_verification_model.md D3.
 	NET_SOCK_BIND   = 5,
 	NET_SOCK_LISTEN = 6,
+	// connect() to an AF_UNIX socket. The socket path travels in the record
+	// payload (payload_len bytes), not in addr, which is too small for it.
+	// AF_UNIX bind and listen reuse NET_SOCK_BIND and NET_SOCK_LISTEN with
+	// family == AF_UNIX and the path in the payload the same way.
+	NET_UNIX_CONNECT = 7,
 };
 
 struct net_event_hdr {
@@ -80,6 +87,8 @@ struct bind_state {
 	__u8  family;
 	__u8  addr[16];
 	__u16 port;
+	__u32 unix_len;                  // AF_UNIX only: bytes of unix_path in use
+	__u8  unix_path[UNIX_PATH_LEN];  // AF_UNIX only
 };
 
 struct {
@@ -179,6 +188,57 @@ static __always_inline void fill_common(struct net_event_hdr *hdr, __u8 type,
 	hdr->payload_len = 0;
 }
 
+// read_unix_path copies the sun_path of a user sockaddr_un into e->payload and
+// returns its length, 0 when it could not be read (the event is still worth
+// emitting: a connect to a socket is evidence even if the name is lost), or -1
+// when there is no name at all (addrlen covers only sun_family, an unnamed
+// socket, which no one connects to or binds on purpose).
+//
+// A pathname socket's name is NUL terminated: bpf_probe_read_user_str copes
+// with a short user buffer. An abstract socket starts with a NUL byte and its
+// name is exactly addrlen - 2 bytes, embedded NULs included, so it is read
+// with a constant size and trimmed by addrlen. Both sizes are compile-time
+// constants, see trace_connect for why. A relative pathname is reported as
+// given, not resolved against the caller's cwd.
+static __always_inline int read_unix_path(struct net_event *e, __u64 uaddr, __u64 addrlen)
+{
+	if (addrlen <= 2)
+		return -1;
+
+	__u8 first = 0;
+	if (bpf_probe_read_user(&first, sizeof(first), (void *)(uaddr + 2)))
+		return 0;
+
+	long len;
+	if (first != 0) {
+		long n = bpf_probe_read_user_str(e->payload, UNIX_PATH_LEN, (void *)(uaddr + 2));
+		if (n <= 0)
+			return 0;
+		len = n - 1; // drop the terminating NUL
+	} else {
+		if (bpf_probe_read_user(e->payload, UNIX_PATH_LEN, (void *)(uaddr + 2)))
+			return 0;
+		len = (long)addrlen - 2;
+	}
+	if (len < 0)
+		len = 0;
+	if (len > UNIX_PATH_LEN)
+		len = UNIX_PATH_LEN;
+	return (int)len;
+}
+
+// emit_unix sends one AF_UNIX record whose path is already in e->payload.
+static __always_inline void emit_unix(struct net_event *e, __u8 type, __u32 tgid, __u32 fd, __u32 len)
+{
+	fill_common(&e->hdr, type, tgid, fd);
+	e->hdr.family = AF_UNIX;
+	e->hdr.port = 0;
+	__builtin_memset(e->hdr.addr, 0, sizeof(e->hdr.addr));
+	e->hdr.payload_len = len;
+	if (bpf_ringbuf_output(&net_events, e, sizeof(e->hdr) + len, 0))
+		count_drop();
+}
+
 // --- sys_enter_connect: records peer identity before the handshake -------
 
 struct sys_enter_connect_ctx {
@@ -206,6 +266,19 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	__u16 family;
 	if (bpf_probe_read_user(&family, sizeof(family), (void *)ctx->uservaddr))
 		return 0;
+	if (family == AF_UNIX) {
+		// Capability evidence only: a connect to /var/run/docker.sock or a
+		// systemd socket is how an agent delegates work to a daemon outside
+		// the tracked tree. No conns entry, since no TLS rides on it.
+		struct net_event *ue = reserve_event();
+		if (!ue)
+			return 0;
+		int ulen = read_unix_path(ue, ctx->uservaddr, ctx->addrlen);
+		if (ulen < 0)
+			return 0;
+		emit_unix(ue, NET_UNIX_CONNECT, tgid, (__u32)ctx->fd, (__u32)ulen);
+		return 0;
+	}
 	if (family != AF_INET && family != AF_INET6)
 		return 0;
 
@@ -256,7 +329,8 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 // treats execve. A bind is not always a listener (a client may bind a source
 // address before connect), so userspace reports NET_SOCK_BIND and
 // NET_SOCK_LISTEN as distinct events and listen is the one that means the
-// process accepts connections. AF_UNIX is not read here, see item 5 part 2.
+// process accepts connections. AF_UNIX sockets take the same path with the
+// socket name in the payload.
 
 struct sys_enter_bind_ctx {
 	__u64 pad;
@@ -278,6 +352,22 @@ int trace_bind(struct sys_enter_bind_ctx *ctx)
 	__u16 family;
 	if (bpf_probe_read_user(&family, sizeof(family), (void *)ctx->umyaddr))
 		return 0;
+	if (family == AF_UNIX) {
+		struct net_event *ue = reserve_event();
+		if (!ue)
+			return 0;
+		int ulen = read_unix_path(ue, ctx->umyaddr, ctx->addrlen);
+		if (ulen < 0)
+			return 0;
+		struct conn_key ukey = { .tgid = tgid, .fd = (__u32)ctx->fd };
+		struct bind_state ubs = {0};
+		ubs.family = AF_UNIX;
+		ubs.unix_len = (__u32)ulen;
+		__builtin_memcpy(ubs.unix_path, ue->payload, UNIX_PATH_LEN);
+		bpf_map_update_elem(&binds, &ukey, &ubs, BPF_ANY);
+		emit_unix(ue, NET_SOCK_BIND, tgid, ukey.fd, (__u32)ulen);
+		return 0;
+	}
 	if (family != AF_INET && family != AF_INET6)
 		return 0;
 
@@ -351,6 +441,14 @@ int trace_listen(struct sys_enter_listen_ctx *ctx)
 	e->hdr.port = 0;
 	__builtin_memset(e->hdr.addr, 0, sizeof(e->hdr.addr));
 	struct bind_state *bs = bpf_map_lookup_elem(&binds, &key);
+	if (bs && bs->family == AF_UNIX) {
+		__u32 ulen = bs->unix_len;
+		if (ulen > UNIX_PATH_LEN)
+			ulen = UNIX_PATH_LEN;
+		__builtin_memcpy(e->payload, bs->unix_path, UNIX_PATH_LEN);
+		emit_unix(e, NET_SOCK_LISTEN, tgid, key.fd, ulen);
+		return 0;
+	}
 	if (bs) {
 		e->hdr.family = bs->family;
 		e->hdr.port = bs->port;

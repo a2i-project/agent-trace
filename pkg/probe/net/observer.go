@@ -49,11 +49,13 @@ const (
 
 	// Listener evidence, mirroring NET_SOCK_BIND and NET_SOCK_LISTEN. Distinct
 	// from netBind above, which is the reserved, never-emitted write join.
-	netSockBind   uint8 = 5
-	netSockListen uint8 = 6
+	netSockBind    uint8 = 5
+	netSockListen  uint8 = 6
+	netUnixConnect uint8 = 7
 )
 
 const (
+	afUnix  = 1
 	afInet  = 2
 	afInet6 = 10
 )
@@ -924,10 +926,13 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		o.emit(key, conn, int32(hdr.Tgid), ts)
 
 	case netSockBind:
-		o.emitListener(models.NetBind, hdr, ts)
+		o.emitListener(models.NetBind, hdr, rec.payload, ts)
 
 	case netSockListen:
-		o.emitListener(models.NetListen, hdr, ts)
+		o.emitListener(models.NetListen, hdr, rec.payload, ts)
+
+	case netUnixConnect:
+		o.emitGroundTruthOnly(models.NetUnixConnect, unixTarget(rec.payload), ts)
 
 	case netBind:
 		// No-op: the write-bracket join this event existed for is
@@ -948,16 +953,40 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 // are ground truth only, never claimable (models.ActionType.IsClaimable), and
 // the net probe assigns no level, so IsTopLevel stays nil and the verifier
 // keys on the action type instead.
-func (o *Observer) emitListener(t models.ActionType, hdr bpfNetEventHdr, ts time.Time) {
-	target := peerAddrPort(hdr.Family, hdr.Addr, hdr.Port)
-	if target == "" {
+func (o *Observer) emitListener(t models.ActionType, hdr bpfNetEventHdr, payload []byte, ts time.Time) {
+	var target string
+	if hdr.Family == afUnix {
+		target = unixTarget(payload)
+	} else if target = peerAddrPort(hdr.Family, hdr.Addr, hdr.Port); target == "" {
 		target = models.UnboundListenTarget
 	}
+	o.emitGroundTruthOnly(t, target, ts)
+}
+
+// emitGroundTruthOnly sends an event of an unclaimable type.
+func (o *Observer) emitGroundTruthOnly(t models.ActionType, target string, ts time.Time) {
 	event := models.GroundTruthEvent{Timestamp: ts, ActionType: t, Target: target}
 	select {
 	case o.events <- event:
 	default:
 		o.dropped.Add(1)
+	}
+}
+
+// unixTarget renders the sun_path bytes the probe captured. An empty payload
+// means the kernel record had no readable name. A leading NUL marks an
+// abstract socket, shown as "@name" with any non-printable byte escaped so the
+// target stays one line of valid text. A pathname is reported as the caller
+// wrote it: a relative path is not resolved against the caller's cwd.
+func unixTarget(payload []byte) string {
+	switch {
+	case len(payload) == 0:
+		return models.UnixTargetPrefix + "<unknown>"
+	case payload[0] == 0:
+		q := strconv.Quote(string(payload[1:]))
+		return models.UnixTargetPrefix + "@" + q[1:len(q)-1]
+	default:
+		return models.UnixTargetPrefix + string(payload)
 	}
 }
 

@@ -875,6 +875,7 @@ func TestVerify_ListenersAreCapabilityNotUnrecorded(t *testing.T) {
 	g := models.GroundTruth{
 		{Timestamp: now, ActionType: models.NetBind, Target: "0.0.0.0:8080"},
 		{Timestamp: now, ActionType: models.NetListen, Target: "0.0.0.0:8080", IsTopLevel: &top},
+		{Timestamp: now, ActionType: models.NetUnixConnect, Target: "unix:/var/run/docker.sock"},
 		{Timestamp: now, ActionType: models.ProcessExec, Target: "ls"},
 	}
 	tr := models.Trajectory{{Timestamp: now, ActionType: models.ProcessExec, Target: "ls"}}
@@ -885,8 +886,8 @@ func TestVerify_ListenersAreCapabilityNotUnrecorded(t *testing.T) {
 	if len(v.Unrecorded) != 0 {
 		t.Errorf("listeners reported as Unrecorded: %v", v.Unrecorded)
 	}
-	if len(v.Capability) != 2 {
-		t.Errorf("Capability = %d events, want 2", len(v.Capability))
+	if len(v.Capability) != 3 {
+		t.Errorf("Capability = %d events, want 3", len(v.Capability))
 	}
 	if len(v.Corroborated) != 1 {
 		t.Errorf("Corroborated = %d, want 1: the exec must still align", len(v.Corroborated))

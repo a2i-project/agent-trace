@@ -12,6 +12,7 @@ import (
 	stdnet "net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -296,23 +297,27 @@ func TestEmitListener(t *testing.T) {
 	var v6 [16]byte
 	v6[15] = 1
 	tests := []struct {
-		name   string
-		typ    models.ActionType
-		hdr    bpfNetEventHdr
-		target string
+		name    string
+		typ     models.ActionType
+		hdr     bpfNetEventHdr
+		payload []byte
+		target  string
 	}{
-		{"bind ipv4 loopback", models.NetBind, bpfNetEventHdr{Family: afInet, Port: 8080, Addr: [16]byte{127, 0, 0, 1}}, "127.0.0.1:8080"},
-		{"listen ipv4 wildcard", models.NetListen, bpfNetEventHdr{Family: afInet, Port: 9, Addr: [16]byte{}}, "0.0.0.0:9"},
-		{"listen ipv6 loopback", models.NetListen, bpfNetEventHdr{Family: afInet6, Port: 443, Addr: v6}, "[::1]:443"},
-		{"listen ipv6 wildcard", models.NetListen, bpfNetEventHdr{Family: afInet6, Port: 443}, "[::]:443"},
-		{"listen with no bound address", models.NetListen, bpfNetEventHdr{}, models.UnboundListenTarget},
-		{"bind port zero keeps the requested port", models.NetBind, bpfNetEventHdr{Family: afInet, Addr: [16]byte{10, 0, 0, 2}}, "10.0.0.2:0"},
+		{"bind ipv4 loopback", models.NetBind, bpfNetEventHdr{Family: afInet, Port: 8080, Addr: [16]byte{127, 0, 0, 1}}, nil, "127.0.0.1:8080"},
+		{"listen ipv4 wildcard", models.NetListen, bpfNetEventHdr{Family: afInet, Port: 9, Addr: [16]byte{}}, nil, "0.0.0.0:9"},
+		{"listen ipv6 loopback", models.NetListen, bpfNetEventHdr{Family: afInet6, Port: 443, Addr: v6}, nil, "[::1]:443"},
+		{"listen ipv6 wildcard", models.NetListen, bpfNetEventHdr{Family: afInet6, Port: 443}, nil, "[::]:443"},
+		{"bind unix pathname", models.NetBind, bpfNetEventHdr{Family: afUnix}, []byte("/tmp/s.sock"), "unix:/tmp/s.sock"},
+		{"listen unix abstract", models.NetListen, bpfNetEventHdr{Family: afUnix}, []byte("\x00agent"), "unix:@agent"},
+		{"listen unix with unreadable name", models.NetListen, bpfNetEventHdr{Family: afUnix}, nil, "unix:<unknown>"},
+		{"listen with no bound address", models.NetListen, bpfNetEventHdr{}, nil, models.UnboundListenTarget},
+		{"bind port zero keeps the requested port", models.NetBind, bpfNetEventHdr{Family: afInet, Addr: [16]byte{10, 0, 0, 2}}, nil, "10.0.0.2:0"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			o := &Observer{events: make(chan models.GroundTruthEvent, 1)}
 			ts := time.Unix(100, 0)
-			o.emitListener(tc.typ, tc.hdr, ts)
+			o.emitListener(tc.typ, tc.hdr, tc.payload, ts)
 			select {
 			case e := <-o.events:
 				if e.ActionType != tc.typ || e.Target != tc.target || !e.Timestamp.Equal(ts) {
@@ -330,7 +335,7 @@ func TestEmitListener(t *testing.T) {
 
 func TestEmitListener_FullChannelCountsDrop(t *testing.T) {
 	o := &Observer{events: make(chan models.GroundTruthEvent)} // unbuffered, nobody reading
-	o.emitListener(models.NetListen, bpfNetEventHdr{Family: afInet, Port: 1}, time.Now())
+	o.emitListener(models.NetListen, bpfNetEventHdr{Family: afInet, Port: 1}, nil, time.Now())
 	if got := o.Dropped(); got != 1 {
 		t.Errorf("Dropped = %d, want 1: a lost listener event must be counted", got)
 	}
@@ -486,6 +491,146 @@ func TestObserver_UntrackedListenerIsInvisible(t *testing.T) {
 	for _, e := range drainEvents(t, obs) {
 		if e.ActionType == models.NetBind || e.ActionType == models.NetListen {
 			t.Errorf("untracked process's listener was observed: %+v", e)
+		}
+	}
+}
+
+func TestUnixTarget(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+		want    string
+	}{
+		{"pathname", []byte("/var/run/docker.sock"), "unix:/var/run/docker.sock"},
+		{"relative pathname is kept as written", []byte("docker.sock"), "unix:docker.sock"},
+		{"abstract", []byte("\x00systemd-private"), "unix:@systemd-private"},
+		{"abstract with embedded NUL is escaped, not truncated", []byte("\x00a\x00b"), `unix:@a\x00b`},
+		{"abstract with newline stays one line", []byte("\x00a\nb"), `unix:@a\nb`},
+		{"lone NUL is the empty abstract name", []byte("\x00"), "unix:@"},
+		{"unreadable name", nil, "unix:<unknown>"},
+	}
+	for _, tc := range tests {
+		if got := unixTarget(tc.payload); got != tc.want {
+			t.Errorf("%s: unixTarget(%q) = %q, want %q", tc.name, tc.payload, got, tc.want)
+		}
+	}
+}
+
+func TestEmitUnixConnect(t *testing.T) {
+	o := &Observer{events: make(chan models.GroundTruthEvent, 2)}
+	o.handleNetRecord(netRecord{hdr: bpfNetEventHdr{Type: netUnixConnect, Family: afUnix}, payload: []byte("/run/docker.sock")})
+	e := <-o.events
+	if e.ActionType != models.NetUnixConnect || e.Target != "unix:/run/docker.sock" {
+		t.Errorf("event = %+v", e)
+	}
+	if e.ActionType.IsClaimable() {
+		t.Error("a unix connect must not be claimable")
+	}
+	if o.coverage.Connections != 0 {
+		t.Errorf("Connections = %d: a unix connect is not a TLS connection and must not skew the TLS coverage ratios", o.coverage.Connections)
+	}
+}
+
+// runPython runs a script with python3, skipping the test when it is absent.
+func runPython(t *testing.T, script string) {
+	t.Helper()
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+	if out, err := exec.Command(py, "-c", script).CombinedOutput(); err != nil {
+		t.Fatalf("python: %v\n%s", err, out)
+	}
+}
+
+// TestObserver_ObservesUnixSockets covers the acceptance cases of item 5 part
+// 2: a command in the tracked tree connects to a Unix socket and the event
+// carries the socket path, for a pathname socket, an abstract socket, and a
+// connect that fails because nothing listens (an attempt, like execve). It
+// also checks the AF_UNIX bind and listen events of a socket server.
+func TestObserver_ObservesUnixSockets(t *testing.T) {
+	skipUnprivileged(t)
+
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "s.sock")
+	missing := filepath.Join(dir, "no-daemon.sock")
+	abstract := fmt.Sprintf("agenttrace-%d", time.Now().UnixNano())
+
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	runPython(t, fmt.Sprintf(`
+import socket
+srv = socket.socket(socket.AF_UNIX)
+srv.bind(%q)
+srv.listen(1)
+c = socket.socket(socket.AF_UNIX)
+c.connect(%q)
+c.close()
+srv.close()
+asrv = socket.socket(socket.AF_UNIX)
+asrv.bind('\0' + %q)
+asrv.listen(1)
+ac = socket.socket(socket.AF_UNIX)
+ac.connect('\0' + %q)
+ac.close()
+asrv.close()
+m = socket.socket(socket.AF_UNIX)
+try:
+    m.connect(%q)
+except OSError:
+    pass
+`, sock, sock, abstract, abstract, missing))
+	time.Sleep(300 * time.Millisecond)
+
+	events := drainEvents(t, obs)
+	pathT, absT, missT := "unix:"+sock, "unix:@"+abstract, "unix:"+missing
+	if got := listenerTargets(events, models.NetUnixConnect); !slices.Equal(got, []string{pathT, absT, missT}) {
+		t.Errorf("unix connect targets = %v, want [%s %s %s] in order", got, pathT, absT, missT)
+	}
+	for _, at := range []models.ActionType{models.NetBind, models.NetListen} {
+		if got := listenerTargets(events, at); !slices.Equal(got, []string{pathT, absT}) {
+			t.Errorf("%s targets = %v, want [%s %s]", at, got, pathT, absT)
+		}
+	}
+	if models.ClassifyBindTarget(pathT) != models.ExposureLocalSocket {
+		t.Errorf("exposure of %s = %s", pathT, models.ClassifyBindTarget(pathT))
+	}
+}
+
+// TestObserver_UntrackedUnixConnectIsInvisible is the gate control.
+func TestObserver_UntrackedUnixConnectIsInvisible(t *testing.T) {
+	skipUnprivileged(t)
+
+	decoy := exec.Command("sleep", "5")
+	if err := decoy.Start(); err != nil {
+		t.Fatalf("start decoy: %v", err)
+	}
+	t.Cleanup(func() { _ = decoy.Process.Kill(); _ = decoy.Wait() })
+
+	obs, err := New(Config{TrackedPID: int32(decoy.Process.Pid), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	runPython(t, `
+import socket
+s = socket.socket(socket.AF_UNIX)
+try:
+    s.connect('/run/agenttrace-nobody-listens.sock')
+except OSError:
+    pass
+`)
+	time.Sleep(300 * time.Millisecond)
+	for _, e := range drainEvents(t, obs) {
+		if e.ActionType == models.NetUnixConnect {
+			t.Errorf("untracked process's unix connect was observed: %+v", e)
 		}
 	}
 }
