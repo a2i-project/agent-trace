@@ -20,6 +20,9 @@ type Command struct {
 	// network event of the subtree. Attributed and counted, never aligned
 	// against a claim (08 D3).
 	Content models.GroundTruth
+	// Baseline is set when the harness baseline explains this command, so no
+	// claim is needed for it (08 V7). See Partition.SubtractBaseline.
+	Baseline bool
 }
 
 // AttributedEvent is an event with its place in the tree.
@@ -35,6 +38,9 @@ type Partition struct {
 	// each command's own exec and exit, in time order, claimable types only.
 	// This is what claims are aligned against (08 V4).
 	Observed models.GroundTruth
+	// Owner is parallel to Observed: the command whose own exec or exit an
+	// observed event is, or nil for a level-0 event.
+	Owner []*Command
 	// Commands are the level-1 subtrees in creation order.
 	Commands []*Command
 	// Outside holds events whose process is not in the agent's tree. They do
@@ -79,6 +85,7 @@ func (f *Forest) Partition(g models.GroundTruth) Partition {
 			part.Outside = append(part.Outside, e)
 		case ZoneAgent:
 			part.Observed = append(part.Observed, e)
+			part.Owner = append(part.Owner, nil)
 		case ZoneSubtree:
 			c := byCommand[a.Command]
 			own := a.Process == a.Command
@@ -87,10 +94,12 @@ func (f *Forest) Partition(g models.GroundTruth) Partition {
 				ev := e
 				c.Exec = &ev
 				part.Observed = append(part.Observed, e)
+				part.Owner = append(part.Owner, c)
 			case own && e.ActionType == models.ProcessExit && c.Exit == nil:
 				ev := e
 				c.Exit = &ev
 				part.Observed = append(part.Observed, e)
+				part.Owner = append(part.Owner, c)
 			default:
 				c.Content = append(c.Content, e)
 			}
