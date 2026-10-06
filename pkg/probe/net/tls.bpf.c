@@ -182,8 +182,7 @@ SEC("tracepoint/task/task_newtask")
 int handle_fork(struct task_newtask_ctx *ctx)
 {
 	// Threads share the tracked tgid; see proc.bpf.c handle_fork.
-	if (ctx->clone_flags & CLONE_THREAD)
-		return 0;
+	/* MUTATION: thread check removed */
 
 	__u32 parent_pid = bpf_get_current_pid_tgid() >> 32;
 	__u32 child_pid = ctx->pid;

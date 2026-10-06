@@ -626,7 +626,7 @@ int trace_close(struct sys_enter_close_ctx *ctx)
 		return 0;
 
 	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
-	bpf_map_delete_elem(&binds, &key);
+	/* MUTATION: binds not cleared on close */
 	struct conn_state *cs = bpf_map_lookup_elem(&conns, &key);
 	if (!cs)
 		return 0; // close() on an fd we never saw connect() on (a file, a pipe, ...)
@@ -659,8 +659,7 @@ SEC("tracepoint/task/task_newtask")
 int handle_fork(struct task_newtask_ctx *ctx)
 {
 	// Threads share the tracked tgid; see proc.bpf.c handle_fork.
-	if (ctx->clone_flags & CLONE_THREAD)
-		return 0;
+	/* MUTATION: thread check removed */
 
 	__u32 parent_pid = bpf_get_current_pid_tgid() >> 32;
 	__u32 child_pid = ctx->pid;

@@ -209,8 +209,7 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	// tid is not a tgid and handle_exit only deletes on tid == tgid, so
 	// inserting it would leak an entry per thread and, once the number is
 	// recycled as an unrelated process's pid, track a stranger.
-	if (ctx->clone_flags & CLONE_THREAD)
-		return 0;
+	/* MUTATION: thread check removed */
 
 	__u32 parent_pid = bpf_get_current_pid_tgid() >> 32;
 	__u32 child_pid = ctx->pid;
