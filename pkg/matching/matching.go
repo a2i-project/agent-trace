@@ -1,21 +1,14 @@
+// Package matching decides whether a claim and an observed event name the
+// same resource. It holds no notion of time: pairing is by position in the
+// alignment and time only orders events (docs/plan/08_verification_model.md,
+// V4 and V6), so the former timestamp window and its Delta are gone.
 package matching
 
 import (
 	"path/filepath"
-	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
-
-const DefaultDelta = 1 * time.Second
-
-type Config struct {
-	Delta time.Duration
-}
-
-func DefaultConfig() Config {
-	return Config{Delta: DefaultDelta}
-}
 
 func isFileAction(actionType models.ActionType) bool {
 	switch actionType {
@@ -56,29 +49,10 @@ func targetsMatch(actionType models.ActionType, tTarget, gTarget string, gPathIs
 }
 
 // TargetsMatch reports whether a claim and an observed event name the same
-// resource, applying the per-action-type normalization of targetsMatch. It
-// is the target half of Match with no timestamp condition and no requirement
-// that the two share an action type, so the verifier can pair by position and
-// then ask whether the targets agree (08 V4).
+// resource, applying the per-action-type normalization of targetsMatch. It has
+// no timestamp condition and no requirement that the two share an action type,
+// so the verifier can pair by position and then ask whether the targets agree
+// (08 V4). The claim's action type picks the normalization.
 func TargetsMatch(t models.TrajectoryEntry, g models.GroundTruthEvent) bool {
 	return targetsMatch(t.ActionType, t.Target, g.Target, g.PathIsAmbiguous)
-}
-
-// Match reports whether a trajectory entry and a ground-truth event refer to
-// the same action: same action_type, same normalized target, and timestamps
-// within delta of each other.
-func Match(t models.TrajectoryEntry, g models.GroundTruthEvent, cfg Config) bool {
-	if t.ActionType != g.ActionType {
-		return false
-	}
-
-	if !targetsMatch(t.ActionType, t.Target, g.Target, g.PathIsAmbiguous) {
-		return false
-	}
-
-	diff := t.Timestamp.Sub(g.Timestamp)
-	if diff < 0 {
-		diff = -diff
-	}
-	return diff <= cfg.Delta
 }
