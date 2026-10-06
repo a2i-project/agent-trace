@@ -146,15 +146,18 @@ func main() {
 	f1 := filepath.Join(workspace, "file1.txt")
 
 	// 1. WriteFile
-	// os.WriteFile triggers:
+	// os.WriteFile triggers, in this order:
+	// - FAN_CREATE (FileWrite, resolved to the directory: the create event is
+	//   a DFID-only record, so it covers the file by the directory fallback)
 	// - FAN_OPEN (FileOpen)
-	// - FAN_CREATE (FileWrite)
-	// - FAN_MODIFY (FileWrite)
+	// - FAN_MODIFY (FileWrite), merged with the close
 	// - FAN_CLOSE_WRITE (FileClose)
-	// We report exactly what the kernel sees so the 1-to-1 verifier is happy.
+	// The verifier aligns claims against the observed sequence by position, so
+	// the claims are in the order the kernel reports, not in the order the
+	// operations read.
 	emptyHash := "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	addEntryWithInputHash(models.FileOpen, f1, emptyHash)
 	addEntry(models.FileWrite, f1) // create
+	addEntryWithInputHash(models.FileOpen, f1, emptyHash)
 	addEntry(models.FileWrite, f1) // modify
 	fileContents := []byte("hello")
 	err := os.WriteFile(f1, fileContents, 0644)

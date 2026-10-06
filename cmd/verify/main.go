@@ -64,6 +64,7 @@ func main() {
 	fmt.Printf("  Unexplained subtrees: %d  (commands nothing claims)\n", len(c.UnexplainedSubtrees))
 	fmt.Printf("  Explained by a claimed command: %d events\n", c.Explained)
 	fmt.Printf("  Explained by the baseline:      %d events\n", c.Baselined)
+	fmt.Printf("  Quiet forks:                    %d (forked, never exec'd, nothing observed: nothing to explain)\n", len(c.Quiet))
 	fmt.Printf("  Outside the agent's tree:       %d events (reported, not the agent's)\n", len(c.Outside))
 	fmt.Printf("  Unplaced (no pid):              %d events\n", len(c.Unknown))
 	fmt.Printf("Capability:   %d  (listeners and sockets observed, never claimable, not part of the verdict)\n", len(v.Capability))

@@ -65,8 +65,16 @@ type Coverage struct {
 	// UnexplainedActions are the top-level actions no claim aligned to.
 	UnexplainedActions []UnexplainedAction
 	// UnexplainedSubtrees are the commands whose own exec no claim aligned to,
-	// or that never exec'd: whole subtrees nothing the agent said accounts for.
+	// or that never exec'd and did something observable: whole subtrees nothing
+	// the agent said accounts for.
 	UnexplainedSubtrees []*Command
+	// Quiet holds the level-1 processes that never exec'd and caused no
+	// observed event. There is nothing in them to explain. Go's os/exec
+	// forks one throwaway child per process to probe for pidfd support, and a
+	// shell forks subshells that run builtins. Reported, not a finding: the
+	// requirement is that every observed event is explained, and none is
+	// left unexplained by a process that did nothing.
+	Quiet []*Command
 	// Explained counts the events inside subtrees of commands a claim explains.
 	Explained int
 	// Baselined counts the events inside subtrees the baseline explains.
@@ -114,6 +122,8 @@ func CheckCoverage(p Partition, alignments []LaneAlignment) Coverage {
 			cov.Baselined += len(c.Content)
 		case execPaired[c]:
 			cov.Explained += len(c.Content)
+		case c.Exec == nil && c.Exit == nil && len(c.Content) == 0:
+			cov.Quiet = append(cov.Quiet, c)
 		default:
 			cov.UnexplainedSubtrees = append(cov.UnexplainedSubtrees, c)
 		}
