@@ -182,10 +182,10 @@ func (f *Forest) link(p *Process) {
 // is consulted only to choose between incarnations of a reused pid, never to
 // pair or to attribute (08 V6).
 func (f *Forest) Attribute(e models.GroundTruthEvent) Attribution {
-	switch {
-	case e.PID == 0:
+	switch e.PID {
+	case 0:
 		return Attribution{Zone: ZoneUnknown, Level: -1}
-	case e.PID == f.RootPID:
+	case f.RootPID:
 		return Attribution{Zone: ZoneAgent, Level: 0}
 	}
 	p := f.Resolve(e.PID, e.Timestamp)
