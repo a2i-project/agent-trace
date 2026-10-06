@@ -20,6 +20,23 @@ type TrajectoryEntry struct {
 	// RequestHash is "sha256:<hex>" of a NetRequest entry's request body.
 	// Nil when the request has no body, or the action isn't a NetRequest.
 	RequestHash *string `json:"request_hash,omitempty"`
+
+	// End is when the format says the action finished. Timestamp is then the
+	// start of the claim interval and End its end (07 D12). Nil means the
+	// format offers no end timestamp and the entry is a point: the adapter
+	// records that degradation instead of inventing a width. Timestamp is a
+	// decision time unless the adapter says otherwise (D13), so the interval
+	// can include human approval latency and must not be used to bound
+	// execution on its own.
+	End *time.Time `json:"end,omitempty"`
+	// ThreadID names the conversation thread a flattened subagent claim came
+	// from (D9). Empty means the main thread, or a format without threads.
+	// It is supplied by the agent being verified, so it is a hint for
+	// ordering and never a basis for trust.
+	ThreadID string `json:"thread_id,omitempty"`
+	// BlockID groups claims the format issued in one parallel block (V2).
+	// Entries sharing a non-empty BlockID have no order among themselves.
+	BlockID string `json:"block_id,omitempty"`
 }
 
 // GroundTruthEvent is an independently observed action from the host-level probes.
@@ -33,9 +50,23 @@ type GroundTruthEvent struct {
 	// unknown, e.g. the process was killed by an uncaught signal rather than
 	// calling exit()/_exit().
 	ExitCode *int32 `json:"exit_code,omitempty"`
+	// PID is the process that caused the event (its thread group id), as the
+	// probe observed it. Zero means the probe did not record it, which is
+	// distinct from every real value: pid 0 is the idle task and never causes
+	// a userspace event. Attribution walks this up the process tree (08 V1).
+	PID uint32 `json:"pid,omitempty"`
+	// PPID is the parent of PID as the probe observed it when the process was
+	// created or exec'd. Only the proc probe sets it, since it is the only
+	// probe that sees processes start; zero means not recorded. It is what
+	// lets the verifier build the tree from events.
+	PPID uint32 `json:"ppid,omitempty"`
 	// IsTopLevel identifies verification-grade events generated directly by
 	// the tracked root process or one of its direct children. A nil value is
 	// legacy data and is treated as top-level for backward compatibility.
+	//
+	// Deprecated: a lossy one-bit summary of the structure PID and PPID now
+	// carry (08 section 3.1). Kept only because pkg/verification still reads
+	// it until the forest rewrite (Tier 6 step 5) replaces its consumer.
 	IsTopLevel *bool `json:"is_top_level,omitempty"`
 	// PathIsAmbiguous is true when the probe could only resolve this event
 	// to its containing directory, not the specific file within it (a
@@ -64,6 +95,9 @@ func (e *TrajectoryEntry) Validate() error {
 	}
 	if e.Target == "" {
 		return errors.New("target is required")
+	}
+	if e.End != nil && e.End.Before(e.Timestamp) {
+		return errors.New("end precedes timestamp")
 	}
 	return nil
 }

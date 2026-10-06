@@ -3,6 +3,7 @@ package models
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -317,5 +318,72 @@ func TestParseGroundTruth(t *testing.T) {
 	}
 	if parsed[0].ActionType != ProcessExec {
 		t.Errorf("wrong action type: %s", parsed[0].ActionType)
+	}
+}
+
+func TestTrajectoryEntry_IntervalValidation(t *testing.T) {
+	start := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	before, after := start.Add(-time.Second), start.Add(time.Second)
+	tests := []struct {
+		name    string
+		end     *time.Time
+		wantErr bool
+	}{
+		{"point entry, no end", nil, false},
+		{"end after start", &after, false},
+		{"zero-width interval", &start, false},
+		{"end before start", &before, true},
+	}
+	for _, tc := range tests {
+		e := TrajectoryEntry{Timestamp: start, End: tc.end, ActionType: ProcessExec, Target: "ls"}
+		if err := e.Validate(); (err != nil) != tc.wantErr {
+			t.Errorf("%s: Validate() = %v, wantErr %v", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+// Files written before the process-identity and interval fields existed must
+// still parse, and a field that is absent must read as "not recorded", never
+// as a value.
+func TestLegacyJSONParsesWithNewFieldsUnset(t *testing.T) {
+	trajectory := `[{"timestamp":"2026-10-06T12:00:00Z","action_type":"process_exec","target":"ls"}]`
+	tr, err := ParseTrajectory([]byte(trajectory))
+	if err != nil {
+		t.Fatalf("ParseTrajectory: %v", err)
+	}
+	if tr[0].End != nil || tr[0].ThreadID != "" || tr[0].BlockID != "" {
+		t.Errorf("absent fields must stay unset: %+v", tr[0])
+	}
+	truth := `[{"timestamp":"2026-10-06T12:00:00Z","action_type":"process_exec","target":"ls","is_top_level":true}]`
+	g, err := ParseGroundTruth([]byte(truth))
+	if err != nil {
+		t.Fatalf("ParseGroundTruth: %v", err)
+	}
+	if g[0].PID != 0 || g[0].PPID != 0 {
+		t.Errorf("absent pid fields must be zero (not recorded): %+v", g[0])
+	}
+}
+
+func TestProcessIdentityRoundTrips(t *testing.T) {
+	end := time.Date(2026, 10, 6, 12, 0, 5, 0, time.UTC)
+	e := GroundTruthEvent{Timestamp: end, ActionType: ProcessExec, Target: "ls", PID: 4242, PPID: 4000}
+	data, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back GroundTruthEvent
+	if err := json.Unmarshal(data, &back); err != nil || back.PID != 4242 || back.PPID != 4000 {
+		t.Errorf("round trip = %+v, %v", back, err)
+	}
+	entry := TrajectoryEntry{Timestamp: end.Add(-5 * time.Second), End: &end, ThreadID: "sub-1", BlockID: "b7", ActionType: ProcessExec, Target: "ls"}
+	data, _ = json.Marshal(entry)
+	var tback TrajectoryEntry
+	if err := json.Unmarshal(data, &tback); err != nil || tback.End == nil || !tback.End.Equal(end) || tback.ThreadID != "sub-1" || tback.BlockID != "b7" {
+		t.Errorf("trajectory round trip = %+v, %v", tback, err)
+	}
+	// An unset pid must not appear in the file at all.
+	data, _ = json.Marshal(GroundTruthEvent{Timestamp: end, ActionType: ProcessExec, Target: "ls"})
+	if strings.Contains(string(data), `"pid"`) || strings.Contains(string(data), `"ppid"`) {
+		t.Errorf("unset pid fields leaked into %s", data)
 	}
 }
