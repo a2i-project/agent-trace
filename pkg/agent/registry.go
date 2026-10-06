@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -45,6 +46,10 @@ func Names() []string {
 	return names
 }
 
+// ErrNoMatch is wrapped by Detect when no adapter recognises a path, so a
+// caller can tell it from an ambiguity and fall back to the generic adapter.
+var ErrNoMatch = errors.New("no adapter recognises the path")
+
 // Detect returns the adapter that recognises path. The generic adapter never
 // detects, so a path no real adapter claims returns false. Two adapters
 // claiming the same path is an error rather than a guess.
@@ -61,7 +66,7 @@ func Detect(path string) (Adapter, error) {
 	}
 	switch len(found) {
 	case 0:
-		return nil, fmt.Errorf("no adapter recognises %s (registered: %v)", path, sortedLocked())
+		return nil, fmt.Errorf("%w: %s (registered: %v)", ErrNoMatch, path, sortedLocked())
 	case 1:
 		return match, nil
 	default:

@@ -24,6 +24,18 @@ Each probe reports loss counters (kernel ring buffer drops, state map exhaustion
 
 A missing field in a claim is a finding only where the trajectory format can state that field and the probe captured it. `Options.Expresses` is where an adapter declares which fields it can state.
 
+## Agent adapters
+
+An adapter (`pkg/agent`) holds everything one harness does differently, so `pkg/verification` and `pkg/matching` contain no agent knowledge. It reads the agent's session into claims in order, each with an interval, a thread id for flattened subagents and a block id for parallel calls. It rewrites observed events into the form claims use, and it declares which content fields its format can state, per tool. A nil field in a claim is a finding only where the format can state it and the probe captured it. `agent.Prepare` turns an adapter, a trajectory and a ground truth file into verification input.
+
+- **Claude Code** reads the JSONL transcript and merges the `subagents/` directory. A Bash call is observed as a wrapper command that sources a shell snapshot and `eval`s the real command, so `Normalize` recovers the command from the `eval` payload. Subagents run in the agent's own process, so they cannot be told apart in the ground truth and are flattened. The format records no exit code, so exits are not aligned.
+- **Gemini** reads a SQLite database whose step payloads are protobuf with no published schema. A small wire-format walker reads the fields by number and returns an error naming the field path when one does not decode, so a version that moves a field fails instead of producing an empty trajectory. Its process model (command wrapping, subagents, ordering) is unmeasured and the adapter reports it as such.
+- **Generic** reads the normalized trajectory JSON and does nothing else.
+
+The adapters do not hardcode what a harness does on its own. That is a baseline measured from control runs with `baseline` and matched exactly.
+
+Both adapters map file tools to a guessed sequence of kernel events (open, write, close). That shape is a hypothesis until a real session has been captured, and the reports say so.
+
 ## Constraints on network content capture
 
 These apply to any agent verified at content level.

@@ -20,6 +20,7 @@ AI agents report what they did in a trajectory log. If the agent is compromised,
 | FAITHFUL | 0 | Both checks passed and the capture lost nothing. |
 | NOT FAITHFUL | 1 | A discrepancy was found. Marked advisory if the capture also lost events. |
 | INCONCLUSIVE | 2 | No discrepancy found, but FAITHFUL cannot be asserted: events were lost, the capture has no coverage record or root pid, or an event could not be attributed. |
+| (error) | 3 | `verify` could not run: bad arguments, an unreadable file or a baseline for another agent. |
 
 The agent claims commands, not what they do. A listener a command opens, or a connection it makes, is counted as capability evidence and shown in the report, but it is not a claim to corroborate.
 
@@ -35,10 +36,11 @@ A faithful verdict says that the agent's top-level claims are true and that noth
 | Process probe (eBPF): exec, exit code, fork edges, parent pid | done |
 | Network probe (eBPF): connections with TLS SNI, request body hash via an `SSL_write` uprobe, listeners and Unix sockets | done |
 | Verification: process tree, alignment, coverage, baseline hook, outcome rules | done |
-| Real-agent adapters (Claude Code, Gemini), measured harness baseline | planned |
+| Agent adapters: Claude Code (JSONL, subagents, command-wrapper recovery) and Gemini (SQLite and protobuf, fails loudly when a field moves) | implemented, not yet checked against a real capture |
+| Harness baseline from control runs (`baseline`) | implemented, no baseline captured yet |
 | Attack generator suite | planned |
 
-Verified against a simulated agent (`cmd/simagent`) only. Nothing here is evaluated on real agents yet.
+The verifier is tested against a simulated agent (`cmd/simagent`) only. The adapters read real session formats and are tested on fixtures and for robustness against real transcripts, but no real agent has been captured and verified end to end, so what a real session's file tools do at the kernel level is still a hypothesis in the adapters. Nothing here is evaluated on real agents yet.
 
 ## Requirements
 
@@ -78,7 +80,27 @@ This prints FAITHFUL. To see a discrepancy, rerun with `--drop-entry 0` on `sima
 
 To record an agent `watch` cannot launch (a container entrypoint, say), start it yourself and pass `--root-pid N` in place of `-- <command>`. Anything that process did before `watch` attached is invisible to the process probe.
 
-`verify` options: `--interval-slack` widens each claim's time interval for a trajectory clock that differs from the kernel's, and `--ignore-exits` skips process exits for a format that cannot state them.
+`verify` options: `--interval-slack` (default 500ms) widens each claim's time interval for a trajectory clock that differs from the kernel's, and `--ignore-exits` skips process exits for a format that cannot state them.
+
+### Verifying a real agent
+
+For a real agent, `verify` reads the agent's own session file through an adapter. It detects the adapter from the file, or you choose one with `--agent claude-code` or `--agent gemini`:
+
+```sh
+sudo ./watch --probes fs,proc,net --workspace "$PWD" --out ground_truth.json -- claude -p "your task"
+./verify --agent claude-code --trajectory ~/.claude/projects/<project>/<session>.jsonl \
+         --ground-truth ground_truth.json --baseline baseline.json
+```
+
+The report lists what the adapter could not turn into a claim (tools that produced no entry, tools it has no mapping for, records it could not parse) and each limitation of the format, so a verdict is never read as stronger than the evidence.
+
+A harness does things on its own that no trajectory records, such as keeping a connection to its model API open. Those events would read as unreported actions, so they are measured rather than guessed. Give the agent a task that claims nothing, record it with `watch`, and build a baseline from several such runs:
+
+```sh
+./baseline --agent claude-code --agent-version 2.1.286 --out baseline.json run1.json run2.json run3.json
+```
+
+Only what every control run did becomes a rule, rules match an action type and target exactly, and a baseline holds for one agent version. Pass it to `verify` with `--baseline`. Without one, the harness's own activity is reported as unexplained.
 
 ### Network example
 
@@ -103,10 +125,12 @@ Here `simagent` claims the `curl` command and nothing curl does, so the connecti
 ```
 cmd/watch         Records ground truth: runs the probes, launches the agent, writes the file
 cmd/verify        Compares a trajectory and a ground truth file and prints the verdict
+cmd/baseline      Builds a harness baseline from control runs
 cmd/simagent      Simulated agent, for exercising the probes end to end
 pkg/models        Trajectory, ground truth and coverage types
 pkg/probe         Observer interface; fs, proc and net implement it
 pkg/verification  Process tree, alignment, coverage and the verdict
+pkg/agent         Adapter interface, registry, baseline; claudecode and gemini adapters
 pkg/matching      Target comparison between a claim and an observed event
 pkg/content       SHA-256 content digests
 pkg/tlsparse      TLS ClientHello and HTTP/1.1 request parsing

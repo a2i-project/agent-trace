@@ -8,12 +8,13 @@ generate:
 build:
 	go build -o watch ./cmd/watch/
 	go build -o verify ./cmd/verify/
+	go build -o baseline ./cmd/baseline/
 	go build -o simagent ./cmd/simagent/
 
 test:
 	go test -v ./...
 
 clean:
-	rm -f watch verify simagent
+	rm -f watch verify simagent baseline
 	rm -f ground_truth.json trajectory.json
 	rm -rf /tmp/agent-trace-demo

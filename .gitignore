@@ -14,6 +14,7 @@ STATE.md
 /watch
 /simagent
 /verify
+/baseline
 
 # Live-demo output (trajectory + ground truth JSON written by the demo)
 /trajectory.json

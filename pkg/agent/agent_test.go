@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,8 +56,8 @@ func TestRegistry(t *testing.T) {
 	if a, err := Detect("x.a"); err != nil || a.Name() != "a" {
 		t.Errorf("Detect(x.a) = %v, %v", a, err)
 	}
-	if _, err := Detect("x.c"); err == nil {
-		t.Error("an unrecognised path must be an error, not the generic adapter")
+	if _, err := Detect("x.c"); !errors.Is(err, ErrNoMatch) {
+		t.Errorf("an unrecognised path = %v, want ErrNoMatch and not the generic adapter", err)
 	}
 	if _, ok := Lookup(GenericName); !ok {
 		t.Error("generic adapter is not selectable by name")
@@ -71,7 +72,7 @@ func TestDetectRefusesToGuessBetweenAdapters(t *testing.T) {
 	both := func(string) bool { return true }
 	Register(fake{name: "a", detect: both})
 	Register(fake{name: "b", detect: both})
-	if _, err := Detect("x"); err == nil || !strings.Contains(err.Error(), "several") {
+	if _, err := Detect("x"); err == nil || errors.Is(err, ErrNoMatch) || !strings.Contains(err.Error(), "several") {
 		t.Errorf("Detect with two matching adapters = %v, want an ambiguity error", err)
 	}
 }
@@ -217,5 +218,150 @@ func TestPrepareKeepsCallerOptions(t *testing.T) {
 	in := Prepare(a, nil, completeFile(nil), nil, verification.Options{IntervalSlack: time.Second})
 	if in.Options.IntervalSlack != time.Second {
 		t.Error("Prepare dropped the caller's interval slack")
+	}
+}
+
+// --- baseline ---
+
+func runFile(root uint32, g models.GroundTruth) models.GroundTruthFile {
+	return models.GroundTruthFile{Events: g, RootPID: root}
+}
+
+func nullRun(extra ...models.GroundTruthEvent) models.GroundTruthFile {
+	g := models.GroundTruth{
+		ev(models.NetConnect, "api.example", 100, 0),
+		ev(models.FileRead, "/home/u/.cfg", 100, 0),
+		{Timestamp: t0, ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: 100},
+		ev(models.ProcessExec, "/bin/sh -c snapshot", 200, 100),
+		ev(models.FileRead, "/tmp/inside-the-command", 200, 100), // a descendant: not a rule
+	}
+	return runFile(100, append(g, extra...))
+}
+
+func TestCaptureKeepsOnlyWhatEveryRunDid(t *testing.T) {
+	a := fake{name: "f"}
+	r1 := nullRun(ev(models.NetConnect, "telemetry.example", 100, 0))
+	r2 := nullRun()
+	b, err := Capture(a, "1.2.3", []models.GroundTruthFile{r1, r2}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Agent != "f" || b.AgentVersion != "1.2.3" || b.Runs != 2 || b.Schema != BaselineSchema {
+		t.Errorf("header = %+v", b)
+	}
+	has := func(rs []Rule, typ models.ActionType, target string) bool {
+		for _, r := range rs {
+			if r.ActionType == typ && r.Target == target {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(b.Rules, models.NetConnect, "api.example") || !has(b.Rules, models.FileRead, "/home/u/.cfg") || !has(b.Rules, models.ProcessExec, "/bin/sh -c snapshot") {
+		t.Errorf("Rules = %+v, want the stable level-0 events and the command exec", b.Rules)
+	}
+	if has(b.Rules, models.FileRead, "/tmp/inside-the-command") {
+		t.Error("a descendant's event became a rule: the command already explains its subtree")
+	}
+	if has(b.Rules, models.NetConnect, "telemetry.example") || !has(b.Unstable, models.NetConnect, "telemetry.example") {
+		t.Errorf("an event seen in one run of two must be unstable and subtract nothing: rules=%+v unstable=%+v", b.Rules, b.Unstable)
+	}
+}
+
+func TestCaptureNormalizesBeforeAttributing(t *testing.T) {
+	a := fake{name: "f", norm: func(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
+		e.Target = strings.ReplaceAll(e.Target, "/tmp/claude-9999-cwd", "/tmp/claude-N-cwd")
+		return e, true
+	}}
+	r := runFile(100, models.GroundTruth{ev(models.FileWrite, "/tmp/claude-9999-cwd", 100, 0)})
+	b, err := Capture(a, "v", []models.GroundTruthFile{r}, t0)
+	if err != nil || len(b.Rules) != 1 || b.Rules[0].Target != "/tmp/claude-N-cwd" {
+		t.Errorf("Capture = %+v, %v, want the normalized target", b.Rules, err)
+	}
+}
+
+func TestCaptureRefusesWhatItCannotAttribute(t *testing.T) {
+	a := fake{name: "f"}
+	if _, err := Capture(a, "v", nil, t0); err == nil {
+		t.Error("no runs must be an error")
+	}
+	if _, err := Capture(a, "v", []models.GroundTruthFile{runFile(0, nil)}, t0); err == nil {
+		t.Error("a run with no root pid must be an error")
+	}
+}
+
+// The baseline matches exactly. A rule for one path must not explain another,
+// or a baseline becomes a place to hide.
+func TestPredicateMatchesExactly(t *testing.T) {
+	b := Baseline{Rules: []Rule{{models.FileWrite, "/home/u/.cfg"}}}
+	p := b.Predicate()
+	if !p(ev(models.FileWrite, "/home/u/.cfg", 1, 0)) {
+		t.Error("an exact rule did not match")
+	}
+	for _, e := range []models.GroundTruthEvent{
+		ev(models.FileWrite, "/home/u/.cfg2", 1, 0),
+		ev(models.FileWrite, "/home/u/", 1, 0),
+		ev(models.FileRead, "/home/u/.cfg", 1, 0),
+		ev(models.NetConnect, "/home/u/.cfg", 1, 0),
+	} {
+		if p(e) {
+			t.Errorf("rule matched %v", e)
+		}
+	}
+	if (Baseline{}).Predicate()(ev(models.FileWrite, "/x", 1, 0)) {
+		t.Error("an empty baseline explained something")
+	}
+}
+
+func TestBaselineSurvivesTheDiskAndRejectsBadFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "b.json")
+	want := Baseline{Schema: BaselineSchema, Agent: "f", AgentVersion: "1", Captured: t0, Runs: 3, Rules: []Rule{{models.NetConnect, "h"}}}
+	if err := SaveBaseline(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadBaseline(path)
+	if err != nil || got.Agent != "f" || got.Runs != 3 || len(got.Rules) != 1 || !got.Captured.Equal(t0) {
+		t.Errorf("round trip = %+v, %v", got, err)
+	}
+	for name, body := range map[string]string{
+		"wrong schema": `{"schema":99,"agent":"f"}`,
+		"no agent":     `{"schema":1}`,
+		"not json":     `nope`,
+	} {
+		p := filepath.Join(dir, name)
+		_ = os.WriteFile(p, []byte(body), 0o644)
+		if _, err := LoadBaseline(p); err == nil {
+			t.Errorf("%s: LoadBaseline accepted it", name)
+		}
+	}
+	if _, err := LoadBaseline(filepath.Join(dir, "missing")); err == nil {
+		t.Error("a missing file must be an error")
+	}
+}
+
+// End to end: with the baseline, the harness's own level-0 activity is not an
+// omission, and an action outside it still is.
+func TestBaselineLetsAnHonestRunVerifyWithoutHidingAnything(t *testing.T) {
+	a := fake{name: "f", model: ProcessModel{ExitsClaimed: false}}
+	b, err := Capture(a, "v", []models.GroundTruthFile{nullRun()}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}}}
+	harness := nullRun().Events
+
+	honest := models.GroundTruthFile{Events: harness, RootPID: 100, Coverage: cov}
+	if v := verification.Verify(Prepare(a, nil, honest, b.Predicate(), verification.Options{})); v.Outcome != verification.OutcomeFaithful {
+		t.Errorf("harness activity with its baseline: outcome = %s, unrecorded = %v", v.Outcome, v.Unrecorded)
+	}
+	if v := verification.Verify(Prepare(a, nil, honest, nil, verification.Options{})); v.Outcome != verification.OutcomeNotFaithful {
+		t.Errorf("harness activity with no baseline: outcome = %s, want NOT FAITHFUL", v.Outcome)
+	}
+
+	sneaky := models.GroundTruthFile{Events: append(append(models.GroundTruth{}, harness...), ev(models.FileWrite, "/home/u/.ssh/authorized_keys", 100, 0)), RootPID: 100, Coverage: cov}
+	v := verification.Verify(Prepare(a, nil, sneaky, b.Predicate(), verification.Options{}))
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "/home/u/.ssh/authorized_keys" {
+		t.Errorf("an action outside the baseline: outcome = %s, unrecorded = %v", v.Outcome, v.Unrecorded)
 	}
 }
