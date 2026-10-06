@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe"
 	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
@@ -62,7 +62,14 @@ func resolveSingleIPv4(t *testing.T, host string) (string, error) {
 	return "", fmt.Errorf("no IPv4 address found for %s", host)
 }
 
-func runTier5MockAgent(t *testing.T, attack string) (models.Trajectory, models.GroundTruth) {
+// runTier5MockAgent captures a curl POST over TLS with the net probe and
+// content capture, and returns the capture with a hand-built trajectory that
+// claims it. The shell execs curl, so curl keeps the shell's pid: the request is
+// the agent's own action at level 0 and is aligned against a claim. A curl that
+// the agent forked instead would be a level-1 subtree, whose requests are
+// counted and attributed but never claimed (08 D3), and so could not carry a
+// request-hash claim at all.
+func runTier5MockAgent(t *testing.T, attack string) capture {
 	t.Helper()
 
 	libssl := findLibSSL(t)
@@ -91,7 +98,8 @@ func runTier5MockAgent(t *testing.T, attack string) (models.Trajectory, models.G
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start shell: %v", err)
 	}
-	
+	root := cmd.Process.Pid
+
 	if err := netObs.TrackPID(int32(cmd.Process.Pid)); err != nil {
 		t.Fatalf("netObs.TrackPID: %v", err)
 	}
@@ -134,46 +142,29 @@ func runTier5MockAgent(t *testing.T, attack string) (models.Trajectory, models.G
 		hashStr = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	}
 	
-	entry := models.TrajectoryEntry{
-		Timestamp:   time.Now().Add(-1 * time.Second), // Fake timestamp close to reality
-		ActionType:  models.NetRequest,
-		Target:      target,
-		RequestHash: &hashStr,
-	}
-	tr = append(tr, entry)
+	// Claims are in the order the connection happened: connect, then request.
+	// The alignment is by position within the net lane, so the claim order has
+	// to be the real order.
+	tr = append(tr,
+		models.TrajectoryEntry{Timestamp: time.Now().Add(-2 * time.Second), ActionType: models.NetConnect, Target: "example.com"},
+		models.TrajectoryEntry{Timestamp: time.Now().Add(-1 * time.Second), ActionType: models.NetRequest, Target: target, RequestHash: &hashStr},
+	)
 
-	tr = append(tr, models.TrajectoryEntry{
-		Timestamp:  time.Now().Add(-2 * time.Second),
-		ActionType: models.NetConnect,
-		Target:     "example.com",
-	})
-
-	return tr, g
+	return capture{tr: tr, g: g, root: root, cov: coverageOf(map[string]probe.CoverageReporter{"net": netObs})}
 }
 
 func TestTier5_E2E_NetRequest_Content_Faithful(t *testing.T) {
 	skipUnprivileged(t)
-	tr, g := runTier5MockAgent(t, "")
-	
-	config := matching.Config{Delta: 10 * time.Second}
-	verdict := verification.Verify(tr, g, config)
-	if !verdict.Faithful {
-		t.Errorf("expected FAITHFUL verdict")
-		t.Logf("Unwitnessed: %d", len(verdict.Unwitnessed))
-		for _, e := range verdict.Unwitnessed {
-			t.Logf("  unwitnessed: %s %s", e.ActionType, e.Target)
-		}
-		t.Logf("Unrecorded: %d", len(verdict.Unrecorded))
-		for _, e := range verdict.Unrecorded {
-			t.Logf("  unrecorded: %s %s", e.ActionType, e.Target)
-		}
-		t.Logf("Mismatched: %d", len(verdict.Mismatched))
+	c := runTier5MockAgent(t, "")
+	g, tr := c.g, c.tr
+
+	verdict := c.verify(tr)
+	if verdict.Outcome != verification.OutcomeFaithful {
+		logVerdict(t, verdict)
 		for _, m := range verdict.Mismatched {
-			t.Logf("  mismatched: %s %s", m.Entry.ActionType, m.Entry.Target)
-			t.Logf("    entry hash: %v", m.Entry.RequestHash)
-			t.Logf("    event hash: %v", m.Event.RequestHash)
+			t.Logf("    entry hash: %v, event hash: %v", m.Entry.RequestHash, m.Event.RequestHash)
 		}
-		t.Fatalf("verdict was not faithful")
+		t.Fatalf("outcome = %s, want FAITHFUL", verdict.Outcome)
 	}
 
 	foundReq := false
@@ -206,12 +197,11 @@ func TestTier5_E2E_NetRequest_Content_Faithful(t *testing.T) {
 
 func TestTier5_E2E_NetRequest_Content_Substitution(t *testing.T) {
 	skipUnprivileged(t)
-	tr, g := runTier5MockAgent(t, "substitution")
+	c := runTier5MockAgent(t, "substitution")
 
-	config := matching.Config{Delta: 10 * time.Second}
-	verdict := verification.Verify(tr, g, config)
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL verdict after substituting the RequestHash")
+	verdict := c.verify(c.tr)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after substituting the RequestHash", verdict.Outcome)
 	}
 
 	foundMismatch := false
@@ -224,12 +214,7 @@ func TestTier5_E2E_NetRequest_Content_Substitution(t *testing.T) {
 	}
 	if !foundMismatch {
 		t.Errorf("expected Mismatched NetRequest")
-		for _, e := range verdict.Unwitnessed {
-			t.Logf("  unwitnessed: %s %s", e.ActionType, e.Target)
-		}
-		for _, e := range verdict.Unrecorded {
-			t.Logf("  unrecorded: %s %s", e.ActionType, e.Target)
-		}
+		logVerdict(t, verdict)
 		t.FailNow()
 	}
 }

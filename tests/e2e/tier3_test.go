@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	"github.com/agent-trace/agent-trace/pkg/probe/proc"
 	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
@@ -23,7 +23,7 @@ const tier3FetchURL = "https://example.com"
 // additionally fetches https://example.com via curl (--fetch-url flag).
 // It returns the agent's self-reported trajectory alongside the merged
 // ground truth from all three probes.
-func runTier3Agent(t *testing.T, extraArgs ...string) (models.Trajectory, models.GroundTruth) {
+func runTier3Agent(t *testing.T, extraArgs ...string) capture {
 	t.Helper()
 
 	binPath := buildSimAgent(t)
@@ -134,49 +134,42 @@ func runTier3Agent(t *testing.T, extraArgs ...string) (models.Trajectory, models
 		t.Fatalf("ParseTrajectory: %v", err)
 	}
 
-	return tr, g
-}
-
-func tier3Config() matching.Config {
-	// Use a generous delta: network events may arrive later due to kernel
-	// scheduling and DNS resolution latency.
-	return matching.Config{Delta: 10 * time.Second}
+	return capture{
+		tr: tr, g: g, root: cmd.Process.Pid,
+		cov: coverageOf(map[string]probe.CoverageReporter{"fs": fsObs, "proc": procObs, "net": netObs}),
+	}
 }
 
 func TestTier3_E2E_Faithful(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier3Agent(t)
+	c := runTier3Agent(t)
 
 	// Verify that the run produced at least one NetConnect ground-truth event.
 	var sawNetEvent bool
-	for _, e := range g {
+	for _, e := range c.g {
 		if e.ActionType == models.NetConnect {
 			sawNetEvent = true
 			break
 		}
 	}
 	if !sawNetEvent {
-		t.Fatalf("expected at least one NetConnect ground-truth event from net probe (got %d total events)", len(g))
+		t.Fatalf("expected at least one NetConnect ground-truth event from net probe (got %d total events)", len(c.g))
 	}
 
-	verdict := verification.Verify(tr, g, tier3Config())
-	if !verdict.Faithful {
-		t.Errorf("expected FAITHFUL verdict for the honest mixed trajectory")
-		logVerdict(t, verdict)
-	}
+	requireFaithful(t, c.verify(c.tr))
 }
 
 func TestTier3_E2E_NotFaithful_NetOmission(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier3Agent(t)
+	c := runTier3Agent(t)
 
 	// Drop the NetConnect entry from the trajectory.  The net probe still
 	// recorded the connection, so it should surface as Unrecorded.
-	filtered := tr[:0:0]
+	filtered := c.tr[:0:0]
 	dropped := false
-	for _, e := range tr {
+	for _, e := range c.tr {
 		if !dropped && e.ActionType == models.NetConnect {
 			dropped = true
 			continue
@@ -187,9 +180,9 @@ func TestTier3_E2E_NotFaithful_NetOmission(t *testing.T) {
 		t.Fatal("no NetConnect entry in trajectory to drop — ensure --fetch-url produced one")
 	}
 
-	verdict := verification.Verify(filtered, g, tier3Config())
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL after dropping the NetConnect trajectory entry")
+	verdict := c.verify(filtered)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after dropping the NetConnect trajectory entry", verdict.Outcome)
 	}
 	found := false
 	for _, e := range verdict.Unrecorded {
@@ -206,7 +199,7 @@ func TestTier3_E2E_NotFaithful_NetOmission(t *testing.T) {
 func TestTier3_E2E_NotFaithful_NetFabrication(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier3Agent(t)
+	c := runTier3Agent(t)
 
 	// Add a NetConnect entry for a host we never contacted.  There is no
 	// ground-truth counterpart, so it should surface as Unwitnessed.
@@ -215,11 +208,11 @@ func TestTier3_E2E_NotFaithful_NetFabrication(t *testing.T) {
 		ActionType: models.NetConnect,
 		Target:     "ghost.example.invalid",
 	}
-	mutated := append(append(models.Trajectory{}, tr...), ghost)
+	mutated := append(append(models.Trajectory{}, c.tr...), ghost)
 
-	verdict := verification.Verify(mutated, g, tier3Config())
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL after fabricating a NetConnect entry")
+	verdict := c.verify(mutated)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after fabricating a NetConnect entry", verdict.Outcome)
 	}
 	found := false
 	for _, e := range verdict.Unwitnessed {

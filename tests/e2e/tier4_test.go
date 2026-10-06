@@ -3,13 +3,11 @@ package e2e
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/content"
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	"github.com/agent-trace/agent-trace/pkg/verification"
@@ -18,50 +16,18 @@ import (
 func TestTier4_E2E_NotFaithful_ContentSubstitution(t *testing.T) {
 	skipUnprivileged(t)
 
-	binPath := buildSimAgent(t)
-	workspace := t.TempDir()
-	trajectoryPath := filepath.Join(t.TempDir(), "trajectory.json")
-
-	observer, err := fs.New(fs.Config{
-		Path:         workspace,
-		PathFilter:   workspace,
-		EventBufSize: 4096,
-	})
-	if err != nil {
-		t.Fatalf("fs.New: %v", err)
-	}
-	observer.Start()
-
-	command := exec.Command(binPath, "--workspace", workspace, "--trajectory-out", trajectoryPath, "--file-only")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("simagent failed: %v\n%s", err, output)
+	c := runFileOnly(t)
+	if verdict := c.verify(c.tr); verdict.Outcome != verification.OutcomeFaithful {
+		logVerdict(t, verdict)
+		t.Fatalf("honest content-hashed trajectory was not faithful: %s", verdict.Outcome)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-	if err := observer.Stop(); err != nil {
-		t.Fatalf("observer.Stop: %v", err)
+	// simagent's first claim is the open of file1.txt, the file it writes.
+	target := c.tr[0].Target
+	if filepath.Base(target) != "file1.txt" {
+		t.Fatalf("first claim targets %s, want file1.txt", target)
 	}
-
-	var groundTruth models.GroundTruth
-	for event := range observer.Events() {
-		groundTruth = append(groundTruth, event)
-	}
-
-	data, err := os.ReadFile(trajectoryPath)
-	if err != nil {
-		t.Fatalf("read trajectory: %v", err)
-	}
-	trajectory, err := models.ParseTrajectory(data)
-	if err != nil {
-		t.Fatalf("ParseTrajectory: %v", err)
-	}
-
-	config := matching.Config{Delta: 2 * time.Second}
-	if verdict := verification.Verify(trajectory, groundTruth, config); !verdict.Faithful {
-		t.Fatalf("honest content-hashed trajectory was not faithful: %#v", verdict)
-	}
-
-	target := filepath.Join(workspace, "file1.txt")
+	trajectory := append(models.Trajectory{}, c.tr...)
 	mutated := false
 	for index := range trajectory {
 		entry := &trajectory[index]
@@ -77,16 +43,17 @@ func TestTier4_E2E_NotFaithful_ContentSubstitution(t *testing.T) {
 		t.Fatalf("no content-hashed FileClose entry for %s", target)
 	}
 
-	verdict := verification.Verify(trajectory, groundTruth, config)
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL verdict after substituting the content hash")
+	verdict := c.verify(trajectory)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after substituting the content hash", verdict.Outcome)
 	}
 	for _, pair := range verdict.Mismatched {
 		if pair.Entry.ActionType == models.FileClose && pair.Entry.Target == target {
 			return
 		}
 	}
-	t.Fatalf("content substitution for %s was not classified as Mismatched: %#v", target, verdict)
+	logVerdict(t, verdict)
+	t.Fatalf("content substitution for %s was not classified as Mismatched", target)
 }
 
 // TestTier4_E2E_RacedRewriteDropsStaleHash is the supplementary, timing-driven
@@ -160,50 +127,18 @@ func TestTier4_E2E_RacedRewriteDropsStaleHash(t *testing.T) {
 func TestTier4_E2E_NotFaithful_InputHashSubstitution(t *testing.T) {
 	skipUnprivileged(t)
 
-	binPath := buildSimAgent(t)
-	workspace := t.TempDir()
-	trajectoryPath := filepath.Join(t.TempDir(), "trajectory.json")
-
-	observer, err := fs.New(fs.Config{
-		Path:         workspace,
-		PathFilter:   workspace,
-		EventBufSize: 4096,
-	})
-	if err != nil {
-		t.Fatalf("fs.New: %v", err)
-	}
-	observer.Start()
-
-	command := exec.Command(binPath, "--workspace", workspace, "--trajectory-out", trajectoryPath, "--file-only")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("simagent failed: %v\n%s", err, output)
+	c := runFileOnly(t)
+	if verdict := c.verify(c.tr); verdict.Outcome != verification.OutcomeFaithful {
+		logVerdict(t, verdict)
+		t.Fatalf("honest content-hashed trajectory was not faithful: %s", verdict.Outcome)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-	if err := observer.Stop(); err != nil {
-		t.Fatalf("observer.Stop: %v", err)
+	// simagent's first claim is the open of file1.txt, the file it writes.
+	target := c.tr[0].Target
+	if filepath.Base(target) != "file1.txt" {
+		t.Fatalf("first claim targets %s, want file1.txt", target)
 	}
-
-	var groundTruth models.GroundTruth
-	for event := range observer.Events() {
-		groundTruth = append(groundTruth, event)
-	}
-
-	data, err := os.ReadFile(trajectoryPath)
-	if err != nil {
-		t.Fatalf("read trajectory: %v", err)
-	}
-	trajectory, err := models.ParseTrajectory(data)
-	if err != nil {
-		t.Fatalf("ParseTrajectory: %v", err)
-	}
-
-	config := matching.Config{Delta: 2 * time.Second}
-	if verdict := verification.Verify(trajectory, groundTruth, config); !verdict.Faithful {
-		t.Fatalf("honest content-hashed trajectory was not faithful: %#v", verdict)
-	}
-
-	target := filepath.Join(workspace, "file1.txt")
+	trajectory := append(models.Trajectory{}, c.tr...)
 	mutated := false
 	for index := range trajectory {
 		entry := &trajectory[index]
@@ -219,14 +154,15 @@ func TestTier4_E2E_NotFaithful_InputHashSubstitution(t *testing.T) {
 		t.Fatalf("no content-hashed FileOpen entry for %s", target)
 	}
 
-	verdict := verification.Verify(trajectory, groundTruth, config)
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL verdict after substituting the InputHash")
+	verdict := c.verify(trajectory)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after substituting the InputHash", verdict.Outcome)
 	}
 	for _, pair := range verdict.Mismatched {
 		if pair.Entry.ActionType == models.FileOpen && pair.Entry.Target == target {
 			return
 		}
 	}
-	t.Fatalf("InputHash substitution for %s was not classified as Mismatched: %#v", target, verdict)
+	logVerdict(t, verdict)
+	t.Fatalf("InputHash substitution for %s was not classified as Mismatched", target)
 }

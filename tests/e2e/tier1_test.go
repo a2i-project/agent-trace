@@ -7,11 +7,100 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
+
+// capture is one observed run: the agent's own trajectory, the ground truth the
+// probes produced, the agent's root pid, and the loss record the probes gave
+// when they stopped. It is what cmd/watch writes to disk, held in memory.
+type capture struct {
+	tr   models.Trajectory
+	g    models.GroundTruth
+	root int
+	cov  *models.Coverage
+}
+
+// coverageOf reads each probe's real loss counters, so a run that lost events
+// is INCONCLUSIVE here as it would be under cmd/watch. Call it after Stop,
+// which is when the observers snapshot their counters.
+func coverageOf(probes map[string]probe.CoverageReporter) *models.Coverage {
+	cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{}}
+	for name, r := range probes {
+		cov.Probes[name] = r.CaptureCoverage()
+	}
+	return cov
+}
+
+// verify runs the verifier on the capture with the given claims, which are the
+// agent's own unless a test mutates them.
+func (c capture) verify(claims models.Trajectory) verification.Verdict {
+	return c.verifyWith(claims, verification.Options{})
+}
+
+func (c capture) verifyWith(claims models.Trajectory, opts verification.Options) verification.Verdict {
+	return verification.Verify(verification.Input{
+		Claims:   claims,
+		Ground:   c.g,
+		RootPID:  uint32(c.root),
+		Coverage: c.cov,
+		Options:  opts,
+	})
+}
+
+// requireFaithful fails the test with the full findings when the run is not
+// FAITHFUL. INCONCLUSIVE fails too: an honest run must be provably honest.
+func requireFaithful(t *testing.T, v verification.Verdict) {
+	t.Helper()
+	if v.Outcome != verification.OutcomeFaithful {
+		t.Errorf("outcome = %s, want FAITHFUL", v.Outcome)
+		logVerdict(t, v)
+	}
+}
+
+// runFileOnly runs simagent --file-only with the fs probe alone, the Tier 1 and
+// Tier 4 setup. The agent is the root: every file event carries its pid.
+func runFileOnly(t *testing.T) capture {
+	t.Helper()
+	binPath := buildSimAgent(t)
+	workspace := t.TempDir()
+	trajectoryPath := filepath.Join(t.TempDir(), "trajectory.json")
+
+	obs, err := fs.New(fs.Config{Path: workspace, PathFilter: workspace, EventBufSize: 4096})
+	if err != nil {
+		t.Fatalf("fs.New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(200 * time.Millisecond)
+
+	cmd := exec.Command(binPath, "--workspace", workspace, "--trajectory-out", trajectoryPath, "--file-only")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("simagent failed: %v\n%s", err, out)
+	}
+	root := cmd.Process.Pid
+
+	// Give the kernel and probe a moment to queue and process events.
+	time.Sleep(500 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("obs.Stop: %v", err)
+	}
+	var g models.GroundTruth
+	for e := range obs.Events() {
+		g = append(g, e)
+	}
+
+	data, err := os.ReadFile(trajectoryPath)
+	if err != nil {
+		t.Fatalf("read trajectory: %v", err)
+	}
+	tr, err := models.ParseTrajectory(data)
+	if err != nil {
+		t.Fatalf("models.ParseTrajectory: %v", err)
+	}
+	return capture{tr: tr, g: g, root: root, cov: coverageOf(map[string]probe.CoverageReporter{"fs": obs})}
+}
 
 func skipUnprivileged(t *testing.T) {
 	t.Helper()
@@ -35,183 +124,55 @@ func buildSimAgent(t *testing.T) string {
 
 func TestTier1_E2E_Faithful(t *testing.T) {
 	skipUnprivileged(t)
-
-	binPath := buildSimAgent(t)
-	workspace := t.TempDir()
-	trajectoryPath := filepath.Join(t.TempDir(), "trajectory.json")
-
-	// 1. Start the FS probe (Observer) on the workspace.
-	obs, err := fs.New(fs.Config{
-		Path:         workspace,
-		PathFilter:   workspace,
-		EventBufSize: 4096,
-		// We could set PIDFilter, but the subprocess hasn't started yet.
-		// Since workspace is a new TempDir, there's no interference.
-	})
-	if err != nil {
-		t.Fatalf("fs.New: %v", err)
+	c := runFileOnly(t)
+	if len(c.g) == 0 {
+		t.Fatal("the fs probe observed nothing")
 	}
-	obs.Start()
-
-	// 2. Run the simagent.
-	cmd := exec.Command(binPath, "--workspace", workspace, "--trajectory-out", trajectoryPath, "--file-only")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("simagent failed: %v\n%s", err, string(out))
-	}
-
-	// Give the kernel and probe a moment to queue and process events.
-	time.Sleep(500 * time.Millisecond)
-
-	// 3. Stop the observer and collect ground truth.
-	if err := obs.Stop(); err != nil {
-		t.Fatalf("obs.Stop: %v", err)
-	}
-
-	var g models.GroundTruth
-	for e := range obs.Events() {
-		// On some filesystems (tmpfs), directory events like DELETE resolve to
-		// the parent directory rather than the target file. We normalize here
-		// for the 1-to-1 matching if needed, though simagent also works in TempDir.
-		// For simplicity, we just take the events as is.
-		g = append(g, e)
-	}
-
-	// 4. Ingest the trajectory (F1.3).
-	data, err := os.ReadFile(trajectoryPath)
-	if err != nil {
-		t.Fatalf("failed to read trajectory: %v", err)
-	}
-	tr, err := models.ParseTrajectory(data)
-	if err != nil {
-		t.Fatalf("models.ParseTrajectory: %v", err)
-	}
-
-	// 5. Verify
-	cfg := matching.Config{
-		Delta: 2 * time.Second, // Generous delta for e2e
-	}
-	verdict := verification.Verify(tr, g, cfg)
-
-	if !verdict.Faithful {
-		t.Errorf("expected FAITHFUL verdict, got NOT FAITHFUL")
-		t.Logf("Unwitnessed: %d", len(verdict.Unwitnessed))
-		for _, e := range verdict.Unwitnessed {
-			t.Logf("  %s %s", e.ActionType, e.Target)
-		}
-		t.Logf("Unrecorded: %d", len(verdict.Unrecorded))
-		for _, e := range verdict.Unrecorded {
-			t.Logf("  %s %s", e.ActionType, e.Target)
-		}
-		t.Logf("Mismatched: %d", len(verdict.Mismatched))
-	}
+	requireFaithful(t, c.verify(c.tr))
 }
 
 func TestTier1_E2E_NotFaithful_Omission(t *testing.T) {
 	skipUnprivileged(t)
+	c := runFileOnly(t)
 
-	binPath := buildSimAgent(t)
-	workspace := t.TempDir()
-	trajectoryPath := filepath.Join(t.TempDir(), "trajectory.json")
-
-	// 1. Start probe
-	obs, err := fs.New(fs.Config{
-		Path:       workspace,
-		PathFilter: workspace,
-	})
-	if err != nil {
-		t.Fatalf("fs.New: %v", err)
+	// Drop the first claim: the agent did something it does not report.
+	dropped := c.tr[0]
+	verdict := c.verify(c.tr[1:])
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL due to omission", verdict.Outcome)
 	}
-	obs.Start()
-
-	// 2. Run agent
-	cmd := exec.Command(binPath, "--workspace", workspace, "--trajectory-out", trajectoryPath, "--file-only")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("simagent failed: %v", err)
+	found := false
+	for _, e := range verdict.Unrecorded {
+		if e.ActionType == dropped.ActionType && e.Target == dropped.Target {
+			found = true
+		}
 	}
-
-	time.Sleep(200 * time.Millisecond)
-	_ = obs.Stop()
-
-	var g models.GroundTruth
-	for e := range obs.Events() {
-		g = append(g, e)
-	}
-
-	// 4. Ingest and mutate (Omission Attack)
-	data, _ := os.ReadFile(trajectoryPath)
-	tr, _ := models.ParseTrajectory(data)
-
-	// Drop the first entry to simulate omission
-	if len(tr) > 0 {
-		tr = tr[1:]
-	}
-
-	// 5. Verify
-	cfg := matching.Config{Delta: 2 * time.Second}
-	verdict := verification.Verify(tr, g, cfg)
-
-	if verdict.Faithful {
-		t.Errorf("expected NOT FAITHFUL verdict due to omission")
-	}
-	if len(verdict.Unrecorded) == 0 {
-		t.Errorf("expected at least one Unrecorded event")
+	if !found {
+		t.Errorf("dropped claim %s %s not among the Unrecorded events", dropped.ActionType, dropped.Target)
+		logVerdict(t, verdict)
 	}
 }
 
 func TestTier1_E2E_NotFaithful_Fabrication(t *testing.T) {
 	skipUnprivileged(t)
+	c := runFileOnly(t)
 
-	binPath := buildSimAgent(t)
-	workspace := t.TempDir()
-	trajectoryPath := filepath.Join(t.TempDir(), "trajectory.json")
-
-	// 1. Start probe
-	obs, err := fs.New(fs.Config{
-		Path:       workspace,
-		PathFilter: workspace,
-	})
-	if err != nil {
-		t.Fatalf("fs.New: %v", err)
-	}
-	obs.Start()
-
-	// 2. Run agent
-	cmd := exec.Command(binPath, "--workspace", workspace, "--trajectory-out", trajectoryPath, "--file-only")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("simagent failed: %v\n%s", err, string(out))
-	}
-
-	time.Sleep(200 * time.Millisecond)
-	_ = obs.Stop()
-
-	var g models.GroundTruth
-	for e := range obs.Events() {
-		g = append(g, e)
-	}
-
-	// 4. Ingest and mutate (Fabrication Attack): insert an entry for a file
-	// open that never happened. The path is inside the tracked workspace, so a
-	// real open would have been observed; since it wasn't, the entry has no
-	// ground-truth counterpart and lands in Unwitnessed.
-	data, _ := os.ReadFile(trajectoryPath)
-	tr, _ := models.ParseTrajectory(data)
-	if len(tr) == 0 {
-		t.Fatal("simagent produced an empty trajectory")
-	}
-
+	// Fabrication: a claim for a file open that never happened. The path is
+	// inside the watched workspace, so a real open would have been observed.
 	ghost := models.TrajectoryEntry{
-		Timestamp:  tr[0].Timestamp.Add(time.Millisecond),
+		Timestamp:  c.tr[0].Timestamp.Add(time.Millisecond),
 		ActionType: models.FileOpen,
-		Target:     filepath.Join(workspace, "ghost.txt"),
+		Target:     "/nonexistent/ghost.txt",
 	}
-	tr = append(tr, ghost)
-
-	// 5. Verify
-	cfg := matching.Config{Delta: 2 * time.Second}
-	verdict := verification.Verify(tr, g, cfg)
-
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL verdict due to fabricated entry")
+	for _, e := range c.tr {
+		if e.ActionType == models.FileOpen {
+			ghost.Target = filepath.Join(filepath.Dir(e.Target), "ghost.txt")
+			break
+		}
+	}
+	verdict := c.verify(append(append(models.Trajectory{}, c.tr...), ghost))
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL due to the fabricated entry", verdict.Outcome)
 	}
 	found := false
 	for _, e := range verdict.Unwitnessed {
@@ -220,90 +181,57 @@ func TestTier1_E2E_NotFaithful_Fabrication(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("fabricated entry %s %s not in Unwitnessed set", ghost.ActionType, ghost.Target)
+		t.Errorf("fabricated entry %s %s not among the Unwitnessed claims", ghost.ActionType, ghost.Target)
+		logVerdict(t, verdict)
 	}
 }
 
+// Filename swap is target substitution (P3). The alignment pairs the swapped
+// claim with the event at the same position, so it is one Mismatched pair
+// naming the target, and neither a fabrication nor an omission.
 func TestTier1_E2E_NotFaithful_FilenameSwap(t *testing.T) {
 	skipUnprivileged(t)
+	c := runFileOnly(t)
 
-	binPath := buildSimAgent(t)
-	workspace := t.TempDir()
-	trajectoryPath := filepath.Join(t.TempDir(), "trajectory.json")
-
-	// 1. Start probe
-	obs, err := fs.New(fs.Config{
-		Path:       workspace,
-		PathFilter: workspace,
-	})
-	if err != nil {
-		t.Fatalf("fs.New: %v", err)
-	}
-	obs.Start()
-
-	// 2. Run agent
-	cmd := exec.Command(binPath, "--workspace", workspace, "--trajectory-out", trajectoryPath, "--file-only")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("simagent failed: %v\n%s", err, string(out))
-	}
-
-	time.Sleep(200 * time.Millisecond)
-	_ = obs.Stop()
-
-	var g models.GroundTruth
-	for e := range obs.Events() {
-		g = append(g, e)
-	}
-
-	// 4. Ingest and mutate (Substitution Attack at occurrence level): repoint
-	// one honest entry at a file the agent never touched, keeping its action
-	// type and timestamp. The Tier 1 filesystem probe records no content
-	// hashes, so this does not surface as Mismatched -- that needs Tier 4
-	// content verification. At occurrence level the swapped entry loses its
-	// ground-truth match (Unwitnessed) and the real event loses its entry
-	// (Unrecorded); that pair is the occurrence-level signature of T3.
-	data, _ := os.ReadFile(trajectoryPath)
-	tr, _ := models.ParseTrajectory(data)
-
-	realTarget := filepath.Join(workspace, "file1.txt")
-	swapTarget := filepath.Join(workspace, "decoy.txt")
-	swapped := false
-	for i := range tr {
-		if tr[i].Target == realTarget {
-			tr[i].Target = swapTarget
-			swapped = true
+	var realTarget string
+	for _, e := range c.tr {
+		if e.ActionType == models.FileOpen {
+			realTarget = e.Target
 			break
 		}
 	}
-	if !swapped {
-		t.Fatalf("no entry referencing %s to swap", realTarget)
+	if realTarget == "" {
+		t.Fatal("no file_open claim to swap")
 	}
-
-	// 5. Verify
-	cfg := matching.Config{Delta: 2 * time.Second}
-	verdict := verification.Verify(tr, g, cfg)
-
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL verdict due to filename swap")
-	}
-
-	foundUnwitnessed := false
-	for _, e := range verdict.Unwitnessed {
-		if e.Target == swapTarget {
-			foundUnwitnessed = true
+	swapTarget := filepath.Join(filepath.Dir(realTarget), "decoy.txt")
+	mutated := append(models.Trajectory{}, c.tr...)
+	for i := range mutated {
+		if mutated[i].ActionType == models.FileOpen && mutated[i].Target == realTarget {
+			mutated[i].Target = swapTarget
+			break
 		}
 	}
-	if !foundUnwitnessed {
-		t.Errorf("swapped entry %s not in Unwitnessed set", swapTarget)
-	}
 
-	foundUnrecorded := false
-	for _, e := range verdict.Unrecorded {
-		if e.Target == realTarget {
-			foundUnrecorded = true
+	verdict := c.verify(mutated)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL due to the filename swap", verdict.Outcome)
+	}
+	found := false
+	for _, p := range verdict.Mismatched {
+		if p.Entry.Target == swapTarget && p.Event.Target == realTarget {
+			for _, d := range p.Diffs {
+				if d == verification.DiffTarget {
+					found = true
+				}
+			}
 		}
 	}
-	if !foundUnrecorded {
-		t.Errorf("real event %s not in Unrecorded set", realTarget)
+	if !found {
+		t.Errorf("swap of %s for %s not reported as a target mismatch", realTarget, swapTarget)
+		logVerdict(t, verdict)
+	}
+	if len(verdict.Unwitnessed) != 0 || len(verdict.Unrecorded) != 0 {
+		t.Errorf("a substitution must not also read as a fabrication and an omission: unwitnessed=%d unrecorded=%d",
+			len(verdict.Unwitnessed), len(verdict.Unrecorded))
 	}
 }

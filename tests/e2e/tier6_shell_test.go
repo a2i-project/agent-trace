@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	"github.com/agent-trace/agent-trace/pkg/probe/proc"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 // runSimAgentShell runs simagent with --shell-cmd and no probes, returning its
@@ -99,8 +101,10 @@ func TestSimAgentShellCmd_OffByDefault(t *testing.T) {
 // level-1 process (the shell, child of the agent) and level-2 processes (what
 // the script runs, children of the shell), and a file written inside the
 // script must carry the pid of a descendant, not of the agent or the shell
-// claim itself. That tree is what Tier 6 step 5 attributes by. Attribution
-// logic is not asserted here, because it does not exist yet.
+// claim itself. That tree is what the verifier attributes by, so the test ends
+// by running the verifier on the capture: the honest trajectory is FAITHFUL
+// although the agent claimed one command and its subtree did a dozen things, and
+// each way of lying about that command is caught.
 func TestTier6_E2E_ShellCmdBuildsAForest(t *testing.T) {
 	skipUnprivileged(t)
 
@@ -228,5 +232,165 @@ func TestTier6_E2E_ShellCmdBuildsAForest(t *testing.T) {
 	}
 	if subWrites == 0 {
 		t.Errorf("no write events for %s; fs events: %v", sub, fsEvents)
+	}
+
+	verifyShellCapture(t, ws, trajectoryPath, agentPID, procEvents, fsEvents, fsObs, procObs)
+}
+
+// verifyShellCapture runs the verifier on the shell-command capture. The
+// subtree's events (the pipeline, the file writes, the subshell) are explained
+// by the one command the agent claimed. They are never compared against a claim.
+func verifyShellCapture(t *testing.T, ws, trajectoryPath string, agentPID uint32, procEvents, fsEvents []models.GroundTruthEvent, fsObs *fs.Observer, procObs *proc.Observer) {
+	t.Helper()
+	data, err := os.ReadFile(trajectoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := models.ParseTrajectory(data)
+	if err != nil {
+		t.Fatalf("ParseTrajectory: %v", err)
+	}
+	c := capture{
+		tr:   tr,
+		g:    append(append(models.GroundTruth{}, procEvents...), fsEvents...),
+		root: int(agentPID),
+		cov:  coverageOf(map[string]probe.CoverageReporter{"fs": fsObs, "proc": procObs}),
+	}
+	// The probes stamp events from their own clocks, so the claim's interval
+	// gets the slack a real trajectory would need (08 V6).
+	opts := verification.Options{IntervalSlack: 250 * time.Millisecond}
+
+	t.Run("honest", func(t *testing.T) {
+		v := c.verifyWith(c.tr, opts)
+		requireFaithful(t, v)
+		if v.Coverage.Explained < 5 {
+			t.Errorf("only %d events attributed to the claimed command's subtree, want the whole script's activity", v.Coverage.Explained)
+		}
+		if len(v.Coverage.UnexplainedSubtrees) != 0 {
+			t.Errorf("unexplained subtrees on an honest run: %d", len(v.Coverage.UnexplainedSubtrees))
+		}
+	})
+
+	// Omission: the agent runs the shell and does not say so. Everything the
+	// script did is left with no claim to explain it, and it cannot hide by
+	// happening in a subtree.
+	t.Run("omitted command", func(t *testing.T) {
+		v := c.verifyWith(nil, opts)
+		if v.Outcome != verification.OutcomeNotFaithful {
+			t.Fatalf("outcome = %s, want NOT FAITHFUL", v.Outcome)
+		}
+		if len(v.Coverage.UnexplainedSubtrees) == 0 {
+			t.Error("the unclaimed shell's subtree was not reported")
+		}
+		if len(v.Unrecorded) == 0 {
+			t.Error("the unclaimed shell's exec was not reported as unrecorded")
+		}
+	})
+
+	// A descendant's write cannot be claimed (D3): the agent did not do it, its
+	// child did. A claim for it has nothing at level 0 to align with.
+	t.Run("claiming a descendant's write", func(t *testing.T) {
+		claimed := append(models.Trajectory{}, c.tr...)
+		claimed = append(claimed, models.TrajectoryEntry{
+			Timestamp: c.tr[0].Timestamp, ActionType: models.FileWrite, Target: filepath.Join(ws, "upper.txt"),
+		})
+		v := c.verifyWith(claimed, opts)
+		if v.Outcome != verification.OutcomeNotFaithful {
+			t.Fatalf("outcome = %s, want NOT FAITHFUL", v.Outcome)
+		}
+		found := false
+		for _, e := range v.Unwitnessed {
+			if e.ActionType == models.FileWrite {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("the claimed write of a descendant is not Unwitnessed")
+		}
+	})
+
+	// Target substitution on the command: the agent says it ran something else.
+	t.Run("command substitution", func(t *testing.T) {
+		swapped := append(models.Trajectory{}, c.tr...)
+		for i := range swapped {
+			if swapped[i].ActionType == models.ProcessExec {
+				swapped[i].Target = "/bin/sh -c true"
+			}
+		}
+		v := c.verifyWith(swapped, opts)
+		if v.Outcome != verification.OutcomeNotFaithful {
+			t.Fatalf("outcome = %s, want NOT FAITHFUL", v.Outcome)
+		}
+		var sawTarget bool
+		for _, p := range v.Mismatched {
+			for _, d := range p.Diffs {
+				if d == verification.DiffTarget && p.Entry.ActionType == models.ProcessExec {
+					sawTarget = true
+				}
+			}
+		}
+		if !sawTarget {
+			t.Error("the substituted command is not reported as a target mismatch")
+		}
+	})
+
+	// Claim interval (D12): the claim says the command ran in a window that
+	// the observed exec is not inside. The pair stays and the claim is flagged.
+	t.Run("claim interval excludes the exec", func(t *testing.T) {
+		moved := append(models.Trajectory{}, c.tr...)
+		for i := range moved {
+			if moved[i].ActionType == models.ProcessExec && moved[i].End != nil {
+				start := moved[i].Timestamp.Add(-time.Hour)
+				end := start.Add(time.Second)
+				moved[i].Timestamp, moved[i].End = start, &end
+			}
+		}
+		v := c.verifyWith(moved, opts)
+		if v.Outcome != verification.OutcomeNotFaithful || len(v.OutsideInterval) == 0 {
+			t.Errorf("outcome = %s, outside interval = %d, want NOT FAITHFUL with the claim flagged", v.Outcome, len(v.OutsideInterval))
+		}
+	})
+}
+
+// The agent claims the commands it runs and not what they do (08 D3). wc's open
+// of the renamed file is wc's action, so it must not appear in the trajectory.
+func TestSimAgent_ClaimsWcAndNotWcsOwnOpen(t *testing.T) {
+	bin := buildSimAgent(t)
+	ws := t.TempDir()
+	out := filepath.Join(t.TempDir(), "trajectory.json")
+	if b, err := exec.Command(bin, "--workspace", ws, "--trajectory-out", out).CombinedOutput(); err != nil {
+		t.Fatalf("simagent: %v\n%s", err, b)
+	}
+	data, _ := os.ReadFile(out)
+	tr, err := models.ParseTrajectory(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawWc bool
+	for _, e := range tr {
+		if e.ActionType == models.ProcessExec && strings.Contains(e.Target, "wc") {
+			sawWc = true
+		}
+		if e.ActionType == models.FileOpen && strings.HasSuffix(e.Target, "file2.txt") {
+			t.Errorf("trajectory claims wc's own open of file2.txt: %+v", e)
+		}
+	}
+	if !sawWc {
+		t.Error("trajectory does not claim the wc command")
+	}
+}
+
+// A curl subprocess's request cannot be claimed, so asking simagent to claim it
+// is a usage error and not a trajectory that could never verify.
+func TestSimAgent_RejectsClaimingACurlSubtreeRequest(t *testing.T) {
+	bin := buildSimAgent(t)
+	cmd := exec.Command(bin, "--workspace", t.TempDir(), "--trajectory-out", filepath.Join(t.TempDir(), "t.json"),
+		"--fetch-url", "https://example.invalid/", "--fetch-via-curl", "--emit-net-request")
+	b, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("simagent accepted --emit-net-request with --fetch-via-curl")
+	}
+	if !strings.Contains(string(b), "D3") {
+		t.Errorf("error does not explain why: %s", b)
 	}
 }

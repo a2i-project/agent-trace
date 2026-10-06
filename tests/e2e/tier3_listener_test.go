@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe"
 	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
@@ -79,9 +79,13 @@ func TestTier3_E2E_ListenerIsCapabilityEvidence(t *testing.T) {
 
 	// The agent reports nothing. The listener must not make that unfaithful,
 	// and it must be counted.
-	v := verification.Verify(models.Trajectory{}, g, matching.Config{Delta: 10 * time.Second})
-	if !v.Faithful || len(v.Unrecorded) != 0 {
-		t.Errorf("listener made the run unfaithful: unrecorded = %v", v.Unrecorded)
+	// The test process is the agent: the probe tracks it, and the listener
+	// command is its child. No proc probe runs, so the child is outside the
+	// forest, which does not matter for an unclaimable event.
+	c := capture{g: g, root: os.Getpid(), cov: coverageOf(map[string]probe.CoverageReporter{"net": obs})}
+	v := c.verify(models.Trajectory{})
+	if v.Outcome != verification.OutcomeFaithful || len(v.Unrecorded) != 0 {
+		t.Errorf("listener made the run unfaithful: outcome = %s, unrecorded = %v", v.Outcome, v.Unrecorded)
 	}
 	if len(v.Capability) < 2 {
 		t.Errorf("Capability = %d, want the bind and the listen counted", len(v.Capability))
@@ -145,9 +149,10 @@ func TestTier3_E2E_UnixConnectIsCapabilityEvidence(t *testing.T) {
 	if !seen {
 		t.Fatalf("no net_unix_connect for %s; events: %v", sock, g)
 	}
-	v := verification.Verify(models.Trajectory{}, g, matching.Config{Delta: 10 * time.Second})
-	if !v.Faithful || len(v.Unrecorded) != 0 {
-		t.Errorf("a unix connect made the run unfaithful: unrecorded = %v", v.Unrecorded)
+	c := capture{g: g, root: os.Getpid(), cov: coverageOf(map[string]probe.CoverageReporter{"net": obs})}
+	v := c.verify(models.Trajectory{})
+	if v.Outcome != verification.OutcomeFaithful || len(v.Unrecorded) != 0 {
+		t.Errorf("a unix connect made the run unfaithful: outcome = %s, unrecorded = %v", v.Outcome, v.Unrecorded)
 	}
 	if len(v.Capability) == 0 {
 		t.Error("the unix connect was not counted as capability evidence")
