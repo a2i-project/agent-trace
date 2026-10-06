@@ -913,3 +913,22 @@ func TestVerify_ListenerClaimNeverCorroborates(t *testing.T) {
 		t.Error("a claim that no valid trajectory can make must not yield FAITHFUL")
 	}
 }
+
+// Fork records are structure for the tree builder. They must not become
+// Unrecorded findings (they are not claimable) and must not clutter the
+// capability list either, since there is one per fork.
+func TestVerify_ForkRecordsAreNeitherUnrecordedNorCapability(t *testing.T) {
+	now := time.Now()
+	g := models.GroundTruth{
+		{Timestamp: now, ActionType: models.ProcessFork, Target: "101", PID: 101, PPID: 100},
+		{Timestamp: now, ActionType: models.ProcessFork, Target: "102", PID: 102, PPID: 101},
+		{Timestamp: now, ActionType: models.NetListen, Target: "0.0.0.0:80"},
+	}
+	v := Verify(models.Trajectory{}, g, matching.Config{Delta: time.Second})
+	if !v.Faithful || len(v.Unrecorded) != 0 {
+		t.Errorf("fork records changed the verdict: faithful=%v unrecorded=%v", v.Faithful, v.Unrecorded)
+	}
+	if len(v.Capability) != 1 || v.Capability[0].ActionType != models.NetListen {
+		t.Errorf("Capability = %v, want only the listener", v.Capability)
+	}
+}

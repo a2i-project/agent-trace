@@ -92,7 +92,9 @@ func Verify(t models.Trajectory, g models.GroundTruth, cfg matching.Config) Verd
 	for j, event := range g {
 		if !event.ActionType.IsClaimable() {
 			matched[j] = true
-			v.Capability = append(v.Capability, event)
+			if !event.ActionType.IsStructural() {
+				v.Capability = append(v.Capability, event)
+			}
 		}
 	}
 

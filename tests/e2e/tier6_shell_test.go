@@ -124,7 +124,9 @@ func TestTier6_E2E_ShellCmdBuildsAForest(t *testing.T) {
 	// An external echo, not the shell builtin: a builtin in a pipeline runs in
 	// a forked subshell that never execs, so it would leave no exec record and
 	// no node in the tree (the open fork-record problem, 08 section 3.2).
-	script := "/bin/echo hi | tr a-z A-Z > {ws}/upper.txt; wc -l {ws}/upper.txt"
+	// ( ) forks a subshell that writes sub.txt without ever exec'ing: its
+	// pid has no exec record and is placed in the tree by a fork record.
+	script := "/bin/echo hi | tr a-z A-Z > {ws}/upper.txt; wc -l {ws}/upper.txt; ( echo sub > {ws}/sub.txt )"
 	cmd := exec.Command(bin, "--workspace", ws, "--trajectory-out", trajectoryPath, "--file-only", "--shell-cmd", script)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start simagent: %v", err)
@@ -150,15 +152,15 @@ func TestTier6_E2E_ShellCmdBuildsAForest(t *testing.T) {
 		fsEvents = append(fsEvents, e)
 	}
 
-	// Build the tree from exec records alone, as the verifier will.
+	// Build the tree from exec and fork records, as the verifier will.
 	parent := map[uint32]uint32{}
 	var shellPID uint32
 	for _, e := range procEvents {
-		if e.ActionType != models.ProcessExec || e.PID == 0 {
+		if (e.ActionType != models.ProcessExec && e.ActionType != models.ProcessFork) || e.PID == 0 {
 			continue
 		}
 		parent[e.PID] = e.PPID
-		if strings.HasPrefix(e.Target, "/bin/sh -c") && e.PPID == agentPID {
+		if e.ActionType == models.ProcessExec && strings.HasPrefix(e.Target, "/bin/sh -c") && e.PPID == agentPID {
 			shellPID = e.PID
 		}
 	}
@@ -207,5 +209,24 @@ func TestTier6_E2E_ShellCmdBuildsAForest(t *testing.T) {
 	}
 	if writers == 0 {
 		t.Errorf("no write events for %s; fs events: %v", target, fsEvents)
+	}
+
+	// The subshell's write has no exec record behind its pid. It must still
+	// land in the tree below the shell, which only fork records make possible.
+	sub := filepath.Join(ws, "sub.txt")
+	var subWrites int
+	for _, e := range fsEvents {
+		if e.Target != sub || (e.ActionType != models.FileWrite && e.ActionType != models.FileClose) {
+			continue
+		}
+		subWrites++
+		if _, known := parent[e.PID]; !known {
+			t.Errorf("%s on %s by pid %d, which is not in the tree at all", e.ActionType, sub, e.PID)
+		} else if level(e.PID) != 2 {
+			t.Errorf("%s on %s by pid %d at level %d, want a level-2 descendant of the shell", e.ActionType, sub, e.PID, level(e.PID))
+		}
+	}
+	if subWrites == 0 {
+		t.Errorf("no write events for %s; fs events: %v", sub, fsEvents)
 	}
 }

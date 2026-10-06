@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,6 +32,7 @@ import (
 const (
 	kindExec uint32 = 0
 	kindExit uint32 = 1
+	kindFork uint32 = 2
 )
 
 // Config controls the observer's behavior.
@@ -354,6 +356,23 @@ func (o *Observer) Stop() error {
 	return nil
 }
 
+// emitForkEdge sends a ProcessFork event: PID is the new process, PPID its
+// parent. The target is the child's pid, since a fork has no command line.
+func (o *Observer) emitForkEdge(hdr *bpfEventHdr) {
+	event := models.GroundTruthEvent{
+		Timestamp:  time.Unix(0, hdr.TsNs+o.bootOffsetNs),
+		ActionType: models.ProcessFork,
+		Target:     strconv.FormatUint(uint64(hdr.Pid), 10),
+		PID:        hdr.Pid,
+		PPID:       hdr.Ppid,
+	}
+	select {
+	case o.events <- event:
+	default:
+		o.dropped.Add(1)
+	}
+}
+
 func (o *Observer) readLoop() {
 	defer close(o.stopped)
 
@@ -388,6 +407,15 @@ func (o *Observer) readLoop() {
 			actionType = models.ProcessExec
 		case kindExit:
 			actionType = models.ProcessExit
+		case kindFork:
+			// A header-only record: the edge parent -> child, for the
+			// process tree. It has no command line, so it skips the payload
+			// handling below.
+			if o.cfg.CommandFilter != "" {
+				continue
+			}
+			o.emitForkEdge(&hdr)
+			continue
 		default:
 			continue
 		}

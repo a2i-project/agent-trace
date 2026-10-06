@@ -66,3 +66,19 @@ func TestListenerEventsAreValidGroundTruthButInvalidClaims(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessForkIsStructuralNotClaimable(t *testing.T) {
+	if !ProcessFork.IsValid() || ProcessFork.IsClaimable() || !ProcessFork.IsStructural() {
+		t.Errorf("ProcessFork: valid=%v claimable=%v structural=%v, want valid, unclaimable, structural",
+			ProcessFork.IsValid(), ProcessFork.IsClaimable(), ProcessFork.IsStructural())
+	}
+	for _, at := range []ActionType{NetBind, NetListen, NetUnixConnect, ProcessExec, FileOpen} {
+		if at.IsStructural() {
+			t.Errorf("%s must not be structural", at)
+		}
+	}
+	entry := TrajectoryEntry{Timestamp: time.Now(), ActionType: ProcessFork, Target: "1"}
+	if err := entry.Validate(); err == nil {
+		t.Error("a trajectory may not claim a fork")
+	}
+}

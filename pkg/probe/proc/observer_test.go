@@ -601,7 +601,11 @@ func TestObserver_ThreadsAreNotTracked(t *testing.T) {
 	if err := obs.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	for range obs.Events() {
+	// A thread is not a child process: 64 threads must leave no fork record.
+	for e := range obs.Events() {
+		if e.ActionType == models.ProcessFork {
+			t.Errorf("thread creation produced a fork record: %+v", e)
+		}
 	}
 }
 
@@ -754,5 +758,94 @@ func TestObserver_EventsCarryProcessIdentity(t *testing.T) {
 	}
 	if len(childPIDs) != 2 {
 		t.Errorf("echo events came from %d distinct pids, want 2", len(childPIDs))
+	}
+}
+
+// TestObserver_ForkRecordsPlaceProcessesThatNeverExec is the reason fork
+// records exist. A subshell runs a builtin without exec, so it has no exec
+// record, yet it is a child of the shell and may write files. Every process the
+// tree contains must be reachable from the root through fork edges, whether or
+// not it execs, and each exec'd child must be preceded by its own fork edge.
+func TestObserver_ForkRecordsPlaceProcessesThatNeverExec(t *testing.T) {
+	skipUnprivileged(t)
+
+	nonce := fmt.Sprintf("agenttrace-fork-%d", time.Now().UnixNano())
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	// ( ... ) forks a subshell that never execs. /bin/echo forks and execs.
+	// The trailing builtin keeps the shell from exec'ing its last command.
+	cmd := exec.Command("/bin/sh", "-c", "( : "+nonce+" ); /bin/echo "+nonce+"; :")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	shPID := uint32(cmd.Process.Pid)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	events := collect(obs)
+	forkedFrom := map[uint32]uint32{} // child -> parent, from fork records
+	execd := map[uint32]bool{}
+	var echoPID uint32
+	for i, e := range events {
+		switch e.ActionType {
+		case models.ProcessFork:
+			if e.PID == 0 || e.PPID == 0 {
+				t.Errorf("fork record without pid or ppid: %+v", e)
+			}
+			if _, dup := forkedFrom[e.PID]; dup {
+				t.Errorf("two fork records for pid %d", e.PID)
+			}
+			forkedFrom[e.PID] = e.PPID
+		case models.ProcessExec:
+			execd[e.PID] = true
+			if strings.HasPrefix(e.Target, "/bin/echo ") && strings.Contains(e.Target, nonce) {
+				echoPID = e.PID
+				if _, ok := forkedFrom[e.PID]; !ok {
+					t.Errorf("event %d: echo %d exec'd with no earlier fork record", i, e.PID)
+				}
+			}
+		}
+	}
+	if echoPID == 0 {
+		t.Fatalf("no exec for echo; events: %v", events)
+	}
+	if forkedFrom[echoPID] != shPID {
+		t.Errorf("echo %d forked from %d, want the shell %d", echoPID, forkedFrom[echoPID], shPID)
+	}
+	var subshell uint32
+	for child, parent := range forkedFrom {
+		if parent == shPID && !execd[child] {
+			subshell = child
+		}
+	}
+	if subshell == 0 {
+		t.Errorf("no fork record for a child of the shell that never exec'd (the subshell); forks: %v", forkedFrom)
+	}
+	// Every fork edge must lead back to the root.
+	for child := range forkedFrom {
+		pid := child
+		for depth := 0; pid != uint32(os.Getpid()); depth++ {
+			parent, ok := forkedFrom[pid]
+			if !ok || depth > 16 {
+				if pid != shPID { // the shell's own parent is the root, whose fork predates tracking
+					t.Errorf("pid %d does not lead back to the root %d through fork records", child, os.Getpid())
+				}
+				break
+			}
+			pid = parent
+		}
 	}
 }

@@ -13,6 +13,7 @@ char LICENSE[] SEC("license") = "GPL";
 
 #define KIND_EXEC 0
 #define KIND_EXIT 1
+#define KIND_FORK 2 // a tracked process created a child; header only, no filename or args
 
 #define path_is(fn, literal) __extension__({ \
 	int _match = 1; \
@@ -219,6 +220,18 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	struct proc_info *p = bpf_map_lookup_elem(&tracked_pids, &parent_pid);
 	if (!p)
 		return 0;
+
+	// Record the edge parent -> child. An exec record only exists for a child
+	// that execs, and a subshell or a pipeline element running a builtin forks
+	// without exec, so without this record its activity could not be tied to
+	// the tree (08 section 3.2). A lost record is counted like any other.
+	struct event_hdr fh = {};
+	fh.pid = child_pid;
+	fh.ppid = parent_pid;
+	fh.kind = KIND_FORK;
+	fh.ts_ns = bpf_ktime_get_ns();
+	if (bpf_ringbuf_output(&events, &fh, sizeof(fh), 0))
+		count_drop();
 
 	struct proc_info child = {0};
 	if (p->is_shell && p->is_toplevel) {
