@@ -1,123 +1,88 @@
 # Agent-Trace: Trajectory Faithfulness Verifier
 
-[![Tests](https://github.com/ASSERT-KTH/agent-trace/actions/workflows/test.yml/badge.svg)](https://github.com/ASSERT-KTH/agent-trace/actions/workflows/test.yml)
+[![Tests](https://github.com/a2i-project/agent-trace/actions/workflows/test.yml/badge.svg)](https://github.com/a2i-project/agent-trace/actions/workflows/test.yml)
 
-AI agents self-report their actions through trajectories. But what if the agent is compromised, hallucinating, or actively hiding malicious actions?
+AI agents report what they did in a trajectory log. If the agent is compromised, hallucinating or hiding something, that log cannot be trusted by itself.
 
-**Agent-Trace** is a verification engine that assesses the *faithfulness* of AI agent trajectories by cross-referencing their self-reported logs against independent, host-level OS probes.
+**Agent-Trace** checks a trajectory against what the host actually observed. Probes in the kernel record file, process and network activity independently of the agent, and a verifier compares that record with the agent's claims.
 
-## How it works
+## How verification works
 
-An agent produces a **trajectory**: a JSON log of the actions it claims to have taken (file opens, writes, process executions, exits, and so on). Independently, host-level probes observe what actually happened on the system and produce a **ground truth** log of the same shape.
+1. **Observe.** `watch` runs the agent and records a **ground truth**: every file, process and network event, each stamped with the process that caused it, plus a record of anything the probes may have lost.
+2. **Build the process tree.** Events are attributed by process ancestry, never by timestamp. What the agent does itself is level 0. Each command it starts is the root of a subtree, and everything that command's descendants do belongs to that command.
+3. **Run two checks.**
+   - *Alignment:* the agent's claims are aligned, in order, against the top-level actions the agent itself took (its own events plus each command it started). A fabricated claim, an unreported action, and a claim whose target or content differs from what happened are reported separately.
+   - *Coverage:* every observed event must be explained by a claim, by a claimed command's subtree, or by the harness baseline. A command nothing claims is reported with everything beneath it.
+4. **Conclude.**
 
-`pkg/verification` compares the two and classifies every entry into one of four sets:
+| Outcome | Exit code | Meaning |
+|---|---|---|
+| FAITHFUL | 0 | Both checks passed and the capture lost nothing. |
+| NOT FAITHFUL | 1 | A discrepancy was found. Marked advisory if the capture also lost events. |
+| INCONCLUSIVE | 2 | No discrepancy found, but FAITHFUL cannot be asserted: events were lost, the capture has no coverage record or root pid, or an event could not be attributed. |
 
-- **Corroborated** — a trajectory entry matches an observed ground-truth event.
-- **Unwitnessed** — the agent claims an action no probe observed (fabrication).
-- **Unrecorded** — a probe observed an action the agent never reported (omission).
-- **Mismatched** — an action is claimed and observed, but details disagree (e.g. a different exit code or content hash), which surfaces substitution attacks.
+The agent claims commands, not what they do. A listener a command opens, or a connection it makes, is counted as capability evidence and shown in the report, but it is not a claim to corroborate.
 
-A trajectory is **faithful** only when every entry corroborates and nothing is unrecorded.
+## What it does not prove
 
-Matching (`pkg/matching`) is greedy closest-timestamp, one-to-one within a configurable time window, and enforces strict absolute-path equality for process execution to prevent substitution attacks (e.g., masquerading `/tmp/ls` as `ls`).
+A faithful verdict says that the agent's top-level claims are true and that nothing observable happened outside them. It does not say that what a claimed command did was benign. An agent that writes `helper.sh` and runs it produces a fully faithful trajectory whatever the script does. The report makes that visible (the command's subtree and capability evidence are listed), but judging it is out of scope. The probes and the host kernel are the trust boundary: an attacker with root on the host can defeat them.
 
-Verification is built up in tiers of increasing probe coverage:
+## Status
 
-- **Tier 0** — core data model, matching, and verification logic, exercised with synthetic trajectories and ground truth.
-- **Tier 1** — filesystem probe (`pkg/probe/fs`, via `fanotify`).
-- **Tier 2** — process probe (`pkg/probe/proc`, via an in-kernel eBPF program on `execve`/`exit_group`/`sched_process_exit`), capturing exec argv, exit codes, and in-kernel timestamps.
-- **Tier 3** — network probe (`pkg/probe/net`), occurrence-level: an eBPF program at the socket layer records peer IP/port and, when the connection is TLS, the ClientHello SNI hostname, without decrypting anything.
-- **Tier 4** — content-level verification: SHA-256 of a file's initial contents is recorded at `FAN_OPEN` and final contents at `FAN_CLOSE_WRITE`; for TLS traffic, a `SSL_write` uprobe captures request plaintext and the HTTP Host header, so the network probe can also compare the request body hash and canonical URL (not just the hostname).
+| Component | State |
+|---|---|
+| Filesystem probe (`fanotify`): opens, writes, closes, renames, deletes, with SHA-256 of contents | done |
+| Process probe (eBPF): exec, exit code, fork edges, parent pid | done |
+| Network probe (eBPF): connections with TLS SNI, request body hash via an `SSL_write` uprobe, listeners and Unix sockets | done |
+| Verification: process tree, alignment, coverage, baseline hook, outcome rules | done |
+| Real-agent adapters (Claude Code, Gemini), measured harness baseline | planned |
+| Attack generator suite | planned |
 
-The standalone attack-generator suite (doc's Tier 5) and real-agent integration (Tier 6) are planned; see `docs/plan/03_tiers_3_to_6.md`.
-
-## Architecture
-
-```
-pkg/models        Shared types: TrajectoryEntry, GroundTruthEvent, ActionType
-pkg/content       Shared SHA-256 content-digest helpers
-pkg/matching      Action matching rules, including command-path normalization
-pkg/verification  Trajectory-vs-ground-truth comparison and verdict classification
-pkg/probe         Observer interface every probe implements (used by cmd/watch)
-pkg/probe/fs      Tier 1 filesystem observer (fanotify)
-pkg/probe/proc    Tier 2 process observer (eBPF: execve, exit_group, sched_process_exit)
-pkg/probe/net     Tier 3/4 network observer (eBPF: socket connect + SSL_write uprobe)
-pkg/tlsparse      Pure-Go TLS ClientHello/SNI and HTTP/1.1 request-line parsing
-pkg/tlsoffset     ELF scanner that locates SSL_write in a target libssl for the uprobe
-cmd/simagent      Simulated agent that performs real filesystem/process actions and
-                  emits a matching trajectory, for exercising the probes end to end
-cmd/watch         Ground-truth recorder CLI: runs the requested probes live, prints
-                  events as they're captured, writes ground truth JSON on exit
-cmd/verify        Verification-engine CLI: compares a trajectory and a ground truth
-                  JSON and prints the FAITHFUL / NOT FAITHFUL verdict
-tests/e2e         End-to-end scenarios wiring simagent + probes + verification together
-```
-
-`cmd/watch`, `cmd/simagent`, and `cmd/verify` map directly onto the three components in the architecture design (`docs/plan/01_protocol_architecture.md`): ground-truth recorder, the thing being observed, and verification engine + reporting layer.
+Verified against a simulated agent (`cmd/simagent`) only. Nothing here is evaluated on real agents yet.
 
 ## Requirements
 
-- Go 1.25+
-- Linux with eBPF support (Tier 2/3/4 probes and their tests)
-- `clang` and kernel headers, for regenerating the eBPF bytecode (`bpf2go`)
-- Root privileges, for running the fs/proc/net probes and their tests (they use `fanotify` and load eBPF programs, including a uprobe on `SSL_write`)
-- A dynamically-linked `libssl` (from `curl` or `openssl`), for the Tier 4 network content-capture demo below
+- Go 1.26 or later
+- Linux with eBPF support
+- Root, to run the probes and their tests (they use `fanotify` and load eBPF programs)
+- `clang` and kernel headers, only to regenerate the eBPF bindings
+- A dynamically linked `libssl` (the one `curl` uses), only for network content capture
 
-## Build & test
+## Build and test
 
 ```sh
-go build ./...
-
-# Regenerate eBPF Go bindings after editing pkg/probe/proc/proc.bpf.c
-go generate ./pkg/probe/proc/...
-
-# Run tests
+make build            # watch, verify, simagent in the repo root
+make generate         # regenerate eBPF bindings after editing a .bpf.c file
 go test ./...
 ```
 
-Without root, the filesystem, process, and end-to-end tests skip rather than fail, so an unprivileged `go test ./...` run is not a full signal. Run the suite as root to actually exercise the probes:
+Without root, the probe and end-to-end tests skip rather than fail, so an unprivileged run is not a full signal. For the full suite:
 
 ```sh
 sudo go test -v ./...
 ```
 
-## Live demo
+## Quickstart
 
-Beyond the automated tests, `watch` + `simagent` + `verify` let you run every implemented tier interactively across two terminals — a probe watching live in one, a simulated agent acting in the other — instead of only reading assertions in test output. Build all three first:
-
-```sh
-go build -o watch    ./cmd/watch
-go build -o simagent ./cmd/simagent
-go build -o verify   ./cmd/verify
-```
-
-Start the ground-truth recorder on a scratch workspace and let it launch the agent (requires root: fanotify + eBPF):
+`watch` launches the agent, records its process tree, and writes `ground_truth.json` when the agent exits. `simagent` is a simulated agent that writes, renames and deletes a file and runs `wc`.
 
 ```sh
 mkdir -p /tmp/agent-trace-demo
 sudo ./watch --workspace /tmp/agent-trace-demo --out ground_truth.json -- \
 	./simagent --workspace /tmp/agent-trace-demo --trajectory-out trajectory.json
-```
 
-With a trailing `-- <command>`, `watch` starts the command itself, records its PID as the process probe's ancestry root (so the agent's own exec is suppressed and only its descendants count as agent actions), prints each file and process event as it's captured, runs the agent to completion, then writes `ground_truth.json` and exits. No `--proc-filter` needed: ancestry scoping replaces it.
-
-`simagent` writes a file, renames it, runs `wc -l` on it, then deletes it — exercising the Tier 1 filesystem probe, the Tier 2 process probe, and the mixed file+process verification together. Then:
-
-```sh
 ./verify --trajectory trajectory.json --ground-truth ground_truth.json
 ```
 
-To watch an agent `watch` cannot be the parent of (e.g. a container entrypoint), start it separately and pass `--root-pid N` instead of a `-- <command>`; `watch` then records until Ctrl+C. This mode has an uncloseable race: anything that PID did before `--root-pid` was applied is invisible to the process probe (the fs probe, which is not ancestry-scoped, still sees it).
+This prints FAITHFUL. To see a discrepancy, rerun with `--drop-entry 0` on `simagent` (it omits one claim) and verify again: the unreported action appears under *Unrecorded* and the verdict is NOT FAITHFUL.
 
-`ground_truth.json` holds the observed events and a coverage record of what each probe may have lost (kernel ring buffer drops, dropped events, fanotify queue overflow). `verify` prints that record. When the checks pass but the record shows loss, or no record exists (an older bare-array file), the verdict is INCONCLUSIVE and `verify` exits with code 2, because lost events could be hiding an action. Exit codes: 0 FAITHFUL, 1 NOT FAITHFUL, 2 INCONCLUSIVE.
+To record an agent `watch` cannot launch (a container entrypoint, say), start it yourself and pass `--root-pid N` in place of `-- <command>`. Anything that process did before `watch` attached is invisible to the process probe.
 
-This prints a FAITHFUL verdict with a per-category breakdown. To see the NOT FAITHFUL path, rerun `simagent` with `--drop-entry 0` (or any valid index) to omit a self-reported action before it's written out, then `verify` again — `Unrecorded` will be non-empty and the verdict flips.
+`verify` options: `--interval-slack` widens each claim's time interval for a trajectory clock that differs from the kernel's, and `--ignore-exits` skips process exits for a format that cannot state them.
 
-This harness is meant to grow with the project: `pkg/probe.Observer` is the interface every probe implements, and `cmd/watch`'s `probeBuilders` map is a single-entry extension point — the network probe below is one entry in that map, not a separate tool.
+### Network example
 
-### Network demo (Tier 3/4)
-
-The same three binaries also exercise the network probe. It needs the path to a dynamically-linked `libssl` so its `SSL_write` uprobe can attach and capture TLS request plaintext (identity-only SNI capture works without this, but skips content-level `NetRequest` verification):
+Add the network probe and point it at the `libssl` your agent's HTTP client uses, so request bodies can be hashed:
 
 ```sh
 LIBSSL=$(ldd "$(which curl)" | awk '/libssl\.so/ {print $3}')
@@ -131,12 +96,22 @@ sudo ./watch --probes fs,proc,net --net-exe-path "$LIBSSL" \
 ./verify --trajectory trajectory.json --ground-truth ground_truth.json
 ```
 
-`--fetch-via-curl` runs the fetch as a `curl` subprocess so the uprobe attaches to a real, dynamically-linked TLS stack, rather than Go's statically-linked `crypto/tls`. The subprocess is visible to the net probe because `tracked_pids` is inherited across `fork` (a `task_newtask` tracepoint), and its `execve`/`exit` are visible to the proc probe through ancestry scoping. `simagent` claims the curl command (one `ProcessExec` and one `ProcessExit`) and nothing curl does: the connection and the request belong to curl's subtree, which the verifier attributes to that command by process ancestry and reports as covered, never as a claim to corroborate. `verify` shows them under the coverage section. Drop `--fetch-via-curl` to fall back to Go's `net/http`, where the connection is the agent's own action and `simagent` claims a `NetConnect` (SNI, no content hash) that the verifier aligns against the observed one. `--emit-net-request` adds a `NetRequest` claim with the SHA-256 of `--fetch-body` and only applies to that in-process mode.
+Here `simagent` claims the `curl` command and nothing curl does, so the connection and the request show up under coverage as events explained by that command. Without `--fetch-via-curl`, `simagent` makes the request itself and claims the connection. Adding `--attack net-fabrication` or `--attack net-omission` to that form claims a connection that never happened or drops a real one, and the verdict becomes NOT FAITHFUL.
 
-Two constraints are baked into that `curl` invocation, and any real agent under content-level verification is subject to both. Content capture parses `SSL_write` plaintext as HTTP/1.x, so `simagent` passes `--http1.1`: over an ALPN-negotiated h2 connection the plaintext is HTTP/2 framing, which yields no `NetRequest` ground truth (the probe counts it under `unsupported`/`unattributed` in its coverage line) and leaves the agent's own `NetRequest` claim Unwitnessed. And a hostname with several A/AAAA records makes `curl` open Happy-Eyeballs-style parallel connections whose losers complete no handshake, carry no SNI, and surface as IP-only `net_connect` events no trajectory claims; `simagent` therefore resolves one IPv4 itself and pins `curl` to it with `--resolve`.
+## Repository layout
 
-To see network fabrication or omission caught, drop `--fetch-via-curl` and add `--attack net-fabrication` (a claimed connection to a host never actually contacted) or `--attack net-omission` (a real connection dropped from the trajectory before it's written) to the `simagent` invocation above — `Unwitnessed`/`Unrecorded` will be non-empty for the `NetConnect` entry and the verdict flips to NOT FAITHFUL. Both need the in-process fetch: the curl subprocess's connection is not something an agent claims.
+```
+cmd/watch         Records ground truth: runs the probes, launches the agent, writes the file
+cmd/verify        Compares a trajectory and a ground truth file and prints the verdict
+cmd/simagent      Simulated agent, for exercising the probes end to end
+pkg/models        Trajectory, ground truth and coverage types
+pkg/probe         Observer interface; fs, proc and net implement it
+pkg/verification  Process tree, alignment, coverage and the verdict
+pkg/matching      Target comparison between a claim and an observed event
+pkg/content       SHA-256 content digests
+pkg/tlsparse      TLS ClientHello and HTTP/1.1 request parsing
+pkg/tlsoffset     Locates SSL_write in a libssl binary for the uprobe
+tests/e2e         End-to-end scenarios: simagent, probes and verifier together
+```
 
-## Project status
-
-This is a research prototype under active development. Tiers 0, 1, 2, 3, and the network/file portions of Tier 4 are implemented and tested. The standalone attack-generator suite and real-agent integration (Tier 6) are not yet built.
+Design and implementation notes are in [`docs/architecture.md`](docs/architecture.md). Related work and the measurement method are in [`docs/related_work/`](docs/related_work/00_intro_and_contents.md) and [`docs/methodology/`](docs/methodology/being_data_driven.md).
