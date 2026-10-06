@@ -107,3 +107,20 @@ func (f *Forest) Partition(g models.GroundTruth) Partition {
 	}
 	return part
 }
+
+// DropExits removes every process exit from the aligned sequence. A format
+// that cannot state an exit has no claim to align them with, so each observed
+// exit would read as an unreported action. Commands keep their Exit field: the
+// exit is still known, it is only not checked against a claim.
+func (p Partition) DropExits() Partition {
+	out := p
+	out.Observed, out.Owner = nil, nil
+	for i, e := range p.Observed {
+		if e.ActionType == models.ProcessExit {
+			continue
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	return out
+}

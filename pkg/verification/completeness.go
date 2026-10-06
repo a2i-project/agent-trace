@@ -104,20 +104,3 @@ func (o Outcome) ExitCode() int {
 		return 2
 	}
 }
-
-// Conclude combines a verdict with the completeness of its ground truth.
-// Incomplete ground truth can hide a discrepancy, so it turns FAITHFUL into
-// INCONCLUSIVE. It leaves NOT FAITHFUL alone for now: the findings are
-// advisory under loss, and whether any survive it is an open question in
-// docs/plan/08_verification_model.md, 3.9. The conservative rule moves into
-// Verify with the Tier 6 verdict rewrite.
-func Conclude(v Verdict, c Completeness) Outcome {
-	switch {
-	case !v.Faithful:
-		return OutcomeNotFaithful
-	case !c.Complete:
-		return OutcomeInconclusive
-	default:
-		return OutcomeFaithful
-	}
-}

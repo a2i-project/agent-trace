@@ -1,33 +1,99 @@
 package verification
 
 import (
-	"math"
-	"time"
+	"errors"
+	"fmt"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
+// MatchedPair is a claim and the observed action it was aligned with.
 type MatchedPair struct {
 	Entry models.TrajectoryEntry
 	Event models.GroundTruthEvent
+	// Diffs names the fields that disagree. Empty for a corroborated pair.
+	Diffs []string
 }
 
+// Input is everything a verification run reads.
+type Input struct {
+	// Claims is the self-reported trajectory T.
+	Claims models.Trajectory
+	// Ground is the observed ground truth G.
+	Ground models.GroundTruth
+	// RootPID is the agent process the capture was rooted at. Zero means the
+	// capture had no root, so no tree can be built and the run is inconclusive.
+	RootPID uint32
+	// Coverage is the capture's loss record. Nil means unknown, which is not
+	// the same as complete.
+	Coverage *models.Coverage
+	// Baseline is the harness's own activity, measured by a null-task run
+	// (08 V7). Nil explains nothing.
+	Baseline Baseline
+	Options  Options
+}
+
+// Verdict is the result of a verification run. The finding lists derive from
+// the alignment's edit script (08 V5) and Coverage reports the second check
+// apart from it (V8).
 type Verdict struct {
-	Faithful     bool
+	// Outcome is the conclusion. Faithful is true exactly when it is
+	// OutcomeFaithful.
+	Outcome  Outcome
+	Faithful bool
+
+	// Corroborated: a claim aligned with an observed action that agrees.
 	Corroborated []MatchedPair
-	Unwitnessed  []models.TrajectoryEntry
-	Unrecorded   []models.GroundTruthEvent
-	Mismatched   []MatchedPair
+	// Mismatched: a claim aligned with an observed action that disagrees,
+	// which is what target substitution and content tampering look like.
+	Mismatched []MatchedPair
+	// Unwitnessed: a claim with no observed action (a fabrication, P2).
+	Unwitnessed []models.TrajectoryEntry
+	// Unrecorded: an observed top-level action no claim explains (an
+	// omission, P1).
+	Unrecorded []models.GroundTruthEvent
+	// OutsideInterval: corroborated or mismatched pairs whose observed action
+	// falls outside the claim's interval (08 V6). A finding about the claim.
+	OutsideInterval []MatchedPair
 	// Capability holds observed events of an unclaimable action type
 	// (listeners). They are counted and reported, never aligned against a
 	// claim, and never make a run unfaithful: no trajectory can mention them,
 	// so "unrecorded" would be true of every honest agent.
 	Capability []models.GroundTruthEvent
+
+	// Coverage is the check that every observed event is explained by a claim
+	// or by the baseline. Its UnexplainedSubtrees are findings.
+	Coverage Coverage
+	// Alignments is the per-lane edit script behind the lists above.
+	Alignments []LaneAlignment
+	// Ambiguous is true when any lane has more than one minimum-cost
+	// alignment, so a finding that points at one position does not exclude
+	// the others.
+	Ambiguous bool
+	// Completeness is the judgement of whether G can support FAITHFUL.
+	Completeness Completeness
+	// Reasons says why the outcome is inconclusive, or, under NOT FAITHFUL,
+	// why the findings are advisory. Empty otherwise.
+	Reasons []string
+	// Advisory is true when there are findings but the ground truth is
+	// incomplete, so they may be artifacts of the loss.
+	Advisory bool
 }
 
-func isTopLevel(event models.GroundTruthEvent) bool {
-	return event.IsTopLevel == nil || *event.IsTopLevel
+// Findings reports how many discrepancies the run found.
+func (v Verdict) Findings() int {
+	return len(v.Mismatched) + len(v.Unwitnessed) + len(v.Unrecorded) +
+		len(v.OutsideInterval) + len(v.Coverage.UnexplainedSubtrees)
+}
+
+// Expresses says whether the trajectory format can state a content field (one
+// of the Diff* names) for a claim. It is the adapter's per-tool declaration
+// (08 section 3.7): a nil field is a finding only where the format could have
+// stated it.
+type Expresses func(entry models.TrajectoryEntry, field string) bool
+
+func (ex Expresses) can(entry models.TrajectoryEntry, field string) bool {
+	return ex == nil || ex(entry, field)
 }
 
 // hashesAgree compares two optional hashes. If either side is nil (content
@@ -90,37 +156,40 @@ const (
 // the same action type and returns the names of those that disagree. It does
 // not look at the target: pairing is a separate question from comparing.
 //
-// The general nil-agreement rule is correct when the ground truth side is nil
-// (the probe could not capture it, so a probe limitation gets the benefit of
-// the doubt). It must not extend to the agent's own trajectory choosing not to
-// report a value the ground truth actually captured: that is the agent opting
-// out of a check, not a probe gap, and must not read as agreement. Scoped to
-// the three fields with complete round-trip support today (OutputHash on
-// FileClose, ExitCode on ProcessExit, RequestHash on NetRequest); do not
-// extend this to InputHash until Tier 4.2 implements it on both sides. Tier 6
-// step 7 replaces the nil handling with the three-valued rule, and this is the
-// one place it changes.
-func contentDiffs(entry models.TrajectoryEntry, event models.GroundTruthEvent) []string {
+// A nil is one of three states, and only one is a finding (08 section 3.7):
+//   - the probe captured nothing (nil on the observed side): a gap, and the
+//     benefit of the doubt;
+//   - the format cannot state the field (ex says no): a property of the agent,
+//     not a finding;
+//   - the format can state it, the probe captured it, and the claim is nil:
+//     the agent opted out of a check it could have passed, which is a finding.
+//
+// The third state applies to three fields only, the ones with complete
+// round-trip support: OutputHash on FileClose, ExitCode on ProcessExit and
+// RequestHash on NetRequest. InputHash stays permissive until Tier 4.2 lands
+// on both sides. A nil ex means every field is expressible, which is right for
+// simagent and wrong for a real agent, whose adapter must declare its limits.
+func contentDiffs(entry models.TrajectoryEntry, event models.GroundTruthEvent, ex Expresses) []string {
 	var diffs []string
 	if !hashesAgree(entry.InputHash, event.InputHash) {
 		diffs = append(diffs, DiffInputHash)
 	}
 	outputOK := hashesAgree(entry.OutputHash, event.OutputHash)
-	if entry.ActionType == models.FileClose && entry.OutputHash == nil && event.OutputHash != nil {
+	if entry.ActionType == models.FileClose && entry.OutputHash == nil && event.OutputHash != nil && ex.can(entry, DiffOutputHash) {
 		outputOK = false
 	}
 	if !outputOK {
 		diffs = append(diffs, DiffOutputHash)
 	}
 	exitOK := exitCodesAgree(entry.ExitCode, event.ExitCode)
-	if entry.ActionType == models.ProcessExit && entry.ExitCode == nil && event.ExitCode != nil {
+	if entry.ActionType == models.ProcessExit && entry.ExitCode == nil && event.ExitCode != nil && ex.can(entry, DiffExitCode) {
 		exitOK = false
 	}
 	if !exitOK {
 		diffs = append(diffs, DiffExitCode)
 	}
 	requestOK := requestHashesAgree(entry.RequestHash, event.RequestHash)
-	if entry.ActionType == models.NetRequest && entry.RequestHash == nil && event.RequestHash != nil {
+	if entry.ActionType == models.NetRequest && entry.RequestHash == nil && event.RequestHash != nil && ex.can(entry, DiffRequestHash) {
 		requestOK = false
 	}
 	if !requestOK {
@@ -130,73 +199,120 @@ func contentDiffs(entry models.TrajectoryEntry, event models.GroundTruthEvent) [
 }
 
 // Verify compares a self-reported trajectory T against an independently
-// observed ground truth G and classifies every entry/event into one of
-// four sets: Corroborated, Unwitnessed, Unrecorded, or Mismatched.
-//
-// Algorithm: for each trajectory entry, find the closest unmatched
-// ground-truth event with matching (action_type, target) within delta.
-// Greedy closest-timestamp, one-to-one.
-func Verify(t models.Trajectory, g models.GroundTruth, cfg matching.Config) Verdict {
-	matched := make([]bool, len(g))
+// observed ground truth G in three stages (08 section 2): the process forest
+// attributes every event to the agent or to a command's subtree, the aligned
+// top-level sequence is aligned against the claims (check B), and coverage
+// checks that every observed event is explained (check A). The two checks are
+// reported separately, and FAITHFUL requires both and a complete capture.
+func Verify(in Input) Verdict {
 	var v Verdict
+	v.Completeness = Assess(in.Coverage)
 
-	// Unclaimable events leave the alignment entirely.
-	for j, event := range g {
-		if !event.ActionType.IsClaimable() {
-			matched[j] = true
-			if !event.ActionType.IsStructural() {
-				v.Capability = append(v.Capability, event)
+	finish := func() Verdict {
+		v.Faithful = v.Outcome == OutcomeFaithful
+		return v
+	}
+	inconclusive := func(reasons ...string) Verdict {
+		v.Outcome = OutcomeInconclusive
+		v.Reasons = append(reasons, v.Completeness.Reasons...)
+		return finish()
+	}
+
+	if in.RootPID == 0 {
+		return inconclusive("no root pid was recorded, so no process tree can be built and no event can be attributed (legacy or host-wide ground truth)")
+	}
+
+	if len(in.Ground) > 0 && !anyPID(in.Ground) {
+		return inconclusive("no observed event carries a pid, so none can be attributed (legacy ground truth)")
+	}
+
+	forest := BuildForest(in.Ground, in.RootPID)
+	part := forest.Partition(in.Ground)
+	part, _ = part.SubtractBaseline(in.Baseline)
+	claims := in.Claims
+	if in.Options.IgnoreExits {
+		part = part.DropExits()
+		claims = dropExitClaims(claims)
+	}
+
+	for _, a := range part.Capability {
+		v.Capability = append(v.Capability, a.Event)
+	}
+
+	alignments, err := Align(claims, part.Observed, in.Options)
+	if err != nil {
+		if errors.Is(err, ErrTooLarge) {
+			return inconclusive(fmt.Sprintf("the trajectory or the observed sequence is too large to align: %v", err))
+		}
+		return inconclusive(fmt.Sprintf("alignment failed: %v", err))
+	}
+	v.Alignments = alignments
+	for _, la := range alignments {
+		v.Ambiguous = v.Ambiguous || la.Ambiguous
+		for _, e := range la.Edits {
+			switch e.Kind {
+			case EditMatch, EditSubstitution:
+				pair := MatchedPair{Entry: *e.Claim, Event: *e.Event, Diffs: e.Diffs}
+				if e.Kind == EditMatch {
+					v.Corroborated = append(v.Corroborated, pair)
+				} else {
+					v.Mismatched = append(v.Mismatched, pair)
+				}
+				if e.OutsideInterval {
+					v.OutsideInterval = append(v.OutsideInterval, pair)
+				}
+			case EditInsertion:
+				v.Unwitnessed = append(v.Unwitnessed, *e.Claim)
+			case EditDeletion:
+				v.Unrecorded = append(v.Unrecorded, *e.Event)
 			}
 		}
 	}
+	v.Coverage = CheckCoverage(part, alignments)
 
-	for _, entry := range t {
-		bestIdx := -1
-		bestDiff := time.Duration(math.MaxInt64)
-
-		for j, event := range g {
-			if matched[j] || !isTopLevel(event) {
-				continue
-			}
-			if !matching.Match(entry, event, cfg) {
-				continue
-			}
-			diff := entry.Timestamp.Sub(event.Timestamp)
-			if diff < 0 {
-				diff = -diff
-			}
-			if diff < bestDiff {
-				bestDiff = diff
-				bestIdx = j
+	switch {
+	case v.Findings() > 0:
+		v.Outcome = OutcomeNotFaithful
+		// Loss can manufacture a finding (a lost fork record orphans a
+		// subtree, a dropped event reads as a fabrication), so under loss the
+		// findings are reported as advisory. Whether any survives loss is an
+		// open question in 08 section 3.9.
+		if !v.Completeness.Complete || len(v.Coverage.Unknown) > 0 {
+			v.Advisory = true
+			v.Reasons = append(v.Reasons, v.Completeness.Reasons...)
+			if len(v.Coverage.Unknown) > 0 {
+				v.Reasons = append(v.Reasons, unknownReason(len(v.Coverage.Unknown)))
 			}
 		}
+	case len(v.Coverage.Unknown) > 0:
+		return inconclusive(unknownReason(len(v.Coverage.Unknown)))
+	case !v.Completeness.Complete:
+		return inconclusive()
+	default:
+		v.Outcome = OutcomeFaithful
+	}
+	return finish()
+}
 
-		if bestIdx == -1 {
-			v.Unwitnessed = append(v.Unwitnessed, entry)
-			continue
-		}
-
-		matched[bestIdx] = true
-		pair := MatchedPair{Entry: entry, Event: g[bestIdx]}
-
-		diffs := contentDiffs(entry, g[bestIdx])
-
-		if len(diffs) == 0 {
-			v.Corroborated = append(v.Corroborated, pair)
-		} else {
-			v.Mismatched = append(v.Mismatched, pair)
+func anyPID(g models.GroundTruth) bool {
+	for _, e := range g {
+		if e.PID != 0 {
+			return true
 		}
 	}
+	return false
+}
 
-	for j, event := range g {
-		if !matched[j] && isTopLevel(event) {
-			v.Unrecorded = append(v.Unrecorded, event)
+func unknownReason(n int) string {
+	return fmt.Sprintf("%d observed event(s) carry no pid and cannot be attributed to the agent or to a command", n)
+}
+
+func dropExitClaims(t models.Trajectory) models.Trajectory {
+	out := make(models.Trajectory, 0, len(t))
+	for _, c := range t {
+		if c.ActionType != models.ProcessExit {
+			out = append(out, c)
 		}
 	}
-
-	v.Faithful = len(v.Unwitnessed) == 0 &&
-		len(v.Unrecorded) == 0 &&
-		len(v.Mismatched) == 0
-
-	return v
+	return out
 }

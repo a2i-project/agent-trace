@@ -107,6 +107,14 @@ type Options struct {
 	// containment check. Zero means exact. It exists for a trajectory whose
 	// clock is not the kernel's.
 	IntervalSlack time.Duration
+	// Expresses says whether the trajectory format can state a content field
+	// (a Diff* name) for a claim. Nil means everything is expressible, the
+	// strict reading. See Expresses and contentDiffs.
+	Expresses Expresses
+	// IgnoreExits removes process exits from both sides before alignment. It
+	// is for a format that cannot state an exit (08 section 6.2), where every
+	// observed exit would otherwise read as an unreported action.
+	IgnoreExits bool
 }
 
 // ErrTooLarge is returned when a lane is too large to align in bounded memory.
@@ -175,24 +183,24 @@ func Align(claims models.Trajectory, observed models.GroundTruth, opts Options) 
 // pairCost returns the cost of aligning claim c with event e, and the fields
 // that differ. Any two entries of one lane can be paired: a different action
 // type costs more but is still a substitution.
-func pairCost(c models.TrajectoryEntry, e models.GroundTruthEvent) (cost int, diffs []string) {
+func pairCost(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses) (cost int, diffs []string) {
 	if c.ActionType != e.ActionType {
-		return costSubType, append([]string{DiffType}, targetAndContentDiffs(c, e)...)
+		return costSubType, append([]string{DiffType}, targetAndContentDiffs(c, e, ex)...)
 	}
-	diffs = targetAndContentDiffs(c, e)
+	diffs = targetAndContentDiffs(c, e, ex)
 	if len(diffs) == 0 {
 		return 0, nil
 	}
 	return costSubSame, diffs
 }
 
-func targetAndContentDiffs(c models.TrajectoryEntry, e models.GroundTruthEvent) []string {
+func targetAndContentDiffs(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses) []string {
 	var diffs []string
 	if !matching.TargetsMatch(c, e) {
 		diffs = append(diffs, DiffTarget)
 	}
 	if c.ActionType == e.ActionType {
-		diffs = append(diffs, contentDiffs(c, e)...)
+		diffs = append(diffs, contentDiffs(c, e, ex)...)
 	}
 	return diffs
 }
@@ -226,7 +234,7 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 	pair := make([]int, n*m) // cost of pairing claim i with event j
 	for i := 1; i <= n; i++ {
 		for j := 1; j <= m; j++ {
-			pc, _ := pairCost(claims[ci[i-1]], observed[ei[j-1]])
+			pc, _ := pairCost(claims[ci[i-1]], observed[ei[j-1]], opts.Expresses)
 			pair[(i-1)*m+(j-1)] = pc
 			diag := cost[(i-1)*w+(j-1)] + int32(pc)
 			up := cost[(i-1)*w+j] + costIndel   // claim i unpaired: insertion
@@ -262,7 +270,7 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 		switch {
 		case i > 0 && j > 0 && cost[i*w+j] == cost[(i-1)*w+(j-1)]+int32(pair[(i-1)*m+(j-1)]):
 			c, e := claims[ci[i-1]], observed[ei[j-1]]
-			_, diffs := pairCost(c, e)
+			_, diffs := pairCost(c, e, opts.Expresses)
 			ed := Edit{Kind: EditMatch, ClaimIndex: ci[i-1], EventIndex: ei[j-1], Claim: &claims[ci[i-1]], Event: &observed[ei[j-1]]}
 			if len(diffs) > 0 {
 				ed.Kind, ed.Diffs = EditSubstitution, diffs

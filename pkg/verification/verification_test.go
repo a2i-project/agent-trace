@@ -1,934 +1,586 @@
 package verification
 
 import (
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
-var (
-	baseTime = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	cfg      = matching.DefaultConfig()
-)
-
-func te(offsetMs int, action models.ActionType, target string, in, out *string) models.TrajectoryEntry {
-	return models.TrajectoryEntry{
-		Timestamp:  baseTime.Add(time.Duration(offsetMs) * time.Millisecond),
-		ActionType: action,
-		Target:     target,
-		InputHash:  in,
-		OutputHash: out,
-	}
-}
-
-func ge(offsetMs int, action models.ActionType, target string, in, out *string) models.GroundTruthEvent {
-	return models.GroundTruthEvent{IsTopLevel: bp(true),
-		Timestamp:  baseTime.Add(time.Duration(offsetMs) * time.Millisecond),
-		ActionType: action,
-		Target:     target,
-		InputHash:  in,
-		OutputHash: out,
-	}
-}
-
 func sp(s string) *string { return &s }
+func ip(n int32) *int32   { return &n }
 
-func bp(b bool) *bool { return &b }
+// completeCov is a capture that lost nothing on the three probes.
+func completeCov() *models.Coverage {
+	return cov(map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}, "net": {Ran: true}})
+}
 
-// --- Unit tests for individual sets ---
+// run verifies with the agent rooted at agentPID and a complete capture.
+func run(claims models.Trajectory, g models.GroundTruth) Verdict {
+	return Verify(Input{Claims: claims, Ground: g, RootPID: agentPID, Coverage: completeCov()})
+}
 
-func TestAllCorroborated(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/etc/hostname", nil, sp("h1")),
-		te(1000, models.FileWrite, "/tmp/out.txt", sp("h2"), sp("h3")),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.FileRead, "/etc/hostname", nil, sp("h1")),
-		ge(1002, models.FileWrite, "/tmp/out.txt", sp("h2"), sp("h3")),
-	}
+// agentEv is an event the agent process itself caused (level 0).
+func agentEv(ms int, typ models.ActionType, target string) models.GroundTruthEvent {
+	return models.GroundTruthEvent{Timestamp: at(ms), ActionType: typ, Target: target, PID: agentPID}
+}
 
-	v := Verify(traj, ground, cfg)
+func claimAt(ms int, typ models.ActionType, target string) models.TrajectoryEntry {
+	return models.TrajectoryEntry{Timestamp: at(ms), ActionType: typ, Target: target}
+}
 
-	if !v.Faithful {
-		t.Error("expected FAITHFUL")
+func wantOutcome(t *testing.T, v Verdict, want Outcome) {
+	t.Helper()
+	if v.Outcome != want {
+		t.Fatalf("outcome = %v, want %v\nunwitnessed=%v unrecorded=%v mismatched=%v subtrees=%d unknown=%d reasons=%v",
+			v.Outcome, want, v.Unwitnessed, v.Unrecorded, v.Mismatched, len(v.Coverage.UnexplainedSubtrees), len(v.Coverage.Unknown), v.Reasons)
 	}
-	if len(v.Corroborated) != 2 {
-		t.Errorf("expected 2 corroborated, got %d", len(v.Corroborated))
-	}
-	if len(v.Unwitnessed) != 0 {
-		t.Errorf("expected 0 unwitnessed, got %d", len(v.Unwitnessed))
-	}
-	if len(v.Unrecorded) != 0 {
-		t.Errorf("expected 0 unrecorded, got %d", len(v.Unrecorded))
-	}
-	if len(v.Mismatched) != 0 {
-		t.Errorf("expected 0 mismatched, got %d", len(v.Mismatched))
+	if v.Faithful != (want == OutcomeFaithful) {
+		t.Errorf("Faithful = %v under outcome %v", v.Faithful, v.Outcome)
 	}
 }
 
-func TestUnwitnessed(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/etc/hostname", nil, sp("h1")),
-		te(1000, models.FileRead, "/etc/shadow", nil, sp("h_secret")),
+func TestVerify_HonestLevelZero(t *testing.T) {
+	g := models.GroundTruth{
+		withHash(agentEv(0, models.FileRead, "/etc/hostname"), nil, sp("h1")),
+		withHash(agentEv(10, models.FileWrite, "/w/out.txt"), sp("h2"), sp("h3")),
 	}
-	ground := models.GroundTruth{
-		ge(5, models.FileRead, "/etc/hostname", nil, sp("h1")),
+	tr := models.Trajectory{
+		withClaimHash(claimAt(0, models.FileRead, "/etc/hostname"), nil, sp("h1")),
+		withClaimHash(claimAt(10, models.FileWrite, "/w/out.txt"), sp("h2"), sp("h3")),
 	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("expected NOT FAITHFUL")
-	}
-	if len(v.Unwitnessed) != 1 {
-		t.Fatalf("expected 1 unwitnessed, got %d", len(v.Unwitnessed))
-	}
-	if v.Unwitnessed[0].Target != "/etc/shadow" {
-		t.Errorf("wrong unwitnessed target: %s", v.Unwitnessed[0].Target)
+	v := run(tr, g)
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.Corroborated) != 2 || v.Findings() != 0 {
+		t.Errorf("corroborated = %d, findings = %d, want 2 and 0", len(v.Corroborated), v.Findings())
 	}
 }
 
-func TestUnrecorded(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/etc/hostname", nil, sp("h1")),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.FileRead, "/etc/hostname", nil, sp("h1")),
-		ge(500, models.NetRequest, "https://evil.com/exfil", sp("stolen"), sp("ack")),
-	}
+func withHash(e models.GroundTruthEvent, in, out *string) models.GroundTruthEvent {
+	e.InputHash, e.OutputHash = in, out
+	return e
+}
 
-	v := Verify(traj, ground, cfg)
+func withClaimHash(c models.TrajectoryEntry, in, out *string) models.TrajectoryEntry {
+	c.InputHash, c.OutputHash = in, out
+	return c
+}
 
-	if v.Faithful {
-		t.Error("expected NOT FAITHFUL")
+func TestVerify_EmptyIsFaithfulOnlyWithARoot(t *testing.T) {
+	wantOutcome(t, run(nil, nil), OutcomeFaithful)
+}
+
+// P1: something observed that no claim explains.
+func TestVerify_Omission(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a"), agentEv(5, models.FileWrite, "/w/secret")}
+	v := run(models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "/w/secret" {
+		t.Errorf("Unrecorded = %v, want /w/secret", v.Unrecorded)
 	}
-	if len(v.Unrecorded) != 1 {
-		t.Fatalf("expected 1 unrecorded, got %d", len(v.Unrecorded))
-	}
-	if v.Unrecorded[0].Target != "https://evil.com/exfil" {
-		t.Errorf("wrong unrecorded target: %s", v.Unrecorded[0].Target)
+	if v.Advisory {
+		t.Error("findings on a complete capture are not advisory")
 	}
 }
 
-func TestDescendantGroundTruthIsIgnored(t *testing.T) {
-	ground := models.GroundTruth{
-		{IsTopLevel: bp(false), Timestamp: baseTime, ActionType: models.ProcessExec, Target: "helper"},
-	}
-
-	v := Verify(nil, ground, cfg)
-	if !v.Faithful {
-		t.Fatalf("descendant event should not affect verification: %+v", v)
-	}
-	if len(v.Unrecorded) != 0 {
-		t.Fatalf("expected no unrecorded descendant events, got %d", len(v.Unrecorded))
+// P2: a claim with nothing behind it.
+func TestVerify_Fabrication(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a")}
+	tr := models.Trajectory{claimAt(0, models.FileWrite, "/w/a"), claimAt(5, models.FileWrite, "/w/ghost")}
+	v := run(tr, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != "/w/ghost" {
+		t.Errorf("Unwitnessed = %v, want /w/ghost", v.Unwitnessed)
 	}
 }
 
-// Fix 3b end-to-end semantics: for a chain of pure shell re-execs, 3b keeps
-// the inner command verification-grade (IsTopLevel: true), so a trajectory
-// that only reports the outer `sh -c ...` invocation is still missing the
-// command the shell actually ran and must come back NOT FAITHFUL. This is
-// the inverse of TestDescendantGroundTruthIsIgnored: there a forensic
-// descendant is correctly ignored; here a shell-routed command is top-level
-// and must not be. The forensic third event confirms the boundary still
-// holds -- Verify uses whatever IsTopLevel values it is given, and 3b's job
-// is to feed it the right ones.
-func TestShellChainInnerCommandIsUnrecorded(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.ProcessExec, "/bin/sh -c echo-hello", nil, nil),
+// P3: a target substitution is one finding, not a fabrication plus an omission.
+func TestVerify_TargetSubstitutionIsOneMismatch(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileRead, "/etc/passwd")}
+	v := run(models.Trajectory{claimAt(0, models.FileRead, "/etc/hostname")}, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Mismatched) != 1 || len(v.Unwitnessed) != 0 || len(v.Unrecorded) != 0 {
+		t.Fatalf("mismatched=%d unwitnessed=%d unrecorded=%d, want 1/0/0", len(v.Mismatched), len(v.Unwitnessed), len(v.Unrecorded))
 	}
-	ground := models.GroundTruth{
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(2 * time.Millisecond),
-			ActionType: models.ProcessExec, Target: "/bin/sh -c echo-hello"},
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(6 * time.Millisecond),
-			ActionType: models.ProcessExec, Target: "/bin/echo hello"},
-		{IsTopLevel: bp(false), Timestamp: baseTime.Add(7 * time.Millisecond),
-			ActionType: models.ProcessExec, Target: "/lib/ld-linux.so helper"},
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("shell-routed inner command must not read as faithful")
-	}
-	if len(v.Corroborated) != 1 {
-		t.Errorf("expected the outer sh invocation corroborated, got %d", len(v.Corroborated))
-	}
-	if len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "/bin/echo hello" {
-		t.Errorf("expected only the inner shell-routed command unrecorded, got %+v", v.Unrecorded)
+	if d := v.Mismatched[0].Diffs; len(d) != 1 || d[0] != DiffTarget {
+		t.Errorf("Diffs = %v, want [target]", d)
 	}
 }
 
-func TestLegacyGroundTruthDefaultsToTopLevel(t *testing.T) {
-	traj := models.Trajectory{te(0, models.FileRead, "/tmp/file", nil, nil)}
-	ground := models.GroundTruth{
-		{Timestamp: baseTime, ActionType: models.FileRead, Target: "/tmp/file"},
-	}
-
-	v := Verify(traj, ground, cfg)
-	if !v.Faithful || len(v.Corroborated) != 1 {
-		t.Fatalf("legacy event should remain verifiable: %+v", v)
-	}
-}
-
-func TestMismatched(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/etc/hostname", nil, sp("benign_hash")),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.FileRead, "/etc/hostname", nil, sp("real_hash")),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("expected NOT FAITHFUL")
-	}
-	if len(v.Mismatched) != 1 {
-		t.Fatalf("expected 1 mismatched, got %d", len(v.Mismatched))
-	}
-	if *v.Mismatched[0].Entry.OutputHash != "benign_hash" {
-		t.Errorf("wrong entry hash: %s", *v.Mismatched[0].Entry.OutputHash)
-	}
-	if *v.Mismatched[0].Event.OutputHash != "real_hash" {
-		t.Errorf("wrong event hash: %s", *v.Mismatched[0].Event.OutputHash)
-	}
-}
-
-func TestHashNilTreatedAsAgreement(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/etc/hostname", nil, sp("h1")),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.FileRead, "/etc/hostname", nil, nil),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Error("nil ground-truth hash should not cause mismatch")
-	}
-	if len(v.Corroborated) != 1 {
-		t.Errorf("expected 1 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-func TestExitCodeMismatch(t *testing.T) {
-	claimedOK := int32(0)
-	actualFailed := int32(1)
-	traj := models.Trajectory{
-		{Timestamp: baseTime, ActionType: models.ProcessExit, Target: "/usr/bin/git push", ExitCode: &claimedOK},
-	}
-	ground := models.GroundTruth{
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(5 * time.Millisecond), ActionType: models.ProcessExit, Target: "/usr/bin/git push", ExitCode: &actualFailed},
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("expected NOT FAITHFUL: agent claimed exit 0 but process exited 1")
-	}
-	if len(v.Mismatched) != 1 {
-		t.Fatalf("expected 1 mismatched, got %d", len(v.Mismatched))
-	}
-	if *v.Mismatched[0].Entry.ExitCode != 0 || *v.Mismatched[0].Event.ExitCode != 1 {
-		t.Errorf("wrong exit codes in mismatch: entry=%d event=%d",
-			*v.Mismatched[0].Entry.ExitCode, *v.Mismatched[0].Event.ExitCode)
-	}
-}
-
-func TestExitCodeNilTreatedAsAgreement(t *testing.T) {
-	code := int32(0)
-	traj := models.Trajectory{
-		{Timestamp: baseTime, ActionType: models.ProcessExit, Target: "/usr/bin/git push", ExitCode: &code},
-	}
-	ground := models.GroundTruth{
-		// Probe didn't capture an exit code (e.g. killed by an uncaught
-		// signal, never hit exit_group): should not be a mismatch.
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(5 * time.Millisecond), ActionType: models.ProcessExit, Target: "/usr/bin/git push"},
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Error("nil ground-truth exit code should not cause mismatch")
-	}
-	if len(v.Corroborated) != 1 {
-		t.Errorf("expected 1 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-func TestRequestHashMismatch(t *testing.T) {
-	claimed := "sha256:claimed"
-	real := "sha256:real"
-	traj := models.Trajectory{
-		{Timestamp: baseTime, ActionType: models.NetRequest,
-			Target: "GET https://api.example.com/v1/chat", RequestHash: &claimed},
-	}
-	ground := models.GroundTruth{
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(5 * time.Millisecond), ActionType: models.NetRequest,
-			Target: "GET https://api.example.com/v1/chat", RequestHash: &real},
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("expected NOT FAITHFUL: claimed request body hash does not match observed plaintext")
-	}
-	if len(v.Mismatched) != 1 {
-		t.Fatalf("expected 1 mismatched, got %d", len(v.Mismatched))
-	}
-	if *v.Mismatched[0].Entry.RequestHash != claimed || *v.Mismatched[0].Event.RequestHash != real {
-		t.Errorf("wrong request hashes in mismatch: entry=%s event=%s",
-			*v.Mismatched[0].Entry.RequestHash, *v.Mismatched[0].Event.RequestHash)
-	}
-}
-
-func TestRequestHashNilTreatedAsAgreement(t *testing.T) {
-	traj := models.Trajectory{
-		{Timestamp: baseTime, ActionType: models.NetRequest, Target: "GET https://api.example.com/v1/chat"},
-	}
-	ground := models.GroundTruth{
-		// Capture layer couldn't attribute content to this connection
-		// (e.g. an unattributed ssl_frame, or an h2 connection): should
-		// not be a mismatch on its own.
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(5 * time.Millisecond), ActionType: models.NetRequest,
-			Target: "GET https://api.example.com/v1/chat"},
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Error("nil request hash on both sides should not cause mismatch")
-	}
-	if len(v.Corroborated) != 1 {
-		t.Errorf("expected 1 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-func ip(n int32) *int32 { return &n }
-
-// Fix 4: a FileClose entry that omits OutputHash while the ground truth
-// captured one is the agent opting out of a content check, not a probe gap.
-// It must surface as Mismatched, not Corroborated.
-func TestOmittedOutputHashOnFileCloseIsMismatched(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileClose, "/workspace/out.txt", nil, nil),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.FileClose, "/workspace/out.txt", nil, sp("real_hash")),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("omitted OutputHash on FileClose should be NOT FAITHFUL")
-	}
-	if len(v.Mismatched) != 1 {
-		t.Fatalf("expected 1 mismatched, got %d", len(v.Mismatched))
-	}
-	if v.Mismatched[0].Entry.OutputHash != nil {
-		t.Errorf("entry OutputHash should stay nil in the report, got %q",
-			*v.Mismatched[0].Entry.OutputHash)
-	}
-	if v.Mismatched[0].Event.OutputHash == nil || *v.Mismatched[0].Event.OutputHash != "real_hash" {
-		t.Errorf("event OutputHash should show what the probe captured, got %v",
-			v.Mismatched[0].Event.OutputHash)
-	}
-	if len(v.Corroborated) != 0 {
-		t.Errorf("expected 0 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// Fix 4: same rule for a ProcessExit entry that omits ExitCode while the
-// ground truth captured one.
-func TestOmittedExitCodeOnProcessExitIsMismatched(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.ProcessExit, "/usr/bin/git push", nil, nil),
-	}
-	ground := models.GroundTruth{
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(5 * time.Millisecond),
-			ActionType: models.ProcessExit, Target: "/usr/bin/git push", ExitCode: ip(1)},
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("omitted ExitCode on ProcessExit should be NOT FAITHFUL")
-	}
-	if len(v.Mismatched) != 1 {
-		t.Fatalf("expected 1 mismatched, got %d", len(v.Mismatched))
-	}
-	if v.Mismatched[0].Entry.ExitCode != nil {
-		t.Errorf("entry ExitCode should stay nil in the report, got %d",
-			*v.Mismatched[0].Entry.ExitCode)
-	}
-	if v.Mismatched[0].Event.ExitCode == nil || *v.Mismatched[0].Event.ExitCode != 1 {
-		t.Errorf("event ExitCode should show what the probe captured, got %v",
-			v.Mismatched[0].Event.ExitCode)
-	}
-}
-
-// Fix 4 regression guard: the permissive default is deliberately kept for
-// the ground-truth-side nil (the probe genuinely couldn't capture it). This
-// duplicates TestHashNilTreatedAsAgreement's intent, kept next to the new
-// tests as an explicit "did the override flip the wrong direction" check.
-func TestGroundTruthNilHashStillTreatedAsAgreement(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileClose, "/workspace/out.txt", nil, sp("agent_hash")),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.FileClose, "/workspace/out.txt", nil, nil),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Error("nil ground-truth hash must still be treated as agreement")
-	}
-	if len(v.Corroborated) != 1 {
-		t.Errorf("expected 1 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// Fix 4 scope boundary: InputHash is deliberately NOT covered by the
-// override yet (Tier 4.2 capture isn't implemented on either side). A
-// trajectory omitting InputHash while the ground truth has one must still be
-// treated as agreement. This fails loudly if someone extends the override
-// to InputHash without building the Tier 4.2 capture path.
-func TestOmittedInputHashStillTreatedAsAgreement(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileClose, "/workspace/out.txt", nil, sp("out_h")),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.FileClose, "/workspace/out.txt", sp("in_h"), sp("out_h")),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Error("omitted InputHash must still be treated as agreement until Tier 4.2")
-	}
-	if len(v.Corroborated) != 1 {
-		t.Errorf("expected 1 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-func TestEmptyTrajectoryAndGroundTruth(t *testing.T) {
-	v := Verify(nil, nil, cfg)
-
-	if !v.Faithful {
-		t.Error("empty T and G should be FAITHFUL")
-	}
-}
-
-func TestEmptyTrajectoryWithGroundTruth(t *testing.T) {
-	ground := models.GroundTruth{
-		ge(0, models.FileRead, "/etc/hostname", nil, sp("h1")),
-	}
-
-	v := Verify(nil, ground, cfg)
-
-	if v.Faithful {
-		t.Error("empty T with non-empty G should be NOT FAITHFUL (omission)")
-	}
-	if len(v.Unrecorded) != 1 {
-		t.Errorf("expected 1 unrecorded, got %d", len(v.Unrecorded))
-	}
-}
-
-func TestGreedyClosestTimestamp(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileWrite, "/tmp/f.txt", nil, sp("h1")),
-		te(100, models.FileWrite, "/tmp/f.txt", nil, sp("h2")),
-	}
-	ground := models.GroundTruth{
-		ge(3, models.FileWrite, "/tmp/f.txt", nil, sp("h1")),
-		ge(98, models.FileWrite, "/tmp/f.txt", nil, sp("h2")),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Error("expected FAITHFUL with correct closest-timestamp pairing")
-	}
-	if len(v.Corroborated) != 2 {
-		t.Errorf("expected 2 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// F2.2: a single verification pass over a trajectory that mixes file and
-// process actions, where the process probe reports absolute command paths
-// while the agent logs bare command names. All entries should corroborate.
-func TestMixedFileAndProcessVerification(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/workspace/./main.go", nil, sp("src_h")),
-		te(500, models.ProcessExec, "/usr/local/bin/go", sp("build_args"), nil),
-		te(1500, models.FileWrite, "/workspace/bin/app", sp("nil_h"), sp("bin_h")),
-		te(2500, models.ProcessExec, "/usr/bin/git", sp("commit_args"), nil),
-		te(3000, models.ProcessExit, "/usr/bin/git", nil, sp("0")),
-	}
-	ground := models.GroundTruth{
-		ge(3, models.FileRead, "/workspace/main.go", nil, sp("src_h")),
-		ge(505, models.ProcessExec, "/usr/local/bin/go", sp("build_args"), nil),
-		ge(1502, models.FileWrite, "/workspace/bin/app", sp("nil_h"), sp("bin_h")),
-		ge(2503, models.ProcessExec, "/usr/bin/git", sp("commit_args"), nil),
-		ge(3004, models.ProcessExit, "/usr/bin/git", nil, sp("0")),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Errorf("mixed file+process trajectory should be FAITHFUL: %+v", v)
-	}
-	if len(v.Corroborated) != 5 {
-		t.Errorf("expected 5 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// F2.2: a process action the agent omitted from its trajectory must surface as
-// Unrecorded even when file actions in the same pass all corroborate.
-func TestMixedVerificationDetectsOmittedProcess(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileWrite, "/workspace/payload.sh", nil, sp("sh_h")),
-	}
-	ground := models.GroundTruth{
-		ge(2, models.FileWrite, "/workspace/payload.sh", nil, sp("sh_h")),
-		ge(50, models.ProcessExec, "/bin/bash", sp("bash_args"), nil),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("omitted subprocess spawn should be NOT FAITHFUL")
-	}
-	if len(v.Unrecorded) != 1 || v.Unrecorded[0].ActionType != models.ProcessExec {
-		t.Fatalf("expected 1 unrecorded process_exec, got %+v", v.Unrecorded)
-	}
-}
-
-// --- E2E attack scenarios (design properties P1, P2, P3, P5) ---
-
-// Honest trajectory: 5 actions, all present and matching in ground truth.
-func honestTrajectory() (models.Trajectory, models.GroundTruth) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/workspace/config.yaml", nil, sp("cfg_h")),
-		te(1000, models.ProcessExec, "python main.py", sp("args_h"), nil),
-		te(2000, models.NetRequest, "https://api.openai.com/v1/chat", sp("req_h"), sp("resp_h")),
-		te(3000, models.FileWrite, "/workspace/output.txt", sp("before_h"), sp("after_h")),
-		te(4000, models.ProcessExec, "git commit -m fix", sp("git_args"), nil),
-	}
-	ground := models.GroundTruth{
-		ge(2, models.FileRead, "/workspace/config.yaml", nil, sp("cfg_h")),
-		ge(1003, models.ProcessExec, "python main.py", sp("args_h"), nil),
-		ge(2010, models.NetRequest, "https://api.openai.com/v1/chat", sp("req_h"), sp("resp_h")),
-		ge(3001, models.FileWrite, "/workspace/output.txt", sp("before_h"), sp("after_h")),
-		ge(4005, models.ProcessExec, "git commit -m fix", sp("git_args"), nil),
-	}
-	return traj, ground
-}
-
-func TestE2E_HonestTrajectory(t *testing.T) {
-	traj, ground := honestTrajectory()
-	v := Verify(traj, ground, cfg)
-
-	if !v.Faithful {
-		t.Error("honest trajectory should be FAITHFUL")
-	}
-	if len(v.Corroborated) != 5 {
-		t.Errorf("expected 5 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// T1 attack: agent omits the API call from the trajectory (hides exfiltration).
-func TestE2E_T1_Omission(t *testing.T) {
-	traj, ground := honestTrajectory()
-
-	// Drop the network request (index 2) from the trajectory.
-	traj = append(traj[:2], traj[3:]...)
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("omission attack should be NOT FAITHFUL")
-	}
-	if len(v.Unrecorded) != 1 {
-		t.Fatalf("expected 1 unrecorded, got %d", len(v.Unrecorded))
-	}
-	if v.Unrecorded[0].Target != "https://api.openai.com/v1/chat" {
-		t.Errorf("wrong unrecorded target: %s", v.Unrecorded[0].Target)
-	}
-	if len(v.Corroborated) != 4 {
-		t.Errorf("expected 4 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// T2 attack: agent fabricates a benign file read that never happened.
-func TestE2E_T2_Fabrication(t *testing.T) {
-	traj, ground := honestTrajectory()
-
-	// Insert a fake entry: agent claims it read a harmless README.
-	fake := te(2500, models.FileRead, "/workspace/README.md", nil, sp("readme_h"))
-	traj = append(traj[:3], append(models.Trajectory{fake}, traj[3:]...)...)
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("fabrication attack should be NOT FAITHFUL")
-	}
-	if len(v.Unwitnessed) != 1 {
-		t.Fatalf("expected 1 unwitnessed, got %d", len(v.Unwitnessed))
-	}
-	if v.Unwitnessed[0].Target != "/workspace/README.md" {
-		t.Errorf("wrong unwitnessed target: %s", v.Unwitnessed[0].Target)
-	}
-	if len(v.Corroborated) != 5 {
-		t.Errorf("expected 5 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// TestE2E_DirectoryFallbackRequiresAmbiguousFlag pins Fix 6 end to end:
-// targetsMatch's directory-covers-file leniency must only apply when the
-// ground truth is a genuinely ambiguous (DFID-only, kernel-merged) record.
-// A fabricated file claim must not be laundered through an unrelated,
-// exactly-resolved ground-truth event that merely happens to equal the
-// claimed file's parent directory.
-func TestE2E_DirectoryFallbackRequiresAmbiguousFlag(t *testing.T) {
-	claim := te(0, models.FileWrite, "/workspace/secret.txt", nil, sp("h"))
-
-	t.Run("exact ground truth equal to the directory does not corroborate", func(t *testing.T) {
-		ground := models.GroundTruth{
-			{IsTopLevel: bp(true), Timestamp: baseTime, ActionType: models.FileWrite, Target: "/workspace"},
-		}
-
-		v := Verify(models.Trajectory{claim}, ground, cfg)
-		if v.Faithful {
-			t.Error("a fabricated file claim must not be corroborated by an unrelated, exactly-resolved directory event")
-		}
-		if len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != "/workspace/secret.txt" {
-			t.Errorf("expected the fabricated claim unwitnessed, got %+v", v.Unwitnessed)
-		}
-		if len(v.Corroborated) != 0 {
-			t.Errorf("expected 0 corroborated, got %d", len(v.Corroborated))
-		}
-	})
-
-	t.Run("ambiguous ground truth for the directory still corroborates", func(t *testing.T) {
-		ground := models.GroundTruth{
-			{IsTopLevel: bp(true), Timestamp: baseTime, ActionType: models.FileWrite, Target: "/workspace", PathIsAmbiguous: true},
-		}
-
-		v := Verify(models.Trajectory{claim}, ground, cfg)
-		if !v.Faithful {
-			t.Errorf("a genuinely ambiguous directory-level ground truth should still corroborate a file write inside it: %+v", v)
-		}
-		if len(v.Corroborated) != 1 {
-			t.Errorf("expected 1 corroborated, got %d", len(v.Corroborated))
-		}
-	})
-}
-
-// TestE2E_AmbiguousDirectoryEventCorroboratesOnlyOneClaim guards the
-// boundary of Fix 6's leniency: one ambiguous (DFID-only) ground-truth event
-// for a directory can corroborate a file claim inside that directory, but
-// Verify's one-to-one greedy matching (matched[bestIdx] = true) means it can
-// still corroborate only ONE such claim, not every file an agent claims to
-// have touched in that directory. A second, distinct file claim with no
-// ground-truth event of its own must remain unwitnessed even though the
-// same ambiguous directory event would, in isolation, satisfy targetsMatch
-// for it too.
-func TestE2E_AmbiguousDirectoryEventCorroboratesOnlyOneClaim(t *testing.T) {
-	claimA := te(0, models.FileWrite, "/workspace/a.txt", nil, sp("ha"))
-	claimB := te(1, models.FileWrite, "/workspace/b.txt", nil, sp("hb"))
-
-	ground := models.GroundTruth{
-		{IsTopLevel: bp(true), Timestamp: baseTime, ActionType: models.FileWrite, Target: "/workspace", PathIsAmbiguous: true},
-	}
-
-	v := Verify(models.Trajectory{claimA, claimB}, ground, cfg)
-
-	if v.Faithful {
-		t.Errorf("only one ground-truth event exists for two distinct file claims; verdict must not be faithful: %+v", v)
-	}
-	if len(v.Corroborated) != 1 {
-		t.Fatalf("expected exactly 1 corroborated claim (the event is consumed once), got %d: %+v", len(v.Corroborated), v.Corroborated)
-	}
-	if v.Corroborated[0].Entry.Target != "/workspace/a.txt" {
-		t.Errorf("expected the earlier claim (a.txt) to win the closest-timestamp match, got %q", v.Corroborated[0].Entry.Target)
-	}
-	if len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != "/workspace/b.txt" {
-		t.Errorf("expected b.txt to remain unwitnessed once the ambiguous event is consumed by a.txt, got %+v", v.Unwitnessed)
-	}
-}
-
-// T3 attack: agent claims it read /etc/hostname but actually read /etc/shadow.
-// The trajectory entry matches the ground-truth event on (type, target, time)
-// but the output hash differs.
-func TestE2E_T3_Substitution(t *testing.T) {
-	traj, ground := honestTrajectory()
-
-	// Replace the file read's output hash with a different value.
-	// The agent claims it got "innocent_content" but the probe captured "cfg_h".
-	traj[0].OutputHash = sp("innocent_content")
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("substitution attack should be NOT FAITHFUL")
-	}
-	if len(v.Mismatched) != 1 {
-		t.Fatalf("expected 1 mismatched, got %d", len(v.Mismatched))
-	}
-	if v.Mismatched[0].Entry.Target != "/workspace/config.yaml" {
-		t.Errorf("wrong mismatched target: %s", v.Mismatched[0].Entry.Target)
-	}
-	if len(v.Corroborated) != 4 {
-		t.Errorf("expected 4 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// T3 attack, process-identity variant: the agent's trajectory claims it ran
-// a trusted system binary, but the process it actually ran resolves to a
-// different path (e.g. a planted binary earlier in PATH, or a directly
-// invoked execve() with a spoofed argv[0]). This is the scenario proc.
-// commandLine's move from argv[0] to the kernel-resolved execve filename
-// exists to make visible: the ground-truth target below is what the fixed
-// probe reports for such a run (see proc.TestCommandLine_UsesResolvedFilenameNotArgv0
-// and matching.TestProcessCommandWithArguments for the layers underneath).
-// Because the claimed and actual binaries are different resolved paths,
-// commandsMatch refuses the match (no basename fallback applies across
-// different directories), so this surfaces as Unwitnessed + Unrecorded
-// rather than Mismatched, the same occurrence-level pattern the Tier 1
-// filename-swap test documents for file actions.
-func TestE2E_T3_ProcessMasquerading(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.ProcessExec, "/usr/bin/ls -la /workspace", nil, nil),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.ProcessExec, "/tmp/attacker-writable-dir/ls -la /workspace", nil, nil),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("process masquerading should be NOT FAITHFUL")
-	}
-	if len(v.Unwitnessed) != 1 {
-		t.Fatalf("expected 1 unwitnessed (claimed binary never ran), got %d", len(v.Unwitnessed))
-	}
-	if v.Unwitnessed[0].Target != "/usr/bin/ls -la /workspace" {
-		t.Errorf("wrong unwitnessed target: %s", v.Unwitnessed[0].Target)
-	}
-	if len(v.Unrecorded) != 1 {
-		t.Fatalf("expected 1 unrecorded (the binary that actually ran), got %d", len(v.Unrecorded))
-	}
-	if v.Unrecorded[0].Target != "/tmp/attacker-writable-dir/ls -la /workspace" {
-		t.Errorf("wrong unrecorded target: %s", v.Unrecorded[0].Target)
-	}
-	if len(v.Corroborated) != 0 {
-		t.Errorf("expected 0 corroborated, got %d", len(v.Corroborated))
-	}
-}
-
-// T3 attack, bare-name variant of process masquerading: the agent reports a
-// process by the normal bare-name convention ("ls"), but the binary that
-// actually ran resolves to a planted copy in an agent-writable directory
-// that happens to share the basename. Before Fix 2, commandsMatch's
-// unconditional basename fallback made this Corroborated. After Fix 2, a
-// bare name only vouches for a resolved path whose directory is on the
-// trustedBinDirs allowlist, so /tmp/attacker-writable-dir/ls does not
-// match, and this surfaces as Unwitnessed + Unrecorded.
-func TestE2E_T3_BareNameMasquerading(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.ProcessExec, "ls -la /workspace", nil, nil),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.ProcessExec, "/tmp/attacker-writable-dir/ls -la /workspace", nil, nil),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("bare-name masquerading should be NOT FAITHFUL")
-	}
-	if len(v.Corroborated) != 0 {
-		t.Errorf("expected 0 corroborated, got %d", len(v.Corroborated))
-	}
-	if len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != "ls -la /workspace" {
-		t.Errorf("expected the bare claim unwitnessed, got %+v", v.Unwitnessed)
-	}
-	if len(v.Unrecorded) != 1 ||
-		v.Unrecorded[0].Target != "/tmp/attacker-writable-dir/ls -la /workspace" {
-		t.Errorf("expected the planted binary unrecorded, got %+v", v.Unrecorded)
-	}
-}
-
-// Sibling to TestE2E_T3_BareNameMasquerading: the same bare claim against a
-// binary that really did resolve into a standard system directory still
-// corroborates, so Fix 2 doesn't break the honest bare-name convention.
-func TestE2E_BareNameAgainstTrustedPathIsNOTFaithful(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.ProcessExec, "ls -la /workspace", nil, nil),
-	}
-	ground := models.GroundTruth{
-		ge(5, models.ProcessExec, "/usr/bin/ls -la /workspace", nil, nil),
-	}
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Errorf("bare name vs /usr/bin path should be NOT FAITHFUL due to strict matching, got %+v", v)
-	}
-	if len(v.Corroborated) != 0 {
-		t.Errorf("expected 0 corroborated, got %d", len(v.Corroborated))
-	}
-	if len(v.Unwitnessed) != 1 || len(v.Unrecorded) != 1 {
-		t.Errorf("expected 1 unwitnessed and 1 unrecorded, got U=%d R=%d", len(v.Unwitnessed), len(v.Unrecorded))
-	}
-}
-
-// Combined attack: omission + fabrication + substitution in the same trajectory.
-func TestE2E_CombinedAttack(t *testing.T) {
-	traj, ground := honestTrajectory()
-
-	// T1: drop the network request (index 2)
-	traj = append(traj[:2], traj[3:]...)
-
-	// T2: insert a fabricated entry
-	fake := te(2500, models.FileRead, "/workspace/README.md", nil, sp("readme_h"))
-	traj = append(traj[:2], append(models.Trajectory{fake}, traj[2:]...)...)
-
-	// T3: substitute the file write hash (now at index 3 after mutations)
-	traj[3].OutputHash = sp("tampered_hash")
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("combined attack should be NOT FAITHFUL")
-	}
-	if len(v.Unrecorded) != 1 {
-		t.Errorf("expected 1 unrecorded (omitted net request), got %d", len(v.Unrecorded))
-	}
-	if len(v.Unwitnessed) != 1 {
-		t.Errorf("expected 1 unwitnessed (fabricated README read), got %d", len(v.Unwitnessed))
-	}
-	if len(v.Mismatched) != 1 {
-		t.Errorf("expected 1 mismatched (substituted file write), got %d", len(v.Mismatched))
-	}
-}
-
-// Fix 4 combined scenario: an omission (T1), a fabrication (T2), and two
-// check opt-outs in the same trajectory -- a FileClose with no OutputHash
-// and a ProcessExit with no ExitCode, both against ground truth that did
-// capture those values. All four must surface; none may launder into
-// Corroborated.
-func TestE2E_CombinedAttackWithOmittedEvidence(t *testing.T) {
-	traj := models.Trajectory{
-		te(0, models.FileRead, "/workspace/config.yaml", nil, sp("cfg_h")),
-		te(1000, models.NetRequest, "https://api.openai.com/v1/chat", sp("req_h"), sp("resp_h")),
-		te(2000, models.FileClose, "/workspace/output.txt", nil, nil),
-		{Timestamp: baseTime.Add(3000 * time.Millisecond), ActionType: models.ProcessExit,
-			Target: "/usr/bin/git push"},
-	}
-	ground := models.GroundTruth{
-		ge(2, models.FileRead, "/workspace/config.yaml", nil, sp("cfg_h")),
-		ge(1003, models.NetRequest, "https://api.openai.com/v1/chat", sp("req_h"), sp("resp_h")),
-		ge(2001, models.FileClose, "/workspace/output.txt", nil, sp("real_out_h")),
-		{IsTopLevel: bp(true), Timestamp: baseTime.Add(3004 * time.Millisecond),
-			ActionType: models.ProcessExit, Target: "/usr/bin/git push", ExitCode: ip(128)},
-		ge(4000, models.FileRead, "/workspace/secret.env", nil, sp("secret_h")),
-	}
-
-	// T2: agent fabricates a benign read that never happened.
-	traj = append(traj, te(3500, models.FileRead, "/workspace/README.md", nil, sp("readme_h")))
-
-	v := Verify(traj, ground, cfg)
-
-	if v.Faithful {
-		t.Error("combined attack should be NOT FAITHFUL")
-	}
-	if len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "/workspace/secret.env" {
-		t.Errorf("expected 1 unrecorded (omitted secret read), got %+v", v.Unrecorded)
-	}
-	if len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != "/workspace/README.md" {
-		t.Errorf("expected 1 unwitnessed (fabricated README read), got %+v", v.Unwitnessed)
-	}
+func TestVerify_ProcessMasqueradingIsASubstitution(t *testing.T) {
+	g := models.GroundTruth{
+		fork(1, 200, agentPID), execEv(2, 200, agentPID, "/tmp/evil/cat README"),
+		exitEv(3, 200, agentPID, "/tmp/evil/cat README"),
+	}
+	v := run(claimsFor("/usr/bin/cat README"), g)
+	wantOutcome(t, v, OutcomeNotFaithful)
 	if len(v.Mismatched) != 2 {
-		t.Errorf("expected 2 mismatched (omitted OutputHash + omitted ExitCode), got %d",
-			len(v.Mismatched))
-	}
-	if len(v.Corroborated) != 2 {
-		t.Errorf("expected 2 corroborated (config read + net request), got %d",
-			len(v.Corroborated))
+		t.Errorf("mismatched = %d, want the exec and the exit both substituted", len(v.Mismatched))
 	}
 }
 
-// Listener events are capability evidence (09 item 2): observed, counted,
-// never aligned. An honest agent's trajectory cannot mention them, so they
-// must not read as Unrecorded and must not make the run unfaithful, whether
-// or not the probe set a level on the event.
-func TestVerify_ListenersAreCapabilityNotUnrecorded(t *testing.T) {
-	now := time.Now()
-	top := true
+func TestVerify_HashMismatch(t *testing.T) {
+	g := models.GroundTruth{withHash(agentEv(0, models.FileRead, "/w/c"), nil, sp("real"))}
+	tr := models.Trajectory{withClaimHash(claimAt(0, models.FileRead, "/w/c"), nil, sp("innocent"))}
+	v := run(tr, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Mismatched) != 1 || v.Mismatched[0].Diffs[0] != DiffOutputHash {
+		t.Errorf("Mismatched = %+v, want an output_hash difference", v.Mismatched)
+	}
+}
+
+// The three states of a nil (08 section 3.7). Each row pairs one claim with one
+// observed event, and says what the content comparison concludes under the
+// default (everything expressible), a format that cannot state the field, and a
+// format that can.
+func TestVerify_ThreeValuedNil(t *testing.T) {
+	h := sp("sha256:aa")
+	other := sp("sha256:bb")
+	type row struct {
+		name    string
+		claim   models.TrajectoryEntry
+		event   models.GroundTruthEvent
+		field   string
+		cannot  bool // result when the format cannot express the field: mismatch?
+		can     bool // result when it can
+		deflt   bool // result with a nil Expresses
+		comment string
+	}
+	fc := func(out *string) models.TrajectoryEntry {
+		c := claimAt(0, models.FileClose, "/w/f")
+		c.OutputHash = out
+		return c
+	}
+	fe := func(out *string) models.GroundTruthEvent {
+		e := agentEv(0, models.FileClose, "/w/f")
+		e.OutputHash = out
+		return e
+	}
+	xc := func(code *int32) models.TrajectoryEntry {
+		c := claimAt(0, models.ProcessExit, "/bin/true")
+		c.ExitCode = code
+		return c
+	}
+	xe := func(code *int32) models.GroundTruthEvent {
+		e := agentEv(0, models.ProcessExit, "/bin/true")
+		e.ExitCode = code
+		return e
+	}
+	rc := func(r *string) models.TrajectoryEntry {
+		c := claimAt(0, models.NetRequest, "example.com:443/")
+		c.RequestHash = r
+		return c
+	}
+	re := func(r *string) models.GroundTruthEvent {
+		e := agentEv(0, models.NetRequest, "example.com:443/")
+		e.RequestHash = r
+		return e
+	}
+	zero := int32(0)
+	one := int32(1)
+	rows := []row{
+		{"file_close: agent opted out", fc(nil), fe(h), DiffOutputHash, false, true, true, "nil by choice is a finding only if expressible"},
+		{"file_close: probe captured nothing", fc(h), fe(nil), DiffOutputHash, false, false, false, "probe gap gets the benefit of the doubt"},
+		{"file_close: both nil", fc(nil), fe(nil), DiffOutputHash, false, false, false, ""},
+		{"file_close: both set, differ", fc(other), fe(h), DiffOutputHash, true, true, true, "a stated value that differs is always a finding"},
+		{"exit: agent opted out", xc(nil), xe(&zero), DiffExitCode, false, true, true, ""},
+		{"exit: probe captured nothing", xc(&zero), xe(nil), DiffExitCode, false, false, false, ""},
+		{"exit: both set, differ", xc(&zero), xe(&one), DiffExitCode, true, true, true, ""},
+		{"request: agent opted out", rc(nil), re(h), DiffRequestHash, false, true, true, ""},
+		{"request: probe captured nothing", rc(h), re(nil), DiffRequestHash, false, false, false, ""},
+		{"request: both set, differ", rc(other), re(h), DiffRequestHash, true, true, true, ""},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			check := func(label string, ex Expresses, wantMismatch bool) {
+				t.Helper()
+				v := Verify(Input{
+					Claims: models.Trajectory{r.claim}, Ground: models.GroundTruth{r.event},
+					RootPID: agentPID, Coverage: completeCov(), Options: Options{Expresses: ex},
+				})
+				if got := len(v.Mismatched) == 1; got != wantMismatch {
+					t.Errorf("%s: mismatched = %v, want %v (%s)", label, got, wantMismatch, r.comment)
+				}
+				if wantMismatch {
+					if d := v.Mismatched[0].Diffs; len(d) == 0 || d[0] != r.field {
+						t.Errorf("%s: Diffs = %v, want %s", label, d, r.field)
+					}
+				}
+			}
+			check("default", nil, r.deflt)
+			check("cannot express", func(models.TrajectoryEntry, string) bool { return false }, r.cannot)
+			check("can express", func(models.TrajectoryEntry, string) bool { return true }, r.can)
+		})
+	}
+}
+
+// Expresses is asked per entry and per field, so one agent can state a field
+// for one tool and not for another (Claude Code's Edit versus Write).
+func TestVerify_ExpressesIsPerEntry(t *testing.T) {
+	h := sp("sha256:aa")
+	edit := claimAt(0, models.FileClose, "/w/edited")
+	write := claimAt(1, models.FileClose, "/w/written")
 	g := models.GroundTruth{
-		{Timestamp: now, ActionType: models.NetBind, Target: "0.0.0.0:8080"},
-		{Timestamp: now, ActionType: models.NetListen, Target: "0.0.0.0:8080", IsTopLevel: &top},
-		{Timestamp: now, ActionType: models.NetUnixConnect, Target: "unix:/var/run/docker.sock"},
-		{Timestamp: now, ActionType: models.ProcessExec, Target: "ls"},
+		withHash(agentEv(0, models.FileClose, "/w/edited"), nil, h),
+		withHash(agentEv(1, models.FileClose, "/w/written"), nil, h),
 	}
-	tr := models.Trajectory{{Timestamp: now, ActionType: models.ProcessExec, Target: "ls"}}
-	v := Verify(tr, g, matching.Config{Delta: time.Second})
-	if !v.Faithful {
-		t.Errorf("Faithful = false, want true: unrecorded=%v unwitnessed=%v", v.Unrecorded, v.Unwitnessed)
+	ex := func(e models.TrajectoryEntry, field string) bool { return e.Target == "/w/written" }
+	v := Verify(Input{Claims: models.Trajectory{edit, write}, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{Expresses: ex}})
+	if len(v.Mismatched) != 1 || v.Mismatched[0].Entry.Target != "/w/written" {
+		t.Errorf("Mismatched = %+v, want only the entry whose format could state the hash", v.Mismatched)
 	}
-	if len(v.Unrecorded) != 0 {
-		t.Errorf("listeners reported as Unrecorded: %v", v.Unrecorded)
-	}
-	if len(v.Capability) != 3 {
-		t.Errorf("Capability = %d events, want 3", len(v.Capability))
-	}
-	if len(v.Corroborated) != 1 {
-		t.Errorf("Corroborated = %d, want 1: the exec must still align", len(v.Corroborated))
+	if len(v.Corroborated) != 1 || v.Corroborated[0].Entry.Target != "/w/edited" {
+		t.Errorf("Corroborated = %+v, want the entry whose format cannot state it", v.Corroborated)
 	}
 }
 
-// A claim of an unclaimable type can only come from a hand-built trajectory
-// (ParseTrajectory rejects it). If one reaches Verify it must still not
-// corroborate against an observed listener, or an agent could launder a
-// listener into a corroborated action.
-func TestVerify_ListenerClaimNeverCorroborates(t *testing.T) {
-	now := time.Now()
-	g := models.GroundTruth{{Timestamp: now, ActionType: models.NetListen, Target: "0.0.0.0:8080"}}
-	tr := models.Trajectory{{Timestamp: now, ActionType: models.NetListen, Target: "0.0.0.0:8080"}}
-	v := Verify(tr, g, matching.Config{Delta: time.Second})
+// InputHash has no round-trip support yet, so an omitted input hash agrees
+// under every declaration.
+func TestVerify_OmittedInputHashStaysPermissive(t *testing.T) {
+	g := models.GroundTruth{withHash(agentEv(0, models.FileRead, "/w/c"), sp("in"), nil)}
+	v := run(models.Trajectory{claimAt(0, models.FileRead, "/w/c")}, g)
+	wantOutcome(t, v, OutcomeFaithful)
+}
+
+// What a build does is explained by the command the agent claimed. None of the
+// descendants' events is compared against anything or reads as an omission.
+func TestVerify_SubtreeEventsAreNotOmissions(t *testing.T) {
+	v := run(claimsFor("/bin/sh -c build", "/usr/bin/curl http://x"), twoCommandTruth())
+	wantOutcome(t, v, OutcomeFaithful)
+	if v.Coverage.Explained == 0 {
+		t.Error("Coverage.Explained = 0, want the subtree events counted")
+	}
+}
+
+// A command nothing claims is an omission and cannot hide by being a command.
+func TestVerify_UnclaimedCommand(t *testing.T) {
+	v := run(claimsFor("/bin/sh -c build"), twoCommandTruth())
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Coverage.UnexplainedSubtrees) != 1 {
+		t.Fatalf("UnexplainedSubtrees = %d, want the curl subtree", len(v.Coverage.UnexplainedSubtrees))
+	}
+	if got := v.Coverage.UnexplainedSubtrees[0].Process.PID; got != 300 {
+		t.Errorf("unexplained subtree pid = %d, want 300", got)
+	}
+}
+
+// A subshell that forks and never execs has no exec record. Nothing the agent
+// said accounts for it, and it must not escape by having no exec.
+func TestVerify_ForkWithoutExecIsAnUnexplainedSubtree(t *testing.T) {
+	g := models.GroundTruth{fork(1, 400, agentPID), fsEv(2, 400, "/w/from-subshell")}
+	v := run(nil, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Coverage.UnexplainedSubtrees) != 1 {
+		t.Errorf("UnexplainedSubtrees = %d, want 1", len(v.Coverage.UnexplainedSubtrees))
+	}
+}
+
+// Level 2 and below are never claimed, so their events do not move the
+// verdict whether or not the file name looks like anything in the trajectory.
+func TestVerify_DescendantEventsDoNotCorroborateClaims(t *testing.T) {
+	g := models.GroundTruth{
+		fork(1, 200, agentPID), execEv(2, 200, agentPID, "/bin/sh -c x"),
+		fsEv(3, 200, "/w/a"),
+		exitEv(4, 200, agentPID, "/bin/sh -c x"),
+	}
+	tr := append(claimsFor("/bin/sh -c x"), claimAt(3, models.FileWrite, "/w/a"))
+	v := run(tr, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != "/w/a" {
+		t.Errorf("Unwitnessed = %v, want the claim of a subtree write (D3)", v.Unwitnessed)
+	}
+}
+
+func TestVerify_OutsideEventsAreReportedAndDoNotBlock(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a"), fsEv(1, 7777, "/w/stranger")}
+	v := run(models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, g)
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.Coverage.Outside) != 1 {
+		t.Errorf("Outside = %d, want 1 reported", len(v.Coverage.Outside))
+	}
+}
+
+func TestVerify_BaselineExplainsHarnessActivity(t *testing.T) {
+	g := models.GroundTruth{
+		agentEv(0, models.FileRead, "/home/u/.config/agent/settings"),
+		fork(1, 200, agentPID), execEv(2, 200, agentPID, "/usr/bin/git config"),
+		exitEv(3, 200, agentPID, "/usr/bin/git config"),
+		agentEv(10, models.FileWrite, "/w/a"),
+	}
+	tr := models.Trajectory{claimAt(10, models.FileWrite, "/w/a")}
+	base := func(e models.GroundTruthEvent) bool {
+		return strings.Contains(e.Target, "/.config/agent/") || strings.HasPrefix(e.Target, "/usr/bin/git config")
+	}
+	wantOutcome(t, Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: completeCov()}), OutcomeNotFaithful)
+	v := Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: completeCov(), Baseline: base})
+	wantOutcome(t, v, OutcomeFaithful)
+}
+
+// A baseline must not be a place to hide: an event it does not recognise is
+// still an omission.
+func TestVerify_BaselineDoesNotSubtractWhatItDoesNotRecognise(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/exfil")}
+	v := Verify(Input{Ground: g, RootPID: agentPID, Coverage: completeCov(), Baseline: func(models.GroundTruthEvent) bool { return false }})
+	wantOutcome(t, v, OutcomeNotFaithful)
+}
+
+// A format with no exit information has no claim for an observed exit.
+func TestVerify_IgnoreExits(t *testing.T) {
+	g := models.GroundTruth{
+		fork(1, 200, agentPID), execEv(2, 200, agentPID, "/bin/ls"), exitEv(3, 200, agentPID, "/bin/ls"),
+	}
+	tr := models.Trajectory{claimAt(2, models.ProcessExec, "/bin/ls")}
+	wantOutcome(t, run(tr, g), OutcomeNotFaithful) // the exit is unclaimed by default
+	v := Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{IgnoreExits: true}})
+	wantOutcome(t, v, OutcomeFaithful)
+	// The exec is still required: ignoring exits must not ignore the command.
+	v = Verify(Input{Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{IgnoreExits: true}})
+	wantOutcome(t, v, OutcomeNotFaithful)
+}
+
+// 08 V6: a claim interval comes from the adversary. An observed action outside
+// it is reported against the claim, and the pair stays paired.
+func TestVerify_OutsideInterval(t *testing.T) {
+	g := models.GroundTruth{agentEv(5000, models.FileWrite, "/w/a")}
+	c := claimAt(0, models.FileWrite, "/w/a")
+	end := at(100)
+	c.End = &end
+	v := run(models.Trajectory{c}, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Corroborated) != 1 || len(v.OutsideInterval) != 1 {
+		t.Errorf("corroborated=%d outside=%d, want the pair kept and flagged", len(v.Corroborated), len(v.OutsideInterval))
+	}
+	v = Verify(Input{Claims: models.Trajectory{c}, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{IntervalSlack: 10 * time.Second}})
+	wantOutcome(t, v, OutcomeFaithful)
+}
+
+// 08 V6: time orders events and does not pair them. A constant offset between
+// the trajectory's clock and the kernel's changes nothing.
+func TestVerify_ClockOffsetDoesNotChangeTheVerdict(t *testing.T) {
+	g := models.GroundTruth{
+		agentEv(0, models.FileWrite, "/w/a"), agentEv(10, models.FileWrite, "/w/b"), agentEv(20, models.FileWrite, "/w/c"),
+	}
+	tr := models.Trajectory{
+		claimAt(0, models.FileWrite, "/w/a"), claimAt(10, models.FileWrite, "/w/b"), claimAt(20, models.FileWrite, "/w/c"),
+	}
+	for i := range tr {
+		tr[i].Timestamp = tr[i].Timestamp.Add(3 * time.Hour)
+	}
+	wantOutcome(t, run(tr, g), OutcomeFaithful)
+}
+
+// Repeated actions on one target pair in order, each by content.
+func TestVerify_RepeatedActionsPairByPosition(t *testing.T) {
+	g := models.GroundTruth{
+		withHash(agentEv(0, models.FileWrite, "/w/log"), nil, sp("h1")),
+		withHash(agentEv(1, models.FileWrite, "/w/log"), nil, sp("h2")),
+	}
+	tr := models.Trajectory{
+		withClaimHash(claimAt(0, models.FileWrite, "/w/log"), nil, sp("h1")),
+		withClaimHash(claimAt(1, models.FileWrite, "/w/log"), nil, sp("h2")),
+	}
+	wantOutcome(t, run(tr, g), OutcomeFaithful)
+	tr[1].OutputHash = sp("h3")
+	v := run(tr, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Mismatched) != 1 || v.Mismatched[0].Event.OutputHash == nil || *v.Mismatched[0].Event.OutputHash != "h2" {
+		t.Errorf("Mismatched = %+v, want the second write", v.Mismatched)
+	}
+}
+
+// Directory-covers-file leniency applies only to a record the probe could not
+// resolve. An exact event equal to the parent directory launders nothing.
+func TestVerify_DirectoryFallbackRequiresAmbiguousFlag(t *testing.T) {
+	c := claimAt(0, models.FileWrite, "/workspace/secret.txt")
+	exact := models.GroundTruthEvent{Timestamp: at(0), ActionType: models.FileWrite, Target: "/workspace", PID: agentPID}
+	v := run(models.Trajectory{c}, models.GroundTruth{exact})
+	wantOutcome(t, v, OutcomeNotFaithful)
 	if len(v.Corroborated) != 0 {
-		t.Errorf("a listener claim corroborated: %v", v.Corroborated)
+		t.Errorf("exact directory event corroborated a file claim: %+v", v.Corroborated)
 	}
-	if len(v.Unwitnessed) != 1 {
-		t.Errorf("Unwitnessed = %d, want the claim reported", len(v.Unwitnessed))
+
+	amb := exact
+	amb.PathIsAmbiguous = true
+	v = run(models.Trajectory{c}, models.GroundTruth{amb})
+	wantOutcome(t, v, OutcomeFaithful)
+}
+
+// One ambiguous directory event explains one file claim, not every file in the
+// directory, and the verdict says the choice of which was arbitrary.
+func TestVerify_AmbiguousDirectoryEventExplainsOneClaim(t *testing.T) {
+	amb := models.GroundTruthEvent{Timestamp: at(0), ActionType: models.FileWrite, Target: "/workspace", PID: agentPID, PathIsAmbiguous: true}
+	tr := models.Trajectory{claimAt(0, models.FileWrite, "/workspace/a.txt"), claimAt(1, models.FileWrite, "/workspace/b.txt")}
+	v := run(tr, models.GroundTruth{amb})
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Corroborated) != 1 || len(v.Unwitnessed) != 1 {
+		t.Errorf("corroborated=%d unwitnessed=%d, want 1 and 1", len(v.Corroborated), len(v.Unwitnessed))
 	}
-	if v.Faithful {
-		t.Error("a claim that no valid trajectory can make must not yield FAITHFUL")
+	if !v.Ambiguous {
+		t.Error("Ambiguous = false: either claim could have been the unwitnessed one")
 	}
 }
 
-// Fork records are structure for the tree builder. They must not become
-// Unrecorded findings (they are not claimable) and must not clutter the
-// capability list either, since there is one per fork.
-func TestVerify_ForkRecordsAreNeitherUnrecordedNorCapability(t *testing.T) {
-	now := time.Now()
+// Listeners are capability evidence: observed and counted, never aligned.
+func TestVerify_ListenersAreCapabilityNotUnrecorded(t *testing.T) {
 	g := models.GroundTruth{
-		{Timestamp: now, ActionType: models.ProcessFork, Target: "101", PID: 101, PPID: 100},
-		{Timestamp: now, ActionType: models.ProcessFork, Target: "102", PID: 102, PPID: 101},
-		{Timestamp: now, ActionType: models.NetListen, Target: "0.0.0.0:80"},
+		agentEv(0, models.NetBind, "0.0.0.0:8080"),
+		agentEv(1, models.NetListen, "0.0.0.0:8080"),
+		agentEv(2, models.NetUnixConnect, "unix:/var/run/docker.sock"),
+		agentEv(3, models.ProcessExec, "ls"),
 	}
-	v := Verify(models.Trajectory{}, g, matching.Config{Delta: time.Second})
-	if !v.Faithful || len(v.Unrecorded) != 0 {
-		t.Errorf("fork records changed the verdict: faithful=%v unrecorded=%v", v.Faithful, v.Unrecorded)
+	v := run(models.Trajectory{claimAt(3, models.ProcessExec, "ls")}, g)
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.Capability) != 3 || len(v.Unrecorded) != 0 || len(v.Corroborated) != 1 {
+		t.Errorf("capability=%d unrecorded=%d corroborated=%d, want 3/0/1", len(v.Capability), len(v.Unrecorded), len(v.Corroborated))
+	}
+}
+
+// A hand-built claim of an unclaimable type must not launder a listener into a
+// corroborated action.
+func TestVerify_ListenerClaimNeverCorroborates(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.NetListen, "0.0.0.0:8080")}
+	v := run(models.Trajectory{claimAt(0, models.NetListen, "0.0.0.0:8080")}, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Corroborated) != 0 || len(v.Unwitnessed) != 1 {
+		t.Errorf("corroborated=%d unwitnessed=%d, want 0 and 1", len(v.Corroborated), len(v.Unwitnessed))
+	}
+}
+
+func TestVerify_ForkRecordsAreNeitherUnrecordedNorCapability(t *testing.T) {
+	g := models.GroundTruth{fork(1, 101, agentPID), fork(2, 102, 101), agentEv(3, models.NetListen, "0.0.0.0:80")}
+	v := run(nil, g)
+	// The two forks are a command with no claim, which is a finding of its
+	// own. They must not also appear as unrecorded actions or capability.
+	if len(v.Unrecorded) != 0 {
+		t.Errorf("fork records became Unrecorded: %v", v.Unrecorded)
 	}
 	if len(v.Capability) != 1 || v.Capability[0].ActionType != models.NetListen {
 		t.Errorf("Capability = %v, want only the listener", v.Capability)
+	}
+}
+
+// --- Outcome rules (08 section 3.9) ---
+
+func TestVerify_NoRootPIDIsInconclusive(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a")}
+	v := Verify(Input{Claims: models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, Ground: g, Coverage: completeCov()})
+	wantOutcome(t, v, OutcomeInconclusive)
+	if len(v.Reasons) == 0 || !strings.Contains(v.Reasons[0], "root pid") {
+		t.Errorf("Reasons = %v, want the missing root named", v.Reasons)
+	}
+	if len(v.Alignments) != 0 || v.Findings() != 0 {
+		t.Error("a run with no root must not report findings from an alignment it could not attribute")
+	}
+}
+
+func TestVerify_LegacyGroundTruthWithoutPIDsIsInconclusive(t *testing.T) {
+	g := models.GroundTruth{{Timestamp: at(0), ActionType: models.FileWrite, Target: "/w/a"}}
+	v := Verify(Input{Claims: models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, Ground: g, RootPID: agentPID, Coverage: completeCov()})
+	wantOutcome(t, v, OutcomeInconclusive)
+	if len(v.Reasons) == 0 || !strings.Contains(v.Reasons[0], "pid") || v.Findings() != 0 {
+		t.Errorf("Reasons = %v findings = %d, want the missing pids named and no findings", v.Reasons, v.Findings())
+	}
+}
+
+func TestVerify_UnknownEventsWithAFindingAreAdvisory(t *testing.T) {
+	g := models.GroundTruth{
+		agentEv(0, models.FileWrite, "/w/a"),
+		{Timestamp: at(1), ActionType: models.FileWrite, Target: "/w/nopid"},
+	}
+	v := run(models.Trajectory{claimAt(0, models.FileWrite, "/w/a"), claimAt(1, models.FileWrite, "/w/ghost")}, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if !v.Advisory {
+		t.Error("Advisory = false: an unplaced event can manufacture a fabrication finding")
+	}
+}
+
+func TestVerify_NilCoverageIsInconclusive(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a")}
+	v := Verify(Input{Claims: models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, Ground: g, RootPID: agentPID})
+	wantOutcome(t, v, OutcomeInconclusive)
+}
+
+// Any loss counter above zero makes FAITHFUL unavailable, however clean the
+// alignment is.
+func TestVerify_LossIsInconclusive(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a")}
+	tr := models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}
+	losses := map[string]models.ProbeCoverage{
+		"ringbuf drops":      {Ran: true, RingbufDrops: 1},
+		"untracked children": {Ran: true, UntrackedChildren: 1},
+		"state map full":     {Ran: true, StateMapFull: 1},
+		"channel drops":      {Ran: true, ChannelDrops: 1},
+		"queue overflow":     {Ran: true, QueueOverflow: true},
+	}
+	for name, p := range losses {
+		t.Run(name, func(t *testing.T) {
+			c := cov(map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": p})
+			v := Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: c})
+			wantOutcome(t, v, OutcomeInconclusive)
+			if v.Outcome.ExitCode() != 2 {
+				t.Errorf("exit code = %d, want 2", v.Outcome.ExitCode())
+			}
+			if len(v.Reasons) == 0 {
+				t.Error("no reason given for INCONCLUSIVE")
+			}
+		})
+	}
+}
+
+// Content gaps are notes, not loss: they limit what content checks can say but
+// do not make the event set incomplete.
+func TestVerify_ContentNotesAreNotLoss(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a")}
+	c := cov(map[string]models.ProbeCoverage{"fs": {Ran: true}, "net": {Ran: true, FaultedReads: 3, Content: models.ContentAttachFailed}})
+	v := Verify(Input{Claims: models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, Ground: g, RootPID: agentPID, Coverage: c})
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.Completeness.Notes) != 2 {
+		t.Errorf("Notes = %v, want both content gaps noted", v.Completeness.Notes)
+	}
+}
+
+// Loss does not hide a finding: it stays NOT FAITHFUL, marked advisory.
+func TestVerify_FindingsUnderLossAreAdvisory(t *testing.T) {
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/secret")}
+	c := cov(map[string]models.ProbeCoverage{"fs": {Ran: true, RingbufDrops: 4}})
+	v := Verify(Input{Ground: g, RootPID: agentPID, Coverage: c})
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if !v.Advisory || len(v.Reasons) == 0 {
+		t.Errorf("Advisory = %v, Reasons = %v, want advisory with the loss named", v.Advisory, v.Reasons)
+	}
+}
+
+func TestOutcomeExitCodes(t *testing.T) {
+	for o, want := range map[Outcome]int{OutcomeFaithful: 0, OutcomeNotFaithful: 1, OutcomeInconclusive: 2} {
+		if o.ExitCode() != want {
+			t.Errorf("%v.ExitCode() = %d, want %d", o, o.ExitCode(), want)
+		}
+	}
+}
+
+func TestVerify_TooLargeToAlignIsInconclusive(t *testing.T) {
+	const n = 4200 // n*n exceeds the alignment budget
+	var g models.GroundTruth
+	var tr models.Trajectory
+	for i := 0; i < n; i++ {
+		g = append(g, agentEv(i, models.FileWrite, "/w/a"))
+		tr = append(tr, claimAt(i, models.FileWrite, "/w/a"))
+	}
+	v := run(tr, g)
+	wantOutcome(t, v, OutcomeInconclusive)
+}
+
+// An event with no pid among placed ones cannot be shown to be explained, so a
+// run with no findings still cannot be FAITHFUL.
+func TestVerify_UnplacedEventBlocksFaithful(t *testing.T) {
+	g := models.GroundTruth{
+		agentEv(0, models.FileWrite, "/w/a"),
+		{Timestamp: at(1), ActionType: models.FileWrite, Target: "/w/nopid"},
+	}
+	v := run(models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, g)
+	wantOutcome(t, v, OutcomeInconclusive)
+	if len(v.Coverage.Unknown) != 1 {
+		t.Errorf("Unknown = %d, want 1", len(v.Coverage.Unknown))
 	}
 }

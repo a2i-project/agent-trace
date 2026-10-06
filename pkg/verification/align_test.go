@@ -289,7 +289,7 @@ func bruteForce(c models.Trajectory, o models.GroundTruth) (best int, count int)
 			return
 		}
 		if i < len(c) && j < len(o) {
-			pc, _ := pairCost(c[i], o[j])
+			pc, _ := pairCost(c[i], o[j], nil)
 			rec(i+1, j+1, cost+pc)
 		}
 		if i < len(c) {
@@ -348,7 +348,7 @@ func TestAlign_AgreesWithBruteForceOnRandomSequences(t *testing.T) {
 			case EditInsertion, EditDeletion:
 				cost += costIndel
 			default:
-				pc, _ := pairCost(*e.Claim, *e.Event)
+				pc, _ := pairCost(*e.Claim, *e.Event, nil)
 				cost += pc
 			}
 		}

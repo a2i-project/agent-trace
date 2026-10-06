@@ -15,18 +15,19 @@ import (
 	"os"
 	"time"
 
-	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 func main() {
 	var trajectoryPath, groundTruthPath string
-	var delta time.Duration
+	var slack time.Duration
+	var ignoreExits bool
 
 	flag.StringVar(&trajectoryPath, "trajectory", "", "Path to the self-reported trajectory JSON")
-	flag.StringVar(&groundTruthPath, "ground-truth", "", "Path to the observed ground truth JSON")
-	flag.DurationVar(&delta, "delta", 2*time.Second, "Max timestamp difference allowed for a match (generous default for manually-run two-terminal sessions)")
+	flag.StringVar(&groundTruthPath, "ground-truth", "", "Path to the observed ground truth JSON (written by watch)")
+	flag.DurationVar(&slack, "interval-slack", 0, "Widen each claim's interval by this much on both sides before checking the observed action falls inside it (for a trajectory clock that is not the kernel's)")
+	flag.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits: for a trajectory format that cannot state an exit")
 	flag.Parse()
 
 	if trajectoryPath == "" || groundTruthPath == "" {
@@ -35,39 +36,61 @@ func main() {
 
 	tr := loadTrajectory(trajectoryPath)
 	gtFile := loadGroundTruth(groundTruthPath)
-	gt := gtFile.Events
 
-	verdict := verification.Verify(tr, gt, matching.Config{Delta: delta})
-	completeness := verification.Assess(gtFile.Coverage)
+	v := verification.Verify(verification.Input{
+		Claims:   tr,
+		Ground:   gtFile.Events,
+		RootPID:  gtFile.RootPID,
+		Coverage: gtFile.Coverage,
+		Options:  verification.Options{IntervalSlack: slack, IgnoreExits: ignoreExits},
+	})
 
 	fmt.Println("=== Agent-Trace Verification Report ===")
 	fmt.Printf("trajectory:   %s (%d entries)\n", trajectoryPath, len(tr))
-	fmt.Printf("ground truth: %s (%d events)\n", groundTruthPath, len(gt))
-	fmt.Printf("delta:        %s\n", delta)
+	fmt.Printf("ground truth: %s (%d events, root pid %d)\n", groundTruthPath, len(gtFile.Events), gtFile.RootPID)
 
-	fmt.Printf("\nCorroborated: %d\n", len(verdict.Corroborated))
-	fmt.Printf("Unwitnessed:  %d  (claimed by the agent, never observed)\n", len(verdict.Unwitnessed))
-	fmt.Printf("Unrecorded:   %d  (observed, never claimed)\n", len(verdict.Unrecorded))
-	fmt.Printf("Mismatched:   %d  (claimed and observed, details disagree)\n", len(verdict.Mismatched))
+	fmt.Println("\nAlignment (what the agent said against what it did at the top level):")
+	fmt.Printf("  Corroborated: %d\n", len(v.Corroborated))
+	fmt.Printf("  Mismatched:   %d  (claimed and observed at the same position, details disagree)\n", len(v.Mismatched))
+	fmt.Printf("  Unwitnessed:  %d  (claimed by the agent, never observed)\n", len(v.Unwitnessed))
+	fmt.Printf("  Unrecorded:   %d  (observed at the top level, never claimed)\n", len(v.Unrecorded))
+	fmt.Printf("  Outside interval: %d  (observed outside the claimed interval)\n", len(v.OutsideInterval))
+	if v.Ambiguous {
+		fmt.Println("  note: more than one alignment is equally good, so the position a finding points at is one of several")
+	}
 
-	fmt.Printf("Capability:   %d  (listeners observed, never claimable, not part of the verdict)\n", len(verdict.Capability))
+	c := v.Coverage
+	fmt.Println("\nCoverage (is every observed event explained by a claim?):")
+	fmt.Printf("  Unexplained subtrees: %d  (commands nothing claims)\n", len(c.UnexplainedSubtrees))
+	fmt.Printf("  Explained by a claimed command: %d events\n", c.Explained)
+	fmt.Printf("  Explained by the baseline:      %d events\n", c.Baselined)
+	fmt.Printf("  Outside the agent's tree:       %d events (reported, not the agent's)\n", len(c.Outside))
+	fmt.Printf("  Unplaced (no pid):              %d events\n", len(c.Unknown))
+	fmt.Printf("Capability:   %d  (listeners and sockets observed, never claimable, not part of the verdict)\n", len(v.Capability))
 
-	printEntries("Unwitnessed", verdict.Unwitnessed)
-	printEvents("Unrecorded", verdict.Unrecorded)
-	printEvents("Capability", verdict.Capability)
-	printMismatched(verdict.Mismatched)
-	printCompleteness(completeness)
+	printEntries("Unwitnessed", v.Unwitnessed)
+	printEvents("Unrecorded", v.Unrecorded)
+	printSubtrees(c.UnexplainedSubtrees)
+	printPairs("Mismatched", v.Mismatched)
+	printPairs("Outside interval", v.OutsideInterval)
+	printEvents("Capability", v.Capability)
+	printCompleteness(v.Completeness)
 
-	outcome := verification.Conclude(verdict, completeness)
 	fmt.Println()
-	fmt.Printf("VERDICT: %s\n", outcome)
-	if outcome == verification.OutcomeInconclusive {
-		fmt.Println("The checks passed, but the ground truth may have lost events, so FAITHFUL cannot be asserted.")
+	fmt.Printf("VERDICT: %s\n", v.Outcome)
+	switch {
+	case v.Outcome == verification.OutcomeInconclusive:
+		fmt.Println("FAITHFUL cannot be asserted:")
+		for _, r := range v.Reasons {
+			fmt.Printf("  - %s\n", r)
+		}
+	case v.Advisory:
+		fmt.Println("The ground truth is incomplete, so the findings above are advisory:")
+		for _, r := range v.Reasons {
+			fmt.Printf("  - %s\n", r)
+		}
 	}
-	if outcome == verification.OutcomeNotFaithful && !completeness.Complete {
-		fmt.Println("Note: the ground truth is incomplete, so the findings above are advisory.")
-	}
-	os.Exit(outcome.ExitCode())
+	os.Exit(v.Outcome.ExitCode())
 }
 
 func printCompleteness(c verification.Completeness) {
@@ -129,21 +152,37 @@ func printEvents(label string, events []models.GroundTruthEvent) {
 	}
 }
 
-// printMismatched shows both sides of every mismatched pair. It always
-// prints both lines rather than trying to guess which field disagreed, so
-// it needs no changes as later tiers add fields (e.g. Tier 4 content hashes)
-// to compare.
-func printMismatched(pairs []verification.MatchedPair) {
+func printSubtrees(cmds []*verification.Command) {
+	if len(cmds) == 0 {
+		return
+	}
+	fmt.Println("\nUnexplained subtrees:")
+	for _, c := range cmds {
+		target := "(forked and never exec'd)"
+		if c.Exec != nil {
+			target = c.Exec.Target
+		}
+		fmt.Printf("  pid %d %s  (%d events beneath it)\n", c.Process.PID, target, len(c.Content))
+	}
+}
+
+// printPairs shows both sides of every pair with the fields that disagree, so
+// it needs no changes as later tiers add fields to compare.
+func printPairs(label string, pairs []verification.MatchedPair) {
 	if len(pairs) == 0 {
 		return
 	}
-	fmt.Println("\nMismatched:")
+	fmt.Printf("\n%s:\n", label)
 	for _, p := range pairs {
-		fmt.Printf("  %s %s\n", p.Entry.ActionType, p.Entry.Target)
-		fmt.Printf("    claimed:  exit_code=%s input_hash=%s output_hash=%s\n",
-			derefInt(p.Entry.ExitCode), derefStr(p.Entry.InputHash), derefStr(p.Entry.OutputHash))
-		fmt.Printf("    observed: exit_code=%s input_hash=%s output_hash=%s\n",
-			derefInt(p.Event.ExitCode), derefStr(p.Event.InputHash), derefStr(p.Event.OutputHash))
+		fmt.Printf("  claimed:  %s %s\n", p.Entry.ActionType, p.Entry.Target)
+		fmt.Printf("  observed: %s %s\n", p.Event.ActionType, p.Event.Target)
+		if len(p.Diffs) > 0 {
+			fmt.Printf("    differs in: %v\n", p.Diffs)
+		}
+		fmt.Printf("    claimed:  exit_code=%s input_hash=%s output_hash=%s request_hash=%s\n",
+			derefInt(p.Entry.ExitCode), derefStr(p.Entry.InputHash), derefStr(p.Entry.OutputHash), derefStr(p.Entry.RequestHash))
+		fmt.Printf("    observed: exit_code=%s input_hash=%s output_hash=%s request_hash=%s\n",
+			derefInt(p.Event.ExitCode), derefStr(p.Event.InputHash), derefStr(p.Event.OutputHash), derefStr(p.Event.RequestHash))
 	}
 }
 
