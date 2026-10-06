@@ -352,7 +352,7 @@ func freePort(t *testing.T) int {
 	if err != nil {
 		t.Fatalf("reserve port: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*stdnet.TCPAddr).Port
 }
 
@@ -384,12 +384,12 @@ func TestObserver_ObservesListeners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen loopback: %v", err)
 	}
-	defer lo.Close()
+	defer func() { _ = lo.Close() }()
 	wild, err := stdnet.Listen("tcp4", stdnet.JoinHostPort("0.0.0.0", strconv.Itoa(anyPort)))
 	if err != nil {
 		t.Fatalf("listen wildcard: %v", err)
 	}
-	defer wild.Close()
+	defer func() { _ = wild.Close() }()
 	time.Sleep(300 * time.Millisecond)
 
 	events := drainEvents(t, obs)
@@ -480,7 +480,7 @@ func TestObserver_UntrackedListenerIsInvisible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	time.Sleep(300 * time.Millisecond)
 
 	for _, e := range drainEvents(t, obs) {
