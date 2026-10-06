@@ -876,6 +876,8 @@ func TestDiag_RawFanotify(t *testing.T) {
 	t.Logf("total events parsed: %d", count)
 }
 
+const unixOpenModifyClose = 0x20 | 0x2 | 0x8 // FAN_OPEN | FAN_MODIFY | FAN_CLOSE_WRITE
+
 func TestMaskToActionTypes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -885,6 +887,10 @@ func TestMaskToActionTypes(t *testing.T) {
 		{"create", 0x100, []models.ActionType{models.FileWrite}},  // FAN_CREATE
 		{"delete", 0x200, []models.ActionType{models.FileDelete}}, // FAN_DELETE
 		{"modify+close_write merges FileWrite", 0x2 | 0x8, []models.ActionType{models.FileWrite, models.FileClose}},
+		// The kernel merges consecutive events on one object. A merged mask has
+		// no order, so the expansion must be the causal one: open, write, close.
+		{"merged open+modify+close is open, write, close", unixOpenModifyClose, []models.ActionType{models.FileOpen, models.FileWrite, models.FileClose}},
+		{"merged open+close is open, close", 0x20 | 0x8, []models.ActionType{models.FileOpen, models.FileClose}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

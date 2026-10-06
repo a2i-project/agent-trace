@@ -730,6 +730,17 @@ func maskToActionTypes(mask uint64) []models.ActionType {
 		}
 	}
 
+	// The kernel merges consecutive events on one object into a single
+	// notification whose mask holds several bits, and a mask has no order. The
+	// events a merged mask expands to are therefore emitted in causal order
+	// (open, then write, then close), so a merged notification and the same
+	// operations delivered as separate notifications produce the same sequence.
+	// Without this, whether the kernel merged them decided whether a write read
+	// as coming before the open that preceded it, and the verifier's alignment,
+	// which pairs by position, read an honest run as a fabrication.
+	if mask&unix.FAN_OPEN != 0 {
+		add(models.FileOpen)
+	}
 	if mask&unix.FAN_CREATE != 0 {
 		add(models.FileWrite)
 	}
@@ -748,9 +759,5 @@ func maskToActionTypes(mask uint64) []models.ActionType {
 	if mask&unix.FAN_MOVED_TO != 0 {
 		add(models.FileRename)
 	}
-	if mask&unix.FAN_OPEN != 0 {
-		add(models.FileOpen)
-	}
-
 	return types
 }
