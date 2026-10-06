@@ -10,7 +10,7 @@ Four threat models recur across the literature:
 | Label | Threat model | Description |
 |:------|:-------------|:---------------------|
 | `TM-A` | Operator does not trust their own agent | The operator controls the host infrastructure. The agent (or its runtime) may be compromised. The operator wants to detect trajectory manipulation|
-| `TM-B` | Delegator does not trust an external agent service | The delegator sent a task to an agent-as-a-service. The delegator receives a trajectory ans want to verify it without host access. |
+| `TM-B` | Delegator does not trust an external agent service | The delegator sent a task to an agent-as-a-service. The delegator receives a trajectory and wants to verify it without host access. |
 | `TM-C` | Auditor requires proof of agent behavior | A regulator or compliance auditor needs verifiable evidence. The operator may have incentive to falsify the trajectory. |
 | `TM-D` | Target system faces an external agent | An external agent interacts with your system. You want to reconstruct its behavior from your side. |
 

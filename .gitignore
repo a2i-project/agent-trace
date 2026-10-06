@@ -1,5 +1,9 @@
-# Ignore the planning, HTML, and research docs as requested
-docs/plan/
+# Local-only docs (see docs/README.md): open work, experiments, evidence from
+# private transcript corpora, superseded plans
+docs/todo/
+docs/eval/
+docs/research/
+docs/archive/
 *.html
 
 # Ignore ephemeral agent state

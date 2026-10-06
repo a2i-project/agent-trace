@@ -138,4 +138,4 @@ pkg/tlsoffset     Locates SSL_write in a libssl binary for the uprobe
 tests/e2e         End-to-end scenarios: simagent, probes and verifier together
 ```
 
-Design and implementation notes are in [`docs/architecture.md`](docs/architecture.md). Related work and the measurement method are in [`docs/related_work/`](docs/related_work/00_intro_and_contents.md) and [`docs/methodology/`](docs/methodology/being_data_driven.md).
+Design documentation starts at [`docs/README.md`](docs/README.md): one page per component in [`docs/architecture/`](docs/architecture/00_overview.md) and the reasons behind each choice in [`docs/decisions/`](docs/decisions/). Related work and the measurement method are in [`docs/related_work/`](docs/related_work/00_intro_and_contents.md) and [`docs/methodology/`](docs/methodology/being_data_driven.md).

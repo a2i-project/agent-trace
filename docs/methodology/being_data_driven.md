@@ -2,9 +2,10 @@
 
 How to decide things in this project by measurement instead of argument, and
 how to avoid the specific ways that goes wrong. This exists because this
-repo's core claim — that a trajectory verdict (FAITHFUL / NOT FAITHFUL,
-MISMATCHED, CORROBORATED) is trustworthy — is only as good as the
-measurement discipline behind the probes, matchers, and E2E tiers that
+repo's core claim, that a trajectory verdict (FAITHFUL, NOT FAITHFUL or
+INCONCLUSIVE, built from Corroborated, Mismatched, Unwitnessed and Unrecorded
+positions and from the coverage check) is trustworthy, is only as good as the
+measurement discipline behind the probes, the verifier, and the E2E tiers that
 produce it. A paper built on ungrounded verdicts does not survive review.
 
 The one-line version: **you are not trying to find out whether you are
@@ -43,7 +44,7 @@ and often is not.
 
 **Worked example from this repo.** The Tier 5 E2E test intermittently
 reported NOT FAITHFUL. The premise nobody had checked: that curl opens
-exactly one connection per fetch. It doesn't — Happy-Eyeballs opens
+exactly one connection per fetch. It doesn't: Happy-Eyeballs opens
 parallel connections to every CDN edge IP for `example.com`, producing
 unattributed `net_connect` ground-truth events with no corresponding
 trajectory entry. The fix (`--resolve` to pin a single IPv4) was one line;
@@ -54,8 +55,8 @@ finding the premise took a flaky test failing several times first. See
 
 ## 2. Pre-registration
 
-Before any measurement — a new tier, a new probe, a threshold on a
-faithfulness metric — write into the plan **and into the tool/test**:
+Before any measurement (a new tier, a new probe, a threshold on a
+faithfulness metric), write into the plan **and into the tool/test**:
 
 ```
 1. THE NUMBER    what is measured, in what unit, over what window
@@ -74,7 +75,7 @@ Then run it and read the answer off the table.
 they all sound reasonable: *the sample was small; the environment was
 quiet; let's try one notch higher; that case was unusual.* Each is
 individually defensible and collectively they keep a dead hypothesis alive
-forever — and in a paper, they show up as a Methods section that doesn't
+forever, and in a paper they show up as a Methods section that doesn't
 match what was actually done.
 
 **The tell:** if you are deciding what a number means *after* seeing it,
@@ -82,11 +83,11 @@ you are not measuring, you are negotiating.
 
 **Step 5 is the one that pays.** Write the result you would least like to
 get, with its consequence attached, because that is the one you will be
-most tempted to explain away. Include outcomes that should be impossible —
+most tempted to explain away. Include outcomes that should be impossible,
 "a trajectory entry with a nil `RequestHash` can never corroborate against
 a ground-truth event that has one; if I ever see it pass, the accounting
 is wrong, stop immediately" (this is exactly the gap closed in
-`pkg/verification/verification.go`, commit `7f8d0ed`) — precisely because
+`pkg/verification/verification.go`, commit `7f8d0ed`), precisely because
 those are the ones nobody will believe when they appear.
 
 ### Pre-register the RIGHT quantity
@@ -98,7 +99,7 @@ This is the failure that survives doing everything else correctly.
 
 For this project: a high raw corroboration rate is not the right quantity
 if the matcher is lenient enough to corroborate almost anything (a proxy
-problem — see §8). The right quantity accounts for both false negatives
+problem, see §8). The right quantity accounts for both false negatives
 (missed real actions) and false positives (accepted forged ones) under
 the specific threat model being tested.
 
@@ -109,11 +110,11 @@ answer disappoints. A threshold in code prints itself:
 
 ```
 VERDICT: NOT FAITHFUL. 2 of 14 ground-truth net_connect events
-  unattributed (Happy-Eyeballs artifact, not a matcher failure —
+  unattributed (Happy-Eyeballs artifact, not a matcher failure;
   see tier5_test.go premise check).
 ```
 
-Make the tool refuse to conclude when its own preconditions are not met —
+Make the tool refuse to conclude when its own preconditions are not met:
 sample too small, control missing, verdict carried by one observation. An
 E2E tier test that fails hard on `TLSAttachError` instead of silently
 skipping (as tier5 now does) is this principle applied directly.
@@ -155,7 +156,7 @@ proof or the commit.
 
 In this repo that means: before trusting a new probe's output on a real
 agent trajectory, run it against `simagent` with a scripted, fully-known
-action sequence and confirm the probe reports exactly that sequence — no
+action sequence and confirm the probe reports exactly that sequence, no
 more, no less. A BPF probe that has never been validated against a known
 trajectory is not ground truth, it's an unverified signal source.
 
@@ -213,7 +214,7 @@ a mean across a short run.
 > corroboration timing or probe overhead. A bucket at 99% top1 is one
 > observation wearing a percentage.
 
-**Scan the population when you can** rather than sampling — this project's
+**Scan the population when you can** rather than sampling: this project's
 E2E runs are small enough (tens to low hundreds of events per tier) that
 full enumeration is usually cheaper than sampling and removes sampling
 error as a confound.
@@ -225,7 +226,7 @@ error as a confound.
 **Compute whether your observations actually contradict the hypothesis
 before declaring that they do.** E2E tiers in this repo run a small number
 of trials; a couple of consecutive failures is not automatically evidence
-the fix regressed — check the base rate first (binomial probability of
+the fix regressed. Check the base rate first (binomial probability of
 that streak under the null) before reverting a fix.
 
 **Do not fit a threshold to two points and call it calibration.** When a
@@ -238,7 +239,7 @@ observations, not an optimized value.
 **Distinguish "not measured" from "measured zero."** A probe that never
 fired and a probe that fired zero times are different observations. In Go
 that means an explicit `ok bool` or a `*T` alongside the value, never a
-bare zero default — this matters directly for `RequestHash` (nil vs. an
+bare zero default. This matters directly for `RequestHash` (nil vs. an
 actual zero-value hash are different claims, and the verification code now
 treats them differently for exactly this reason).
 
@@ -261,7 +262,7 @@ present was handled correctly; it cannot ask how much was absent.
 
 Report **`considered` / `evaluated` / `succeeded`** together for any
 verification run, not just the pass/fail headline, and **count what could
-not be evaluated** (e.g. probe attach failures, skipped tiers) — a number
+not be evaluated** (e.g. probe attach failures, skipped tiers): a number
 that is silently zero is indistinguishable from one that is genuinely
 zero.
 
@@ -277,20 +278,20 @@ state, in this order:
 2. **The three counts** (considered / evaluated / succeeded) for both
    arms. The ranking is the verdict; these say why.
 3. **What could not be evaluated**, counted, not omitted.
-4. **The proxy result, clearly subordinate** to the real quantity — e.g.
+4. **The proxy result, clearly subordinate** to the real quantity, e.g.
    "test-suite pass rate 100%, threat-model action coverage 40%" is the
    honest shape; leading with the pass rate inverts it.
-5. **What was NOT run, and why** — so the next session (or a paper
+5. **What was NOT run, and why**, so the next session (or a paper
    reviewer) doesn't assume it was tried and failed.
 6. **Caveats in the same breath as the number.** A dozen E2E runs is a
    dozen E2E runs; say so in the same sentence as the headline result.
 
 **Report the negative result as loudly as the positive one.** A probe
 approach that was built, tested, and abandoned because it failed a control
-is worth recording — in `STATE.md` and, for anything paper-relevant, in
-this doc's changelog below — so it isn't re-attempted from scratch.
+is worth recording in `STATE.md` and, for anything paper-relevant, in
+this doc's changelog below, so it isn't re-attempted from scratch.
 
-**Say plainly when you were wrong** — not as ceremony, as information.
+**Say plainly when you were wrong**, not as ceremony, as information.
 Correct it *in the file where the wrong number lives* (commit message,
 `STATE.md`, or this doc), not only in conversation, and keep the
 superseded number next to the correction so the error isn't re-derived.
@@ -303,3 +304,14 @@ Use this section to log abandoned approaches and corrected numbers
 relevant to the paper's claims, so they aren't silently lost or
 re-attempted. Format: date, what was measured, what it turned out to be,
 why.
+
+* **2026-10-06, timestamp-window matching abandoned.** The first verifier
+  paired each claim with the nearest ground-truth event of the same type and
+  target inside a fixed window (`Delta`, 2 s in the E2E tests). The pairing was
+  circular (target equality was a precondition, so a substituted target read
+  as a fabrication plus an omission), one claimed command expands into many
+  observed events, greedy nearest-time pairing mispairs repeated actions, and
+  real tool calls routinely outlast any window that excludes unrelated events
+  (measured on a local transcript corpus, design input only). Replaced by the
+  process forest, per-lane alignment and coverage check (commits `eec9735`,
+  `5e17be5`). Rationale in `docs/decisions/verification.md`.

@@ -1,10 +1,10 @@
 # Agent-Trace Repository Guide
 
-## ⚠️ Privileged Commands — NEVER run sudo headlessly
+## ⚠️ Privileged Commands: NEVER run sudo headlessly
 
 **NEVER attempt to run `sudo` in a background task or unattended terminal.** Sudo requires an interactive password and any attempt to do so will block, fail, or break the environment.
 
-**Instead**: when a privileged test or command is needed (e.g., `sudo go test -v ./...` for eBPF/fanotify tests), **STOP** and ask the user to run it in their own terminal. Wait for them to paste back the output before continuing.
+**Instead**: when a privileged test or command is needed (e.g., `sudo go test -v ./...` for eBPF/fanotify tests), either push and let CI run it (CI runs the whole suite with sudo), or **STOP** and ask the user to run it in their own terminal and paste back the output.
 
 This applies to ALL privileged operations: `sudo go test`, `sudo go run`, any BPF/fanotify program requiring root, etc.
 
@@ -27,21 +27,17 @@ This repository contains the Agent Trajectory Faithfulness Verifier, written in 
 
 ## Documentation Index (Progressive Disclosure)
 
-Do not assume all context is listed here. Search and load the following files when you need context on specific areas:
+Do not assume all context is listed here. `docs/README.md` explains the layout. Load what the task needs:
 
-### Development Plan
-
-- `docs/plan/01_protocol_architecture.md`: Overall working protocol and design architecture.
-- `docs/plan/02_tiers_0_to_2.md`: Core logic, filesystem probes, and process probes requirements and tests.
-- `docs/plan/03_tiers_3_to_6.md`: Network probes, content hashing, and attack simulation details.
-
-### Related Work & Threat Models
-
-- `docs/related_work/01_threat_models.md`: The taxonomy of threat models we address.
-- `docs/related_work/02_execution_assurance.md`: Cryptographic evidence and faithful reproduction approaches.
-- `docs/related_work/03_authorization_governance.md`: Pre-execution governance (AARM, AgentBound).
-- `docs/related_work/04_anomaly_detection.md`: TraceAegis, TrajAD, and other detection methods.
-- `docs/related_work/05_surveys_attacks_summary.md`: Documented attacks (e.g., HF intrusion) and summary table.
+- `docs/architecture/00_overview.md`: objective, threat model, properties, end-to-end workflow. Read first.
+- `docs/architecture/1x_*.md`: the probes (common contract and loss accounting, proc, fs, net). Read before touching `pkg/probe`.
+- `docs/architecture/20_verifier.md`: process forest, alignment, coverage, verdict. Read before touching `pkg/verification` or `pkg/matching`.
+- `docs/architecture/30_agent_adapters.md` and `40_tools.md`: adapters, baseline, command-line tools.
+- `docs/decisions/*.md`: why each design choice was made, with stable IDs (`P-`, `N-`, `V`, `D`/`I-`). `docs/decisions/open.md` lists undecided questions. Do not silently resolve an open decision in code; record it.
+- `docs/methodology/dev_workflow.md`: tests, privileged runs, eBPF bindings, CI, commits, documentation rules.
+- `docs/methodology/being_data_driven.md`: measurement discipline for experiments.
+- `docs/related_work/`: survey of other systems and threat models (`01_threat_models.md` defines TM-A to TM-D).
+- Local only, gitignored, may be absent: `docs/todo/` (open work), `docs/eval/` (experiment plans), `docs/research/` (evidence), `docs/archive/` (superseded plans). Never treat `docs/archive/` as current.
 
 ## SKILL.state Agent Protocol
 
@@ -70,26 +66,26 @@ If it's not in `STATE.md`, the next agent won't know about it. Project all trans
 
 ## Agentic CI & TDD
 
-Shift Left via Agent Self-Correction: Before you attempt to commit any code or state that you have finished your turn, you MUST locally run `sudo go test -v ./...` and `go vet ./...` (or `golangci-lint run` if available). Act as your own IDE. Never commit broken code or ignore unhandled errors. If a test or linter fails, fix it immediately.
+Shift Left via Agent Self-Correction: Before you attempt to commit any code or state that you have finished your turn, you MUST run `go vet ./...` and `go test ./...` locally (or `golangci-lint run` if available). The privileged tests skip without root, so they run in CI or in the user's terminal, never headlessly (see the top of this file). Act as your own IDE. Never commit broken code or ignore unhandled errors. If a test or linter fails, fix it immediately.
 
 ## Measurement Discipline
 
-This project's central claim is a verdict (FAITHFUL / NOT FAITHFUL, MISMATCHED, CORROBORATED). Every such verdict is a measurement, and this is a research prototype for a paper, so the measurement has to survive scrutiny, not just pass locally. Full rationale and worked examples: `docs/methodology/being_data_driven.md`. Read it before designing a new experiment, probe, or E2E tier. In this repo, in practice:
+This project's central claim is a verdict (FAITHFUL, NOT FAITHFUL or INCONCLUSIVE, built from Corroborated, Mismatched, Unwitnessed and Unrecorded positions and the coverage check). Every such verdict is a measurement, and this is a research prototype for a paper, so the measurement has to survive scrutiny, not just pass locally. Full rationale and worked examples: `docs/methodology/being_data_driven.md`. Read it before designing a new experiment, probe, or E2E tier. In this repo, in practice:
 
-- **Name the premise before building on it.** Before trusting a new probe or matcher on real trajectories, state the assumption you're least sure of (e.g. "curl opens exactly one connection per fetch" — false, see Tier 5 Happy-Eyeballs) and check it cheaply first.
+- **Name the premise before building on it.** Before trusting a new probe or matcher on real trajectories, state the assumption you're least sure of (e.g. "curl opens exactly one connection per fetch", which is false, see Tier 5 Happy-Eyeballs) and check it cheaply first.
 - **Pre-register GO/STOP thresholds in the test/tool, before running it**, not after seeing the result. A verdict decided after the fact is a negotiation, not a measurement.
 - **No verdict without a control.** A corroboration-rate change is only meaningful relative to the same rate measured on an unmodified baseline in the same run/environment. If there's no control, the tool should print UNJUDGED, not a verdict.
 - **Validate new instrumentation against a known answer first.** A new probe's first real test should be against `simagent` with a fully scripted, known action sequence, before it's trusted on an unscripted trajectory.
-- **Distinguish "not measured" from "measured zero."** Use an explicit `ok bool` or `*T`, never a bare zero default — this is why a nil `RequestHash` must not silently corroborate against a hashed ground-truth event (`pkg/verification/verification.go`).
+- **Distinguish "not measured" from "measured zero."** Use an explicit `ok bool` or `*T`, never a bare zero default. This is why a nil claim field is a finding only where the format can express it and the probe captured it (`Options.Expresses` in `pkg/verification`).
 - **Report `considered` / `evaluated` / `succeeded` together**, and count what couldn't be evaluated (skipped tiers, attach failures) instead of dropping it.
 - **A proxy passing (e.g. 100% on the current E2E suite) is not the same as coverage of the threat model.** Check coverage against `docs/related_work/01_threat_models.md` periodically, not just test pass/fail.
 - **Log abandoned approaches and corrected numbers** in the changelog section of `docs/methodology/being_data_driven.md` when they're relevant to a paper claim, so they aren't silently lost or re-attempted.
 
 ## CI Discipline
 
-Tests run twice: once on your dev box, once on GitHub Actions' shared `ubuntu-latest` runners in `.github/workflows/test.yml`. `sudo go test -v ./...` passing locally is necessary, not sufficient — the runner is slower, shared, and sometimes cold-starting, and eBPF attach/ring-buffer timing can differ from a local box in ways that don't show up until CI.
+Tests run twice: once on your dev box, once on GitHub Actions' shared `ubuntu-latest` runners in `.github/workflows/test.yml`. `sudo go test -v ./...` passing locally is necessary, not sufficient: the runner is slower, shared, and sometimes cold-starting, and eBPF attach/ring-buffer timing can differ from a local box in ways that don't show up until CI.
 
 - **Design timing-sensitive tests for CI, not your dev box.** Fixed `time.Sleep` windows around probe attach, process forking, or ring-buffer draining (e.g. `cmd/watch/main_test.go`) must budget for a contended GitHub-hosted runner, not local timing. Prefer synchronizing on an explicit signal over a bare sleep; when a sleep is unavoidable, size it generously and say in a comment that CI sets the bound, not the dev box.
 - **A pass on this box is a hypothesis, not a result.** After any commit that touches probes, timing, or CI-relevant code, push and watch the actual CI run before treating the change as done.
 - **Watch CI after every push, without being asked.** Immediately after pushing to `main` or opening a PR, run `gh run list --limit 1` (or `gh run watch <run-id> --exit-status`) and report pass/fail back in the same turn, so failures get fixed while context is still loaded instead of discovered later.
-- **A CI failure needs a verdict before moving on**: transient flake (rerun once with `gh run rerun <run-id> --failed`; if it then passes, record it under STATE.md's "Known Flaky Tests") vs. real regression (fix it) vs. environment-specific gap (kernel/BTF difference on the runner — add a debug step to the workflow, don't guess with a timeout bump).
+- **A CI failure needs a verdict before moving on**: transient flake (rerun once with `gh run rerun <run-id> --failed`; if it then passes, record it under STATE.md's "Known Flaky Tests") vs. real regression (fix it) vs. environment-specific gap (kernel/BTF difference on the runner: add a debug step to the workflow, don't guess with a timeout bump).

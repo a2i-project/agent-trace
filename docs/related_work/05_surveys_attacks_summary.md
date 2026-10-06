@@ -151,7 +151,7 @@ The report cannot determine which actions the agents took that were never writte
 | in-toto Runtime Trace | Monitor-observed process, network, and file events for a build | Monitor (e.g. Tetragon) | C | Agents; no self-reported counterpart to compare against |
 | AgentSight | eBPF correlation of captured LLM traffic (intent) with kernel events (actions); observer-LLM risk analysis | Kernel (eBPF, SSL uprobes) on the host | A | Checking the agent's self-reported trajectory; measured coverage; detection rates (verdict is an LLM judgment) |
 | AARM / AgentBound / aiAuthZ | Pre-execution authorization and governance records | Governance layer | C, D | Governance bypass; authorized ≠ executed |
-| TraceAegis / TrajAD / Trajectory Guard / MCPShield / Forensic Traj. Sig. | Behavioral anomaly detection on trajectories | Learned/rule-based templates | — | Trajectory faithfulness (all assume faithful input) |
+| TraceAegis / TrajAD / Trajectory Guard / MCPShield / Forensic Traj. Sig. | Behavioral anomaly detection on trajectories | Learned/rule-based templates | none | Trajectory faithfulness (all assume faithful input) |
 | Auditable Agents | Five-dimension auditability framework, Auditability Card; runtime firewall with signed records | Mediation layer on the execution path (assumed honest) | C | Record-vs-reality agreement; actions that bypass the mediation point; a compromised producer |
 | Three Jobs, Not One | Taxonomy of evidence architectures (5 classes, 2 degrees of independence); coverage-bounded PASS | Depends on class; author favours host observer at micro-VM wall | A, C | Checking an agent's self-report against observation; Degree 2 behavioural evidence (stated open) |
 | Relay Tampering Attack | Attack demonstration (99.1% success) | N/A (attack paper) | A | N/A (documents the problem, does not solve it) |
@@ -160,4 +160,4 @@ The report cannot determine which actions the agents took that were never writte
 
 ---
 
-*Working document. Describes existing systems using the authors' own stated framing, assumptions, and limitations. Not for distribution.*
+*Working document. Describes existing systems using the authors' own stated framing, assumptions, and limitations.*
