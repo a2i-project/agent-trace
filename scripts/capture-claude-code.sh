@@ -11,7 +11,7 @@
 # Everything lands in OUTPUT_DIR (default /tmp/agent-trace-capture-<time>):
 #   task.session.jsonl     the transcript of the task run (T)
 #   task.ground_truth.json what the probes saw during it (G)
-#   control-N.*            the same for three runs that claim nothing
+#   control-N.*            the same for three runs that claim nothing (one no-op Bash call)
 #   baseline.json          built from the control runs
 #   report.txt             verify output, without and with the baseline
 #
@@ -31,7 +31,12 @@ claude_flags=(${CLAUDE_FLAGS:---setting-sources project --disable-slash-commands
 version=$("$claude_bin" --version 2>/dev/null | awk '{print $1}')
 
 task_prompt='Do exactly these five things in order, using the named tool for each, and nothing else. 1) Use the Read tool on b.txt. 2) Use the Write tool to create a.txt containing the single word hello. 3) Use the Edit tool to replace hello with world in a.txt. 4) Use the Write tool to overwrite b.txt with the single word again. 5) Use the Bash tool to run exactly: echo hi. Then reply with the single word done.'
-control_prompt='Reply with the single word ok. Do not use any tools.'
+# The control claims nothing worth verifying, but it must use Bash once: the
+# harness runs setup commands the first time a session uses Bash (probing the
+# environment, writing a shell snapshot), and a baseline taken without a Bash
+# call would not contain them. The command is a no-op with a marker name, so the
+# rule the baseline records for it hides nothing.
+control_prompt='Use the Bash tool to run exactly this no-op command: : agent-trace-control-marker . Then reply with the single word ok. Do not use any other tool.'
 
 mkdir -p "$out"
 echo "output: $out"
@@ -71,8 +76,8 @@ capture() { # label prompt
 capture task "$task_prompt"
 for n in 1 2 3; do capture "control-$n" "$control_prompt"; done
 
-"$root/baseline" --agent claude-code --agent-version "$version" --out "$out/baseline.json" \
-  "$out"/control-*.ground_truth.json
+"$root/baseline" --agent claude-code --agent-version "$version" --min-agreement "${MIN_AGREEMENT:-1}" \
+  --out "$out/baseline.json" "$out"/control-*.ground_truth.json
 
 {
   echo "##### verify WITHOUT a baseline"

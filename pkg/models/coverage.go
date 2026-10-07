@@ -67,6 +67,10 @@ type GroundTruthFile struct {
 	// no root (legacy file, or host-wide recording), so no tree can be built
 	// and the verifier cannot attribute events.
 	RootPID uint32 `json:"root_pid,omitempty"`
+	// Workspace is the absolute directory the capture watched. A harness
+	// baseline names it with a placeholder, so a baseline measured in one
+	// directory applies to a run in another. Empty means unknown.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // ParseGroundTruthFile reads a ground truth file in either form: the current

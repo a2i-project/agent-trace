@@ -47,6 +47,15 @@ type Adapter interface {
 	Process() ProcessModel
 }
 
+// StreamNormalizer is implemented by an adapter whose observed events can only
+// be put into comparable form by looking at several together: a harness that
+// writes a file by creating a temporary, writing it and renaming it over the
+// target produces five events for what the trajectory calls one write. It runs
+// after Normalize, on events in time order with ties in arrival order.
+type StreamNormalizer interface {
+	NormalizeStream(models.GroundTruth) models.GroundTruth
+}
+
 // IntervalKind says what an entry's start timestamp means.
 type IntervalKind int
 
@@ -143,6 +152,9 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 		if n, keep := a.Normalize(e); keep {
 			ground = append(ground, n)
 		}
+	}
+	if sn, ok := a.(StreamNormalizer); ok {
+		ground = sn.NormalizeStream(ground)
 	}
 	baseline := func(e models.GroundTruthEvent) bool {
 		return a.IsHarnessNoise(e) || (measured != nil && measured(e))

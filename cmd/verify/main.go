@@ -84,7 +84,7 @@ func run(args []string, out, errOut io.Writer) int {
 			_, _ = fmt.Fprintf(errOut, "verify: baseline %s was captured for %q, not %q\n", baselinePath, b.Agent, adapter.Name())
 			return exitError
 		}
-		baseline, measured = &b, b.Predicate()
+		baseline, measured = &b, b.Predicate(gt.Workspace)
 	} else if adapter.Name() != agent.GenericName {
 		rep.Degradations = append(rep.Degradations, "no baseline supplied: the harness's own activity is reported as unexplained (08 V7)")
 	}

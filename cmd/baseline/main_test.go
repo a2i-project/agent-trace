@@ -59,7 +59,7 @@ func TestWritesARuleForWhatEveryRunDid(t *testing.T) {
 	if b.Agent != "generic" || b.AgentVersion != "9.9" || b.Runs != 2 || len(b.Rules) != 1 || b.Rules[0].Target != "api.example" || len(b.Unstable) != 1 {
 		t.Errorf("baseline = %+v", b)
 	}
-	if !strings.Contains(out, "1 rule(s)") || !strings.Contains(out, "1 unstable") {
+	if !strings.Contains(out, "1 rule(s)") || !strings.Contains(out, "100% agreement") || !strings.Contains(out, "1 unstable") {
 		t.Errorf("summary = %q", out)
 	}
 	if strings.Contains(out, "capture at least three") {
@@ -113,5 +113,24 @@ func TestUsageErrors(t *testing.T) {
 		if code, _, _ := baseline(t, args...); code != 3 {
 			t.Errorf("%s: exit %d, want 3", name, code)
 		}
+	}
+}
+
+func TestMinAgreementFlag(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string, targets ...string) string {
+		var g models.GroundTruth
+		for _, tg := range targets {
+			g = append(g, ev(models.NetConnect, tg))
+		}
+		return write(t, dir, name, models.GroundTruthFile{RootPID: 100, Coverage: cov(models.ProbeCoverage{Ran: true}), Events: g})
+	}
+	runs := []string{mk("1.json", "a", "b"), mk("2.json", "a", "b"), mk("3.json", "a")}
+	outPath := filepath.Join(dir, "b.json")
+	if code, out, errOut := baseline(t, append([]string{"--agent", "generic", "--agent-version", "1", "--min-agreement", "0.6", "--out", outPath}, runs...)...); code != 0 || !strings.Contains(out, "2 rule(s)") || !strings.Contains(out, "60% agreement") {
+		t.Fatalf("exit %d, out %q, err %q", code, out, errOut)
+	}
+	if code, _, _ := baseline(t, append([]string{"--agent", "generic", "--agent-version", "1", "--min-agreement", "2", "--out", outPath}, runs...)...); code != 3 {
+		t.Errorf("an agreement above 1: exit %d, want 3", code)
 	}
 }

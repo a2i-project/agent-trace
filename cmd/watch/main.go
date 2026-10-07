@@ -37,6 +37,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -128,6 +129,23 @@ func buildCoverage(reporters map[string]probe.CoverageReporter) models.Coverage 
 		}
 	}
 	return cov
+}
+
+// sortGround orders events by time. It is stable, because events read in one
+// batch share a timestamp and keep the order the probe emitted them in, and the
+// verifier aligns by position: an unstable sort could swap such ties.
+func sortGround(g models.GroundTruth) {
+	sort.SliceStable(g, func(i, j int) bool { return g[i].Timestamp.Before(g[j].Timestamp) })
+}
+
+// workspaceAbs is the workspace as an absolute path, which is how the probes
+// report paths. The verifier uses it to recognise the workspace inside the
+// targets of a harness baseline.
+func workspaceAbs(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
 
 func availableProbes() string {
@@ -445,12 +463,12 @@ func runWatch(opts watchOptions) error {
 		}
 	}
 
-	sort.Slice(ground, func(i, j int) bool { return ground[i].Timestamp.Before(ground[j].Timestamp) })
+	sortGround(ground)
 
 	if ground == nil {
 		ground = models.GroundTruth{}
 	}
-	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot}, "", "  ")
+	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot, Workspace: workspaceAbs(opts.cfg.Workspace)}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal ground truth: %w", err)
 	}

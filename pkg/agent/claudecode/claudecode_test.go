@@ -45,8 +45,13 @@ func TestParseMapsEffectfulToolsInClaimOrder(t *testing.T) {
 		"Bash:process_exec:ls -la",
 		"Read:file_open:/w/a.txt",
 		"Read:file_open:/w/b.txt",
-		"Write:file_open:/w/c.txt", "Write:file_write:/w/c.txt", "Write:file_close:/w/c.txt",
-		"Edit:file_open:/w/c.txt", "Edit:file_write:/w/c.txt", "Edit:file_close:/w/c.txt",
+		"Write:file_write:/w/c.txt", // created: no open of the existing file first
+		// The Read of c.txt and the open Edit makes of it before replacing it are
+		// adjacent opens of one file, which are one access.
+		"Read:file_open:/w/c.txt",
+		"Edit:file_write:/w/c.txt",
+		"Write:file_open:/w/d.txt", "Write:file_write:/w/d.txt", // updated: opened first
+		"Write:file_open:/w/e.txt", "Write:file_write:/w/e.txt", // no result kind: assumed to update
 		"WebFetch:net_connect:example.com",
 		"Bash:process_exec:pwd",
 		"Bash:process_exec:echo 'it'\"'\"'s' && date",
@@ -54,8 +59,8 @@ func TestParseMapsEffectfulToolsInClaimOrder(t *testing.T) {
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("claims =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if rep.Entries != len(tr) || rep.ToolCalls != 12 {
-		t.Errorf("report: entries=%d (want %d) toolCalls=%d (want 12)", rep.Entries, len(tr), rep.ToolCalls)
+	if rep.Entries != len(tr) || rep.ToolCalls != 15 {
+		t.Errorf("report: entries=%d (want %d) toolCalls=%d (want 15)", rep.Entries, len(tr), rep.ToolCalls)
 	}
 }
 
@@ -80,7 +85,7 @@ func TestParseCountsWhatItDoesNotMap(t *testing.T) {
 	}
 	// The bad line and the unparsed Read input are errors, not silent drops.
 	joined := strings.Join(rep.ParseErrors, "\n")
-	if !strings.Contains(joined, "session.jsonl:7") || !strings.Contains(joined, "__unparsedToolInput") {
+	if !strings.Contains(joined, "session.jsonl:8") || !strings.Contains(joined, "__unparsedToolInput") {
 		t.Errorf("ParseErrors = %q, want the bad line and the unparsed input", joined)
 	}
 }
@@ -116,25 +121,25 @@ func TestWriteClaimsTheContentHashAndEditDoesNot(t *testing.T) {
 	tr, _ := parseFixture(t)
 	var w, e *models.TrajectoryEntry
 	for i := range tr {
-		if tr[i].ActionType == models.FileClose && tr[i].Tool == "Write" {
+		if tr[i].ActionType == models.FileWrite && tr[i].Tool == "Write" && tr[i].Target == "/w/c.txt" {
 			w = &tr[i]
 		}
-		if tr[i].ActionType == models.FileClose && tr[i].Tool == "Edit" {
+		if tr[i].ActionType == models.FileWrite && tr[i].Tool == "Edit" {
 			e = &tr[i]
 		}
 	}
 	if w == nil || w.OutputHash == nil || *w.OutputHash != content.SHA256Bytes([]byte("hello\n")) {
-		t.Errorf("Write close = %+v, want the hash of its content", w)
+		t.Errorf("Write claim = %+v, want the hash of its content", w)
 	}
 	if e == nil || e.OutputHash != nil {
-		t.Errorf("Edit close = %+v, want no hash: the input holds fragments, not content", e)
+		t.Errorf("Edit claim = %+v, want no hash: the input holds fragments, not content", e)
 	}
 }
 
 func TestExpressesIsPerTool(t *testing.T) {
 	a := Adapter{}
-	write := models.TrajectoryEntry{Tool: "Write", ActionType: models.FileClose}
-	edit := models.TrajectoryEntry{Tool: "Edit", ActionType: models.FileClose}
+	write := models.TrajectoryEntry{Tool: "Write", ActionType: models.FileWrite}
+	edit := models.TrajectoryEntry{Tool: "Edit", ActionType: models.FileWrite}
 	if !a.Expresses(write, verification.DiffOutputHash) {
 		t.Error("Write can state a hash")
 	}
@@ -161,7 +166,7 @@ func TestProcessModel(t *testing.T) {
 func TestParseReportsItsDegradations(t *testing.T) {
 	_, rep := parseFixture(t)
 	joined := strings.Join(rep.Degradations, "|")
-	for _, want := range []string{"approval latency", "exit code", "hypothesis", "Grep"} {
+	for _, want := range []string{"approval latency", "exit code", "atomic replace", "no create or update result", "Grep"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("Degradations %q lack %q", joined, want)
 		}
@@ -267,7 +272,8 @@ func TestNormalizeLeavesWhatItCannotRecover(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			e := models.GroundTruthEvent{ActionType: models.ProcessExec, Target: target}
 			got, keep := Adapter{}.Normalize(e)
-			if !keep || got.Target != target {
+			// Only the per-run ids may change; the command is not recovered.
+			if !keep || got.Target != canonicalIDs(target) {
 				t.Errorf("Normalize changed %q to %q", target, got.Target)
 			}
 		})

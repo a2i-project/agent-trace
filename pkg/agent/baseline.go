@@ -3,8 +3,10 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -14,6 +16,12 @@ import (
 // BaselineSchema is the version of the baseline file this build writes and
 // reads.
 const BaselineSchema = 1
+
+// WorkspacePlaceholder stands for the watched directory inside a rule's target,
+// so a baseline measured in one directory applies to a run in another. The
+// harness inspects the working directory (a git status, a file listing), and
+// those commands name it.
+const WorkspacePlaceholder = "{workspace}"
 
 // Rule is one thing the harness does on its own: an action type and the target
 // it acts on, after the adapter's normalization.
@@ -33,14 +41,24 @@ type Baseline struct {
 	Captured     time.Time `json:"captured"`
 	// Runs is how many control runs the rules were taken from.
 	Runs int `json:"runs"`
-	// Rules are the actions every control run performed. Only these subtract
-	// anything: an action seen in some runs and not others is not something the
-	// harness reliably does.
+	// MinAgreement is the fraction of runs that had to perform an action for it
+	// to become a rule. One means every run.
+	MinAgreement float64 `json:"min_agreement"`
+	// Rules are the actions enough control runs performed. Only these subtract
+	// anything: an action seen in few runs is not something the harness
+	// reliably does.
 	Rules []Rule `json:"rules"`
-	// Unstable lists the actions seen in at least one control run but not in
-	// all of them. They are recorded so the person reading the baseline can see
-	// what was left out, and they subtract nothing.
+	// Unstable lists the actions seen in at least one control run but too few of
+	// them. They are recorded so the person reading the baseline can see what
+	// was left out, and they subtract nothing.
 	Unstable []Rule `json:"unstable,omitempty"`
+}
+
+// CaptureOptions tunes Capture.
+type CaptureOptions struct {
+	// MinAgreement is the fraction of runs that must perform an action for it
+	// to become a rule. Zero means one: every run.
+	MinAgreement float64
 }
 
 // Capture builds a baseline from control runs. Each run's ground truth is
@@ -49,9 +67,26 @@ type Baseline struct {
 // activity a trajectory would otherwise have to claim. Descendants of a command
 // are not rules, since a command's whole subtree is explained once the command
 // is. A run with no root pid cannot be attributed and is an error.
-func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.Time) (Baseline, error) {
+//
+// A harness does some things only some of the time (probing for a package
+// manager, say), so the agreement threshold decides how often an action must
+// recur to count as the harness's. At one, an occasional action is left out and
+// can then read as unexplained in a later run. Below one, a rule can explain an
+// action the harness took in only some controls, which is a wider baseline.
+func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.Time, opts CaptureOptions) (Baseline, error) {
 	if len(runs) == 0 {
 		return Baseline{}, fmt.Errorf("a baseline needs at least one control run")
+	}
+	agreement := opts.MinAgreement
+	if agreement == 0 {
+		agreement = 1
+	}
+	if agreement < 0 || agreement > 1 {
+		return Baseline{}, fmt.Errorf("min agreement %v is not a fraction between 0 and 1", agreement)
+	}
+	need := int(math.Ceil(agreement*float64(len(runs)) - 1e-9))
+	if need < 1 {
+		need = 1
 	}
 	counts := map[Rule]int{}
 	for i, r := range runs {
@@ -66,15 +101,15 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		}
 		seen := map[Rule]bool{}
 		for _, e := range verification.BuildForest(g, r.RootPID).Partition(g).Observed {
-			seen[Rule{ActionType: e.ActionType, Target: e.Target}] = true
+			seen[Rule{ActionType: e.ActionType, Target: templateWorkspace(e.Target, r.Workspace)}] = true
 		}
 		for rule := range seen {
 			counts[rule]++
 		}
 	}
-	b := Baseline{Schema: BaselineSchema, Agent: a.Name(), AgentVersion: version, Captured: now.UTC(), Runs: len(runs)}
+	b := Baseline{Schema: BaselineSchema, Agent: a.Name(), AgentVersion: version, Captured: now.UTC(), Runs: len(runs), MinAgreement: agreement}
 	for rule, n := range counts {
-		if n == len(runs) {
+		if n >= need {
 			b.Rules = append(b.Rules, rule)
 		} else {
 			b.Unstable = append(b.Unstable, rule)
@@ -83,6 +118,16 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 	sortRules(b.Rules)
 	sortRules(b.Unstable)
 	return b, nil
+}
+
+// templateWorkspace replaces the watched directory inside a target with the
+// placeholder. A workspace that is empty or the root is left alone: replacing
+// "/" would rewrite every path.
+func templateWorkspace(target, workspace string) string {
+	if len(workspace) < 2 {
+		return target
+	}
+	return strings.ReplaceAll(target, workspace, WorkspacePlaceholder)
 }
 
 func sortRules(r []Rule) {
@@ -94,13 +139,20 @@ func sortRules(r []Rule) {
 	})
 }
 
-// Predicate returns the baseline as a verification baseline. An event is
-// explained when a rule has its action type and target exactly. There is no
-// pattern matching: a wildcard would explain whatever an attacker made it
-// match.
-func (b Baseline) Predicate() verification.Baseline {
+// Predicate returns the baseline as a verification baseline for a run that
+// watched workspace. An event is explained when a rule has its action type and
+// target exactly, with the placeholder standing for the workspace. There is no
+// other pattern matching: a wildcard would explain whatever an attacker made it
+// match. With no workspace, a rule that names the placeholder matches nothing.
+func (b Baseline) Predicate(workspace string) verification.Baseline {
 	set := make(map[Rule]bool, len(b.Rules))
 	for _, r := range b.Rules {
+		if strings.Contains(r.Target, WorkspacePlaceholder) {
+			if len(workspace) < 2 {
+				continue
+			}
+			r.Target = strings.ReplaceAll(r.Target, WorkspacePlaceholder, workspace)
+		}
 		set[r] = true
 	}
 	return func(e models.GroundTruthEvent) bool {

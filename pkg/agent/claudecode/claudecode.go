@@ -47,6 +47,8 @@ func (Adapter) Process() agent.ProcessModel {
 // It states an output hash only for Write, the one file tool whose input holds
 // the final content: Edit carries fragments, so a nil there is nil by format
 // and not an opt-out (08 section 3.7). It states no request body for WebFetch.
+// The hash is the final content of the replaced file, which the observed side
+// takes from the close of the temporary (see stream.go).
 func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 	switch field {
 	case verification.DiffExitCode, verification.DiffRequestHash:
@@ -71,10 +73,16 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 	if e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit {
 		if payload, ok := evalPayload(e.Target); ok {
 			e.Target = payload
+		} else {
+			e.Target = canonicalIDs(e.Target)
 		}
 	}
 	return e, true
 }
+
+// capturedVersion is the Claude Code version whose kernel-level behaviour the
+// claim shapes were checked against (scripts/capture-claude-code.sh).
+const capturedVersion = "2.1.286"
 
 // Tool names.
 const (
@@ -127,7 +135,12 @@ type record struct {
 	Type      string    `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
 	SessionID string    `json:"sessionId"`
-	Message   *struct {
+	// ToolUseResult is the harness's structured result of the tool call, on the
+	// user record that carries the tool_result. For Write it says whether the
+	// file was created or updated, which decides whether the harness first
+	// opened the existing file.
+	ToolUseResult json.RawMessage `json:"toolUseResult"`
+	Message       *struct {
 		ID      string          `json:"id"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -139,6 +152,13 @@ type block struct {
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`
 	ToolUseID string          `json:"tool_use_id"`
+}
+
+// toolResult is what a call's result record held: when it came back and, for
+// tools that report one, what kind of result it was.
+type toolResult struct {
+	ts   time.Time
+	kind string
 }
 
 type toolUse struct {
@@ -157,7 +177,7 @@ type toolUse struct {
 func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	var rep agent.Report
 	var uses []toolUse
-	results := map[string]time.Time{}
+	results := map[string]toolResult{}
 
 	read := func(file, thread string) error {
 		f, err := os.Open(file)
@@ -183,12 +203,29 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: content: %v", filepath.Base(file), line, err))
 				continue
 			}
+			nResults := 0
+			for _, b := range blocks {
+				if b.Type == "tool_result" {
+					nResults++
+				}
+			}
 			for _, b := range blocks {
 				switch b.Type {
 				case "tool_use":
 					uses = append(uses, toolUse{id: b.ID, name: b.Name, input: b.Input, ts: r.Timestamp, messageID: r.Message.ID, thread: thread, seq: len(uses)})
 				case "tool_result":
-					results[b.ToolUseID] = r.Timestamp
+					res := toolResult{ts: r.Timestamp}
+					// One structured result per record: with several tool
+					// results in one record it cannot be attributed to a call.
+					if nResults == 1 {
+						var tr struct {
+							Type string `json:"type"`
+						}
+						if json.Unmarshal(r.ToolUseResult, &tr) == nil {
+							res.kind = tr.Type
+						}
+					}
+					results[b.ToolUseID] = res
 				}
 			}
 		}
@@ -226,16 +263,21 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 
 	var tr models.Trajectory
 	unknown := map[string]bool{}
+	writeUnknown := 0
 	for _, u := range uses {
 		base := models.TrajectoryEntry{Timestamp: u.ts, ThreadID: u.thread, Tool: u.name}
-		if end, ok := results[u.id]; ok && !end.Before(u.ts) {
-			e := end
+		res, hasResult := results[u.id]
+		if hasResult && !res.ts.Before(u.ts) {
+			e := res.ts
 			base.End = &e
 		}
 		if perMessage[u.messageID] > 1 {
 			base.BlockID = u.messageID
 		}
-		entries, why := claimsFor(u, base)
+		entries, why := claimsFor(u, base, res.kind)
+		if u.name == toolWrite && why == "" && res.kind != "create" && res.kind != "update" {
+			writeUnknown++
+		}
 		switch why {
 		case "":
 			tr = append(tr, entries...)
@@ -253,11 +295,16 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		rep.UnknownTools = append(rep.UnknownTools, n)
 	}
 	sort.Strings(rep.UnknownTools)
+	// Adjacent opens of one file are one access, on the observed side too.
+	tr = collapseOpenClaims(tr)
 	rep.Entries = len(tr)
 	rep.Degradations = []string{
 		"claim start is the moment the model emitted the call and includes approval latency, so the interval cannot bound execution (D13)",
 		"the format records no process exit code, so exits are not aligned (08 section 6.2)",
-		"file-tool claim shapes (which kernel events a Read, Write or Edit produces) are a hypothesis until checked against a paired capture",
+		"file-tool claim shapes follow one paired capture of version " + capturedVersion + ": a Write or Edit is claimed as one atomic replace (temp file and rename), and a variant not seen there, such as a direct write, will show as unexplained",
+	}
+	if writeUnknown > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d Write call(s) have no create or update result, so they are assumed to overwrite an existing file", writeUnknown))
 	}
 	if len(unknown) > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("tools with no mapping and not declared non-effectful: %s; their effects, if any, will appear unexplained", strings.Join(rep.UnknownTools, ", ")))
@@ -272,7 +319,7 @@ const (
 
 // claimsFor maps one tool call to its claims. A non-empty reason means no entry
 // was produced and says why.
-func claimsFor(u toolUse, base models.TrajectoryEntry) ([]models.TrajectoryEntry, string) {
+func claimsFor(u toolUse, base models.TrajectoryEntry, resultKind string) ([]models.TrajectoryEntry, string) {
 	if nonEffectful[u.name] {
 		return nil, reasonNonEffectful
 	}
@@ -311,11 +358,16 @@ func claimsFor(u toolUse, base models.TrajectoryEntry) ([]models.TrajectoryEntry
 		if in.FilePath == "" {
 			return nil, "no file_path"
 		}
-		closeEntry := mk(models.FileClose, in.FilePath)
+		write := mk(models.FileWrite, in.FilePath)
 		if u.name == toolWrite {
-			closeEntry.OutputHash = models.StringPtr(contentHash(in.Content))
+			write.OutputHash = models.StringPtr(contentHash(in.Content))
 		}
-		return []models.TrajectoryEntry{mk(models.FileOpen, in.FilePath), mk(models.FileWrite, in.FilePath), closeEntry}, ""
+		// Edit, and Write over an existing file, first open the target. A Write
+		// that created the file did not.
+		if u.name == toolWrite && resultKind == "create" {
+			return []models.TrajectoryEntry{write}, ""
+		}
+		return []models.TrajectoryEntry{mk(models.FileOpen, in.FilePath), write}, ""
 	case toolWebFetch:
 		host := hostOf(in.URL)
 		if host == "" {

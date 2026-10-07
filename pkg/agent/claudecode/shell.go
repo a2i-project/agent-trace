@@ -1,6 +1,9 @@
 package claudecode
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // Claude Code runs every Bash call as
 //
@@ -92,4 +95,19 @@ func shellWord(s string) (string, bool) {
 		return "", false
 	}
 	return b.String(), true
+}
+
+// The harness's own commands name a per-session snapshot file and a per-call
+// working-directory file by ids that differ every run, so two runs of the same
+// harness behaviour would never match. The ids are replaced by a fixed token on
+// the observed side, which is the only side they appear on: a claim names the
+// agent's command, never these.
+var (
+	snapshotID = regexp.MustCompile(`snapshot-bash-\d+-[0-9a-f]+\.sh`)
+	cwdFileID  = regexp.MustCompile(`/tmp/claude-[0-9a-f]+-cwd`)
+)
+
+func canonicalIDs(s string) string {
+	s = snapshotID.ReplaceAllString(s, "snapshot-bash-N.sh")
+	return cwdFileID.ReplaceAllString(s, "/tmp/claude-N-cwd")
 }

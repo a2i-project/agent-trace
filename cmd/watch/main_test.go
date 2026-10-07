@@ -182,3 +182,32 @@ func TestRunWatch_RecordsLossInCoverage(t *testing.T) {
 		t.Error("Assess reported a capture with ring buffer drops as complete")
 	}
 }
+
+// Events from one batch share a timestamp, and the verifier aligns by
+// position, so ties must keep the order the probe emitted them in.
+func TestSortGroundKeepsTiesInArrivalOrder(t *testing.T) {
+	ts := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	var g models.GroundTruth
+	for i := 0; i < 500; i++ {
+		g = append(g, models.GroundTruthEvent{Timestamp: ts, ActionType: models.FileWrite, Target: fmt.Sprintf("/w/%03d", i)})
+	}
+	g = append(g, models.GroundTruthEvent{Timestamp: ts.Add(-time.Second), ActionType: models.FileOpen, Target: "/w/earlier"})
+	sortGround(g)
+	if g[0].Target != "/w/earlier" {
+		t.Fatalf("first = %s, want the earliest event", g[0].Target)
+	}
+	for i := 1; i < len(g); i++ {
+		if want := fmt.Sprintf("/w/%03d", i-1); g[i].Target != want {
+			t.Fatalf("tie %d = %s, want %s: a tie was reordered", i, g[i].Target, want)
+		}
+	}
+}
+
+func TestWorkspaceAbsIsAbsolute(t *testing.T) {
+	if got := workspaceAbs("rel/dir"); !filepath.IsAbs(got) || !strings.HasSuffix(got, "rel/dir") {
+		t.Errorf("workspaceAbs(rel/dir) = %q", got)
+	}
+	if got := workspaceAbs("/already/abs"); got != "/already/abs" {
+		t.Errorf("workspaceAbs(/already/abs) = %q", got)
+	}
+}

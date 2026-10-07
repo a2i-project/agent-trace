@@ -242,7 +242,7 @@ func TestCaptureKeepsOnlyWhatEveryRunDid(t *testing.T) {
 	a := fake{name: "f"}
 	r1 := nullRun(ev(models.NetConnect, "telemetry.example", 100, 0))
 	r2 := nullRun()
-	b, err := Capture(a, "1.2.3", []models.GroundTruthFile{r1, r2}, t0)
+	b, err := Capture(a, "1.2.3", []models.GroundTruthFile{r1, r2}, t0, CaptureOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestCaptureNormalizesBeforeAttributing(t *testing.T) {
 		return e, true
 	}}
 	r := runFile(100, models.GroundTruth{ev(models.FileWrite, "/tmp/claude-9999-cwd", 100, 0)})
-	b, err := Capture(a, "v", []models.GroundTruthFile{r}, t0)
+	b, err := Capture(a, "v", []models.GroundTruthFile{r}, t0, CaptureOptions{})
 	if err != nil || len(b.Rules) != 1 || b.Rules[0].Target != "/tmp/claude-N-cwd" {
 		t.Errorf("Capture = %+v, %v, want the normalized target", b.Rules, err)
 	}
@@ -282,10 +282,10 @@ func TestCaptureNormalizesBeforeAttributing(t *testing.T) {
 
 func TestCaptureRefusesWhatItCannotAttribute(t *testing.T) {
 	a := fake{name: "f"}
-	if _, err := Capture(a, "v", nil, t0); err == nil {
+	if _, err := Capture(a, "v", nil, t0, CaptureOptions{}); err == nil {
 		t.Error("no runs must be an error")
 	}
-	if _, err := Capture(a, "v", []models.GroundTruthFile{runFile(0, nil)}, t0); err == nil {
+	if _, err := Capture(a, "v", []models.GroundTruthFile{runFile(0, nil)}, t0, CaptureOptions{}); err == nil {
 		t.Error("a run with no root pid must be an error")
 	}
 }
@@ -294,7 +294,7 @@ func TestCaptureRefusesWhatItCannotAttribute(t *testing.T) {
 // or a baseline becomes a place to hide.
 func TestPredicateMatchesExactly(t *testing.T) {
 	b := Baseline{Rules: []Rule{{models.FileWrite, "/home/u/.cfg"}}}
-	p := b.Predicate()
+	p := b.Predicate("")
 	if !p(ev(models.FileWrite, "/home/u/.cfg", 1, 0)) {
 		t.Error("an exact rule did not match")
 	}
@@ -308,7 +308,7 @@ func TestPredicateMatchesExactly(t *testing.T) {
 			t.Errorf("rule matched %v", e)
 		}
 	}
-	if (Baseline{}).Predicate()(ev(models.FileWrite, "/x", 1, 0)) {
+	if (Baseline{}).Predicate("")(ev(models.FileWrite, "/x", 1, 0)) {
 		t.Error("an empty baseline explained something")
 	}
 }
@@ -344,7 +344,7 @@ func TestBaselineSurvivesTheDiskAndRejectsBadFiles(t *testing.T) {
 // omission, and an action outside it still is.
 func TestBaselineLetsAnHonestRunVerifyWithoutHidingAnything(t *testing.T) {
 	a := fake{name: "f", model: ProcessModel{ExitsClaimed: false}}
-	b, err := Capture(a, "v", []models.GroundTruthFile{nullRun()}, t0)
+	b, err := Capture(a, "v", []models.GroundTruthFile{nullRun()}, t0, CaptureOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestBaselineLetsAnHonestRunVerifyWithoutHidingAnything(t *testing.T) {
 	harness := nullRun().Events
 
 	honest := models.GroundTruthFile{Events: harness, RootPID: 100, Coverage: cov}
-	if v := verification.Verify(Prepare(a, nil, honest, b.Predicate(), verification.Options{})); v.Outcome != verification.OutcomeFaithful {
+	if v := verification.Verify(Prepare(a, nil, honest, b.Predicate(""), verification.Options{})); v.Outcome != verification.OutcomeFaithful {
 		t.Errorf("harness activity with its baseline: outcome = %s, unrecorded = %v", v.Outcome, v.Unrecorded)
 	}
 	if v := verification.Verify(Prepare(a, nil, honest, nil, verification.Options{})); v.Outcome != verification.OutcomeNotFaithful {
@@ -360,8 +360,87 @@ func TestBaselineLetsAnHonestRunVerifyWithoutHidingAnything(t *testing.T) {
 	}
 
 	sneaky := models.GroundTruthFile{Events: append(append(models.GroundTruth{}, harness...), ev(models.FileWrite, "/home/u/.ssh/authorized_keys", 100, 0)), RootPID: 100, Coverage: cov}
-	v := verification.Verify(Prepare(a, nil, sneaky, b.Predicate(), verification.Options{}))
+	v := verification.Verify(Prepare(a, nil, sneaky, b.Predicate(""), verification.Options{}))
 	if v.Outcome != verification.OutcomeNotFaithful || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "/home/u/.ssh/authorized_keys" {
 		t.Errorf("an action outside the baseline: outcome = %s, unrecorded = %v", v.Outcome, v.Unrecorded)
+	}
+}
+
+func TestCaptureAgreementThreshold(t *testing.T) {
+	a := fake{name: "f"}
+	mk := func(extra ...models.GroundTruthEvent) models.GroundTruthFile {
+		return runFile(100, append(models.GroundTruth{ev(models.NetConnect, "always", 100, 0)}, extra...))
+	}
+	runs := []models.GroundTruthFile{mk(ev(models.NetConnect, "twice", 100, 0)), mk(ev(models.NetConnect, "twice", 100, 0)), mk()}
+	has := func(rs []Rule, target string) bool {
+		for _, r := range rs {
+			if r.Target == target {
+				return true
+			}
+		}
+		return false
+	}
+	strict, _ := Capture(a, "v", runs, t0, CaptureOptions{})
+	if !has(strict.Rules, "always") || has(strict.Rules, "twice") || !has(strict.Unstable, "twice") || strict.MinAgreement != 1 {
+		t.Errorf("default threshold: rules=%+v unstable=%+v agreement=%v", strict.Rules, strict.Unstable, strict.MinAgreement)
+	}
+	loose, _ := Capture(a, "v", runs, t0, CaptureOptions{MinAgreement: 0.6})
+	if !has(loose.Rules, "twice") || loose.MinAgreement != 0.6 {
+		t.Errorf("0.6 threshold: rules=%+v", loose.Rules)
+	}
+	for _, bad := range []float64{-0.1, 1.5} {
+		if _, err := Capture(a, "v", runs, t0, CaptureOptions{MinAgreement: bad}); err == nil {
+			t.Errorf("agreement %v accepted", bad)
+		}
+	}
+}
+
+// The harness inspects the working directory, so its commands name it. A
+// baseline measured in one directory has to apply in another.
+func TestBaselineTemplatesTheWorkspace(t *testing.T) {
+	a := fake{name: "f"}
+	run := func(ws string) models.GroundTruthFile {
+		f := runFile(100, models.GroundTruth{
+			{Timestamp: t0, ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: 100},
+			ev(models.ProcessExec, "/usr/bin/git -C "+ws+" status", 200, 100),
+		})
+		f.Workspace = ws
+		return f
+	}
+	b, err := Capture(a, "v", []models.GroundTruthFile{run("/tmp/run-a/ws"), run("/tmp/run-b/ws")}, t0, CaptureOptions{})
+	if err != nil || len(b.Rules) != 1 || b.Rules[0].Target != "/usr/bin/git -C {workspace} status" {
+		t.Fatalf("Capture = %+v, %v, want one templated rule from two different workspaces", b.Rules, err)
+	}
+	p := b.Predicate("/home/u/elsewhere")
+	if !p(ev(models.ProcessExec, "/usr/bin/git -C /home/u/elsewhere status", 1, 0)) {
+		t.Error("the rule did not apply in a third directory")
+	}
+	if p(ev(models.ProcessExec, "/usr/bin/git -C /home/u/other status", 1, 0)) {
+		t.Error("the rule matched a directory that is not the watched one")
+	}
+	if b.Predicate("")(ev(models.ProcessExec, "/usr/bin/git -C {workspace} status", 1, 0)) {
+		t.Error("with no workspace the placeholder matched itself literally")
+	}
+	if got := templateWorkspace("/anything", "/"); got != "/anything" {
+		t.Errorf("a root workspace rewrote a path: %q", got)
+	}
+}
+
+type streamFake struct{ fake }
+
+func (streamFake) NormalizeStream(g models.GroundTruth) models.GroundTruth {
+	var out models.GroundTruth
+	for _, e := range g {
+		if e.Target != "/noise" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestPrepareRunsTheStreamNormalizer(t *testing.T) {
+	in := Prepare(streamFake{fake{name: "f"}}, nil, completeFile(models.GroundTruth{ev(models.FileWrite, "/noise", 100, 0), ev(models.FileWrite, "/keep", 100, 0)}), nil, verification.Options{})
+	if len(in.Ground) != 1 || in.Ground[0].Target != "/keep" {
+		t.Errorf("Ground = %v, want the stream normalizer applied", in.Ground)
 	}
 }

@@ -32,9 +32,11 @@ func run(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("baseline", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	var agentName, version, outPath string
+	var agreement float64
 	fs.StringVar(&agentName, "agent", "", "Adapter that normalizes the control runs ("+strings.Join(agent.Names(), ", ")+")")
 	fs.StringVar(&version, "agent-version", "", "Version of the agent that was run: a baseline holds for one version only")
 	fs.StringVar(&outPath, "out", "baseline.json", "Where to write the baseline")
+	fs.Float64Var(&agreement, "min-agreement", 1, "Fraction of control runs that must perform an action for it to count as the harness's. 1 keeps only what every run did; lower it if the harness does some things only some of the time, at the cost of a wider baseline")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintln(errOut, "Usage: baseline --agent NAME --agent-version V [--out FILE] CONTROL_RUN.json...")
 		fs.PrintDefaults()
@@ -77,7 +79,7 @@ func run(args []string, out, errOut io.Writer) int {
 		runs = append(runs, f)
 	}
 
-	b, err := agent.Capture(a, version, runs, time.Now())
+	b, err := agent.Capture(a, version, runs, time.Now(), agent.CaptureOptions{MinAgreement: agreement})
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "baseline: %v\n", err)
 		return 3
@@ -86,7 +88,7 @@ func run(args []string, out, errOut io.Writer) int {
 		_, _ = fmt.Fprintf(errOut, "baseline: %v\n", err)
 		return 3
 	}
-	_, _ = fmt.Fprintf(out, "wrote %s: %d rule(s) every one of %d run(s) performed, %d unstable action(s) left out\n", outPath, len(b.Rules), b.Runs, len(b.Unstable))
+	_, _ = fmt.Fprintf(out, "wrote %s: %d rule(s) from %d run(s) at %.0f%% agreement, %d unstable action(s) left out\n", outPath, len(b.Rules), b.Runs, b.MinAgreement*100, len(b.Unstable))
 	if b.Runs == 1 {
 		_, _ = fmt.Fprintln(out, "note: one control run cannot tell stable activity from incidental activity; capture at least three")
 	}
