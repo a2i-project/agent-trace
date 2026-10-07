@@ -32,7 +32,7 @@ type Rule struct {
 
 // Baseline is the harness's own activity, measured by control runs: the agent
 // is given a task that claims nothing, so everything it does is by construction
-// the harness (07 D11, 08 V7). It is keyed on the agent and its version, since
+// the harness (D11, V7). It is keyed on the agent and its version, since
 // a harness's activity changes between versions.
 type Baseline struct {
 	Schema       int       `json:"schema"`

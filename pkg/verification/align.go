@@ -12,7 +12,7 @@ import (
 // Lane groups the action types that one probe produces. Probes stamp events
 // with different clocks and read them at different latencies, so the order of
 // a file event against a process event is not reliable. Order within a lane is,
-// so claims are aligned lane by lane (08 V4, with V6's caveat).
+// so claims are aligned lane by lane (V4, with V6's caveat).
 type Lane string
 
 const (
@@ -37,7 +37,7 @@ func LaneOf(a models.ActionType) Lane {
 }
 
 // EditKind is one operation of the edit script. The script is the finding
-// report (08 V5).
+// report (V5).
 type EditKind int
 
 const (
@@ -81,7 +81,7 @@ type Edit struct {
 	Diffs []string
 	// OutsideInterval is set when the claim carries an interval and the
 	// observed action falls outside it. A finding about the claim, not a
-	// reason to refuse the pair (08 V6).
+	// reason to refuse the pair (V6).
 	OutsideInterval bool
 }
 
@@ -112,7 +112,7 @@ type Options struct {
 	// strict reading. See Expresses and contentDiffs.
 	Expresses Expresses
 	// IgnoreExits removes process exits from both sides before alignment. It
-	// is for a format that cannot state an exit (08 section 6.2), where every
+	// is for a format that cannot state an exit (I-15), where every
 	// observed exit would otherwise read as an unreported action.
 	IgnoreExits bool
 }
@@ -126,7 +126,7 @@ const maxCells = 16 << 20
 // insertion plus deletion. A same-type substitution is cheaper than the pair,
 // and a cross-type one is cheaper still than the pair but dearer than a
 // same-type one, so the cost model separates a content disagreement from a
-// structural one (08 V5).
+// structural one (V5).
 const (
 	costIndel   = 2
 	costSubSame = 2

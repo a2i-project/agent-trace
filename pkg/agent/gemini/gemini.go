@@ -1,6 +1,6 @@
 // Package gemini adapts Gemini (antigravity-cli) conversations to the verifier.
 // A conversation is a SQLite database whose steps table holds an undocumented
-// protobuf payload per step. See docs/plan/07_trajectory_formats.md section 4.
+// protobuf payload per step. See docs/architecture/30_agent_adapters.md.
 package gemini
 
 import (
@@ -33,7 +33,7 @@ type Adapter struct{}
 func (Adapter) Name() string { return Name }
 
 // Process records what is known and marks what is not. A run_command step has
-// an execution start (07 D13), but the process model is unmeasured: whether a
+// an execution start (D13), but the process model is unmeasured: whether a
 // command execs its own shell, whether subagents share the agent's process, and
 // whether the sequence is ordered all need a live /proc experiment that has not
 // been run, so the fields below that are false or unmeasured say so in
@@ -61,7 +61,7 @@ func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 	return true
 }
 
-// IsHarnessNoise declares nothing: the baseline is measured per version (07 D11).
+// IsHarnessNoise declares nothing: the baseline is measured per version (D11).
 func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 
 // Normalize is the identity. How Gemini wraps the commands it runs has not been

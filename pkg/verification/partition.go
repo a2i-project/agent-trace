@@ -18,10 +18,10 @@ type Command struct {
 	// Content is every other claimable event in the subtree: later execs of
 	// the same process, descendants' execs and exits, and every file and
 	// network event of the subtree. Attributed and counted, never aligned
-	// against a claim (08 D3).
+	// against a claim (D3).
 	Content models.GroundTruth
 	// Baseline is set when the harness baseline explains this command, so no
-	// claim is needed for it (08 V7). See Partition.SubtractBaseline.
+	// claim is needed for it (V7). See Partition.SubtractBaseline.
 	Baseline bool
 }
 
@@ -36,7 +36,7 @@ type AttributedEvent struct {
 type Partition struct {
 	// Observed is the top-level sequence: the agent's own events (level 0) and
 	// each command's own exec and exit, in time order, claimable types only.
-	// This is what claims are aligned against (08 V4).
+	// This is what claims are aligned against (V4).
 	Observed models.GroundTruth
 	// Owner is parallel to Observed: the command whose own exec or exit an
 	// observed event is, or nil for a level-0 event.

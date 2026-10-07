@@ -10,7 +10,7 @@ import (
 //	<shell> -c [-l] source <snapshot> ... && eval '<command>' < /dev/null && pwd -P >| /tmp/claude-<n>-cwd
 //
 // so the argv the process probe sees is the wrapper, not the command the agent
-// claimed (07 D6). The wrapper is specific to the harness version, which is why
+// claimed (D6). The wrapper is specific to the harness version, which is why
 // recovering the command lives here and not in pkg/matching.
 
 const snapshotMarker = "shell-snapshots/snapshot-"

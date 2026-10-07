@@ -10,7 +10,7 @@ import (
 // conversations and are version-sensitive by construction: every lookup that
 // must find a field returns an error naming the path when it does not, so a
 // version that moves a field fails loudly and never yields an empty
-// trajectory (07 section 4).
+// trajectory (docs/architecture/30_agent_adapters.md).
 
 type wireType uint8
 

@@ -258,7 +258,7 @@ func TestProcessModelSaysWhatIsUnmeasured(t *testing.T) {
 	}
 }
 
-// --- failing loudly (07 section 4) ---
+// --- failing loudly (docs/architecture/30_agent_adapters.md) ---
 
 func TestParseFailsWhenAPayloadDoesNotDecode(t *testing.T) {
 	path := writeDB(t, []step{{typ: 132, status: 3, payload: []byte{0x2a, 0xff, 0xff}}}) // field 5, length past the end

@@ -54,7 +54,7 @@ func TestAlign_IdenticalSequencesMatchEverywhere(t *testing.T) {
 	}
 }
 
-// The three edit operations are the three attacks (08 V5). Each is recovered
+// The three edit operations are the three attacks (V5). Each is recovered
 // from a deliberately mutated sequence at a known position.
 func TestAlign_ThreeEditOperations(t *testing.T) {
 	base := []string{"/bin/a", "/bin/b", "/bin/c"}
@@ -105,7 +105,7 @@ func TestAlign_ThreeEditOperations(t *testing.T) {
 	}
 }
 
-// The case the old engine cannot report (08 section 1.1): the agent claims
+// The case the old engine cannot report (V4): the agent claims
 // cat README and the ground truth shows cat /etc/passwd. One substitution at a
 // known position, not one fabrication plus one omission.
 func TestAlign_TargetSubstitutionIsOneEdit(t *testing.T) {
@@ -173,7 +173,7 @@ func TestAlign_CrossLaneOrderIsNotChecked(t *testing.T) {
 }
 
 // Two equally good alignments must be reported as ambiguous, not resolved
-// silently by iteration order (08 V5).
+// silently by iteration order (V5).
 func TestAlign_NonUniqueMinimumIsAmbiguous(t *testing.T) {
 	c := models.Trajectory{claim(models.ProcessExec, "/bin/cat x"), claim(models.ProcessExec, "/bin/cat x")}
 	o := models.GroundTruth{obs(models.ProcessExec, "/bin/cat x")}
@@ -199,7 +199,7 @@ func TestAlign_NonUniqueMinimumIsAmbiguous(t *testing.T) {
 }
 
 // Time orders and never pairs: a constant offset, or any latency, between the
-// trajectory's clock and the kernel's changes nothing (08 V6).
+// trajectory's clock and the kernel's changes nothing (V6).
 func TestAlign_ClockOffsetDoesNotChangeThePairing(t *testing.T) {
 	var c models.Trajectory
 	var o models.GroundTruth

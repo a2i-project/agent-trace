@@ -10,7 +10,7 @@ import (
 // observed traffic and when ingesting a trajectory entry's claimed URL, so
 // that matching.Match's strict string equality (the same anti-normalization
 // discipline as F2.2's command matching) is sufficient for NetRequest --
-// see docs/plan/06_tier3_network_design.md section 7.1.
+// see docs/architecture/13_probe_net.md.
 //
 // The form is:
 //

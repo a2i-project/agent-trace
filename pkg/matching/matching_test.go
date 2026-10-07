@@ -55,7 +55,7 @@ func TestTargetsMatchIgnoresActionTypeOfTheEvent(t *testing.T) {
 }
 
 // Time plays no part: a constant clock offset between the trajectory and the
-// probes must not change whether two targets agree (08 V6).
+// probes must not change whether two targets agree (V6).
 func TestTargetsMatchIgnoresTime(t *testing.T) {
 	te := entry(0, models.FileWrite, "/tmp/test.txt")
 	ge := event(48*time.Hour, models.FileWrite, "/tmp/test.txt")

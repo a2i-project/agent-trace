@@ -86,7 +86,7 @@ func run(args []string, out, errOut io.Writer) int {
 		}
 		baseline, measured = &b, b.Predicate(gt.Workspace)
 	} else if adapter.Name() != agent.GenericName {
-		rep.Degradations = append(rep.Degradations, "no baseline supplied: the harness's own activity is reported as unexplained (08 V7)")
+		rep.Degradations = append(rep.Degradations, "no baseline supplied: the harness's own activity is reported as unexplained (V7)")
 	}
 
 	opts := verification.Options{IntervalSlack: slack}

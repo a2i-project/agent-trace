@@ -129,7 +129,7 @@ func TestVerify_HashMismatch(t *testing.T) {
 	}
 }
 
-// The three states of a nil (08 section 3.7). Each row pairs one claim with one
+// The three states of a nil (V-20). Each row pairs one claim with one
 // observed event, and says what the content comparison concludes under the
 // default (everything expressible), a format that cannot state the field, and a
 // format that can.
@@ -338,7 +338,7 @@ func TestVerify_IgnoreExits(t *testing.T) {
 	wantOutcome(t, v, OutcomeNotFaithful)
 }
 
-// 08 V6: a claim interval comes from the adversary. An observed action outside
+// V6: a claim interval comes from the adversary. An observed action outside
 // it is reported against the claim, and the pair stays paired.
 func TestVerify_OutsideInterval(t *testing.T) {
 	g := models.GroundTruth{agentEv(5000, models.FileWrite, "/w/a")}
@@ -354,7 +354,7 @@ func TestVerify_OutsideInterval(t *testing.T) {
 	wantOutcome(t, v, OutcomeFaithful)
 }
 
-// 08 V6: time orders events and does not pair them. A constant offset between
+// V6: time orders events and does not pair them. A constant offset between
 // the trajectory's clock and the kernel's changes nothing.
 func TestVerify_ClockOffsetDoesNotChangeTheVerdict(t *testing.T) {
 	g := models.GroundTruth{
@@ -459,7 +459,7 @@ func TestVerify_ForkRecordsAreNeitherUnrecordedNorCapability(t *testing.T) {
 	}
 }
 
-// --- Outcome rules (08 section 3.9) ---
+// --- Outcome rules (V-13 to V-15) ---
 
 func TestVerify_NoRootPIDIsInconclusive(t *testing.T) {
 	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a")}

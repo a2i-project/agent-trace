@@ -70,7 +70,7 @@ type Attribution struct {
 	Command *Process
 }
 
-// Forest is the process tree of one capture, rooted at the agent (08 V1).
+// Forest is the process tree of one capture, rooted at the agent (V1).
 type Forest struct {
 	RootPID uint32
 	agent   *Process
@@ -180,7 +180,7 @@ func (f *Forest) link(p *Process) {
 
 // Attribute places an event in the tree by the pid that caused it. The clock
 // is consulted only to choose between incarnations of a reused pid, never to
-// pair or to attribute (08 V6).
+// pair or to attribute (V6).
 func (f *Forest) Attribute(e models.GroundTruthEvent) Attribution {
 	switch e.PID {
 	case 0:

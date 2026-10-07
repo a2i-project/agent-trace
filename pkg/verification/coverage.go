@@ -4,7 +4,7 @@ import "github.com/agent-trace/agent-trace/pkg/models"
 
 // Baseline reports whether an observed event is the harness's own activity: the
 // model API connection, telemetry, config reads. It is measured by a null-task
-// control run, not declared (08 V7). A nil Baseline explains nothing.
+// control run, not declared (V7). A nil Baseline explains nothing.
 type Baseline func(models.GroundTruthEvent) bool
 
 // SubtractBaseline removes the harness's own activity from the aligned
@@ -59,7 +59,7 @@ type UnexplainedAction struct {
 }
 
 // Coverage is the result of checking that every observed event is explained
-// by a claim or by the baseline (08 V3). It is reported apart from the
+// by a claim or by the baseline (V3). It is reported apart from the
 // alignment, because the two fail for different reasons (V8).
 type Coverage struct {
 	// UnexplainedActions are the top-level actions no claim aligned to.

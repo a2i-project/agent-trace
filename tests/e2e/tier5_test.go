@@ -67,7 +67,7 @@ func resolveSingleIPv4(t *testing.T, host string) (string, error) {
 // claims it. The shell execs curl, so curl keeps the shell's pid: the request is
 // the agent's own action at level 0 and is aligned against a claim. A curl that
 // the agent forked instead would be a level-1 subtree, whose requests are
-// counted and attributed but never claimed (08 D3), and so could not carry a
+// counted and attributed but never claimed (D3), and so could not carry a
 // request-hash claim at all.
 func runTier5MockAgent(t *testing.T, attack string) capture {
 	t.Helper()

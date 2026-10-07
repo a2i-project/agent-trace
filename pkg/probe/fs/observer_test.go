@@ -919,7 +919,7 @@ func TestPidOf(t *testing.T) {
 	}
 }
 
-// Every event the probe emits must carry its own causing PID (08 section 3.2),
+// Every event the probe emits must carry its own causing PID (V1),
 // including a close that is superseded by another process's close: the older
 // close keeps the pid that caused it, not the pid of whoever superseded it.
 func TestObserver_EventsCarryTheirOwnPID(t *testing.T) {

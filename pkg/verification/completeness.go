@@ -8,7 +8,7 @@ import (
 )
 
 // Completeness is the verifier's judgement of whether the ground truth can
-// support a FAITHFUL verdict. See docs/plan/08_verification_model.md, 3.9.
+// support a FAITHFUL verdict. See docs/decisions/verification.md, V-13 to V-15.
 type Completeness struct {
 	// Complete is true only when a coverage record exists and shows no event
 	// loss on any probe that ran.

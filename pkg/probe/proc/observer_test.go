@@ -697,7 +697,7 @@ func TestObserver_NoStateMapFullWhenMapFits(t *testing.T) {
 
 // TestObserver_EventsCarryProcessIdentity checks that exec and exit events name
 // the process that caused them and its parent, which is the tree the verifier
-// walks (08 V1). A shell running two commands gives a chain: test -> sh ->
+// walks (V1). A shell running two commands gives a chain: test -> sh ->
 // two children. The ppid comes from the kernel task struct at exec time, so the
 // test checks it against pids the test itself observed, not against anything
 // the probe reports.

@@ -8,7 +8,7 @@ import (
 )
 
 // What a paired capture of Claude Code 2.1.286 showed at the kernel level
-// (07 section 3, D6 and the file-tool shapes):
+// (D6, I-22):
 //
 //   - Read opens the file once.
 //   - Write and Edit replace a file atomically: a temporary named

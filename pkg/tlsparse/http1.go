@@ -18,7 +18,7 @@ var ErrMalformedRequest = errors.New("tlsparse: malformed HTTP/1.1 request")
 // HTTPRequest is one parsed HTTP/1.1 request. Path and Query are taken
 // verbatim from the request line's target and are never decoded or
 // normalized, per the anti-normalization discipline in
-// docs/plan/06_tier3_network_design.md section 7.1 -- CanonicalNetTarget is
+// docs/architecture/13_probe_net.md -- CanonicalNetTarget is
 // the single place that assembles the comparable form.
 type HTTPRequest struct {
 	Method  string

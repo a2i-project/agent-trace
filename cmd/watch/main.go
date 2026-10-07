@@ -1,6 +1,6 @@
 // Command watch is the ground-truth recorder half of the live verification
 // harness (see the three-component architecture in
-// docs/plan/01_protocol_architecture.md): it runs whichever probes are
+// docs/architecture/40_tools.md): it runs whichever probes are
 // requested against a workspace, prints each ground-truth event as it is
 // captured, and writes the accumulated ground truth to a JSON file that
 // `verify` can compare against a trajectory.

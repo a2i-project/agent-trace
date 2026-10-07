@@ -1,6 +1,6 @@
 // Package matching decides whether a claim and an observed event name the
 // same resource. It holds no notion of time: pairing is by position in the
-// alignment and time only orders events (docs/plan/08_verification_model.md,
+// alignment and time only orders events (docs/decisions/verification.md,
 // V4 and V6), so the former timestamp window and its Delta are gone.
 package matching
 
@@ -52,7 +52,7 @@ func targetsMatch(actionType models.ActionType, tTarget, gTarget string, gPathIs
 // resource, applying the per-action-type normalization of targetsMatch. It has
 // no timestamp condition and no requirement that the two share an action type,
 // so the verifier can pair by position and then ask whether the targets agree
-// (08 V4). The claim's action type picks the normalization.
+// (V4). The claim's action type picks the normalization.
 func TargetsMatch(t models.TrajectoryEntry, g models.GroundTruthEvent) bool {
 	return targetsMatch(t.ActionType, t.Target, g.Target, g.PathIsAmbiguous)
 }

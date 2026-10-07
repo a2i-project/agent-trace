@@ -42,7 +42,7 @@ type Config struct {
 	// descendants, leave it zero.
 	//
 	// The probe deliberately does not scope by the kernel tracked-PID set
-	// (08 section 3.2 first proposed that). A fanotify event is read some time
+	// (V1 first proposed that). A fanotify event is read some time
 	// after the access, a short-lived child has usually left tracked_pids by
 	// then, and a filter that consulted the set would drop that child's events
 	// silently, which is event loss nothing counts. Every event instead carries

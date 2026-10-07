@@ -86,7 +86,7 @@ func main() {
 	flag.StringVar(&attack, "attack", "", "Simulate an attack scenario: 'omission', 'fabrication', 'substitution-exit', 'substitution-hash', 'substitution-cmd', 'net-omission', 'net-fabrication'")
 	flag.StringVar(&fetchURL, "fetch-url", "", "If set, run `curl -s -o /dev/null -m 10 <url>` and record a NetConnect trajectory entry for the host")
 	var shellCmd string
-	flag.StringVar(&shellCmd, "shell-cmd", "", "Run this script through a child /bin/sh -c and claim only the shell invocation, not what the script spawns. {ws} in the script expands to the workspace path. Gives the process tree a level 1 (the shell) and level 2 (its children), see docs/plan/08_verification_model.md section 3.8")
+	flag.StringVar(&shellCmd, "shell-cmd", "", "Run this script through a child /bin/sh -c and claim only the shell invocation, not what the script spawns. {ws} in the script expands to the workspace path. Gives the process tree a level 1 (the shell) and level 2 (its children), see docs/decisions/verification.md section 3.8")
 	var fetchMethod, fetchBody string
 	var emitNetRequest bool
 	var fetchViaCurl bool
@@ -101,7 +101,7 @@ func main() {
 		log.Fatal("--workspace and --trajectory-out are required")
 	}
 	if emitNetRequest && fetchViaCurl {
-		log.Fatal("--emit-net-request cannot be combined with --fetch-via-curl: the request is made by curl's subtree, which no claim can corroborate (08 D3)")
+		log.Fatal("--emit-net-request cannot be combined with --fetch-via-curl: the request is made by curl's subtree, which no claim can corroborate (D3)")
 	}
 
 	var trajectory models.Trajectory
@@ -204,7 +204,7 @@ func main() {
 		// wc opens f2 for reading, but that open is wc's own action, inside the
 		// subtree of the command claimed above. The verifier attributes it to
 		// the command by ancestry and never aligns it against a claim, so the
-		// agent claims the command and not what the command does (08 D3).
+		// agent claims the command and not what the command does (D3).
 		wcCmd := exec.Command(wcArgs[0], wcArgs[1:]...)
 		runErr := wcCmd.Run()
 		if _, ok := runErr.(*exec.ExitError); runErr != nil && !ok {
@@ -228,8 +228,8 @@ func main() {
 	// shell tool. The agent claims one command, the shell invocation. It never
 	// claims what the script then spawns or touches: that is the shell's
 	// subtree, observed as level 2 and below, and attributed to this claim by
-	// ancestry (08 V1, D3). The claim interval comes from the format, so it
-	// carries the end the real run produced (07 D12).
+	// ancestry (V1, D3). The claim interval comes from the format, so it
+	// carries the end the real run produced (D12).
 	if shellCmd != "" {
 		script := strings.ReplaceAll(shellCmd, "{ws}", workspace)
 		shArgs := []string{"-c", script}
@@ -371,7 +371,7 @@ func main() {
 		// Record what we did: a network connection to the host. Under
 		// --fetch-via-curl the connection belongs to curl's subtree, so the
 		// agent claims the curl command above and not the connection, which
-		// the verifier attributes to that command by ancestry (08 D3).
+		// the verifier attributes to that command by ancestry (D3).
 		if !fetchViaCurl {
 			addEntry(models.NetConnect, fetchHost)
 		}

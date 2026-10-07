@@ -22,7 +22,7 @@ type TrajectoryEntry struct {
 	RequestHash *string `json:"request_hash,omitempty"`
 
 	// End is when the format says the action finished. Timestamp is then the
-	// start of the claim interval and End its end (07 D12). Nil means the
+	// start of the claim interval and End its end (D12). Nil means the
 	// format offers no end timestamp and the entry is a point: the adapter
 	// records that degradation instead of inventing a width. Timestamp is a
 	// decision time unless the adapter says otherwise (D13), so the interval
@@ -58,7 +58,7 @@ type GroundTruthEvent struct {
 	// PID is the process that caused the event (its thread group id), as the
 	// probe observed it. Zero means the probe did not record it, which is
 	// distinct from every real value: pid 0 is the idle task and never causes
-	// a userspace event. Attribution walks this up the process tree (08 V1).
+	// a userspace event. Attribution walks this up the process tree (V1).
 	PID uint32 `json:"pid,omitempty"`
 	// PPID is the parent of PID as the probe observed it when the process was
 	// created or exec'd. Only the proc probe sets it, since it is the only
@@ -71,7 +71,7 @@ type GroundTruthEvent struct {
 	//
 	// Legacy (to be removed, not tagged Deprecated so staticcheck does not flag
 	// the probes and verifier that still use it): a lossy one-bit summary of the structure PID and PPID now
-	// carry (08 section 3.1). Kept only because pkg/verification still reads
+	// carry (V1). Kept only because pkg/verification still reads
 	// it until the forest rewrite (Tier 6 step 5) replaces its consumer.
 	IsTopLevel *bool `json:"is_top_level,omitempty"`
 	// PathIsAmbiguous is true when the probe could only resolve this event

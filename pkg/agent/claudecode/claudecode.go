@@ -1,5 +1,5 @@
 // Package claudecode adapts Claude Code sessions (JSONL transcripts) to the
-// verifier. See docs/plan/07_trajectory_formats.md section 3 for the design and
+// verifier. See docs/architecture/30_agent_adapters.md for the design and
 // the measurements behind it.
 package claudecode
 
@@ -29,10 +29,10 @@ type Adapter struct{}
 func (Adapter) Name() string { return Name }
 
 // Process: every Bash call execs its own shell (level 1), subagents run in the
-// agent's own process (07 D9), and the start timestamp is the moment the model
+// agent's own process (D9), and the start timestamp is the moment the model
 // emitted the call, which includes approval latency (D13). The format records
 // no process exit, only an is_error flag that conflates a failed command with
-// one that never ran, so exits are not claimed (08 section 6.2).
+// one that never ran, so exits are not claimed (I-15).
 func (Adapter) Process() agent.ProcessModel {
 	return agent.ProcessModel{
 		ShellPerCommand:    true,
@@ -46,7 +46,7 @@ func (Adapter) Process() agent.ProcessModel {
 // Expresses declares what the format can state. It states no exit code ever.
 // It states an output hash only for Write, the one file tool whose input holds
 // the final content: Edit carries fragments, so a nil there is nil by format
-// and not an opt-out (08 section 3.7). It states no request body for WebFetch.
+// and not an opt-out (V-20). It states no request body for WebFetch.
 // The hash is the final content of the replaced file, which the observed side
 // takes from the close of the temporary (see stream.go).
 func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
@@ -63,7 +63,7 @@ func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 // (two persistent connections from the agent process, a read and a write per
 // shell call), but the membership changes by version and endpoint, so it is
 // measured by a null-task run and supplied as the baseline, never hardcoded
-// here (07 D11). A static list would rot into false omissions, and a filter
+// here (D11). A static list would rot into false omissions, and a filter
 // that matched a path an attacker could write to would hide the write.
 func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 
@@ -96,7 +96,7 @@ const (
 // nonEffectful tools perform no syscall of their own, so they must not become
 // entries: emitting them would be a permanent false fabrication signal (D10).
 // WebSearch is here because Claude Code runs it server-side, so the host never
-// sees it (verified once, 07 section 3.1 and the hardening notes).
+// sees it (verified once, I-16).
 var nonEffectful = map[string]bool{
 	"Agent": true, "Task": true, "AskUserQuestion": true, "ToolSearch": true,
 	"Skill": true, "ScheduleWakeup": true, "TodoWrite": true, "ExitPlanMode": true,
@@ -300,7 +300,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	rep.Entries = len(tr)
 	rep.Degradations = []string{
 		"claim start is the moment the model emitted the call and includes approval latency, so the interval cannot bound execution (D13)",
-		"the format records no process exit code, so exits are not aligned (08 section 6.2)",
+		"the format records no process exit code, so exits are not aligned (I-15)",
 		"file-tool claim shapes follow one paired capture of version " + capturedVersion + ": a Write or Edit is claimed as one atomic replace (temp file and rename), and a variant not seen there, such as a direct write, will show as unexplained",
 	}
 	if writeUnknown > 0 {

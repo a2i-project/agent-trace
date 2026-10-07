@@ -127,7 +127,7 @@ func TestTier6_E2E_ShellCmdBuildsAForest(t *testing.T) {
 	// the file event's pid is a process that also has an exec record.
 	// An external echo, not the shell builtin: a builtin in a pipeline runs in
 	// a forked subshell that never execs, so it would leave no exec record and
-	// no node in the tree (the open fork-record problem, 08 section 3.2).
+	// no node in the tree (the fork-record problem, V1).
 	// ( ) forks a subshell that writes sub.txt without ever exec'ing: its
 	// pid has no exec record and is placed in the tree by a fork record.
 	script := "/bin/echo hi | tr a-z A-Z > {ws}/upper.txt; wc -l {ws}/upper.txt; ( echo sub > {ws}/sub.txt )"
@@ -257,7 +257,7 @@ func verifyShellCapture(t *testing.T, ws, trajectoryPath string, agentPID uint32
 		cov:  coverageOf(map[string]probe.CoverageReporter{"fs": fsObs, "proc": procObs}),
 	}
 	// The probes stamp events from their own clocks, so the claim's interval
-	// gets the slack a real trajectory would need (08 V6).
+	// gets the slack a real trajectory would need (V6).
 	opts := verification.Options{IntervalSlack: 250 * time.Millisecond}
 
 	t.Run("honest", func(t *testing.T) {
@@ -352,7 +352,7 @@ func verifyShellCapture(t *testing.T, ws, trajectoryPath string, agentPID uint32
 	})
 }
 
-// The agent claims the commands it runs and not what they do (08 D3). wc's open
+// The agent claims the commands it runs and not what they do (D3). wc's open
 // of the renamed file is wc's action, so it must not appear in the trajectory.
 func TestSimAgent_ClaimsWcAndNotWcsOwnOpen(t *testing.T) {
 	bin := buildSimAgent(t)

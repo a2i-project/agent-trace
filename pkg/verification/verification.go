@@ -28,13 +28,13 @@ type Input struct {
 	// the same as complete.
 	Coverage *models.Coverage
 	// Baseline is the harness's own activity, measured by a null-task run
-	// (08 V7). Nil explains nothing.
+	// (V7). Nil explains nothing.
 	Baseline Baseline
 	Options  Options
 }
 
 // Verdict is the result of a verification run. The finding lists derive from
-// the alignment's edit script (08 V5) and Coverage reports the second check
+// the alignment's edit script (V5) and Coverage reports the second check
 // apart from it (V8).
 type Verdict struct {
 	// Outcome is the conclusion. Faithful is true exactly when it is
@@ -53,7 +53,7 @@ type Verdict struct {
 	// omission, P1).
 	Unrecorded []models.GroundTruthEvent
 	// OutsideInterval: corroborated or mismatched pairs whose observed action
-	// falls outside the claim's interval (08 V6). A finding about the claim.
+	// falls outside the claim's interval (V6). A finding about the claim.
 	OutsideInterval []MatchedPair
 	// Capability holds observed events of an unclaimable action type
 	// (listeners). They are counted and reported, never aligned against a
@@ -88,7 +88,7 @@ func (v Verdict) Findings() int {
 
 // Expresses says whether the trajectory format can state a content field (one
 // of the Diff* names) for a claim. It is the adapter's per-tool declaration
-// (08 section 3.7): a nil field is a finding only where the format could have
+// (V-20): a nil field is a finding only where the format could have
 // stated it.
 type Expresses func(entry models.TrajectoryEntry, field string) bool
 
@@ -156,7 +156,7 @@ const (
 // the same action type and returns the names of those that disagree. It does
 // not look at the target: pairing is a separate question from comparing.
 //
-// A nil is one of three states, and only one is a finding (08 section 3.7):
+// A nil is one of three states, and only one is a finding (V-20):
 //   - the probe captured nothing (nil on the observed side): a gap, and the
 //     benefit of the doubt;
 //   - the format cannot state the field (ex says no): a property of the agent,
@@ -199,7 +199,7 @@ func contentDiffs(entry models.TrajectoryEntry, event models.GroundTruthEvent, e
 }
 
 // Verify compares a self-reported trajectory T against an independently
-// observed ground truth G in three stages (08 section 2): the process forest
+// observed ground truth G in three stages (V1 to V8): the process forest
 // attributes every event to the agent or to a command's subtree, the aligned
 // top-level sequence is aligned against the claims (check B), and coverage
 // checks that every observed event is explained (check A). The two checks are
@@ -276,7 +276,7 @@ func Verify(in Input) Verdict {
 		// Loss can manufacture a finding (a lost fork record orphans a
 		// subtree, a dropped event reads as a fabrication), so under loss the
 		// findings are reported as advisory. Whether any survives loss is an
-		// open question in 08 section 3.9.
+		// open question in V-13 to V-15.
 		if !v.Completeness.Complete || len(v.Coverage.Unknown) > 0 {
 			v.Advisory = true
 			v.Reasons = append(v.Reasons, v.Completeness.Reasons...)
