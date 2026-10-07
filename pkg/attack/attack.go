@@ -51,6 +51,12 @@ type Options struct {
 	// It overrides N and Select, so an evaluation can compose attacks on known
 	// entries. Out-of-range or repeated indices are an error.
 	Indices []int
+	// Retime makes Omit close the hole an omission leaves in the timeline by
+	// moving later claims earlier. It is off by default: the verifier's clock is
+	// real, so a claim moved off its real time falls outside the interval it
+	// states and is reported (V-12), which makes the attack easier to catch. It
+	// exists to measure exactly that. Only Omit reads it.
+	Retime bool
 	// Avoid lists targets a generator must not produce (fabrication and
 	// substitution), for example every target observed in the capture, so a
 	// fabricated claim cannot happen to be true.

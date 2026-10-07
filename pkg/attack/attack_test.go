@@ -200,9 +200,26 @@ func TestOmitRemovesExactlyTheRecordedEntries(t *testing.T) {
 
 // An omission must not leave a hole in the timeline: what follows the removed
 // entry moves earlier by the time it occupied, and durations are kept.
-func TestOmitClosesTheGapAndKeepsDurations(t *testing.T) {
+func TestOmitLeavesTimestampsAloneByDefault(t *testing.T) {
 	in := sample()
-	out, _, err := Omit(in, Options{Indices: []int{1}}) // the 10s..14s command
+	out, _, err := Omit(in, Options{Indices: []int{1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, e := range out {
+		orig := in[i]
+		if i >= 1 {
+			orig = in[i+1]
+		}
+		if !e.Timestamp.Equal(orig.Timestamp) || !reflect.DeepEqual(e.End, orig.End) {
+			t.Errorf("entry %d moved: [%v, %v], want [%v, %v]", i, e.Timestamp, e.End, orig.Timestamp, orig.End)
+		}
+	}
+}
+
+func TestOmitWithRetimeClosesTheGapAndKeepsDurations(t *testing.T) {
+	in := sample()
+	out, _, err := Omit(in, Options{Indices: []int{1}, Retime: true}) // the 10s..14s command
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,12 +235,12 @@ func TestOmitClosesTheGapAndKeepsDurations(t *testing.T) {
 		t.Errorf("the last entry's duration changed: %v", last.End)
 	}
 	// Removing a point entry closes the gap to the next one.
-	out2, _, _ := Omit(in, Options{Indices: []int{0}})
+	out2, _, _ := Omit(in, Options{Indices: []int{0}, Retime: true})
 	if !out2[0].Timestamp.Equal(at(0)) {
 		t.Errorf("after dropping the first entry (gap 10s) the next starts at %v, want 0s", out2[0].Timestamp)
 	}
 	// Removing the last entry shifts nothing.
-	out3, _, _ := Omit(in, Options{Indices: []int{5}})
+	out3, _, _ := Omit(in, Options{Indices: []int{5}, Retime: true})
 	mustEqual(t, out3, in[:5], "the entries before a removed last entry")
 }
 

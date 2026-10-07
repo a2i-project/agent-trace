@@ -7,12 +7,14 @@ import (
 )
 
 // Omit is attack A1: the agent did something and does not say so. It removes N
-// entries and returns the trajectory without them. A careful attacker would not
-// leave a hole in the timeline, so every later entry is moved earlier by the
-// time the removed entry occupied: its own duration if it has an interval,
-// otherwise the gap to the next entry. Entry durations are preserved. Time does
-// not pair claims with events (V6), so this changes no verdict, and it keeps the
-// mutated trajectory realistic for any check that does look at gaps.
+// entries and returns the trajectory without them. The remaining claims keep
+// their timestamps, which are the real ones. With opt.Retime the hole in the
+// timeline is closed instead: every later entry moves earlier by the time the
+// removed entry occupied (its own duration if it has an interval, otherwise the
+// gap to the next entry), durations preserved. That hides the hole from anyone
+// reading the trajectory and misplaces every later interval against the real
+// clock, so the verifier reports them as outside their intervals (V-12): the
+// attack is easier to catch, not harder.
 func Omit(t models.Trajectory, opt Options) (models.Trajectory, Record, error) {
 	idx, err := choose(t, opt, nil)
 	if err != nil {
@@ -31,7 +33,9 @@ func Omit(t models.Trajectory, opt Options) (models.Trajectory, Record, error) {
 			rec.Mutations = append(rec.Mutations, Mutation{
 				Kind: Omission, OriginalIndex: i, Index: -1, Before: entryPtr(e),
 			})
-			shift += occupied(t, i)
+			if opt.Retime {
+				shift += occupied(t, i)
+			}
 			continue
 		}
 		c := cloneEntry(e)
