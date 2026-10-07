@@ -166,7 +166,7 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 						// outside its interval (O-24). Any other unaccounted finding is
 						// an error.
 						if res.Unaccounted != 0 {
-							if !(v.Ambiguous && res.Unaccounted == len(v.OutsideInterval)) {
+							if !v.Ambiguous || res.Unaccounted != len(v.OutsideInterval) {
 								t.Errorf("seed %d: %d finding(s) that no mutation explains, not interval findings of an ambiguous alignment", seed, res.Unaccounted)
 							}
 						}
