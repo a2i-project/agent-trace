@@ -65,28 +65,29 @@ type Options struct {
 
 // Mutation is one change, with enough to check a verdict against it.
 type Mutation struct {
-	Kind Kind
+	Kind Kind `json:"kind"`
 	// OriginalIndex is the entry's position in the input, or -1 for an inserted
 	// entry. Index is its position in the output, or -1 for a removed entry.
-	OriginalIndex int
-	Index         int
+	OriginalIndex int `json:"original_index"`
+	Index         int `json:"index"`
 	// Field names what changed in a substitution or a widening (target,
 	// output_hash, exit_code, request_hash, interval). Empty for an omission or
 	// a fabrication.
-	Field string
+	Field string `json:"field,omitempty"`
 	// Old and New are the field's value before and after, as text.
-	Old, New string
+	Old string `json:"old,omitempty"`
+	New string `json:"new,omitempty"`
 	// Before is the original entry (nil for a fabrication) and After the
 	// mutated or inserted one (nil for an omission).
-	Before *models.TrajectoryEntry
-	After  *models.TrajectoryEntry
+	Before *models.TrajectoryEntry `json:"before,omitempty"`
+	After  *models.TrajectoryEntry `json:"after,omitempty"`
 }
 
 // Record is what a generator did.
 type Record struct {
-	Kind      Kind
-	Seed      uint64
-	Mutations []Mutation
+	Kind      Kind       `json:"kind"`
+	Seed      uint64     `json:"seed"`
+	Mutations []Mutation `json:"mutations"`
 }
 
 func newRand(seed uint64) *rand.Rand {

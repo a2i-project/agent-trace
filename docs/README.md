@@ -31,7 +31,8 @@ them for a fact a reader needs.
 | [13_probe_net.md](architecture/13_probe_net.md) | network probe (eBPF tracepoints, `SSL_write` uprobe) |
 | [20_verifier.md](architecture/20_verifier.md) | process forest, alignment, coverage, verdict |
 | [30_agent_adapters.md](architecture/30_agent_adapters.md) | adapters for Claude Code and Gemini, harness baseline |
-| [40_tools.md](architecture/40_tools.md) | `watch`, `verify`, `baseline`, `simagent` |
+| [40_tools.md](architecture/40_tools.md) | `watch`, `verify`, `baseline`, `attack`, `simagent` |
+| [50_attack_generators.md](architecture/50_attack_generators.md) | attack generators A1 to A4, scoring against a mutation record |
 
 ## Decision files
 
@@ -41,6 +42,7 @@ them for a fact a reader needs.
 | [network.md](decisions/network.md) | capture layers, TLS content, threat-model scope for the network | N- |
 | [verification.md](decisions/verification.md) | verification model | V |
 | [integration.md](decisions/integration.md) | agent adapters and trajectory formats | D, I- |
+| [evaluation.md](decisions/evaluation.md) | attack generators and how a verdict is scored against them | E- |
 | [open.md](decisions/open.md) | undecided questions | O- |
 
 ## Conventions

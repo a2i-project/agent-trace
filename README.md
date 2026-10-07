@@ -39,7 +39,7 @@ A faithful verdict says that the agent's top-level claims are true and that noth
 | Claude Code adapter (JSONL, subagents, command-wrapper and atomic-write recovery) | done, checked against one paired capture of version 2.1.286 |
 | Gemini adapter (SQLite and protobuf, fails loudly when a field moves) | implemented, not yet checked against a real capture |
 | Harness baseline from control runs (`baseline`) | done, measured for Claude Code 2.1.286 |
-| Attack generator suite | planned |
+| Attack generators (`attack`): omission, fabrication, substitution, interval widening, scored against a record of the mutation | done, run over the two real captures |
 
 The verifier is tested against a simulated agent (`cmd/simagent`) and against two real paired captures of Claude Code 2.1.286 (a five-step task, and a task with parallel reads, a subagent, searches and a web fetch, each with three control runs, checked in as fixtures). On both, an honest trajectory verifies FAITHFUL and the altered ones do not. That is two short tasks on one version on one machine: it shows the pipeline works end to end, and it is not an evaluation. The Gemini adapter has not seen a real capture, and nothing here has been measured on a population of real sessions.
 
@@ -127,11 +127,13 @@ Here `simagent` claims the `curl` command and nothing curl does, so the connecti
 cmd/watch         Records ground truth: runs the probes, launches the agent, writes the file
 cmd/verify        Compares a trajectory and a ground truth file and prints the verdict
 cmd/baseline      Builds a harness baseline from control runs
+cmd/attack        Mutates a trajectory for evaluation and records the change
 cmd/simagent      Simulated agent, for exercising the probes end to end
 pkg/models        Trajectory, ground truth and coverage types
 pkg/probe         Observer interface; fs, proc and net implement it
 pkg/verification  Process tree, alignment, coverage and the verdict
 pkg/agent         Adapter interface, registry, baseline; claudecode and gemini adapters
+pkg/attack        Attack generators and scoring against a mutation record
 pkg/matching      Target comparison between a claim and an observed event
 pkg/content       SHA-256 content digests
 pkg/tlsparse      TLS ClientHello and HTTP/1.1 request parsing

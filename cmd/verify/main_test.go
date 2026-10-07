@@ -201,3 +201,94 @@ func TestIntervalSlackFlag(t *testing.T) {
 		t.Errorf("with no slack: exit %d, want 1", code)
 	}
 }
+
+// --- normalized claims (what cmd/attack writes) ---
+
+const pairedDir = "../../pkg/agent/claudecode/testdata/paired-2.1.286"
+
+// pairedFiles writes the checked-in real capture's honest claims as normalized
+// JSON, and a baseline from its own control runs, so a test can verify them.
+func pairedFiles(t *testing.T) (claims, baseline string, tr models.Trajectory) {
+	t.Helper()
+	ca, ok := agent.Lookup("claude-code")
+	if !ok {
+		t.Fatal("claude-code adapter is not registered")
+	}
+	tr, _, err := ca.Parse(filepath.Join(pairedDir, "task.session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runs []models.GroundTruthFile
+	for _, l := range []string{"control-1", "control-2", "control-3"} {
+		data, err := os.ReadFile(filepath.Join(pairedDir, l+".ground_truth.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := models.ParseGroundTruthFile(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs = append(runs, f)
+	}
+	b, err := agent.Capture(ca, "2.1.286", runs, t0, agent.CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	baseline = filepath.Join(dir, "b.json")
+	if err := agent.SaveBaseline(baseline, b); err != nil {
+		t.Fatal(err)
+	}
+	return writeJSON(t, dir, "claims.json", tr), baseline, tr
+}
+
+func TestNormalizedClaimsVerifyAgainstARealCapture(t *testing.T) {
+	claims, baseline, tr := pairedFiles(t)
+	gt := filepath.Join(pairedDir, "task.ground_truth.json")
+
+	code, out, errOut := verify(t, "--normalized", "--agent", "claude-code", "--trajectory", claims, "--ground-truth", gt, "--baseline", baseline)
+	if code != 0 || !strings.Contains(out, "VERDICT: FAITHFUL") || !strings.Contains(out, "read as normalized JSON, ground truth normalized by the claude-code adapter") {
+		t.Fatalf("honest claims: exit %d\n%s\n%s", code, out, errOut)
+	}
+
+	// A claim whose content hash is not what the file ended up holding.
+	tampered := append(models.Trajectory{}, tr...)
+	for i := range tampered {
+		if tampered[i].OutputHash != nil {
+			h := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+			tampered[i].OutputHash = &h
+			break
+		}
+	}
+	bad := writeJSON(t, t.TempDir(), "tampered.json", tampered)
+	code, out, _ = verify(t, "--normalized", "--agent", "claude-code", "--trajectory", bad, "--ground-truth", gt, "--baseline", baseline)
+	if code != 1 || !strings.Contains(out, "VERDICT: NOT FAITHFUL") || !strings.Contains(out, "output_hash") {
+		t.Errorf("tampered hash: exit %d\n%s", code, out)
+	}
+}
+
+// Without --agent the ground truth is not normalized by the claude-code adapter,
+// so the real capture's wrapped commands do not match their claims. This is why
+// the flag exists: normalized claims still need the adapter for the observed side.
+func TestNormalizedClaimsNeedTheAdapterForTheGroundTruth(t *testing.T) {
+	claims, _, _ := pairedFiles(t)
+	code, _, _ := verify(t, "--normalized", "--trajectory", claims, "--ground-truth", filepath.Join(pairedDir, "task.ground_truth.json"))
+	if code != 1 {
+		t.Errorf("exit %d, want NOT FAITHFUL without the adapter's normalization", code)
+	}
+}
+
+func TestNormalizedErrors(t *testing.T) {
+	dir := t.TempDir()
+	g := writeJSON(t, dir, "g.json", models.GroundTruthFile{RootPID: 100, Coverage: completeCov()})
+	notJSON := filepath.Join(dir, "x.jsonl")
+	_ = os.WriteFile(notJSON, []byte("not a trajectory"), 0o644)
+	for name, args := range map[string][]string{
+		"unknown agent":    {"--normalized", "--agent", "nope", "--trajectory", notJSON, "--ground-truth", g},
+		"not a trajectory": {"--normalized", "--trajectory", notJSON, "--ground-truth", g},
+	} {
+		if code, _, errOut := verify(t, args...); code != exitError || errOut == "" {
+			t.Errorf("%s: exit %d, stderr %q", name, code, errOut)
+		}
+	}
+}

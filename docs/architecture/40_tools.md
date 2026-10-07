@@ -1,10 +1,10 @@
 # Command-line tools
 
-Checked against commit d1276ff on 2026-10-07.
+Checked against commit d1276ff on 2026-10-07, with the changes below.
 
 ## Objective
 
-Four commands turn the probes, adapters and verifier into a workflow: `watch` records ground truth while an agent runs, `baseline` measures a harness's own activity from control runs, `verify` compares a trajectory with a capture and prints a verdict, and `simagent` is a simulated agent that exercises the whole chain in tests. The probes are described in [10_probes_common.md](10_probes_common.md), the verifier in [20_verifier.md](20_verifier.md) and the adapters in [30_agent_adapters.md](30_agent_adapters.md).
+Five commands turn the probes, adapters and verifier into a workflow: `watch` records ground truth while an agent runs, `baseline` measures a harness's own activity from control runs, `verify` compares a trajectory with a capture and prints a verdict, `attack` mutates a trajectory for evaluation (see [50_attack_generators.md](50_attack_generators.md)), and `simagent` is a simulated agent that exercises the whole chain in tests. The probes are described in [10_probes_common.md](10_probes_common.md), the verifier in [20_verifier.md](20_verifier.md) and the adapters in [30_agent_adapters.md](30_agent_adapters.md).
 
 ## Structure
 
@@ -13,6 +13,7 @@ Four commands turn the probes, adapters and verifier into a workflow: `watch` re
 | `watch` | `cmd/watch/main.go` | `runWatch(watchOptions)`, `buildCoverage`, `probeBuilders` | `cmd/watch/main_test.go` |
 | `verify` | `cmd/verify/main.go` | `run(args, out, errOut) int`, `chooseAdapter`, `report` | `cmd/verify/main_test.go` |
 | `baseline` | `cmd/baseline/main.go` | `run(args, out, errOut) int` | `cmd/baseline/main_test.go` |
+| `attack` | `cmd/attack/main.go` | `run(args, out, errOut) int`, `observedTargets` | `cmd/attack/main_test.go` |
 | `simagent` | `cmd/simagent/main.go` | `main` | driven by `tests/e2e` |
 
 ### watch
@@ -50,6 +51,7 @@ Reads a trajectory through an adapter and a capture, runs `verification.Verify`,
 | `--ground-truth PATH` | (required) | Capture written by `watch` (object form, or a legacy bare array) |
 | `--agent NAME` | detect | `claude-code`, `gemini` or `generic` |
 | `--baseline PATH` | none | Baseline written by `baseline` |
+| `--normalized` | off | Read `--trajectory` as normalized trajectory JSON (what `attack` writes), using `--agent` only for the ground truth side |
 | `--interval-slack D` | `500ms` | Widen each claim interval on both sides, because the probes and the agent do not share a clock |
 | `--ignore-exits` | false | Do not align process exits even if the adapter's format records them |
 
@@ -89,6 +91,18 @@ The baseline file is JSON: `schema` (1), `agent`, `agent_version`, `captured`, `
 |---|---|
 | 0 | Baseline written |
 | 3 | Usage error (missing flag or no runs, unknown agent, `-h`), unreadable or invalid capture, refused control run, write failure |
+
+### attack
+
+Mutates a trajectory with one of the generators in `pkg/attack` and writes the result and a record of the change.
+
+```
+attack --kind omission|fabrication|substitution|interval-widening [--n N] [--seed S]
+       --trajectory FILE [--agent NAME | --normalized] [--select all|sensitive]
+       [--field F] [--retime] [--avoid-ground-truth FILE] [--out FILE] [--record FILE]
+```
+
+The mutated trajectory is normalized JSON (it keeps each claim's `tool`, which the adapter's per-tool declaration needs), so it is verified with `verify --normalized --agent NAME`. Exit 0 when both files are written, 3 for usage and I/O errors and for a mutation the trajectory does not admit; nothing is written then. The same seed and flags give the same mutation.
 
 ### simagent
 

@@ -36,12 +36,13 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.SetOutput(errOut)
 	var trajectoryPath, groundTruthPath, agentName, baselinePath string
 	var slack time.Duration
-	var ignoreExits bool
+	var ignoreExits, normalized bool
 	fs.StringVar(&trajectoryPath, "trajectory", "", "Path to the trajectory: the agent's own session file when an adapter reads it, or normalized trajectory JSON")
 	fs.StringVar(&groundTruthPath, "ground-truth", "", "Path to the observed ground truth JSON (written by watch)")
 	fs.StringVar(&agentName, "agent", "", "Adapter that reads the trajectory ("+strings.Join(agent.Names(), ", ")+"). Default: detect from the file, else generic")
 	fs.StringVar(&baselinePath, "baseline", "", "Harness baseline measured by a null-task run (see cmd/baseline). Without one the harness's own activity is reported as unexplained")
 	fs.DurationVar(&slack, "interval-slack", 500*time.Millisecond, "Widen each claim's interval by this much on both sides before checking the observed action falls inside it: the probes and the agent do not share a clock")
+	fs.BoolVar(&normalized, "normalized", false, "Read --trajectory as normalized trajectory JSON (what cmd/attack writes) and use --agent only for the ground truth side")
 	fs.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits even if the adapter's format records them")
 	if err := fs.Parse(args); err != nil {
 		return exitError
@@ -51,15 +52,38 @@ func run(args []string, out, errOut io.Writer) int {
 		return exitError
 	}
 
-	adapter, err := chooseAdapter(agentName, trajectoryPath)
-	if err != nil {
-		_, _ = fmt.Fprintf(errOut, "verify: %v\n", err)
-		return exitError
-	}
-	tr, rep, err := adapter.Parse(trajectoryPath)
-	if err != nil {
-		_, _ = fmt.Fprintf(errOut, "verify: read trajectory %s with the %s adapter: %v\n", trajectoryPath, adapter.Name(), err)
-		return exitError
+	var adapter agent.Adapter
+	var tr models.Trajectory
+	var rep agent.Report
+	var err error
+	if normalized {
+		// The claims are already normalized, so no adapter reads them, but the
+		// adapter still normalizes the ground truth and declares what the format
+		// can state. Without --agent that is the generic adapter.
+		name := agentName
+		if name == "" {
+			name = agent.GenericName
+		}
+		var ok bool
+		if adapter, ok = agent.Lookup(name); !ok {
+			_, _ = fmt.Fprintf(errOut, "verify: unknown agent %q (registered: %s)\n", name, strings.Join(agent.Names(), ", "))
+			return exitError
+		}
+		g, _ := agent.Lookup(agent.GenericName)
+		if tr, rep, err = g.Parse(trajectoryPath); err != nil {
+			_, _ = fmt.Fprintf(errOut, "verify: read normalized trajectory %s: %v\n", trajectoryPath, err)
+			return exitError
+		}
+		rep.Degradations = nil // the generic adapter's caveats describe a reading that did not happen
+	} else {
+		if adapter, err = chooseAdapter(agentName, trajectoryPath); err != nil {
+			_, _ = fmt.Fprintf(errOut, "verify: %v\n", err)
+			return exitError
+		}
+		if tr, rep, err = adapter.Parse(trajectoryPath); err != nil {
+			_, _ = fmt.Fprintf(errOut, "verify: read trajectory %s with the %s adapter: %v\n", trajectoryPath, adapter.Name(), err)
+			return exitError
+		}
 	}
 	data, err := os.ReadFile(groundTruthPath)
 	if err != nil {
@@ -96,9 +120,17 @@ func run(args []string, out, errOut io.Writer) int {
 
 	report(out, reportInput{
 		trajectoryPath: trajectoryPath, groundTruthPath: groundTruthPath, adapter: adapter.Name(),
-		parse: rep, baseline: baseline, entries: len(tr), gt: gt, verdict: v,
+		reader: readerNote(normalized, adapter.Name()),
+		parse:  rep, baseline: baseline, entries: len(tr), gt: gt, verdict: v,
 	})
 	return v.Outcome.ExitCode()
+}
+
+func readerNote(normalized bool, adapter string) string {
+	if normalized {
+		return "read as normalized JSON, ground truth normalized by the " + adapter + " adapter"
+	}
+	return "read by the " + adapter + " adapter"
 }
 
 // chooseAdapter picks the adapter by name, or detects it, or falls back to the
@@ -125,12 +157,12 @@ func chooseAdapter(name, path string) (agent.Adapter, error) {
 }
 
 type reportInput struct {
-	trajectoryPath, groundTruthPath, adapter string
-	parse                                    agent.Report
-	baseline                                 *agent.Baseline
-	entries                                  int
-	gt                                       models.GroundTruthFile
-	verdict                                  verification.Verdict
+	trajectoryPath, groundTruthPath, adapter, reader string
+	parse                                            agent.Report
+	baseline                                         *agent.Baseline
+	entries                                          int
+	gt                                               models.GroundTruthFile
+	verdict                                          verification.Verdict
 }
 
 func report(w io.Writer, r reportInput) {
@@ -138,7 +170,7 @@ func report(w io.Writer, r reportInput) {
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
 
 	p("=== Agent-Trace Verification Report ===\n")
-	p("trajectory:   %s (%d entries, read by the %s adapter)\n", r.trajectoryPath, r.entries, r.adapter)
+	p("trajectory:   %s (%d entries, %s)\n", r.trajectoryPath, r.entries, r.reader)
 	p("ground truth: %s (%d events, root pid %d)\n", r.groundTruthPath, len(r.gt.Events), r.gt.RootPID)
 	if r.baseline != nil {
 		p("baseline:     %s %s, %d rule(s) from %d control run(s)\n", r.baseline.Agent, r.baseline.AgentVersion, len(r.baseline.Rules), r.baseline.Runs)
