@@ -114,3 +114,44 @@ func canonicalIDs(s string) string {
 	s = cwdFileID.ReplaceAllString(s, "/tmp/claude-N-cwd")
 	return heredocID.ReplaceAllString(s, "PATH_END_N")
 }
+
+// Grep and Glob run as ripgrep, which Claude Code embeds in its own binary and
+// starts as a child of the agent, so each search is a level-1 command whose
+// program is <install dir>/claude/versions/<version> and whose first argument is
+// --no-config. A paired capture of 2.1.286 showed three shapes:
+//
+//	... --no-config --files --hidden <workspace>                        harness startup
+//	... --no-config --files --hidden --no-ignore --max-depth 4 ...      harness startup
+//	... --no-config --hidden --glob !.git ... -l --null <pattern> .     Grep
+//	... --no-config --files --null --glob <pattern> --sort=modified ... Glob
+//
+// A search's pattern is not recoverable from the arguments in general (options
+// take values, the pattern can follow -e), and what a search reads is not
+// something a claim is verified against, so a search is claimed and observed as
+// the kind of search only. The harness's own startup listings keep their exact
+// text, so a baseline names them.
+const (
+	// SearchGrep and SearchGlob are the claimed and normalized targets of a
+	// Grep and a Glob call.
+	SearchGrep = "claude-code search:grep"
+	SearchGlob = "claude-code search:glob"
+)
+
+var embeddedRipgrep = regexp.MustCompile(`^\S*/claude/versions/[0-9][0-9.]* --no-config (.*)$`)
+
+// searchKind classifies an observed command line as a Grep or a Glob. ok is
+// false for anything else, including the harness's own listings.
+func searchKind(line string) (target string, ok bool) {
+	m := embeddedRipgrep.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	args := " " + m[1] + " "
+	switch {
+	case strings.Contains(args, " --files ") && strings.Contains(args, " --null "):
+		return SearchGlob, true
+	case !strings.Contains(args, " --files "):
+		return SearchGrep, true
+	}
+	return "", false
+}

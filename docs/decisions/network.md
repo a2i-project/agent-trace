@@ -162,3 +162,11 @@ Decision and reasons:
 - Tetragon, Tracee, Falco: built for alerting; content capture limited or absent; customizing them costs as much as custom probes.
 - Firecracker or Kata microVMs: block-level and L2/L3 visibility, the wrong abstraction for paths and plaintext.
 Consequences: Custom eBPF probes plus fanotify remain the stack.
+
+### N-19: Port-0 connects are not emitted
+Status: Accepted, implemented (`net.Observer.emit`, `TestEmitSkipsAddressSelectionAndDNS`).
+Date: 2026-10-07.
+Context: In a paired capture of Claude Code every real connection was preceded by connects to port 0 of the destination's IPv4 and IPv6 addresses, and nothing was sent on them. The resolver connects a datagram socket to each candidate address to ask the kernel which source address it would use (RFC 3484 address selection; **Reported**, glibc behaviour; the twin pattern is **Verified** in that capture). They name addresses that change with DNS, so no trajectory can claim them and a baseline cannot list them. A fetch of a new host left one as an unrecorded action.
+Decision: `emit` drops a connection to port 0, like port 53 (N-13), and marks it emitted so its close does not retry.
+Consequences: Ground truth no longer holds the `IP:0` events, so baselines measured earlier carry rules that match nothing (harmless). A real connection to port 0 does not exist, so nothing legitimate is hidden. Like the DNS drop it has no counter.
+Alternatives rejected: Dropping them in the adapter (it is resolver behaviour, not a harness property); recording them as capability evidence (they carry no information about what the agent did).

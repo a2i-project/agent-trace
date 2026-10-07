@@ -15,9 +15,11 @@
 #             `basic` does not (docs/todo/adapters.md ADP-1), and needs the network.
 #
 # By default the script also runs three control runs and builds the baseline from
-# them. With --baseline-from DIR it reuses the control runs already in DIR (from an
-# earlier capture of the SAME Claude Code version) and runs only the task, which
-# saves three model calls; the baseline is rebuilt with the current code.
+# them, with the same tools enabled as the task. With --baseline-from DIR it
+# reuses the control runs already in DIR and runs only the task, which saves three
+# model calls; that is only valid for the SAME Claude Code version and the SAME
+# tool set, and the script refuses otherwise. The baseline is rebuilt with the
+# current code.
 #
 # Everything lands in OUTPUT_DIR (default /tmp/agent-trace-capture-<time>):
 #   <task>.session.jsonl      the transcript of the task run (T), and
@@ -76,7 +78,24 @@ esac
 # call would not contain them. The command is a no-op with a marker name, so the
 # rule the baseline records for it hides nothing.
 control_prompt='Use the Bash tool to run exactly this no-op command: : agent-trace-control-marker . Then reply with the single word ok. Do not use any other tool.'
-control_tools='Read Write Edit Bash'
+# The control runs must enable the same tools as the task. The shell snapshot
+# command the harness runs at the first Bash call differs with the tool set (it
+# shadows find and grep only when Grep and Glob are disabled), so a baseline
+# measured with one tool set does not explain the other's setup commands.
+control_tools=$task_tools
+
+# Refuse an unusable --baseline-from before anything that needs root or quota.
+if [ -n "$baseline_from" ]; then
+  [ -e "$(ls "$baseline_from"/control-*.ground_truth.json 2>/dev/null | head -1)" ] || { echo "no control-*.ground_truth.json in $baseline_from" >&2; exit 1; }
+  # A capture made before the tool set was recorded used the basic task's tools.
+  earlier=$(cat "$baseline_from/control-tools.txt" 2>/dev/null || echo 'Read Write Edit Bash')
+  if [ "$earlier" != "$control_tools" ]; then
+    echo "the control runs in $baseline_from enabled: $earlier" >&2
+    echo "this task enables:                          $control_tools" >&2
+    echo "a baseline holds for one tool set; run without --baseline-from to measure new controls" >&2
+    exit 1
+  fi
+fi
 
 mkdir -p "$out"
 echo "output: $out"
@@ -119,9 +138,11 @@ capture "$task" "$task_prompt" "$task_tools"
 if [ -n "$baseline_from" ]; then
   controls=("$baseline_from"/control-*.ground_truth.json)
   [ -e "${controls[0]}" ] || { echo "no control-*.ground_truth.json in $baseline_from" >&2; exit 1; }
+
   echo "baseline: reusing ${#controls[@]} control run(s) from $baseline_from"
 else
   for n in 1 2 3; do capture "control-$n" "$control_prompt" "$control_tools"; done
+  printf '%s' "$control_tools" >"$out/control-tools.txt"
   controls=("$out"/control-*.ground_truth.json)
 fi
 "$root/baseline" --agent claude-code --agent-version "$version" --min-agreement "${MIN_AGREEMENT:-1}" \

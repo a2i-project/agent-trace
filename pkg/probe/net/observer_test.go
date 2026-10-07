@@ -830,3 +830,43 @@ func TestObserver_ThreadsAreNotTracked(t *testing.T) {
 	for range obs.Events() {
 	}
 }
+
+// The resolver connects a datagram socket to each candidate address with port
+// 0 to pick a source address. Those are not connections, and their addresses
+// change with DNS, so they must not become events. Port 53 (DNS itself) is
+// filtered the same way, and a real port is emitted.
+func TestEmitSkipsAddressSelectionAndDNS(t *testing.T) {
+	tests := []struct {
+		name string
+		port uint16
+		want int
+	}{
+		{"port 0 address selection", 0, 0},
+		{"port 53 dns", 53, 0},
+		{"https", 443, 1},
+		{"high port", 8080, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := &Observer{events: make(chan models.GroundTruthEvent, 4)}
+			conn := &connection{family: afInet, port: tc.port}
+			copy(conn.addr[:], stdnet.ParseIP("192.0.2.7").To4())
+			o.emit(connKeyGo{}, conn, 4242, time.Now())
+			o.emit(connKeyGo{}, conn, 4242, time.Now()) // a close must not emit again
+			if got := len(o.events); got != tc.want {
+				t.Fatalf("port %d emitted %d event(s), want %d", tc.port, got, tc.want)
+			}
+			if tc.want == 1 {
+				e := <-o.events
+				if e.ActionType != models.NetConnect || e.Target != "192.0.2.7:"+itoa(tc.port) || e.PID != 4242 {
+					t.Errorf("event = %+v", e)
+				}
+			}
+			if !conn.emitted {
+				t.Error("a skipped connection must still be marked emitted so its close does not retry")
+			}
+		})
+	}
+}
+
+func itoa(n uint16) string { return strconv.Itoa(int(n)) }

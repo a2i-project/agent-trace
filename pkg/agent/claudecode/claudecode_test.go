@@ -54,27 +54,29 @@ func TestParseMapsEffectfulToolsInClaimOrder(t *testing.T) {
 		"Write:file_open:/w/e.txt", "Write:file_write:/w/e.txt", // no result kind: assumed to update
 		"WebFetch:net_connect:example.com",
 		"Bash:process_exec:pwd",
+		"Grep:process_exec:claude-code search:grep", // a search is claimed as the kind of search
+		"Glob:process_exec:claude-code search:glob",
 		"Bash:process_exec:echo 'it'\"'\"'s' && date",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("claims =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if rep.Entries != len(tr) || rep.ToolCalls != 15 {
-		t.Errorf("report: entries=%d (want %d) toolCalls=%d (want 15)", rep.Entries, len(tr), rep.ToolCalls)
+	if rep.Entries != len(tr) || rep.ToolCalls != 17 {
+		t.Errorf("report: entries=%d (want %d) toolCalls=%d (want 17)", rep.Entries, len(tr), rep.ToolCalls)
 	}
 }
 
 func TestParseCountsWhatItDoesNotMap(t *testing.T) {
 	_, rep := parseFixture(t)
-	for _, tool := range []string{"AskUserQuestion", "Agent", "Grep", "Read"} {
+	for _, tool := range []string{"AskUserQuestion", "Agent", "NotebookEdit", "Read"} {
 		if rep.UnmappedByTool[tool] == 0 {
 			t.Errorf("%s not counted as unmapped: %v", tool, rep.UnmappedByTool)
 		}
 	}
-	// Grep is neither mapped nor declared non-effectful: it must be named,
-	// because it may have done something the verifier cannot explain.
-	if len(rep.UnknownTools) != 1 || rep.UnknownTools[0] != "Grep" {
-		t.Errorf("UnknownTools = %v, want [Grep]", rep.UnknownTools)
+	// NotebookEdit is neither mapped nor declared non-effectful: it must be
+	// named, because it may have done something the verifier cannot explain.
+	if len(rep.UnknownTools) != 1 || rep.UnknownTools[0] != "NotebookEdit" {
+		t.Errorf("UnknownTools = %v, want [NotebookEdit]", rep.UnknownTools)
 	}
 	for _, n := range []string{"AskUserQuestion", "Agent"} {
 		for _, u := range rep.UnknownTools {
@@ -166,7 +168,7 @@ func TestProcessModel(t *testing.T) {
 func TestParseReportsItsDegradations(t *testing.T) {
 	_, rep := parseFixture(t)
 	joined := strings.Join(rep.Degradations, "|")
-	for _, want := range []string{"approval latency", "exit code", "atomic replace", "no create or update result", "Grep"} {
+	for _, want := range []string{"approval latency", "exit code", "atomic replace", "no create or update result", "NotebookEdit"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("Degradations %q lack %q", joined, want)
 		}

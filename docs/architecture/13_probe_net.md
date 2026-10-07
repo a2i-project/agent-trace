@@ -47,7 +47,7 @@ Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps
 - `NET_CONNECT` opens the entry and counts `Connections`.
 - `NET_HELLO` runs `tlsparse.ParseClientHello`. With an SNI name it stores host and ALPN, counts `WithHostname` (and `ContentUnsupported` when ALPN offers `h2`), and emits `net_connect` with the hostname as `Target`, stamped at the hello.
 - `NET_CLOSE` emits `net_connect` for a connection that has not been emitted yet, with `ip:port` as `Target`, stamped at the close.
-- `emit` skips any connection to port 53 and marks it emitted, without counting it.
+- `emit` skips any connection to port 53 (DNS) or port 0 (the resolver's source-address selection, N-19) and marks it emitted, without counting it.
 - `NET_SOCK_BIND` and `NET_SOCK_LISTEN` become `net_bind` and `net_listen` with target `host:port` (IPv6 in brackets), `unix:<path>`, `unix:@<abstract>` or `unbound`. `NET_UNIX_CONNECT` becomes `net_unix_connect`. These three types are ground truth only; `models.ClassifyBindTarget` grades a listener as loopback, wildcard, interface, local socket or unknown.
 
 Every N0 event carries `PID` (the tgid). None carries `PPID`.
@@ -81,7 +81,7 @@ The hostname comes from the ClientHello the client sent, so it needs no plaintex
 - `writev` is not hooked and `sendmsg` inspects only its first iovec, so a ClientHello sent that way can be missed.
 - The hello capture is 1024 bytes; an SNI extension beyond that is lost and the connection is reported by address.
 - A faulted hello read is dropped without a counter.
-- Connections to port 53 are discarded without a counter, so DNS traffic is not recorded.
+- Connections to port 53 and port 0 are discarded without a counter, so DNS traffic and address-selection probes are not recorded.
 - UDP is not tracked: `sendto` with an address on an unconnected socket creates no connection, so QUIC and HTTP/3 are invisible.
 - No byte counts or response data are recorded.
 - Encrypted Client Hello would hide the SNI name.

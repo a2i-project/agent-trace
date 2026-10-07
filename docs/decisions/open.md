@@ -83,11 +83,11 @@ Blocked by: A proof per finding kind that it does not depend on a missing event.
 ## Integration
 
 ### O-9: Many-target search tools
-Status: Open.
-Question: `Glob`, `Grep`, `list_dir`, `grep_search` and `find_by_name` claim a pattern and touch many files. How are they claimed?
-Options: (a) containers with no enumerable claim, like D2; (b) non-effectful; (c) unknown, named in the report (current).
-Current behaviour: (c). Their file opens at level 0 read as unexplained.
-Blocked by: A paired capture showing what these tools produce.
+Status: Partly decided. Claude Code `Grep` and `Glob` are settled by I-25. Gemini's search tools are open.
+Question: `list_dir`, `grep_search` and `find_by_name` (Gemini) claim a pattern and touch many files. How are they claimed?
+Options: (a) containers with no enumerable claim, like D2; (b) non-effectful; (c) unknown, named in the report (current for Gemini); (d) the kind-of-search claim of I-25, if they also run as a child process.
+Current behaviour: Claude Code, (d). Gemini, (c).
+Blocked by: A paired capture of Gemini (ADP-4).
 
 ### O-10: Containers and PID namespace translation
 Status: Open.

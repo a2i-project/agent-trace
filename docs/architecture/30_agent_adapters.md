@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit c4df56f on 2026-10-07.
+Checked against commit d124fc9 on 2026-10-07, with the changes below.
 
 ## Objective
 
@@ -87,7 +87,9 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `Edit` | `file_open`, `file_write` | `input.file_path` | none (fragments only) |
 | `WebFetch` | `net_connect` | hostname of `input.url` | none |
 | Non-effectful: `Agent`, `Task`, `AskUserQuestion`, `ToolSearch`, `Skill`, `ScheduleWakeup`, `TodoWrite`, `ExitPlanMode`, `EnterPlanMode`, `WebSearch`, `TaskOutput`, `TaskStop`, `SendMessage`, `TaskCreate`, `TaskUpdate`, `TaskGet`, `TaskList` | none, counted in `UnmappedByTool` | | |
-| Any other tool (for example `Grep`, `Glob`) | none, counted and listed in `UnknownTools` | | |
+| `Grep` | `process_exec` | `claude-code search:grep` (the kind of search, I-25) | none |
+| `Glob` | `process_exec` | `claude-code search:glob` | none |
+| Any other tool (for example `NotebookEdit`) | none, counted and listed in `UnknownTools` | | |
 
 `WebSearch` is non-effectful because Claude Code runs it server-side, so the host never sees it (verified once). An input marked `__unparsedToolInput`, an unreadable input or a missing target field produces no entry and a parse error.
 
@@ -96,6 +98,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `Process` | `ShellPerCommand: true`, `SubagentsInProcess: true`, `IntervalDecision`, `Parallel`, `ExitsClaimed: false` |
 | `Expresses` | `exit_code`: never. `request_hash`: never. `output_hash`: only for `Tool == "Write"`. Other fields: yes. |
 | `Normalize` | For `process_exec` and `process_exit`, if the target contains `shell-snapshots/snapshot-` and `&& eval `, replaces it with the eval payload read as one POSIX shell word (`evalPayload`). Otherwise it replaces the per-run ids (snapshot file, working-directory file, heredoc delimiter) with fixed tokens (I-23) and leaves the rest unchanged, so an unrecognised wrapper shows as a mismatch rather than a guess (D6). |
+| `Normalize`, searches | A command line whose program is `<dir>/claude/versions/<version>` with first argument `--no-config` becomes `claude-code search:glob` (with `--files` and `--null`) or `claude-code search:grep` (without `--files`); the harness's own `--files` start-up listings are left as they are (I-25). |
 | `NormalizeStream` | Folds a finished temp-and-rename (`<path>.tmp.<pid>.<12 hex>`: create on the directory, open, write, close and rename, the close and rename in either order) into one `file_write` of the target carrying the close's hash, and collapses a run of opens of one file by one process into one. Events of other processes, an unfinished replace and a name that is not the harness's pattern are left alone (I-22). |
 | `IsHarnessNoise` | Declares nothing; harness activity comes from the measured baseline (D11). |
 | Degradations | Decision-time start (D13); no exit codes, so exits are not aligned; file-tool claims are one atomic replace as measured on 2.1.286, and a variant not seen shows as unexplained; Write calls with no create or update result assumed to overwrite; unknown tools when present. |
@@ -179,6 +182,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - The Gemini adapter does not follow subtrajectories and does not set `ThreadID`.
 - The Gemini process model (shell per command, subagents, ordering) is unmeasured.
 - Gemini commands run with `RunPersistent` and calls in non-completed steps are not claimed.
-- Neither real adapter maps search tools (`Grep`, `Glob`, `list_dir`, `grep_search`, `find_by_name`) or Gemini's `search_web`; they are reported as unknown tools.
+- A Grep or Glob claim does not verify its pattern or path, only that a search of that kind ran. Gemini's search tools (`list_dir`, `grep_search`, `find_by_name`) and `search_web` are reported as unknown tools.
+- A baseline holds for one agent version and one tool set: the shell snapshot command differs with the enabled tools (I-24).
 - A baseline records `AgentVersion` but `cmd/verify` checks only the agent name, not the version.
 - `Containerized` is not handled by any adapter.

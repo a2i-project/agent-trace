@@ -299,3 +299,55 @@ func TestAnUnclaimedAtomicWriteIsStillAnOmission(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// Grep and Glob run as ripgrep embedded in Claude Code's own binary. The harness
+// also lists the working directory the same way at start-up, and those listings
+// must keep their exact text so a baseline can name them.
+func TestNormalizeRecognisesEmbeddedRipgrepSearches(t *testing.T) {
+	const bin = "/home/u/.local/share/claude/versions/2.1.286"
+	tests := []struct {
+		name, line, want string
+	}{
+		{"grep, files with matches", bin + " --no-config --hidden --glob !.git --glob !.svn --glob !.hg --glob !.bzr --glob !.jj --glob !.sl --max-columns 500 -l --null seed .", SearchGrep},
+		{"grep, content with context", bin + " --no-config --hidden --max-columns 500 -n -B 2 -e foo bar/", SearchGrep},
+		{"glob", bin + " --no-config --files --null --glob *.txt --sort=modified --no-ignore --hidden .", SearchGlob},
+		{"start-up listing of the workspace", bin + " --no-config --files --hidden /tmp/ws", bin + " --no-config --files --hidden /tmp/ws"},
+		{"start-up listing of the plugin cache", bin + " --no-config --files --hidden --no-ignore --max-depth 4 --glob .orphaned_at /h/.claude/plugins/cache", bin + " --no-config --files --hidden --no-ignore --max-depth 4 --glob .orphaned_at /h/.claude/plugins/cache"},
+		{"the binary without --no-config", bin + " --version", bin + " --version"},
+		// Only the harness's own binary is recognised: any other program that
+		// happens to take --no-config is not a search.
+		{"another program", "/tmp/evil --no-config --files --null --glob x", "/tmp/evil --no-config --files --null --glob x"},
+		{"another install path", "/opt/other/versions/1.0 --no-config -l --null x .", "/opt/other/versions/1.0 --no-config -l --null x ."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, typ := range []models.ActionType{models.ProcessExec, models.ProcessExit} {
+				got, _ := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: typ, Target: tc.line})
+				if got.Target != tc.want {
+					t.Errorf("%s: Normalize = %q, want %q", typ, got.Target, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// A search claimed and observed verifies, and an unclaimed search is an
+// omission like any other command.
+func TestASearchIsClaimedAsAKindOfSearch(t *testing.T) {
+	const bin = "/home/u/.local/share/claude/versions/2.1.286"
+	g := models.GroundTruth{
+		{Timestamp: at(0), ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: agentPID},
+		{Timestamp: at(0), ActionType: models.ProcessExec, Target: bin + " --no-config --hidden --max-columns 500 -l --null seed .", PID: 200, PPID: agentPID},
+	}
+	claims := models.Trajectory{{Timestamp: at(0), ActionType: models.ProcessExec, Target: SearchGrep, Tool: "Grep"}}
+	if v := verifyCaptured(t, claims, g); v.Outcome != verification.OutcomeFaithful {
+		t.Errorf("claimed search: outcome = %s, unrecorded=%v mismatched=%v", v.Outcome, v.Unrecorded, v.Mismatched)
+	}
+	if v := verifyCaptured(t, nil, g); v.Outcome != verification.OutcomeNotFaithful {
+		t.Errorf("unclaimed search: outcome = %s, want NOT FAITHFUL", v.Outcome)
+	}
+	wrong := models.Trajectory{{Timestamp: at(0), ActionType: models.ProcessExec, Target: SearchGlob, Tool: "Glob"}}
+	if v := verifyCaptured(t, wrong, g); v.Outcome != verification.OutcomeNotFaithful {
+		t.Errorf("a Glob claimed for a Grep: outcome = %s, want NOT FAITHFUL", v.Outcome)
+	}
+}

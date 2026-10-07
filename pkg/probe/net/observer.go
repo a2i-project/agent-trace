@@ -1016,6 +1016,17 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 		conn.emitted = true // prevent double-emit on close
 		return
 	}
+	// Port 0 is not a connection. The resolver connects a datagram socket to
+	// each candidate address with port 0 to ask the kernel which source address
+	// it would use (RFC 3484 address selection), once per address family, before
+	// the real connection. In a paired capture every real connection had such
+	// twins (an IPv4 and an IPv6 address with port 0), with nothing ever sent.
+	// They name the destination's addresses, which change with DNS, so no
+	// trajectory could claim them and no baseline could list them.
+	if conn.port == 0 {
+		conn.emitted = true
+		return
+	}
 	conn.emitted = true
 
 	target := conn.host

@@ -73,6 +73,8 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 	if e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit {
 		if payload, ok := evalPayload(e.Target); ok {
 			e.Target = payload
+		} else if search, ok := searchKind(e.Target); ok {
+			e.Target = search
 		} else {
 			e.Target = canonicalIDs(e.Target)
 		}
@@ -91,6 +93,8 @@ const (
 	toolWrite    = "Write"
 	toolEdit     = "Edit"
 	toolWebFetch = "WebFetch"
+	toolGrep     = "Grep"
+	toolGlob     = "Glob"
 )
 
 // nonEffectful tools perform no syscall of their own, so they must not become
@@ -368,6 +372,10 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, resultKind string) ([]mod
 			return []models.TrajectoryEntry{write}, ""
 		}
 		return []models.TrajectoryEntry{mk(models.FileOpen, in.FilePath), write}, ""
+	case toolGrep:
+		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGrep)}, ""
+	case toolGlob:
+		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGlob)}, ""
 	case toolWebFetch:
 		host := hostOf(in.URL)
 		if host == "" {
