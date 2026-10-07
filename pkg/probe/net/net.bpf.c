@@ -4,12 +4,10 @@
 // Kernel-side half of the Tier 3 network probe. This program owns identity
 // (pid, tid, fd, peer address, peer port) and the first-write ClientHello
 // capture that yields SNI; it does not decrypt anything. Content capture
-// (the SSL_write uprobe in tls.bpf.c) is a separate, not-yet-implemented
-// program -- see docs/plan/06_tier3_network_design.md sections 4 and 5. The
-// write-bracket join described in section 4.4 step 2 (looking up
-// tls.bpf.c's active_write map to emit NET_BIND) is deferred along with it:
-// this file implements only step 1 (tracked_pids gate) and step 3
-// (hello-capture) of that sequence.
+// (the SSL_write uprobe in tls.bpf.c) is a separate program. The
+// write-bracket join (looking up an active_write map to emit NET_BIND) was
+// abandoned, see N-D1 in docs/decisions/network.md: this file implements the
+// tracked_pids gate and the hello capture only.
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
@@ -26,11 +24,11 @@ char LICENSE[] SEC("license") = "GPL";
 enum net_event_type {
 	NET_CONNECT = 1,
 	NET_HELLO   = 2,
-	NET_BIND    = 3, // reserved: emitted only once tls.bpf.c exists (S5)
+	NET_BIND    = 3, // reserved, never emitted: the write-bracket join is abandoned (N-D1)
 	NET_CLOSE   = 4,
-	// Listener capability evidence (09_observer_hardening_todo.md item 2).
+	// Listener capability evidence (P-8 in docs/decisions/probes.md).
 	// Ground truth only: no trajectory format can claim these, and the
-	// verifier never aligns them. See 08_verification_model.md D3.
+	// verifier never aligns them (D3 in docs/decisions/integration.md).
 	NET_SOCK_BIND   = 5,
 	NET_SOCK_LISTEN = 6,
 	// connect() to an AF_UNIX socket. The socket path travels in the record
@@ -49,7 +47,7 @@ struct net_event_hdr {
 	__u32 fd;
 	__u64 ts_ns;
 	__u8  addr[16];
-	__u64 seq;         // NET_BIND only; always 0 until tls.bpf.c exists
+	__u64 seq;         // unused: it belonged to NET_BIND, which is never emitted
 	__u32 payload_len; // NET_HELLO only
 };
 
@@ -498,7 +496,7 @@ static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, 
 		// A faulting read (buffer page not resident, or a bad
 		// pointer) must not be silently treated as an empty capture
 		// that later reads as "no content, but not disagreement" --
-		// see D5 in docs/plan/06_tier3_network_design.md section 13.
+		// see N-D5 in docs/decisions/network.md.
 		// Drop the frame instead of emitting a zero-length NET_HELLO
 		// that the correlator cannot tell apart from a genuinely
 		// empty write.

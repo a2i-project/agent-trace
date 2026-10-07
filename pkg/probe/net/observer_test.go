@@ -166,8 +166,7 @@ func TestObserver_UntrackedProcessIsInvisible(t *testing.T) {
 	// style subprocess tracking), so tracking our own PID would make the
 	// openssl child below tracked too, defeating the point of this test.
 	// The decoy has no relation to the openssl process spawned below, so
-	// this still exercises the tracked_pids gate from the design doc
-	// (section 4.1): a connection from a process outside the tracked set
+	// this still exercises the tracked_pids gate: a connection from a process outside the tracked set
 	// and its descendants must never surface as a ground-truth event.
 	decoy := exec.Command("sleep", "5")
 	if err := decoy.Start(); err != nil {

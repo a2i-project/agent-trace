@@ -1,18 +1,14 @@
-// Package net is the Tier 3 network probe. This first slice (S3, see
-// docs/plan/06_tier3_network_design.md section 11) implements only the
-// kernel-side identity half: connect/write/sendto/sendmsg/close
-// tracepoints, first-write ClientHello capture, and SNI extraction via
-// pkg/tlsparse. Content correlation against the SSL_write uprobe (tls.bpf.c,
-// the active_write/NET_BIND join, models.ActionNetRequest) is S5 and is not
-// implemented here; see STATE.md and design doc section 13 (D1, D3, D5) for
-// what blocks it.
-//
-// Because this slice has no content layer yet, it emits
-// models.ActionType(models.NetConnect) events -- "a connection was observed,
-// here is its resolved hostname if any" -- rather than NetRequest events.
-// This is a deliberate stand-in for S3 only: once S5 lands, connections with
-// captured content should produce NetRequest events instead, and
-// Observer.readLoop's emission point is where that switch happens.
+// Package net is the network probe. It has two layers. The kernel side
+// (net.bpf.c) records identity: connect, listener and Unix-socket tracepoints,
+// the first bytes of each connection, and the TLS SNI hostname that
+// pkg/tlsparse extracts from them. The content side (tls.bpf.c) is a uprobe on
+// SSL_write that captures request plaintext before encryption, located in the
+// target's TLS library by pkg/tlsoffset and validated at run time; correlator.go
+// parses HTTP out of it and attributes each request to a connection by Host
+// header. A connection with no captured content is emitted as
+// models.NetConnect, a request as models.NetRequest with a body hash.
+// docs/architecture/13_probe_net.md describes the workflow and its limits, and
+// docs/decisions/network.md the reasons (N-D1 to N-D5).
 package net
 
 import (
@@ -66,7 +62,7 @@ type Config struct {
 	// process's connections are observed. Additional PIDs can be added
 	// later via TrackPID. There is no global (untracked) mode: net.bpf.c
 	// gates every program on tracked_pids membership unconditionally (see
-	// design doc section 4.1), so an Observer with no tracked PID at all
+	// docs/architecture/13_probe_net.md), so an Observer with no tracked PID at all
 	// sees nothing until TrackPID is called.
 	TrackedPID int32
 
@@ -99,7 +95,7 @@ type Config struct {
 
 	// ValidationTimeout bounds how long Observer.New waits for a candidate
 	// SSL_write offset to produce a parseable HTTP request before trying
-	// the next candidate, per design doc section 9. Defaults to 5s.
+	// the next candidate (N-D4). Defaults to 5s.
 	ValidationTimeout time.Duration
 }
 
@@ -367,8 +363,7 @@ func New(cfg Config) (*Observer, error) {
 }
 
 // httpRequestLineRE recognizes an HTTP/1.x request line at the start of a
-// captured buffer, for offset validation only (design doc section 9 step
-// 2-3): "does this candidate's first captured write look like a real
+// captured buffer, for offset validation only (N-D4): "does this candidate's first captured write look like a real
 // SSL_write(request_bytes) call, not some other BoringSSL internal buffer".
 // It is deliberately looser than tlsparse.ParseHTTP1, which needs a
 // complete header block; validation only needs the request line.
@@ -378,9 +373,8 @@ var httpRequestLineRE = regexp.MustCompile(`^[A-Z]{2,10} \S+ HTTP/1\.[01]\r\n`)
 // executable and the ssl_events ring buffer, and resolves SSL_write
 // candidates in cfg.ExePath -- everything content capture needs except the
 // actual uprobe attach, which Start (via attachAndValidateTLS) performs.
-// Splitting attach out of New matches design doc section 9: "Validation is
-// a separate mandatory step performed by net.Observer.Start", not New --
-// because the process(es) whose traffic will validate a candidate may not
+// Validation is a separate mandatory step performed by
+// net.Observer.Start, not New, because the process(es) whose traffic will validate a candidate may not
 // exist yet at New time.
 func (o *Observer) prepareTLS(cfg Config) (err error) {
 	candidates, buildID, err := tlsoffset.ScanELF(cfg.ExePath)
@@ -457,7 +451,7 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	return nil
 }
 
-// attachAndValidateTLS is design doc section 9's validation step: attach
+// attachAndValidateTLS is the validation step (N-D4): attach
 // probe_ssl_write at each candidate in turn and require its first captured
 // frame from a tracked process to look like an HTTP/1.x request line (D4:
 // runtime validation is authoritative, the ELF scan's score is only a
@@ -585,7 +579,7 @@ func (o *Observer) TrackPID(pid int32) error {
 }
 
 // Coverage reports how much of the observed network activity was
-// attributed to content, per design doc section 8. FaultedReads and
+// attributed to content (docs/architecture/13_probe_net.md). FaultedReads and
 // RingbufDrops come from eBPF maps: they are read live while the observer
 // runs and from the snapshot Stop took before closing the maps afterwards.
 // Both are zero for the TLS side when content capture (cfg.ExePath) was
@@ -782,8 +776,8 @@ type sslRecord struct {
 }
 
 // correlate is the single goroutine that owns all correlator state (o.conns,
-// o.pending, o.coverage): it drives both ring buffers via one select loop,
-// per design doc section 6. The two feeder goroutines below exist only
+// o.pending, o.coverage): it drives both ring buffers via one select loop.
+// The two feeder goroutines below exist only
 // because cilium/ebpf's ringbuf.Reader.Read is a blocking call with no
 // select-able primitive of its own; they decode records and hand them to
 // this goroutine, doing no correlation themselves.
@@ -945,7 +939,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 
 	case netBind:
 		// No-op: the write-bracket join this event existed for is
-		// abandoned (D1, design doc section 13); net.bpf.c never emits it.
+		// abandoned (N-D1); net.bpf.c never emits it.
 		return
 
 	case netClose:

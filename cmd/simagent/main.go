@@ -86,7 +86,7 @@ func main() {
 	flag.StringVar(&attack, "attack", "", "Simulate an attack scenario: 'omission', 'fabrication', 'substitution-exit', 'substitution-hash', 'substitution-cmd', 'net-omission', 'net-fabrication'")
 	flag.StringVar(&fetchURL, "fetch-url", "", "If set, run `curl -s -o /dev/null -m 10 <url>` and record a NetConnect trajectory entry for the host")
 	var shellCmd string
-	flag.StringVar(&shellCmd, "shell-cmd", "", "Run this script through a child /bin/sh -c and claim only the shell invocation, not what the script spawns. {ws} in the script expands to the workspace path. Gives the process tree a level 1 (the shell) and level 2 (its children), see docs/decisions/verification.md section 3.8")
+	flag.StringVar(&shellCmd, "shell-cmd", "", "Run this script through a child /bin/sh -c and claim only the shell invocation, not what the script spawns. {ws} in the script expands to the workspace path. Gives the process tree a level 1 (the shell) and level 2 (its children), see docs/architecture/40_tools.md")
 	var fetchMethod, fetchBody string
 	var emitNetRequest bool
 	var fetchViaCurl bool

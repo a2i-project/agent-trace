@@ -177,8 +177,7 @@ func TestObserver_CloseWriteIncludesContentHash(t *testing.T) {
 // the correct content hash even when the same path is renamed away shortly
 // afterward. This is the real shape of cmd/simagent's Tier 4 fixture (write,
 // wait 50ms, rename) and the exact scenario that regressed when the settle
-// window was widened too far -- see docs/plan/06_security_hardening_fixes.md,
-// Fix 5 round 4. It pins settleQuietWindow's upper bound: window + polling
+// window was widened too far -- the settle window of docs/architecture/12_probe_fs.md. It pins settleQuietWindow's upper bound: window + polling
 // latency must stay comfortably under the gap between an agent's distinct
 // operations on a path, or the observer never gets a chance to hash before
 // the file it was about to hash disappears out from under it.

@@ -15,7 +15,7 @@ var errNotAPort = errors.New("net: not a port")
 
 // Coverage reports how much of the network activity seen by the kernel-side
 // program was successfully attributed to content, per
-// docs/plan/06_tier3_network_design.md section 8.
+// docs/architecture/13_probe_net.md.
 type Coverage struct {
 	Connections        int    // NET_CONNECT seen
 	WithHostname       int    // SNI parsed from a ClientHello
@@ -30,8 +30,8 @@ type Coverage struct {
 
 // sslKey identifies the (tgid, tid) pair a run of ssl_frames belongs to.
 // Frames from the same thread are assumed to belong to one logical
-// request/response stream at a time -- see the design doc D1 resolution
-// (section 13): since the write-bracket join is abandoned, this is the only
+// request/response stream at a time -- see N-D1 in
+// docs/decisions/network.md: since the write-bracket join is abandoned, this is the only
 // correlation signal available short of parsing BoringSSL's SSL* internals.
 type sslKey struct {
 	tgid uint32
@@ -40,7 +40,7 @@ type sslKey struct {
 
 // handleSSLFrame feeds one captured SSL_write payload into the per-thread
 // reassembly stream and emits a models.NetRequest GroundTruthEvent for every
-// complete HTTP/1.1 request it yields. Per D3 (design doc section 13), the
+// complete HTTP/1.1 request it yields. Per N-D3, the
 // raw plaintext never leaves this function: only RequestHash and the fields
 // CanonicalNetTarget needs are retained in the emitted event.
 func (o *Observer) handleSSLFrame(tgid, tid uint32, payload []byte, ts time.Time) {

@@ -16,7 +16,7 @@ import (
 )
 
 // TestTier3_E2E_ListenerIsCapabilityEvidence is the spec test for
-// 09_observer_hardening_todo.md item 2. A command in the watched tree opens a
+// decision P-8 (docs/decisions/probes.md). A command in the watched tree opens a
 // wildcard listener. The net probe must record bind and listen with the
 // address, the exposure must read as wildcard, and the verifier must count the
 // listener as capability evidence without making the run unfaithful, because

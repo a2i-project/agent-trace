@@ -224,7 +224,7 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	// Record the edge parent -> child. An exec record only exists for a child
 	// that execs, and a subshell or a pipeline element running a builtin forks
 	// without exec, so without this record its activity could not be tied to
-	// the tree (08 section 3.2). A lost record is counted like any other.
+	// the tree (V1 in docs/decisions/verification.md). A lost record is counted like any other.
 	struct event_hdr fh = {};
 	fh.pid = child_pid;
 	fh.ppid = parent_pid;

@@ -43,7 +43,7 @@ func TestCanonicalNetTarget_NoQuery(t *testing.T) {
 }
 
 // TestCanonicalNetTarget_GroundTruthAndTrajectoryAgree exercises the actual
-// requirement from the design doc: a ground-truth triple (host from SNI,
+// requirement of the network probe (docs/architecture/13_probe_net.md): a ground-truth triple (host from SNI,
 // port from the connection, path/query from the parsed HTTP request line)
 // and the equivalent trajectory-side URL (e.g. from a WebFetch tool_use
 // input) must canonicalize identically for strict-equality matching to work.
