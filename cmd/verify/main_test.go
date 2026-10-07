@@ -122,7 +122,7 @@ func TestUsageAndIOErrorsAreNotVerdicts(t *testing.T) {
 func TestADetectedAdapterReadsItsOwnFormatAndReportsItsLimits(t *testing.T) {
 	g := writeJSON(t, t.TempDir(), "g.json", models.GroundTruthFile{RootPID: 100, Coverage: completeCov()})
 	_, out, _ := verify(t, "--trajectory", "../../pkg/agent/claudecode/testdata/session.jsonl", "--ground-truth", g)
-	for _, want := range []string{"read by the claude-code adapter", "tool call(s) became", "WARNING tools with no mapping", "Grep", "limitation:", "no baseline supplied", "parse error:"} {
+	for _, want := range []string{"read by the claude-code adapter", "tool call(s) became", "WARNING tools with no mapping", "NotebookEdit", "limitation:", "no baseline supplied", "parse error:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}
