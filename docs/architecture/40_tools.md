@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit d0e2c73 on 2026-10-06.
+Checked against commit d1276ff on 2026-10-07.
 
 ## Objective
 
@@ -155,6 +155,10 @@ sudo ./watch --probes fs,proc,net --workspace "$PWD" --out ground_truth.json -- 
 ```
 
 Read the adapter section of the report before the verdict: unknown tools, parse errors and limitations bound what the verdict can mean. The exit code (0, 1, 2, 3) is the machine-readable result.
+
+### Capture scripts
+
+`scripts/capture-claude-code.sh` does the two workflows above for Claude Code in one run: it records a task run and three control runs under `watch` (as the user, with `setpriv` exec'ing the agent in place so it keeps the pid `watch` records as the root), copies each transcript by session id, builds the baseline and writes `verify` output with and without it. `--task basic|parallel` picks the task (`parallel` adds three Reads in one message, a subagent, Grep, Glob, WebFetch and a Bash pipeline). The control runs enable the same tools as the task, because the harness's shell snapshot command differs with the tool set (I-24). `--baseline-from DIR` reuses the controls of an earlier capture of the same version and tool set and refuses otherwise, before it asks for sudo. It needs root and model quota, so the user runs it. `scripts/make-capture-fixture.py` reduces a capture to a checked-in fixture: paths rewritten, the transcript cut to the fields the adapter reads, the snapshot script elided.
 
 ### Tests
 

@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Checked against commit d0e2c73 on 2026-10-06.
+Checked against commit d1276ff on 2026-10-07.
 
 This page states what agent-trace is for, the threat model it assumes, the
 properties it claims, and how its components fit together. Each component has
