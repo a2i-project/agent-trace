@@ -103,11 +103,14 @@ func shellWord(s string) (string, bool) {
 // the observed side, which is the only side they appear on: a claim names the
 // agent's command, never these.
 var (
-	snapshotID = regexp.MustCompile(`snapshot-bash-\d+-[0-9a-f]+\.sh`)
-	cwdFileID  = regexp.MustCompile(`/tmp/claude-[0-9a-f]+-cwd`)
+	snapshotID = regexp.MustCompile(`snapshot-bash-\d+-[0-9a-z]+\.sh`)
+	cwdFileID  = regexp.MustCompile(`/tmp/claude-[0-9a-z]+-cwd`)
+	// The snapshot command writes a heredoc whose delimiter is random.
+	heredocID = regexp.MustCompile(`PATH_END_[0-9a-z]+`)
 )
 
 func canonicalIDs(s string) string {
 	s = snapshotID.ReplaceAllString(s, "snapshot-bash-N.sh")
-	return cwdFileID.ReplaceAllString(s, "/tmp/claude-N-cwd")
+	s = cwdFileID.ReplaceAllString(s, "/tmp/claude-N-cwd")
+	return heredocID.ReplaceAllString(s, "PATH_END_N")
 }

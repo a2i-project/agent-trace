@@ -1,0 +1,1228 @@
+{
+ "events": [
+  {
+   "timestamp": "2026-10-07T09:34:14.474413465+02:00",
+   "action_type": "file_open",
+   "target": "/ws/control-3/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 19460
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.67915369+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.679230345+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.681182771+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.681385098+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.681433013+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.681587309+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.682183189+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/org.gnome.DisplayManager",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.68248998+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/io.systemd.DynamicUser",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.683596798+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.983117728+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.983153762+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.983837167+02:00",
+   "action_type": "net_connect",
+   "target": "160.79.104.10:443",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.983862574+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.983975341+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:14.987591246+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.057862432+02:00",
+   "action_type": "net_connect",
+   "target": "160.79.104.10:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.057917484+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.080581302+02:00",
+   "action_type": "net_connect",
+   "target": "160.79.104.10:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.080646148+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.098175915+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.100690233+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.101201259+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.353831094+02:00",
+   "action_type": "process_fork",
+   "target": "19515",
+   "pid": 19515,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.354025237+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-3 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "pid": 19515,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.355738357+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-3 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "exit_code": 128,
+   "pid": 19515,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.370709769+02:00",
+   "action_type": "process_fork",
+   "target": "19516",
+   "pid": 19516,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.370836238+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c core.hooksPath=/dev/null -c core.fsmonitor= remote get-url origin",
+   "pid": 19516,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.372988745+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c core.hooksPath=/dev/null -c core.fsmonitor= remote get-url origin",
+   "exit_code": 128,
+   "pid": 19516,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.404895531+02:00",
+   "action_type": "net_connect",
+   "target": "160.79.104.10:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.404920685+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.405554913+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.410208199+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.462028574+02:00",
+   "action_type": "net_connect",
+   "target": "160.79.104.10:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.462077226+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.542529952+02:00",
+   "action_type": "process_fork",
+   "target": "19526",
+   "pid": 19526,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.542754136+02:00",
+   "action_type": "process_exec",
+   "target": "/home/user/.local/share/claude/versions/2.1.286 --no-config --files --hidden /ws/control-3",
+   "pid": 19526,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.557477391+02:00",
+   "action_type": "process_exit",
+   "target": "/home/user/.local/share/claude/versions/2.1.286 --no-config --files --hidden /ws/control-3",
+   "exit_code": 0,
+   "pid": 19526,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.636091613+02:00",
+   "action_type": "process_fork",
+   "target": "19549",
+   "pid": 19549,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.636284945+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-3 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "pid": 19549,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.637608145+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-3 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "exit_code": 128,
+   "pid": 19549,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.775284242+02:00",
+   "action_type": "process_fork",
+   "target": "19554",
+   "pid": 19554,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.775515551+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c core.hooksPath=/dev/null -c core.fsmonitor= remote",
+   "pid": 19554,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.778089887+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.779057172+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c core.hooksPath=/dev/null -c core.fsmonitor= remote",
+   "exit_code": 128,
+   "pid": 19554,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.812796581+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.813391741+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:15.813805808+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.006289644+02:00",
+   "action_type": "process_fork",
+   "target": "19564",
+   "pid": 19564,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.006462784+02:00",
+   "action_type": "process_exec",
+   "target": "/home/user/.local/share/claude/versions/2.1.286 --version",
+   "pid": 19564,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.007740124+02:00",
+   "action_type": "process_fork",
+   "target": "19565",
+   "pid": 19565,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.007932485+02:00",
+   "action_type": "process_exec",
+   "target": "/home/user/.local/share/claude/versions/2.1.286 --no-config --files --hidden --no-ignore --max-depth 4 --glob .orphaned_at /home/user/.claude/plugins/cache",
+   "pid": 19565,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.011064964+02:00",
+   "action_type": "net_bind",
+   "target": "unix:/tmp/cc-socks/19480.sock",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.011145766+02:00",
+   "action_type": "net_listen",
+   "target": "unix:/tmp/cc-socks/19480.sock",
+   "pid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.011969654+02:00",
+   "action_type": "process_exit",
+   "target": "/home/user/.local/share/claude/versions/2.1.286 --version",
+   "exit_code": 0,
+   "pid": 19564,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.019207461+02:00",
+   "action_type": "process_exit",
+   "target": "/home/user/.local/share/claude/versions/2.1.286 --no-config --files --hidden --no-ignore --max-depth 4 --glob .orphaned_at /home/user/.claude/plugins/cache",
+   "exit_code": 1,
+   "pid": 19565,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.453450763+02:00",
+   "action_type": "net_connect",
+   "target": "160.79.104.10:443",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.453470776+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.453549663+02:00",
+   "action_type": "net_connect",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:16.457229282+02:00",
+   "action_type": "net_connect",
+   "target": "mcp-proxy.anthropic.com",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.602929845+02:00",
+   "action_type": "process_fork",
+   "target": "19645",
+   "pid": 19645,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.603115455+02:00",
+   "action_type": "process_exec",
+   "target": "/bin/bash -c env",
+   "pid": 19645,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.606063147+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/env",
+   "pid": 19645,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.612437689+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/env",
+   "exit_code": 0,
+   "pid": 19645,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.625462647+02:00",
+   "action_type": "process_fork",
+   "target": "19646",
+   "pid": 19646,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.625564619+02:00",
+   "action_type": "process_exec",
+   "target": "/bin/bash -c -l SNAPSHOT_FILE=/home/user/.claude/shell-snapshots/snapshot-bash-1791358457623-58mm14.sh\n      <snapshot script elided>",
+   "pid": 19646,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.627412494+02:00",
+   "action_type": "process_fork",
+   "target": "19647",
+   "pid": 19647,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.627610278+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/run-parts --list --regex ^[a-zA-Z0-9_][a-zA-Z0-9._-]*\\.sh$ /etc/profile.d",
+   "pid": 19647,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.628726177+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/run-parts --list --regex ^[a-zA-Z0-9_][a-zA-Z0-9._-]*\\.sh$ /etc/profile.d",
+   "exit_code": 0,
+   "pid": 19647,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.629099141+02:00",
+   "action_type": "process_fork",
+   "target": "19648",
+   "pid": 19648,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.629328883+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/locale-check C.UTF-8",
+   "pid": 19648,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.630025669+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/locale-check C.UTF-8",
+   "exit_code": 0,
+   "pid": 19648,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.630976603+02:00",
+   "action_type": "process_fork",
+   "target": "19649",
+   "pid": 19649,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.631215343+02:00",
+   "action_type": "process_fork",
+   "target": "19650",
+   "pid": 19650,
+   "ppid": 19649
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.631327134+02:00",
+   "action_type": "process_fork",
+   "target": "19651",
+   "pid": 19651,
+   "ppid": 19649
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.631409774+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/find /etc/debuginfod -name *.urls -print0",
+   "pid": 19650,
+   "ppid": 19649,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.63145274+02:00",
+   "action_type": "process_fork",
+   "target": "19652",
+   "pid": 19652,
+   "ppid": 19649
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.631522208+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/xargs -0 cat",
+   "pid": 19651,
+   "ppid": 19649,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.631552991+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/tr \\n  ",
+   "pid": 19652,
+   "ppid": 19649,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.63261543+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/find /etc/debuginfod -name *.urls -print0",
+   "exit_code": 0,
+   "pid": 19650,
+   "ppid": 19649,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.632699462+02:00",
+   "action_type": "process_fork",
+   "target": "19653",
+   "pid": 19653,
+   "ppid": 19651
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.632801645+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/local/bin/cat /etc/debuginfod/elfutils.urls",
+   "pid": 19653,
+   "ppid": 19651,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.632813988+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat /etc/debuginfod/elfutils.urls",
+   "pid": 19653,
+   "ppid": 19651,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.63548918+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat /etc/debuginfod/elfutils.urls",
+   "exit_code": 0,
+   "pid": 19653,
+   "ppid": 19651,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.635748715+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/xargs -0 cat",
+   "exit_code": 0,
+   "pid": 19651,
+   "ppid": 19649,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.635788254+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/tr \\n  ",
+   "exit_code": 0,
+   "pid": 19652,
+   "ppid": 19649,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.636494047+02:00",
+   "action_type": "process_fork",
+   "target": "19654",
+   "pid": 19654,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.636742676+02:00",
+   "action_type": "process_fork",
+   "target": "19655",
+   "pid": 19655,
+   "ppid": 19654
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.636865546+02:00",
+   "action_type": "process_fork",
+   "target": "19656",
+   "pid": 19656,
+   "ppid": 19654
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.63696078+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/find /etc/debuginfod -name *.certpath -print0",
+   "pid": 19655,
+   "ppid": 19654,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.636986603+02:00",
+   "action_type": "process_fork",
+   "target": "19657",
+   "pid": 19657,
+   "ppid": 19654
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.637076322+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/xargs -0 cat",
+   "pid": 19656,
+   "ppid": 19654,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.63712933+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/tr \\n :",
+   "pid": 19657,
+   "ppid": 19654,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.638261618+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/find /etc/debuginfod -name *.certpath -print0",
+   "exit_code": 0,
+   "pid": 19655,
+   "ppid": 19654,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.638334308+02:00",
+   "action_type": "process_fork",
+   "target": "19658",
+   "pid": 19658,
+   "ppid": 19656
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.638444933+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/local/bin/cat",
+   "pid": 19658,
+   "ppid": 19656,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.638453223+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 19658,
+   "ppid": 19656,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.640444402+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 19658,
+   "ppid": 19656,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.640685869+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/xargs -0 cat",
+   "exit_code": 0,
+   "pid": 19656,
+   "ppid": 19654,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.640742086+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/tr \\n :",
+   "exit_code": 0,
+   "pid": 19657,
+   "ppid": 19654,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.642949391+02:00",
+   "action_type": "process_fork",
+   "target": "19659",
+   "pid": 19659,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.643277655+02:00",
+   "action_type": "process_fork",
+   "target": "19660",
+   "pid": 19660,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.643892568+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/head -n 1000",
+   "pid": 19660,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.651499463+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/head -n 1000",
+   "exit_code": 0,
+   "pid": 19660,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.653327285+02:00",
+   "action_type": "process_fork",
+   "target": "19661",
+   "pid": 19661,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.653771457+02:00",
+   "action_type": "process_fork",
+   "target": "19662",
+   "pid": 19662,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.65413505+02:00",
+   "action_type": "process_fork",
+   "target": "19663",
+   "pid": 19663,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.6545034+02:00",
+   "action_type": "process_fork",
+   "target": "19664",
+   "pid": 19664,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.654760631+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cut -d  -f3",
+   "pid": 19662,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.655044687+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/grep -vE ^_[^_]",
+   "pid": 19663,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.661661356+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cut -d  -f3",
+   "exit_code": 0,
+   "pid": 19662,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.666104042+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/grep -vE ^_[^_]",
+   "exit_code": 0,
+   "pid": 19663,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.666949338+02:00",
+   "action_type": "process_fork",
+   "target": "19665",
+   "pid": 19665,
+   "ppid": 19664
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.669374478+02:00",
+   "action_type": "process_fork",
+   "target": "19666",
+   "pid": 19666,
+   "ppid": 19664
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.671584685+02:00",
+   "action_type": "process_fork",
+   "target": "19667",
+   "pid": 19667,
+   "ppid": 19664
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.67372711+02:00",
+   "action_type": "process_fork",
+   "target": "19668",
+   "pid": 19668,
+   "ppid": 19664
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.675485374+02:00",
+   "action_type": "process_fork",
+   "target": "19669",
+   "pid": 19669,
+   "ppid": 19664
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.6772865+02:00",
+   "action_type": "process_fork",
+   "target": "19670",
+   "pid": 19670,
+   "ppid": 19664
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.680058624+02:00",
+   "action_type": "process_fork",
+   "target": "19671",
+   "pid": 19671,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.680460397+02:00",
+   "action_type": "process_fork",
+   "target": "19672",
+   "pid": 19672,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.680833518+02:00",
+   "action_type": "process_fork",
+   "target": "19673",
+   "pid": 19673,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.681296319+02:00",
+   "action_type": "process_fork",
+   "target": "19674",
+   "pid": 19674,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.681338901+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/grep on",
+   "pid": 19672,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.681565664+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/awk {print \"set -o \" $1}",
+   "pid": 19673,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.682459772+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/head -n 1000",
+   "pid": 19674,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.684348157+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/grep on",
+   "exit_code": 0,
+   "pid": 19672,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.685775533+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/awk {print \"set -o \" $1}",
+   "exit_code": 0,
+   "pid": 19673,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.691303766+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/head -n 1000",
+   "exit_code": 0,
+   "pid": 19674,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.692865375+02:00",
+   "action_type": "process_fork",
+   "target": "19675",
+   "pid": 19675,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.693124502+02:00",
+   "action_type": "process_fork",
+   "target": "19676",
+   "pid": 19676,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.693445866+02:00",
+   "action_type": "process_fork",
+   "target": "19677",
+   "pid": 19677,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.693725599+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/sed s/^alias //g",
+   "pid": 19676,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.69375902+02:00",
+   "action_type": "process_fork",
+   "target": "19678",
+   "pid": 19678,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.694086053+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/sed s/^/alias -- /",
+   "pid": 19677,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.694539514+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/head -n 1000",
+   "pid": 19678,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.69701163+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/sed s/^alias //g",
+   "exit_code": 0,
+   "pid": 19676,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.697347987+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/sed s/^/alias -- /",
+   "exit_code": 0,
+   "pid": 19677,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.701525934+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/head -n 1000",
+   "exit_code": 0,
+   "pid": 19678,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.703068895+02:00",
+   "action_type": "process_fork",
+   "target": "19679",
+   "pid": 19679,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.703686951+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 19679,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.710135365+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 19679,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.711545775+02:00",
+   "action_type": "process_fork",
+   "target": "19680",
+   "pid": 19680,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.712328638+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 19680,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.721298959+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 19680,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.722615445+02:00",
+   "action_type": "process_fork",
+   "target": "19682",
+   "pid": 19682,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.723274044+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 19682,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.731898575+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 19682,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.733454344+02:00",
+   "action_type": "process_fork",
+   "target": "19683",
+   "pid": 19683,
+   "ppid": 19646
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.734261991+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 19683,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.742437487+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 19683,
+   "ppid": 19646,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.743715614+02:00",
+   "action_type": "process_exit",
+   "target": "/bin/bash -c -l SNAPSHOT_FILE=/home/user/.claude/shell-snapshots/snapshot-bash-1791358457623-58mm14.sh\n      <snapshot script elided>",
+   "exit_code": 0,
+   "pid": 19646,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.762461195+02:00",
+   "action_type": "process_fork",
+   "target": "19684",
+   "pid": 19684,
+   "ppid": 19480
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.762765341+02:00",
+   "action_type": "process_exec",
+   "target": "/bin/bash -c source /home/user/.claude/shell-snapshots/snapshot-bash-1791358457623-58mm14.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval ': agent-trace-control-marker' < /dev/null && pwd -P >| /tmp/claude-b2d7-cwd",
+   "pid": 19684,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.769505298+02:00",
+   "action_type": "process_fork",
+   "target": "19685",
+   "pid": 19685,
+   "ppid": 19684
+  },
+  {
+   "timestamp": "2026-10-07T09:34:17.772624978+02:00",
+   "action_type": "process_exit",
+   "target": "/bin/bash -c source /home/user/.claude/shell-snapshots/snapshot-bash-1791358457623-58mm14.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval ': agent-trace-control-marker' < /dev/null && pwd -P >| /tmp/claude-b2d7-cwd",
+   "exit_code": 0,
+   "pid": 19684,
+   "ppid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:22.161990644+02:00",
+   "action_type": "net_connect",
+   "target": "34.149.66.165:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:22.162035183+02:00",
+   "action_type": "net_connect",
+   "target": "[2600:1901:0:9e23::]:0",
+   "pid": 19480,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-07T09:34:22.180854218+02:00",
+   "action_type": "net_connect",
+   "target": "http-intake.logs.us5.datadoghq.com",
+   "pid": 19480,
+   "is_top_level": true
+  }
+ ],
+ "coverage": {
+  "schema": 1,
+  "probes": {
+   "fs": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0
+   },
+   "net": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "content": "identity_only"
+   },
+   "proc": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0
+   }
+  }
+ },
+ "root_pid": 19480,
+ "workspace": "/ws/control-3"
+}

@@ -16,7 +16,8 @@ import (
 //     over the target. fanotify reports it as a create on the directory, an open,
 //     a write and a close on the temporary, and a rename on the directory, five
 //     events for what the trajectory calls one write. The close carries the hash
-//     of the final content.
+//     of the final content, and when it is read after the rename it names the
+//     target instead of the temporary.
 //   - Edit, and Write over an existing file, first open the target one or more
 //     times to check it has not changed.
 //
@@ -59,9 +60,13 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 		}
 		target, dir, pid := m[1], filepath.Dir(m[1]), open.PID
 
+		// The close and the rename arrive in either order, and the close can name
+		// the temporary or the target: fanotify resolves a path when the event is
+		// read, so a close read after the rename already names the target. The
+		// paired captures showed both.
 		closeIdx, renameIdx := -1, -1
 		var burst []int
-		for i := o + 1; i < len(g); i++ {
+		for i := o + 1; i < len(g) && (closeIdx < 0 || renameIdx < 0); i++ {
 			e := g[i]
 			if used[i] || e.PID != pid {
 				continue
@@ -69,13 +74,10 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 			switch {
 			case e.Target == open.Target && e.ActionType == models.FileWrite:
 				burst = append(burst, i)
-			case e.Target == open.Target && e.ActionType == models.FileClose && closeIdx < 0:
+			case e.ActionType == models.FileClose && closeIdx < 0 && (e.Target == open.Target || e.Target == target):
 				closeIdx = i
-			case closeIdx >= 0 && e.ActionType == models.FileRename && (e.Target == dir || e.Target == target || e.Target == open.Target):
+			case e.ActionType == models.FileRename && renameIdx < 0 && (e.Target == dir || e.Target == target || e.Target == open.Target):
 				renameIdx = i
-			}
-			if renameIdx >= 0 {
-				break
 			}
 		}
 		// Without a close and a rename this is not a finished replace: the

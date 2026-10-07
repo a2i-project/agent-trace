@@ -71,6 +71,33 @@ func TestFoldTurnsAnAtomicReplaceIntoOneWriteWithTheFinalHash(t *testing.T) {
 	}
 }
 
+// The second paired capture showed the other order: the close read after the
+// rename, so it names the target, and the rename comes first.
+func TestFoldHandlesACloseThatNamesTheTargetAfterTheRename(t *testing.T) {
+	tmp := "/w/b.txt.tmp.100.7068b43dd15d"
+	g := models.GroundTruth{
+		dirEv(0, models.FileWrite, 100),
+		fev(0, models.FileOpen, tmp, 100),
+		fev(1, models.FileWrite, tmp, 100),
+		dirEv(2, models.FileRename, 100),
+		hashed(fev(2, models.FileClose, "/w/b.txt", 100), "sha256:final"),
+	}
+	got := Adapter{}.NormalizeStream(g)
+	if len(got) != 1 || got[0].Target != "/w/b.txt" || got[0].OutputHash == nil || *got[0].OutputHash != "sha256:final" {
+		t.Fatalf("folded = %v, want one write of /w/b.txt with the close's hash", targets(got))
+	}
+}
+
+// A close of the target with no rename is a plain write by the agent, not a
+// replace, and must stay visible.
+func TestFoldNeedsTheRenameEvenWhenTheCloseNamesTheTarget(t *testing.T) {
+	tmp := "/w/b.txt.tmp.100.7068b43dd15d"
+	g := models.GroundTruth{dirEv(0, models.FileWrite, 100), fev(0, models.FileOpen, tmp, 100), fev(1, models.FileWrite, tmp, 100), hashed(fev(2, models.FileClose, "/w/b.txt", 100), "sha256:h")}
+	if got := (Adapter{}).NormalizeStream(g); len(got) != len(g) {
+		t.Errorf("folded without a rename: %v", targets(got))
+	}
+}
+
 func TestFoldKeepsEverythingAroundTheBurst(t *testing.T) {
 	g := models.GroundTruth{fev(0, models.FileOpen, "/w/before", 100)}
 	g = append(g, atomicWrite(10, "/w/a.txt", "100.5b5474087431", "sha256:h", 100)...)
@@ -169,6 +196,10 @@ func TestNormalizeCanonicalisesPerRunIdsOnTheHarnessCommands(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"/bin/bash -c -l SNAPSHOT_FILE=/h/.claude/shell-snapshots/snapshot-bash-1791357771136-4d6ac0.sh\n source x", "/bin/bash -c -l SNAPSHOT_FILE=/h/.claude/shell-snapshots/snapshot-bash-N.sh\n source x"},
 		{"/bin/bash -c cat /tmp/claude-1a2b-cwd", "/bin/bash -c cat /tmp/claude-N-cwd"},
+		// Ids are base 36, not only hex: one seen was 0qttaz.
+		{"SNAPSHOT_FILE=/h/.claude/shell-snapshots/snapshot-bash-1791358431910-0qttaz.sh", "SNAPSHOT_FILE=/h/.claude/shell-snapshots/snapshot-bash-N.sh"},
+		{"/bin/bash -c cat /tmp/claude-qz9x-cwd", "/bin/bash -c cat /tmp/claude-N-cwd"},
+		{"cat >> \"$F\" << 'PATH_END_eha29nbtq8n'\nexport PATH=/x", "cat >> \"$F\" << 'PATH_END_N'\nexport PATH=/x"},
 		{"/bin/bash -c env", "/bin/bash -c env"},
 	} {
 		got, _ := a.Normalize(models.GroundTruthEvent{ActionType: models.ProcessExec, Target: tc.in})

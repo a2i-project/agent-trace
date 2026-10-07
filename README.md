@@ -36,11 +36,12 @@ A faithful verdict says that the agent's top-level claims are true and that noth
 | Process probe (eBPF): exec, exit code, fork edges, parent pid | done |
 | Network probe (eBPF): connections with TLS SNI, request body hash via an `SSL_write` uprobe, listeners and Unix sockets | done |
 | Verification: process tree, alignment, coverage, baseline hook, outcome rules | done |
-| Agent adapters: Claude Code (JSONL, subagents, command-wrapper recovery) and Gemini (SQLite and protobuf, fails loudly when a field moves) | implemented, not yet checked against a real capture |
-| Harness baseline from control runs (`baseline`) | implemented, no baseline captured yet |
+| Claude Code adapter (JSONL, subagents, command-wrapper and atomic-write recovery) | done, checked against one paired capture of version 2.1.286 |
+| Gemini adapter (SQLite and protobuf, fails loudly when a field moves) | implemented, not yet checked against a real capture |
+| Harness baseline from control runs (`baseline`) | done, measured for Claude Code 2.1.286 |
 | Attack generator suite | planned |
 
-The verifier is tested against a simulated agent (`cmd/simagent`) only. The adapters read real session formats and are tested on fixtures and for robustness against real transcripts, but no real agent has been captured and verified end to end, so what a real session's file tools do at the kernel level is still a hypothesis in the adapters. Nothing here is evaluated on real agents yet.
+The verifier is tested against a simulated agent (`cmd/simagent`) and against one real paired capture of Claude Code 2.1.286 (a five-step task and three control runs, checked in as a fixture). On that capture an honest trajectory verifies FAITHFUL and six kinds of altered trajectory do not. That is one task on one version on one machine: it shows the pipeline works end to end, and it is not an evaluation. The Gemini adapter has not seen a real capture, and nothing here has been measured on a population of real sessions.
 
 ## Requirements
 
