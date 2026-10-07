@@ -55,7 +55,7 @@ Detected without classified is the failure the evaluation plan names: the right 
 
 ### The evaluation tests
 
-`pkg/attack/eval_test.go` runs every generator over the two real Claude Code captures (`pkg/agent/claudecode/testdata`) with a baseline from each capture's own controls, 100 seeds and 1 to 3 mutations each. On the honest control there are no findings. Every mutation is detected, classified and located, and no finding is unaccounted. Widening leaves the honest verdict unchanged, and an omission whose neighbours are widened over the omitted moment is found for every position. Distinct mutations per capture: 7 and 8 single omissions, 13 to 19 fabrications, 44 to 91 substitutions. With `Retime`, omissions are still found and a third of runs also report later claims as outside their interval.
+`pkg/attack/eval_test.go` runs every generator over the three real Claude Code captures (`pkg/agent/claudecode/testdata`) with a baseline from each capture's own controls, 100 seeds and 1 to 3 mutations each. On the honest control there are no findings. Every mutation is detected, classified and located, and the only unaccounted finding is an interval finding on a truthful claim when an omission leaves an ambiguous alignment (O-24; 2 of 100 runs of two omissions and 7 of 100 of three on the project capture). Widening leaves the honest verdict unchanged, and an omission whose neighbours are widened over the omitted moment is found for every position. Distinct mutations per capture: 7, 8 and 19 single omissions, 13 to 29 fabrications, 44 to 144 substitutions. Three captures: basic (7 claims), parallel (8) and project (19, a seeded coding task). With `Retime`, omissions are still found and a third of runs also report later claims as outside their interval.
 
 ## Guarantees and loss accounting
 
@@ -66,7 +66,7 @@ Detected without classified is the failure the evaluation plan names: the right 
 
 ## Known limits
 
-- The evaluation covers two captures of one agent version on one machine, with 7 and 8 claims. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
+- The evaluation covers three captures of one agent version on one machine, with 7, 8 and 19 claims. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
 - Only Claude Code has real captures. The generators are agent-independent, but nothing has been scored on Gemini.
 - The scorer matches findings to mutations by action type, target and (for claims) timestamp. A mutation that happens to equal another claim could be mis-attributed; `Avoid` makes that unlikely, not impossible.
 - A4 is scored as suppressing nothing, which holds because attribution does not use intervals. What widening can evade is the interval check itself, and catching that needs an observed interval in the ground truth (an open decision, `docs/todo/verifier.md` VER-4).

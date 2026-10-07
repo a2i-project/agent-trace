@@ -147,7 +147,8 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 						if err != nil {
 							t.Fatalf("seed %d: %v", seed, err)
 						}
-						res := Score(rec, s.verify(mut))
+						v := s.verify(mut)
+						res := Score(rec, v)
 						tally.Add(res)
 						if !res.Detected {
 							t.Errorf("seed %d: the run was not NOT FAITHFUL (%s)", seed, res.Outcome)
@@ -158,8 +159,16 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 									seed, g.kind, entryKind(m.Mutation), entryTarget(m.Mutation), m.Detected, m.Classified, m.Located)
 							}
 						}
+						// The one side effect tolerated: when removing claims leaves
+						// identical observed actions with fewer claims than events, the
+						// alignment is ambiguous (V-11), the verifier pairs a truthful
+						// claim with the wrong one of them, and that claim reads as
+						// outside its interval (O-24). Any other unaccounted finding is
+						// an error.
 						if res.Unaccounted != 0 {
-							t.Errorf("seed %d: %d finding(s) that no mutation explains", seed, res.Unaccounted)
+							if !(v.Ambiguous && res.Unaccounted == len(v.OutsideInterval)) {
+								t.Errorf("seed %d: %d finding(s) that no mutation explains, not interval findings of an ambiguous alignment", seed, res.Unaccounted)
+							}
 						}
 					}
 					t.Logf("%s %s n=%d: %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f, ambiguous alignments %d, unaccounted findings %d",

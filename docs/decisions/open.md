@@ -141,6 +141,14 @@ Options: (a) keep the filter; (b) record DNS queries and names as unclaimable ca
 Current behaviour: (a). The filter hides DNS exfiltration and has no counter.
 Blocked by: Nothing technical; (b) is part of O-20.
 
+### O-24: Break ties between equal alignments by interval consistency?
+Status: Open.
+Date: 2026-10-07.
+Question: When an alignment has several minimum-cost readings (V-11), the verifier reports one by a fixed rule. If claims are missing, identical observed actions (the same file opened twice by two Edits) leave a truthful claim paired with the wrong occurrence, and the claim then reads as outside its interval, a finding about a claim that is true. Should the choice among equal-cost readings prefer the one with fewer interval violations?
+Options: (a) leave it, since `Ambiguous` is reported and the unrecorded findings are right (current); (b) a secondary cost of one per interval violation among minimum-cost readings, so the interval only chooses between readings that are equally good on content; (c) report interval findings only when the alignment is unambiguous.
+Current behaviour: (a). Found by the project capture: omitting two claims of a nineteen-claim session left one interval finding in 2 of 100 runs of two omissions and 7 of 100 of three, always with an ambiguous alignment, and detection, classification and localization were unaffected. No honest run has this, since honest alignments are unique.
+Blocked by: Nothing technical. A claim interval comes from the trajectory and is adversary-controlled, so (b) lets an attacker steer which equal reading is reported, never whether a finding exists.
+
 ## Proposals (not decided)
 
 ### O-18: Move net hooks to the kernel socket layer (fentry or LSM)
