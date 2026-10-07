@@ -106,11 +106,12 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
       "net":  { "ran": false, "ringbuf_drops": 0, "untracked_children": 0, "state_map_full": 0, "channel_drops": 0 }
     }
   },
-  "root_pid": 4200
+  "root_pid": 4200,
+  "workspace": "/work/project"
 }
 ```
 
-`models.ParseGroundTruthFile` accepts this object or the legacy form, a bare JSON array of events, which yields a nil coverage and a zero `root_pid`. It rejects a coverage `schema` other than `models.CoverageSchema` (1). `ParseGroundTruth` accepts only the bare array, so a caller that ignores coverage fails on the object form instead of silently dropping it. A zero `root_pid` means no tree can be built and the verifier cannot attribute events.
+`models.ParseGroundTruthFile` accepts this object or the legacy form, a bare JSON array of events, which yields a nil coverage and a zero `root_pid`. It rejects a coverage `schema` other than `models.CoverageSchema` (1). `ParseGroundTruth` accepts only the bare array, so a caller that ignores coverage fails on the object form instead of silently dropping it. A zero `root_pid` means no tree can be built and the verifier cannot attribute events. `workspace` is the absolute directory the capture watched, written by `watch`; a baseline uses it to name that directory with a placeholder. `watch` sorts events by timestamp with a stable sort, because events read in one batch share a timestamp and the verifier aligns by position.
 
 ## Guarantees and loss accounting
 

@@ -1,22 +1,22 @@
 # Agent adapters
 
-Checked against commit d0e2c73 on 2026-10-06.
+Checked against commit c4df56f on 2026-10-07.
 
 ## Objective
 
 An adapter isolates everything one agent harness does differently from the core verifier: how its session file is read into claims, how observed events are rewritten into the form claims use, what the harness does on its own, and which content fields its format can state. `pkg/matching` and `pkg/verification` contain no agent knowledge; adding an agent means adding a package under `pkg/agent` that implements `agent.Adapter` and registers itself. The design reasons are in [decisions/integration.md](../decisions/integration.md) (D6 to D13) and [decisions/verification.md](../decisions/verification.md) (V2, V7).
 
-Neither the Claude Code nor the Gemini adapter has yet been checked against a real paired capture (a real session recorded by `watch` and verified with its own transcript). Both are tested on synthetic fixtures, and an opt-in test per adapter (`AGENT_TRACE_CLAUDE_CORPUS`, `AGENT_TRACE_GEMINI_CORPUS` naming a directory of session files) checks that real sessions parse without failure; which kernel events a file tool produces is a hypothesis in both, and each adapter reports this as a degradation.
+The Claude Code adapter has been checked against one paired capture of version 2.1.286 (a real session recorded by `watch` and verified with its own transcript): **Verified** on one five-step task, one machine, three control runs. The capture is a fixture (`pkg/agent/claudecode/testdata/paired-2.1.286`, reduced by `scripts/make-capture-fixture.py`), and an honest trajectory verifies FAITHFUL while six altered ones do not. That is a check that the pipeline works, not an evaluation. The Gemini adapter has not seen a real capture: it is tested on synthetic fixtures, which kernel events its file tools produce is a hypothesis, and it reports that as a degradation. An opt-in test per adapter (`AGENT_TRACE_CLAUDE_CORPUS`, `AGENT_TRACE_GEMINI_CORPUS` naming a directory of session files) checks that real sessions parse without failure.
 
 ## Structure
 
 | File | Main symbols |
 |---|---|
-| `pkg/agent/agent.go` | `Adapter`, `ProcessModel`, `IntervalKind`, `Concurrency`, `Report`, `Report.Count`, `Prepare` |
+| `pkg/agent/agent.go` | `Adapter`, `StreamNormalizer`, `ProcessModel`, `IntervalKind`, `Concurrency`, `Report`, `Report.Count`, `Prepare` |
 | `pkg/agent/registry.go` | `Register`, `Lookup`, `Names`, `Detect`, `ErrNoMatch` |
 | `pkg/agent/generic.go` | `Generic`, `GenericName` (`"generic"`) |
-| `pkg/agent/baseline.go` | `Baseline`, `Rule`, `Capture`, `Baseline.Predicate`, `SaveBaseline`, `LoadBaseline`, `BaselineSchema` |
-| `pkg/agent/claudecode/` | `Adapter` registered as `"claude-code"`; `claudecode.go` (parse, mapping), `shell.go` (`evalPayload`, `shellWord`), `hash.go` |
+| `pkg/agent/baseline.go` | `Baseline`, `Rule`, `Capture`, `CaptureOptions`, `WorkspacePlaceholder`, `Baseline.Predicate`, `SaveBaseline`, `LoadBaseline`, `BaselineSchema` |
+| `pkg/agent/claudecode/` | `Adapter` registered as `"claude-code"`; `claudecode.go` (parse, mapping), `shell.go` (`evalPayload`, `shellWord`, `canonicalIDs`), `stream.go` (`NormalizeStream`, `collapseOpenClaims`), `hash.go` |
 | `pkg/agent/gemini/` | `Adapter` registered as `"gemini"`; `gemini.go` (SQLite reading, mapping), `wire.go` (protobuf wire-format walker) |
 
 ### The Adapter interface
@@ -33,7 +33,7 @@ type Adapter interface {
 }
 ```
 
-`Name` keys the registry and the baseline file. `Parse` returns entries in claim order, each with its interval (`Timestamp`, `End`), its `ThreadID` where subagents were flattened, its `BlockID` where the format issued several calls at once, and its `Tool`. `Normalize` returns false to drop an event. `IsHarnessNoise` is what the adapter knows statically; the measured baseline is supplied separately. `Expresses` answers for one of the `verification.Diff*` field names.
+`StreamNormalizer` is an optional second interface, `NormalizeStream(models.GroundTruth) models.GroundTruth`, for an adapter whose observed events are comparable only when several are looked at together (I-22). `Name` keys the registry and the baseline file. `Parse` returns entries in claim order, each with its interval (`Timestamp`, `End`), its `ThreadID` where subagents were flattened, its `BlockID` where the format issued several calls at once, and its `Tool`. `Normalize` returns false to drop an event. `IsHarnessNoise` is what the adapter knows statically; the measured baseline is supplied separately. `Expresses` answers for one of the `verification.Diff*` field names.
 
 ### ProcessModel
 
@@ -66,7 +66,7 @@ Each adapter package calls `agent.Register` from `init`. `Register` panics on an
 
 ### From session to verifier input
 
-`agent.Prepare(a, claims, groundTruthFile, measured, opts)` builds a `verification.Input`: it runs every observed event through `a.Normalize` (dropping those it rejects), combines `a.IsHarnessNoise` and the measured baseline into one predicate (an event is harness activity if either says so), sets `opts.Expresses = a.Expresses` and `opts.IgnoreExits = !a.Process().ExitsClaimed`, and copies `RootPID` and `Coverage` from the file. Caller options such as `IntervalSlack` are kept.
+`agent.Prepare(a, claims, groundTruthFile, measured, opts)` builds a `verification.Input`: it runs every observed event through `a.Normalize` (dropping those it rejects), then through `NormalizeStream` when the adapter implements it, combines `a.IsHarnessNoise` and the measured baseline into one predicate (an event is harness activity if either says so), sets `opts.Expresses = a.Expresses` and `opts.IgnoreExits = !a.Process().ExitsClaimed`, and copies `RootPID` and `Coverage` from the file. Caller options such as `IntervalSlack` are kept.
 
 ### Generic
 
@@ -82,8 +82,9 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 |---|---|---|---|
 | `Bash` | `process_exec` | `input.command` | none |
 | `Read` | `file_open` | `input.file_path` | none |
-| `Write` | `file_open`, `file_write`, `file_close` | `input.file_path` | `output_hash` of `input.content` on `file_close` |
-| `Edit` | `file_open`, `file_write`, `file_close` | `input.file_path` | none (fragments only) |
+| `Write`, result `create` | `file_write` | `input.file_path` | `output_hash` of `input.content` |
+| `Write`, result `update` (or no result kind, assumed) | `file_open`, `file_write` | `input.file_path` | `output_hash` of `input.content` on the write |
+| `Edit` | `file_open`, `file_write` | `input.file_path` | none (fragments only) |
 | `WebFetch` | `net_connect` | hostname of `input.url` | none |
 | Non-effectful: `Agent`, `Task`, `AskUserQuestion`, `ToolSearch`, `Skill`, `ScheduleWakeup`, `TodoWrite`, `ExitPlanMode`, `EnterPlanMode`, `WebSearch`, `TaskOutput`, `TaskStop`, `SendMessage`, `TaskCreate`, `TaskUpdate`, `TaskGet`, `TaskList` | none, counted in `UnmappedByTool` | | |
 | Any other tool (for example `Grep`, `Glob`) | none, counted and listed in `UnknownTools` | | |
@@ -94,9 +95,12 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 |---|---|
 | `Process` | `ShellPerCommand: true`, `SubagentsInProcess: true`, `IntervalDecision`, `Parallel`, `ExitsClaimed: false` |
 | `Expresses` | `exit_code`: never. `request_hash`: never. `output_hash`: only for `Tool == "Write"`. Other fields: yes. |
-| `Normalize` | For `process_exec` and `process_exit`, if the target contains `shell-snapshots/snapshot-` and `&& eval `, replaces it with the eval payload read as one POSIX shell word (`evalPayload`); otherwise leaves it unchanged, so an unrecognised wrapper shows as a mismatch rather than a guess (D6). |
+| `Normalize` | For `process_exec` and `process_exit`, if the target contains `shell-snapshots/snapshot-` and `&& eval `, replaces it with the eval payload read as one POSIX shell word (`evalPayload`). Otherwise it replaces the per-run ids (snapshot file, working-directory file, heredoc delimiter) with fixed tokens (I-23) and leaves the rest unchanged, so an unrecognised wrapper shows as a mismatch rather than a guess (D6). |
+| `NormalizeStream` | Folds a finished temp-and-rename (`<path>.tmp.<pid>.<12 hex>`: create on the directory, open, write, close and rename, the close and rename in either order) into one `file_write` of the target carrying the close's hash, and collapses a run of opens of one file by one process into one. Events of other processes, an unfinished replace and a name that is not the harness's pattern are left alone (I-22). |
 | `IsHarnessNoise` | Declares nothing; harness activity comes from the measured baseline (D11). |
-| Degradations | Decision-time start (D13); no exit codes, so exits are not aligned; file-tool claim shapes are a hypothesis until a paired capture; unknown tools when present. |
+| Degradations | Decision-time start (D13); no exit codes, so exits are not aligned; file-tool claims are one atomic replace as measured on 2.1.286, and a variant not seen shows as unexplained; Write calls with no create or update result assumed to overwrite; unknown tools when present. |
+
+Claims are rewritten the same way: `collapseOpenClaims` merges adjacent opens of one file among the file claims, since commands and connections are other lanes and do not break a run. The structured result of the call (`toolUseResult.type`, on the user record that carries the `tool_result`) is read only when the record holds a single result.
 
 The exit code is not expressible because the format records only an `is_error` flag, which conflates a failed command with one that never ran.
 
@@ -131,9 +135,9 @@ A call in a step whose status is not completed (3) is counted as `<tool> (status
 
 A baseline is the harness's own activity, measured by control runs in which the agent is given a task that claims nothing, so everything it does is the harness (D11, V7).
 
-`agent.Capture(a, version, runs, now)` requires at least one run and a root pid in each. For each run it normalizes events with the adapter, builds the forest and partition, and takes the distinct `(action_type, target)` pairs of `Partition.Observed`: the agent's own level-0 events and each command's own exec and exit. Descendants of a command are not rules, since a command explains its subtree. A pair seen in every run becomes a `Rule`; a pair seen in some runs only goes to `Unstable`, which is recorded for the reader and subtracts nothing. Both lists are sorted. The `Baseline` records `Schema`, `Agent`, `AgentVersion`, `Captured` (UTC) and `Runs`.
+`agent.Capture(a, version, runs, now, opts)` requires at least one run and a root pid in each. For each run it normalizes events with the adapter, builds the forest and partition, and takes the distinct `(action_type, target)` pairs of `Partition.Observed`: the agent's own level-0 events and each command's own exec and exit. Descendants of a command are not rules, since a command explains its subtree. A pair seen in at least `opts.MinAgreement` of the runs (default 1, every run) becomes a `Rule`; a pair seen in fewer goes to `Unstable`, which is recorded for the reader and subtracts nothing. The run's own workspace (recorded by `watch` in the ground truth file) is replaced by `{workspace}` in each target (I-24). Both lists are sorted. The `Baseline` records `Schema`, `Agent`, `AgentVersion`, `Captured` (UTC), `Runs` and `MinAgreement`.
 
-`Baseline.Predicate` recognises an event when a rule has exactly its action type and target. There is no pattern matching, since a wildcard would explain whatever an attacker made it match. `LoadBaseline` rejects an unknown schema and a baseline that names no agent. `cmd/baseline` additionally refuses a control run with no coverage record or with any loss counter set, since a short baseline reads as false omissions later; `cmd/verify` refuses a baseline captured for a different adapter name ([40_tools.md](40_tools.md)).
+`Baseline.Predicate(workspace)` recognises an event when a rule has exactly its action type and target, with the placeholder expanded to the workspace of the run being verified (a rule that names the placeholder matches nothing when no workspace is known). There is no pattern matching, since a wildcard would explain whatever an attacker made it match. `LoadBaseline` rejects an unknown schema and a baseline that names no agent. `cmd/baseline` additionally refuses a control run with no coverage record or with any loss counter set, since a short baseline reads as false omissions later; `cmd/verify` refuses a baseline captured for a different adapter name ([40_tools.md](40_tools.md)).
 
 ### Onboarding a new agent
 
@@ -162,13 +166,15 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - A format limit is never read as an opt-out: `Expresses` turns a nil that the format cannot state into no finding, and `ExitsClaimed: false` removes exits from both sides rather than reporting every exit as an omission.
 - Detection never guesses between adapters (`TestDetectRefusesToGuessBetweenAdapters`).
 - The Gemini adapter fails with the field path rather than returning a partial trajectory when the payload layout changes.
-- A baseline only subtracts exact `(action_type, target)` pairs that every control run produced, from loss-free runs, for the adapter it was captured with.
+- A baseline only subtracts exact `(action_type, target)` pairs that enough control runs produced, from loss-free runs, for the adapter it was captured with.
 
 ## Known limits
 
-- Neither real adapter has been checked against a real paired capture, so their file-tool claim shapes are unverified.
+- The Claude Code claim shapes rest on one paired capture of one version on one task. A write that does not use a temporary file, a different version, or a tool not exercised (`NotebookEdit`, `MultiEdit`, parallel calls, subagents) is unchecked. The Gemini adapter has not seen a real capture.
+- Some harness activity is occasional (a package-manager probe appeared in two of three control runs). At full agreement it is left out of the baseline and can read as unexplained in a later run.
 - `Concurrency`, `SubagentsInProcess`, `ShellPerCommand` and `IntervalKind` are declarations only; the verifier does not read them.
-- The Claude Code adapter's command recovery depends on the current wrapper shape (`shell-snapshots/snapshot-` and `&& eval`), which is harness-version-specific.
+- The Claude Code adapter's command recovery and id canonicalisation depend on the current wrapper and snapshot shapes (`shell-snapshots/snapshot-`, `&& eval`, `PATH_END_`), which are harness-version-specific.
+- Collapsing opens loses the count of repeated reads of one file, on both sides.
 - The Gemini adapter does no wrapper recovery, so a wrapped command shows as a mismatch.
 - The Gemini adapter does not follow subtrajectories and does not set `ThreadID`.
 - The Gemini process model (shell per command, subagents, ordering) is unmeasured.

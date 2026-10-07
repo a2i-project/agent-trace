@@ -134,7 +134,7 @@ Consequences: A claim nothing could witness is not reported as a false fabricati
 Alternatives rejected: Claiming every step, which turns harness bookkeeping into Unwitnessed findings.
 
 ### I-18: Claim order in the fs lane follows the kernel's order
-Status: Accepted, implemented in `simagent` and the adapters' file-tool claim shapes. The shapes for real agents are a hypothesis (O-16).
+Status: Accepted, implemented in `simagent` and the adapters' file-tool claim shapes. The Claude Code shapes were later measured and replaced by I-22; Gemini's remain a hypothesis (O-16).
 Date: 2026-10-06 (commits da6ccc8, 81b3c4d).
 Context: The alignment pairs by position within a lane, so claim order must match the order the probe reports. fanotify reports a new file as create (a directory record covering the file, `PathIsAmbiguous`), open, modify, close, and merges consecutive events on one object.
 Decision: Adapters emit fs claims in the kernel's order, and merged events sit where the kernel queued them. On the observed side a merged mask expands as open, write, close (P-13 in [probes.md](probes.md)).
@@ -164,3 +164,27 @@ Context: `cmd/verify` selects an adapter from the trajectory file when `--agent`
 Decision: `Detect` returns an error when no adapter or several recognize the file. `cmd/verify` falls back to `Generic` only when nothing recognizes it.
 Consequences: A misdetection cannot silently change which tool map and noise rules apply.
 Alternatives rejected: First-match detection by registration order.
+
+### I-22: Claude Code file tools are claimed at the grain of the tool call, and the observed side is rewritten to match
+Status: Accepted, implemented (`claudecode.Adapter.NormalizeStream` in `stream.go`, `agent.StreamNormalizer`).
+Date: 2026-10-07 (paired capture of Claude Code 2.1.286, **Verified** on one task, one machine).
+Context: A paired capture showed that `Read` opens the file once, and that `Write` and `Edit` replace a file atomically through a temporary named `<path>.tmp.<pid>.<12 hex>`. fanotify reports a replace as a create on the directory, then open, write and close of the temporary, then a rename on the directory, with the close carrying the hash of the final content. The close can be read after the rename, in which case it names the target. `Edit`, and a `Write` over an existing file, first open the target one or more times. The trajectory records one call per tool.
+Decision: One claim per tool call where the call is one action: `Read` is a `file_open`, `Write` a `file_write` carrying the content hash (preceded by a `file_open` unless the harness's own `toolUseResult` says the file was created), `Edit` a `file_open` then a `file_write` with no hash. The observed side is rewritten to the same grain by an optional `StreamNormalizer` that `agent.Prepare` runs after per-event `Normalize`: a finished temp-and-rename, in either order of close and rename, becomes one `file_write` of the target with the close's hash, and a run of opens of one file by one process becomes one open. The claims collapse adjacent opens of one file the same way, so the two sides stay comparable.
+Consequences: An honest session verifies, and an unclaimed atomic write is still an omission. A temporary that is never closed and renamed, a name that does not match the harness's pattern, and events of other processes are left alone, so they show as unexplained. A write that does not use a temporary (not seen) will show as unexplained, and the report says so. Collapsing opens loses the count of repeated reads of one file.
+Alternatives rejected: Claiming each of the five kernel events (the temporary's name is random, and the reads before a replace vary in number); making the verifier ignore multiplicity (it would lose the ability to count claims against events elsewhere); dropping the harness's pre-reads outright (that would also drop the open a separate `Read` claim needs).
+
+### I-23: Per-run ids in the harness's own commands are replaced on the observed side
+Status: Accepted, implemented (`canonicalIDs` in `claudecode/shell.go`).
+Date: 2026-10-07.
+Context: The commands the harness runs the first time a session uses Bash name a snapshot file and a heredoc delimiter by ids that differ every run, and the wrapper names a working-directory file the same way. The ids are base 36, not hex. Two runs of the same behaviour would never match a baseline rule.
+Decision: `Normalize` replaces the three ids with fixed tokens in process targets that are not recovered commands. A claim never names these, so only the observed side is rewritten.
+Consequences: A baseline rule for a setup command is stable across runs. File targets are not rewritten.
+Alternatives rejected: Pattern rules in the baseline (a wildcard explains whatever an attacker makes it match, V-19).
+
+### I-24: A baseline names the watched directory with a placeholder and takes a measured agreement threshold
+Status: Accepted, implemented (`agent.WorkspacePlaceholder`, `Baseline.Predicate(workspace)`, `CaptureOptions.MinAgreement`, `models.GroundTruthFile.Workspace`).
+Date: 2026-10-07.
+Context: The harness lists and inspects the working directory, so its commands name it; a baseline measured in one directory would otherwise not apply in another. Some harness activity is occasional: a probe for package managers appeared in two of three control runs.
+Decision: Capture rewrites the run's workspace (recorded by `watch`) to `{workspace}` in rule targets, and the predicate expands it to the workspace of the run being verified. A rule still matches an action type and target exactly. `--min-agreement` sets the fraction of control runs that must perform an action for it to become a rule, one by default.
+Consequences: A baseline is reusable across directories. At full agreement an occasional action is left out and can read as unexplained in a later run, and lowering the threshold widens the baseline, which is a choice the person makes and the file records (`min_agreement`).
+Alternatives rejected: Controls that all run in one directory (the baseline would fit only that directory); a union of every action seen (a wider baseline by default).

@@ -104,12 +104,11 @@ Current behaviour: Gemini `RunPersistent` commands are not claimed (I-17), so th
 Blocked by: An agent that uses a persistent shell in practice.
 
 ### O-16: File-tool claim shapes and fanotify multiplicity
-Status: Open.
-Date: 2026-10-06.
-Question: Which kernel events does a real `Read`, `Write` or `Edit` produce, and how many?
-Options: (a) observed-side coalescing of consecutive same-path, same-PID fs events in `Normalize`; (b) adapter claims that tolerate repeats; (c) both.
-Current behaviour: Claims are `Read` = open, `Write`/`Edit` = open, write, close (I-18), a hypothesis. The create record of a new file is not claimed, and fanotify merging changes multiplicity.
-Blocked by: A paired capture (needs root). A planned strace experiment hit an account session limit.
+Status: Partly decided. Claude Code is settled by I-22 and I-23. Gemini is open.
+Date: 2026-10-06, updated 2026-10-07.
+Question: Which kernel events does a real file tool produce, and how many?
+Current behaviour: For Claude Code 2.1.286 the shapes were measured by one paired capture (**Verified**, one task on one machine): see I-22. Gemini's file tools still use the guessed open, write, close sequence, and its adapter reports that. Whether other Claude Code versions, or a write that does not use a temporary file, behave the same is **Unverified**.
+Blocked by: A paired capture of Gemini (needs root and a working Gemini CLI, which has no headless authentication here), and captures of other Claude Code versions.
 
 ### O-17: Is replaying a partial edit ever worth doing?
 Status: Open (low priority).

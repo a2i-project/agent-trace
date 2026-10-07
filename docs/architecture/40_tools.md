@@ -79,10 +79,11 @@ baseline --agent NAME --agent-version V [--out FILE] CONTROL_RUN.json...
 | `--agent NAME` | (required) | Adapter that normalizes the runs |
 | `--agent-version V` | (required) | Version of the agent that was run; a baseline holds for one version |
 | `--out PATH` | `baseline.json` | Output file |
+| `--min-agreement F` | `1` | Fraction of control runs that must perform an action for it to become a rule. Lower it for activity the harness does only sometimes, at the cost of a wider baseline (I-24). |
 
 Each positional argument is a capture from `watch`. A run with no coverage record, with any loss counter set, or with no root pid is refused. On success it prints how many rules every run produced and how many unstable actions were left out, and warns when given a single run that one run cannot separate stable from incidental activity.
 
-The baseline file is JSON: `schema` (1), `agent`, `agent_version`, `captured`, `runs`, `rules` and `unstable`, each rule an `action_type` and `target`.
+The baseline file is JSON: `schema` (1), `agent`, `agent_version`, `captured`, `runs`, `min_agreement`, `rules` and `unstable`, each rule an `action_type` and `target`. A target names the watched directory as `{workspace}`.
 
 | Exit code | When |
 |---|---|
