@@ -364,23 +364,24 @@ func TestObserver_UnracedCloseKeepsHash(t *testing.T) {
 	}
 }
 
-// TestObserver_BatchedCloseTrustsPostBatchGeneration checks that a bare
-// write-class event (no intervening close) for the same path, seen before a
-// close is ever resolved, is folded into the generation snapshot rather than
-// wrongly flagged as a race: both events run through processRawEvent before
-// the settle cycle resolves the close, so hashSettled's own generation check
-// sees no further change during the read itself and trusts it.
-func TestObserver_BatchedCloseTrustsPostBatchGeneration(t *testing.T) {
+// TestObserver_BatchedCloseFollowedByWriteHasNoHash covers a close and a bare
+// write-class event (no intervening close) for the same path read in one batch,
+// both processed before the settle cycle resolves the close. An earlier version
+// of the observer folded such an event into the close's generation snapshot and
+// hashed the content the file had by then. That content is not what the close
+// described, and when the later event is an open the file may be mid-truncate
+// (TestObserver_OpenAfterCloseDropsHash), so the close now settles without a
+// hash and without a read.
+func TestObserver_BatchedCloseFollowedByWriteHasNoHash(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "batched.txt")
 
+	hashCalls := 0
 	obs := newHashSeamObserver(t, dir, func(int) (string, error) {
+		hashCalls++
 		return "sha256:final", nil
 	})
 
-	// Simulate one fanotify read returning both records together: both run
-	// through processRawEvent (bumping generation twice) before the close
-	// is ever resolved.
 	now := time.Now()
 	obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: int32(os.Getpid()), Path: target}, now)
 	obs.processRawEvent(&rawEvent{Mask: unix.FAN_MODIFY, PID: int32(os.Getpid()), Path: target}, now)
@@ -388,18 +389,12 @@ func TestObserver_BatchedCloseTrustsPostBatchGeneration(t *testing.T) {
 	before := obs.settleSnapshot()
 	obs.resolveSettled(before, hashSeamBuf(), false)
 
-	var got *models.GroundTruthEvent
-	for _, e := range drainEvents(obs) {
-		if e.ActionType == models.FileClose {
-			ev := e
-			got = &ev
-		}
+	closes := closeEvents(obs)
+	if len(closes) != 1 {
+		t.Fatalf("expected 1 FileClose, got %d", len(closes))
 	}
-	if got == nil {
-		t.Fatal("no FileClose event emitted")
-	}
-	if got.OutputHash == nil || *got.OutputHash != "sha256:final" {
-		t.Fatalf("batched close should trust its post-batch generation snapshot and carry the digest, got %v", got.OutputHash)
+	if closes[0].OutputHash != nil || hashCalls != 0 {
+		t.Fatalf("a close followed by a write in the same batch must settle without a hash or a read, got hash %v after %d read(s)", closes[0].OutputHash, hashCalls)
 	}
 }
 
@@ -536,7 +531,11 @@ func TestObserver_SupersededCloseAmbiguityFlag(t *testing.T) {
 // against content the next write immediately truncated (the CI failure).
 // Here the close survives every cycle (nothing supersedes it), yet must not
 // be hashed while write-class events keep arriving; only once the path is
-// quiet does it settle, and then exactly once.
+// quiet does it settle, and then exactly once. Since the close was followed by
+// write-class events the content it described may be gone, so it settles
+// without a hash and without a read (see TestObserver_OpenAfterCloseDropsHash);
+// the positive case, a quiet path whose close is hashed, is
+// TestObserver_CloseOfAQuietPathIsHashedAfterTheWindow.
 func TestObserver_CloseHeldUntilPathQuiet(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "burst.txt")
@@ -583,11 +582,38 @@ func TestObserver_CloseHeldUntilPathQuiet(t *testing.T) {
 	if got == nil {
 		t.Fatal("no FileClose emitted after the path went quiet")
 	}
-	if got.OutputHash == nil || *got.OutputHash != "sha256:final" {
-		t.Fatalf("settled close should carry the digest, got %v", got.OutputHash)
+	if got.OutputHash != nil {
+		t.Fatalf("a close followed by write-class events must settle without a hash, got %v", *got.OutputHash)
 	}
-	if hashCalls != 1 {
-		t.Errorf("expected exactly 1 hashFile call, got %d", hashCalls)
+	if hashCalls != 0 {
+		t.Errorf("expected no hashFile call, got %d", hashCalls)
+	}
+}
+
+// The quiet gate on its own: a close with nothing after it is not published
+// until its path has been quiet for settleDelay, and then it carries the
+// digest, read exactly once.
+func TestObserver_CloseOfAQuietPathIsHashedAfterTheWindow(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "quiet.txt")
+	var hashCalls int
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) {
+		hashCalls++
+		return "sha256:final", nil
+	})
+	obs.settleDelay = 50 * time.Millisecond
+
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: int32(os.Getpid()), Path: target}, time.Now())
+	obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), false)
+	if got := closeEvents(obs); len(got) != 0 || hashCalls != 0 {
+		t.Fatalf("a close published before its path was quiet: %d event(s), %d read(s)", len(got), hashCalls)
+	}
+
+	time.Sleep(2 * obs.settleDelay)
+	obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), false)
+	got := closeEvents(obs)
+	if len(got) != 1 || got[0].OutputHash == nil || *got[0].OutputHash != "sha256:final" || hashCalls != 1 {
+		t.Fatalf("after the window: events %+v, reads %d, want one hashed close read once", got, hashCalls)
 	}
 }
 
@@ -1003,5 +1029,124 @@ func TestObserver_ChildProcessWriteCarriesChildPID(t *testing.T) {
 	}
 	if !sawChild {
 		t.Errorf("no event for %s carried the child's pid %d; events: %v", target, childPID, events)
+	}
+}
+
+// closeEvents returns the FileClose events an observer has emitted.
+func closeEvents(obs *Observer) []models.GroundTruthEvent {
+	var out []models.GroundTruthEvent
+	for _, e := range drainEvents(obs) {
+		if e.ActionType == models.FileClose {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// The hole behind the intermittent empty-content hash: a close is registered,
+// then the writer's next iteration opens the file (open with O_TRUNC truncates
+// it, and fanotify cannot say which flags an open had), and the writer stalls
+// before writing. The path then looks quiet for the whole settle window while
+// the file sits empty. The open was seen before the hash read began, so the
+// generation did not change during the read, and the empty digest was trusted.
+// A write-class event after a close was registered means the content the close
+// described may be gone, so the close must be published without a hash.
+func TestObserver_OpenAfterCloseDropsHash(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "rewritten.txt")
+
+	hashed := 0
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) {
+		hashed++
+		return "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", nil // the empty file
+	})
+
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: 4242, Path: target}, time.Now())
+	// The next iteration of the writer opens the file. No close follows yet.
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_OPEN, PID: 4242, Path: target}, time.Now())
+
+	obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), false)
+
+	closes := closeEvents(obs)
+	if len(closes) != 1 {
+		t.Fatalf("expected 1 FileClose, got %d", len(closes))
+	}
+	if closes[0].OutputHash != nil {
+		t.Errorf("a close followed by an open of the same path carried a hash %q: the content it described may have been truncated", *closes[0].OutputHash)
+	}
+	if hashed != 0 {
+		t.Errorf("hashFD ran %d time(s): a read that cannot be trusted should not be made", hashed)
+	}
+}
+
+// The same holds for a modify after the close.
+func TestObserver_ModifyAfterCloseDropsHash(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "f.txt")
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "sha256:x", nil })
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: 1, Path: target}, time.Now())
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_MODIFY, PID: 1, Path: target}, time.Now())
+	obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), false)
+	closes := closeEvents(obs)
+	if len(closes) != 1 || closes[0].OutputHash != nil {
+		t.Errorf("closes = %+v, want one without a hash", closes)
+	}
+}
+
+// What must not change: events on other paths, and events that are not content
+// changes (a rename), leave the hash alone, and a close that registers after
+// the last write-class event keeps its digest.
+func TestObserver_UnrelatedEventsKeepTheHash(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "kept.txt")
+	other := filepath.Join(dir, "other.txt")
+
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "sha256:good", nil })
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: 1, Path: target}, time.Now())
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_OPEN | unix.FAN_MODIFY, PID: 1, Path: other}, time.Now())
+	obs.processRawEvent(&rawEvent{Mask: unix.FAN_MOVED_FROM, PID: 1, Path: target}, time.Now())
+	obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), false)
+
+	var got *models.GroundTruthEvent
+	for _, c := range closeEvents(obs) {
+		if c.Target == target {
+			ev := c
+			got = &ev
+		}
+	}
+	if got == nil || got.OutputHash == nil || *got.OutputHash != "sha256:good" {
+		t.Fatalf("close of %s = %+v, want the digest kept", target, got)
+	}
+}
+
+// A rewrite loop: each iteration is open, write, close. The earlier closes are
+// superseded and carry no hash, and the last close, with nothing after it,
+// keeps its digest. This is the shape of the e2e raced-rewrite test.
+func TestObserver_RewriteLoopHashesOnlyTheLastClose(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "loop.txt")
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "sha256:final", nil })
+	for i := 0; i < 5; i++ {
+		obs.processRawEvent(&rawEvent{Mask: unix.FAN_OPEN, PID: 1, Path: target}, time.Now())
+		obs.processRawEvent(&rawEvent{Mask: unix.FAN_MODIFY, PID: 1, Path: target}, time.Now())
+		obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: 1, Path: target}, time.Now())
+	}
+	obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), false)
+
+	closes := closeEvents(obs)
+	if len(closes) != 5 {
+		t.Fatalf("expected 5 FileClose events, got %d", len(closes))
+	}
+	hashes := 0
+	for i, c := range closes {
+		if c.OutputHash != nil {
+			hashes++
+			if i != len(closes)-1 {
+				t.Errorf("close %d carried a hash but was not the last", i)
+			}
+		}
+	}
+	if hashes != 1 {
+		t.Errorf("%d closes carried a hash, want only the last", hashes)
 	}
 }

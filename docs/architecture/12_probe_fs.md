@@ -35,10 +35,10 @@ fanotify through `golang.org/x/sys/unix`, in notification class (`FAN_CLASS_NOTI
 
 A `file_open` gets an `InputHash` from `lookupShadowHash`: the last settled hash for the path, else the hash for the file's device and inode (which survives a rename), else the SHA-256 of empty content.
 
-A `file_close` goes through a settle protocol so its `OutputHash` reflects the file's content after the write burst ends:
+A `file_close` goes through a settle protocol so its `OutputHash` is the content the close described and not a state a later write left behind:
 
-1. `registerClose` makes the close the pending one for its path and opens an `O_PATH` fd from its handle. If a close was already pending for that path, the older one is emitted at once with no `OutputHash`, because a newer close proves it was not final.
-2. `resolveSettled` runs after every wakeup. It hashes a pending close only if it is still the current entry for its path and the path has had no write-class event for `settleQuietWindow` (20 ms).
+1. `registerClose` makes the close the pending one for its path, records the path's write generation (`pendingClose.gen`, taken after the close's own event bumped it) and opens an `O_PATH` fd from its handle. If a close was already pending for that path, the older one is emitted at once with no `OutputHash`, because a newer close proves it was not final.
+2. `resolveSettled` runs after every wakeup. It hashes a pending close only if it is still the current entry for its path, the path has had no write-class event for `settleQuietWindow` (20 ms), and the path's generation is still the one recorded at registration. A write-class event after the close, an open included, means the content the close described may be gone, so the close is published with no `OutputHash` and no read is made (P-16).
 3. `hashSettledFD` snapshots the path's generation, reads the content through the `O_PATH` fd, drains the fanotify queue without blocking, and compares the generation again. A write that completed during the read has its notification already queued, so a changed generation means the read is not trusted and no `OutputHash` is attached (time-of-check to time-of-use protection). A trusted digest updates both shadow maps.
 4. On `Stop`, `flushPendingCloses` resolves every remaining close without the quiet check, since no further write can be observed.
 
@@ -52,7 +52,7 @@ The probe never drops on its own channel: `processRawEvent` and the settle code 
 
 ## Known limits
 
-- The `OutputHash` is computed in userspace after the close, so a write that lands between the close and the read, outside the generation check's window, can still make the hash describe later content.
+- The `OutputHash` is computed in userspace after the close, so a write that lands between the close and the read, outside the generation check's window, can still make the hash describe later content. The probe errs towards publishing no hash: any open of the path after the close drops it, including a plain read, so a file read within the settle window of being written is published without a hash.
 - Writes through a shared `mmap` do not raise `FAN_MODIFY`.
 - `FAN_ACCESS` and `FAN_CLOSE_NOWRITE` are not in the mask, so reads are invisible beyond the open and the probe never emits `file_read`.
 - Attribute and permission changes are not watched.

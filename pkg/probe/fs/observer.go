@@ -138,6 +138,11 @@ type pendingClose struct {
 	pid       uint32
 	ambiguous bool
 	pathFD    int
+	// gen is the path's write generation when this close was registered, after
+	// the close's own event bumped it. A later write-class event on the path
+	// (an open that may have truncated it, a modify) changes the generation, and
+	// then the content this close described may be gone: see resolveSettled.
+	gen uint64
 }
 
 // New creates an Observer. The caller must call Start to begin receiving
@@ -549,7 +554,7 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 	} else if o.mountFD == -1 {
 		pathFD, _ = unix.Open(path, unix.O_RDONLY|unix.O_PATH, 0)
 	}
-	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD}
+	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path]}
 	o.mu.Unlock()
 
 	if existed {
@@ -599,8 +604,16 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 		settled := ok && current == entry
 		quiet := force || time.Since(o.lastWriteAt[path]) >= o.settleDelay
 		var pathFD int
+		var changed bool
 		if settled && quiet {
 			pathFD = entry.pathFD
+			// A write-class event after this close was registered means the
+			// content it described may no longer be there. An open is such an
+			// event because open(O_TRUNC) truncates and fanotify cannot say
+			// which flags an open had. Quiet time does not help: a writer
+			// stalled between the truncate and its write leaves the path quiet
+			// while the file is empty, and a read then would be trusted.
+			changed = o.pathGeneration[path] != entry.gen
 			delete(o.pendingCloses, path)
 		}
 		o.mu.Unlock()
@@ -609,7 +622,11 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 			continue
 		}
 
-		digest, ok := o.hashSettledFD(path, buf, pathFD)
+		var digest string
+		hashed := false
+		if !changed {
+			digest, hashed = o.hashSettledFD(path, buf, pathFD)
+		}
 		if pathFD >= 0 {
 			_ = unix.Close(pathFD)
 		}
@@ -617,15 +634,15 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 			Timestamp:  entry.ts,
 			ActionType: models.FileClose,
 			Target:     path,
-			// OutputHash left nil below when hashing failed, or a write
-			// raced in during the read itself (hashSettled's own check);
-			// a write landing before this point would instead have gone
-			// through registerClose's supersession above, or held this
-			// close back via the quiet check.
+			// OutputHash left nil below when hashing failed, when a
+			// write-class event followed this close (changed), or when a
+			// write raced in during the read itself (hashSettled's own
+			// check). A newer close would instead have gone through
+			// registerClose's supersession above.
 			PathIsAmbiguous: entry.ambiguous,
 			PID:             entry.pid,
 		}
-		if ok {
+		if hashed {
 			event.OutputHash = &digest
 		}
 		o.events <- event
