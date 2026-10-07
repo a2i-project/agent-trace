@@ -10,11 +10,16 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
   * the home directory becomes /home/user and each run's workspace becomes
     /ws/<label>, so the baseline's workspace placeholder is exercised;
   * the snapshot-creation command keeps its first line, with its per-run id
-    intact, and loses the script body.
+    intact, and loses the script body. The body differs with the enabled tool
+    set, so a reduced fixture cannot show that a baseline is tied to one.
 
 Ground truth events, pids, timestamps and coverage are kept as captured.
 
-    scripts/make-capture-fixture.py CAPTURE_DIR OUTPUT_DIR
+    scripts/make-capture-fixture.py CAPTURE_DIR OUTPUT_DIR [TASK_LABEL]
+
+TASK_LABEL is the task run's label (basic captures use `task`, which is the
+default; the parallel task uses `parallel`). Subagent transcripts, when the
+capture has them, are reduced the same way.
 """
 import json
 import os
@@ -22,9 +27,10 @@ import re
 import sys
 
 capture, out = sys.argv[1], sys.argv[2]
+task = sys.argv[3] if len(sys.argv) > 3 else "task"
 os.makedirs(out, exist_ok=True)
 home = os.path.expanduser("~")
-labels = ["task", "control-1", "control-2", "control-3"]
+labels = [task, "control-1", "control-2", "control-3"]
 
 
 def rewrite(s, label):
@@ -51,31 +57,44 @@ for label in labels:
         json.dump(g, f, indent=1)
         f.write("\n")
 
-kept = []
-with open(os.path.join(capture, "task.session.jsonl")) as f:
-    for line in f:
-        o = json.loads(line)
-        m = o.get("message")
-        if not isinstance(m, dict) or not isinstance(m.get("content"), list):
-            continue
-        blocks = [b for b in m["content"] if b.get("type") in ("tool_use", "tool_result")]
-        if not blocks:
-            continue
-        slim = []
-        for b in blocks:
-            if b["type"] == "tool_use":
-                slim.append({"type": "tool_use", "id": b["id"], "name": b["name"], "input": b["input"]})
-            else:
-                slim.append({"type": "tool_result", "tool_use_id": b["tool_use_id"], "content": "(elided)"})
-        rec = {"type": o["type"], "timestamp": o["timestamp"], "sessionId": "00000000-0000-0000-0000-000000000000",
-               "version": o.get("version", ""), "message": {"id": m.get("id", ""), "role": m.get("role", ""), "content": slim}}
-        tr = o.get("toolUseResult")
-        if isinstance(tr, dict) and "type" in tr:
-            rec["toolUseResult"] = {"type": tr["type"]}
-        elif tr is not None:
-            rec["toolUseResult"] = {}
-        kept.append(json.loads(rewrite(json.dumps(rec), "task")))
-with open(os.path.join(out, "task.session.jsonl"), "w") as f:
-    for r in kept:
-        f.write(json.dumps(r) + "\n")
-print("wrote", out, "with", len(kept), "transcript records")
+def reduce_transcript(src, dst):
+    kept = []
+    with open(src) as f:
+        for line in f:
+            o = json.loads(line)
+            m = o.get("message")
+            if not isinstance(m, dict) or not isinstance(m.get("content"), list):
+                continue
+            blocks = [b for b in m["content"] if b.get("type") in ("tool_use", "tool_result")]
+            if not blocks:
+                continue
+            slim = []
+            for b in blocks:
+                if b["type"] == "tool_use":
+                    slim.append({"type": "tool_use", "id": b["id"], "name": b["name"], "input": b["input"]})
+                else:
+                    slim.append({"type": "tool_result", "tool_use_id": b["tool_use_id"], "content": "(elided)"})
+            rec = {"type": o["type"], "timestamp": o["timestamp"], "sessionId": "00000000-0000-0000-0000-000000000000",
+                   "version": o.get("version", ""), "message": {"id": m.get("id", ""), "role": m.get("role", ""), "content": slim}}
+            if o.get("isSidechain"):
+                rec["isSidechain"] = True
+            tr = o.get("toolUseResult")
+            if isinstance(tr, dict) and "type" in tr:
+                rec["toolUseResult"] = {"type": tr["type"]}
+            elif tr is not None:
+                rec["toolUseResult"] = {}
+            kept.append(json.loads(rewrite(json.dumps(rec), task)))
+    os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+    with open(dst, "w") as f:
+        for r in kept:
+            f.write(json.dumps(r) + "\n")
+    return len(kept)
+
+
+n = reduce_transcript(os.path.join(capture, task + ".session.jsonl"), os.path.join(out, task + ".session.jsonl"))
+sub = os.path.join(capture, task + ".session", "subagents")
+if os.path.isdir(sub):
+    for name in sorted(os.listdir(sub)):
+        if name.endswith(".jsonl"):
+            n += reduce_transcript(os.path.join(sub, name), os.path.join(out, task + ".session", "subagents", name))
+print("wrote", out, "with", n, "transcript records")

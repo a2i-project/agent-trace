@@ -41,7 +41,7 @@ A faithful verdict says that the agent's top-level claims are true and that noth
 | Harness baseline from control runs (`baseline`) | done, measured for Claude Code 2.1.286 |
 | Attack generator suite | planned |
 
-The verifier is tested against a simulated agent (`cmd/simagent`) and against one real paired capture of Claude Code 2.1.286 (a five-step task and three control runs, checked in as a fixture). On that capture an honest trajectory verifies FAITHFUL and six kinds of altered trajectory do not. That is one task on one version on one machine: it shows the pipeline works end to end, and it is not an evaluation. The Gemini adapter has not seen a real capture, and nothing here has been measured on a population of real sessions.
+The verifier is tested against a simulated agent (`cmd/simagent`) and against two real paired captures of Claude Code 2.1.286 (a five-step task, and a task with parallel reads, a subagent, searches and a web fetch, each with three control runs, checked in as fixtures). On both, an honest trajectory verifies FAITHFUL and the altered ones do not. That is two short tasks on one version on one machine: it shows the pipeline works end to end, and it is not an evaluation. The Gemini adapter has not seen a real capture, and nothing here has been measured on a population of real sessions.
 
 ## Requirements
 
