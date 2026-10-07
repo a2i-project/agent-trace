@@ -27,9 +27,24 @@ type capture struct {
 	label string
 }
 
-var captures = []capture{
+// captures lists the checked-in real captures. A capture whose fixture
+// directory is absent is left out, so a larger one (the project task of
+// scripts/capture-claude-code.sh, turned into a fixture with
+// scripts/make-capture-fixture.py) joins the evaluation as soon as it is added.
+var captures = existing([]capture{
 	{"basic", "../agent/claudecode/testdata/paired-2.1.286", "task"},
 	{"parallel", "../agent/claudecode/testdata/paired-2.1.286-parallel", "parallel"},
+	{"project", "../agent/claudecode/testdata/paired-2.1.286-project", "project"},
+})
+
+func existing(cs []capture) []capture {
+	var out []capture
+	for _, c := range cs {
+		if _, err := os.Stat(c.dir); err == nil {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func loadRun(t *testing.T, c capture, label string) models.GroundTruthFile {

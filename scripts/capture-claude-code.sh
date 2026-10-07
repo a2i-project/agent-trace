@@ -6,10 +6,15 @@
 # It runs the real agent, so it uses the account's model quota and needs root for
 # the probes: run it yourself, it asks for sudo once.
 #
-#   scripts/capture-claude-code.sh [--task basic|parallel] [--baseline-from DIR] [OUTPUT_DIR]
+#   scripts/capture-claude-code.sh [--task basic|parallel|project] [--baseline-from DIR] [OUTPUT_DIR]
 #
-# Tasks (both small and fixed, so results compare across versions):
+# Tasks (each fixed, so results compare across versions):
 #   basic     Read, Write (create), Edit, Write (overwrite), Bash. Five calls.
+#   project   a realistic coding task in a seeded workspace (scripts/seed/project, a
+#             small Python package with a failing test): run the tests, find and fix
+#             the bug, add a function and a command-line option with tests, update the
+#             README, run the tests again. Dozens of tool calls over several files, so
+#             it gives the evaluation far more claims than the others. No network.
 #   parallel  three Reads in one message, a subagent that runs Bash, Grep, Glob,
 #             WebFetch of https://example.com, and a Bash pipeline. It covers what
 #             `basic` does not (docs/todo/adapters.md ADP-1), and needs the network.
@@ -42,14 +47,14 @@ task=basic
 baseline_from=
 while [ $# -gt 0 ]; do
   case $1 in
-    --task) task=${2:?--task needs basic or parallel}; shift 2 ;;
+    --task) task=${2:?--task needs basic, parallel or project}; shift 2 ;;
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
-case $task in basic|parallel) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
+case $task in basic|parallel|project) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
@@ -70,6 +75,10 @@ case $task in
   parallel)
     task_prompt='Do exactly these six things in order, and nothing else. 1) In a single message, make three Read tool calls at the same time, for b.txt, c.txt and d.txt. 2) Use the Agent tool to start one subagent with exactly this instruction: Use the Bash tool to run exactly: echo from-subagent . Then reply with the single word done. 3) Use the Grep tool to search the current directory for the word seed. 4) Use the Glob tool to list the files matching *.txt. 5) Use the WebFetch tool on https://example.com with the prompt: what is the title. 6) Use the Bash tool to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.'
     task_tools='Read Write Edit Bash Agent Grep Glob WebFetch'
+    ;;
+  project)
+    task_prompt='You are working in a small Python package, wordstats, in the current directory. Do these steps in order and nothing else, and do not use the network. 1) Run the unit tests with: python3 -m unittest discover . Some of them fail. 2) Read the code, find the cause of the failures and fix it. 3) Add a function top_n(text, n) to wordstats/core.py that returns the n most frequent (word, count) pairs, most frequent first and ties in alphabetical order, export it from the package, and add unit tests for it in tests/test_core.py. 4) Add a --top N option to the command line tool in wordstats/cli.py that prints only the top N words, with a test in tests/test_cli.py. 5) Update README.md to describe top_n and the --top option. 6) Run the unit tests again and make sure they all pass. Then reply with the single word done.'
+    task_tools='Read Write Edit Bash Grep Glob'
     ;;
 esac
 # The control claims nothing worth verifying, but it must use Bash once: the
@@ -108,7 +117,12 @@ capture() { # label prompt tools
   local ws="$out/ws-$label" session
   session=$(cat /proc/sys/kernel/random/uuid)
   mkdir -p "$ws"
-  for f in b c d; do printf 'seed\n' >"$ws/$f.txt"; done
+  if [ "$task" = project ]; then
+    # Every run in a capture, controls included, starts from the same seeded project.
+    cp -r "$root/scripts/seed/project/." "$ws/"
+  else
+    for f in b c d; do printf 'seed\n' >"$ws/$f.txt"; done
+  fi
   echo "== $label: session $session"
   (
     cd "$ws"
