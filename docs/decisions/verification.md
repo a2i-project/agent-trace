@@ -170,6 +170,14 @@ Decision: The code reads nil as the strict reading: every field is expressible. 
 Consequences: Correct for `simagent`, which can state every field. A caller that invokes `Verify` directly for a real agent without a declaration gets false opt-out findings.
 Alternatives rejected: Not recorded at the time.
 
+### V-22: A stated value the probe did not capture is unverified, and FAITHFUL is not asserted over it
+Status: Accepted, implemented (`unverifiedFields`, `Edit.Unverified`, `Verdict.Unverified`, the outcome rule in `Verify`).
+Date: 2026-10-08 (security review of the verifier).
+Context: V-20 reads a nil on the observed side as agreement, because a missing capture cannot disprove a claim. The fs probe publishes a close without a hash whenever a write-class event, an open included, follows it within the settle window (P-16), and nothing counts that. An agent that reads its file back right after writing it therefore made the probe drop the hash, and any claimed content was then corroborated (**Verified**: `TestPairedWriteWithoutAnObservedHashIsInconclusive` verified FAITHFUL with a false hash before the change).
+Decision: A pair whose claim states `output_hash` (on `file_close` or `file_write`), `exit_code` (on `process_exit`) or `request_hash` (on `net_request`) and whose observed event does not carry it is corroborated and listed as unverified, with the fields named. It is not a finding, since a probe gap is not the agent's doing. With no finding, the outcome is INCONCLUSIVE with the fields and counts as the reason. `Expresses` is not consulted: the claim did state the value.
+Consequences: Content verification can no longer be switched off by the agent; it can only be made inconclusive, which the report says. An honest run whose probe dropped a hash is INCONCLUSIVE rather than FAITHFUL, the same reading as event loss. `input_hash` is not tracked, because the fs probe stamps every open with one. The fs probe still has no counter for hashless closes, so `watch` cannot warn at capture time (an open item).
+Alternatives rejected: Reporting the pair as a mismatch (it punishes an honest agent for a probe gap, and under loss findings are advisory anyway); keeping the pair silent (the attack above).
+
 ## Superseded
 
 ### F0.2-F0.3: Timestamp-window matcher

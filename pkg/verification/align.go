@@ -83,6 +83,11 @@ type Edit struct {
 	// observed action falls outside it. A finding about the claim, not a
 	// reason to refuse the pair (V6).
 	OutsideInterval bool
+	// Unverified names the content fields the claim states and the observed
+	// event does not carry, so the pair could be neither confirmed nor
+	// refuted on them. Not a finding; it keeps FAITHFUL from being asserted
+	// (V-22).
+	Unverified []string
 }
 
 // DiffType is reported when a substitution crosses action types within a lane,
@@ -276,6 +281,7 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 				ed.Kind, ed.Diffs = EditSubstitution, diffs
 			}
 			ed.OutsideInterval = outsideInterval(c, e, opts.IntervalSlack)
+			ed.Unverified = unverifiedFields(c, e)
 			rev = append(rev, ed)
 			i--
 			j--

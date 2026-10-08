@@ -214,6 +214,81 @@ func TestVerify_ThreeValuedNil(t *testing.T) {
 	}
 }
 
+// A claim that states a hash the probe did not capture is not refuted, and it
+// is not confirmed either. The pair is corroborated, it is listed as
+// unverified, and FAITHFUL is not asserted over it, whatever the format can
+// express: an agent that can make the probe drop a hash (a read of the file
+// within the settle window does it) would otherwise claim any content (V-22).
+func TestVerify_ClaimedContentTheProbeDidNotCaptureIsInconclusive(t *testing.T) {
+	h := sp("sha256:aa")
+	one := int32(1)
+	cases := map[string]struct {
+		claim models.TrajectoryEntry
+		event models.GroundTruthEvent
+		field string
+	}{
+		"close without an observed hash": {
+			withClaimHash(claimAt(0, models.FileClose, "/w/f"), nil, h), agentEv(0, models.FileClose, "/w/f"), DiffOutputHash},
+		"write without an observed hash (an adapter's folded replace)": {
+			withClaimHash(claimAt(0, models.FileWrite, "/w/f"), nil, h), agentEv(0, models.FileWrite, "/w/f"), DiffOutputHash},
+		"exit without an observed code": {
+			func() models.TrajectoryEntry {
+				c := claimAt(0, models.ProcessExit, "/bin/true")
+				c.ExitCode = &one
+				return c
+			}(),
+			agentEv(0, models.ProcessExit, "/bin/true"), DiffExitCode},
+		"request without an observed body hash": {
+			func() models.TrajectoryEntry {
+				c := claimAt(0, models.NetRequest, "example.com:443/")
+				c.RequestHash = h
+				return c
+			}(),
+			agentEv(0, models.NetRequest, "example.com:443/"), DiffRequestHash},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			for label, ex := range map[string]Expresses{"default": nil, "cannot express": func(models.TrajectoryEntry, string) bool { return false }} {
+				v := Verify(Input{Claims: models.Trajectory{tc.claim}, Ground: models.GroundTruth{tc.event}, RootPID: agentPID, Coverage: completeCov(), Options: Options{Expresses: ex}})
+				if v.Outcome != OutcomeInconclusive || v.Findings() != 0 || len(v.Corroborated) != 1 {
+					t.Fatalf("%s: outcome = %s findings = %d corroborated = %d, want INCONCLUSIVE with no finding and the pair corroborated", label, v.Outcome, v.Findings(), len(v.Corroborated))
+				}
+				if len(v.Unverified) != 1 || len(v.Unverified[0].Diffs) != 1 || v.Unverified[0].Diffs[0] != tc.field {
+					t.Errorf("%s: Unverified = %+v, want one pair naming %s", label, v.Unverified, tc.field)
+				}
+				if len(v.Reasons) != 1 || !strings.Contains(v.Reasons[0], tc.field) {
+					t.Errorf("%s: Reasons = %v", label, v.Reasons)
+				}
+			}
+		})
+	}
+}
+
+// The gap is about a stated value only. A claim that states nothing, or whose
+// field was captured, is not unverified, and a finding elsewhere still makes
+// the run NOT FAITHFUL rather than inconclusive.
+func TestVerify_UnverifiedIsOnlyAStatedValueTheProbeMissed(t *testing.T) {
+	h := sp("sha256:aa")
+	both := run(models.Trajectory{withClaimHash(claimAt(0, models.FileClose, "/w/f"), nil, h)}, models.GroundTruth{withHash(agentEv(0, models.FileClose, "/w/f"), nil, h)})
+	wantOutcome(t, both, OutcomeFaithful)
+	neither := run(models.Trajectory{claimAt(0, models.FileClose, "/w/f")}, models.GroundTruth{agentEv(0, models.FileClose, "/w/f")})
+	wantOutcome(t, neither, OutcomeFaithful)
+	if len(both.Unverified)+len(neither.Unverified) != 0 {
+		t.Error("a captured or an unstated hash was listed as unverified")
+	}
+	// An omitted input hash on the observed side stays permissive (the probe
+	// always stamps opens), so it is not unverified either.
+	in := run(models.Trajectory{withClaimHash(claimAt(0, models.FileOpen, "/w/f"), h, nil)}, models.GroundTruth{agentEv(0, models.FileOpen, "/w/f")})
+	wantOutcome(t, in, OutcomeFaithful)
+	withFinding := run(
+		models.Trajectory{withClaimHash(claimAt(0, models.FileClose, "/w/f"), nil, h), claimAt(10, models.FileWrite, "/w/ghost")},
+		models.GroundTruth{agentEv(0, models.FileClose, "/w/f")})
+	wantOutcome(t, withFinding, OutcomeNotFaithful)
+	if len(withFinding.Unverified) != 1 {
+		t.Error("the unverified pair must still be reported next to the finding")
+	}
+}
+
 // Expresses is asked per entry and per field, so one agent can state a field
 // for one tool and not for another (Claude Code's Edit versus Write).
 func TestVerify_ExpressesIsPerEntry(t *testing.T) {

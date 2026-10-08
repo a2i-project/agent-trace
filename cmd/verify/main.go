@@ -183,6 +183,7 @@ func report(w io.Writer, r reportInput) {
 	p("  Unwitnessed:  %d  (claimed by the agent, never observed)\n", len(v.Unwitnessed))
 	p("  Unrecorded:   %d  (observed at the top level, never claimed)\n", len(v.Unrecorded))
 	p("  Outside interval: %d  (observed outside the claimed interval)\n", len(v.OutsideInterval))
+	p("  Unverified:   %d  (claimed content the probe did not capture: neither confirmed nor refuted)\n", len(v.Unverified))
 	if v.Ambiguous {
 		p("  note: more than one alignment is equally good, so the position a finding points at is one of several\n")
 	}
@@ -202,6 +203,7 @@ func report(w io.Writer, r reportInput) {
 	printSubtrees(w, c.UnexplainedSubtrees)
 	printPairs(w, "Mismatched", v.Mismatched)
 	printPairs(w, "Outside interval", v.OutsideInterval)
+	printPairs(w, "Unverified", v.Unverified)
 	printEvents(w, "Capability", v.Capability)
 	printCompleteness(w, v.Completeness)
 

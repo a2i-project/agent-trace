@@ -1,6 +1,6 @@
 # Verifier
 
-Checked against commit d1276ff on 2026-10-07.
+Checked against commit 726c907 on 2026-10-08, with the changes in the commit that introduced V-22.
 
 ## Objective
 
@@ -60,13 +60,13 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 5. **Baseline subtraction.** `Partition.SubtractBaseline(b)` drops level-0 events the baseline recognises and marks a command whose exec it recognises (`Command.Baseline`), removing that command's exec and exit from `Observed`. It copies rather than mutates and must run before alignment, or harness activity would read as an omission.
 6. **Exit handling.** With `IgnoreExits`, `Partition.DropExits` removes exits from `Observed` and `process_exit` claims are dropped. `Command.Exit` is kept.
 7. **Alignment.** `Align(claims, Observed, opts)` groups both sides by lane (`LaneOf`): `fs` (file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_dns`, `net_connect`), and `other`. Lanes are aligned independently, in sorted lane order. Within a lane the claims keep their order and events keep time order. Costs: match 0, same-type substitution 2, cross-type substitution 3 (diff `action_type`), insertion or deletion 2. A substitution therefore always beats an adjacent insertion plus deletion (4), so no tie exists between the two readings. The dynamic program counts minimum-cost alignments (`LaneAlignment.Optimal`, saturating); more than one sets `Ambiguous`. Traceback prefers pair, then insertion, then deletion. A lane over `maxCells` returns `ErrTooLarge`.
-8. **Pair comparison.** `pairCost` compares a claim and an event. The target is compared with `matching.TargetsMatch`: file types compare `filepath.Clean` of both paths, and accept an observed directory as covering a claimed file only when the event has `PathIsAmbiguous` set (a fanotify record that lost its name); every other type requires exact string equality. Content is compared by `contentDiffs` only when the types agree (below). Each pair also gets `OutsideInterval` when the claim has an `End` and the event's timestamp lies outside `[Timestamp - slack, End + slack]`.
+8. **Pair comparison.** `pairCost` compares a claim and an event. The target is compared with `matching.TargetsMatch`: file types compare `filepath.Clean` of both paths, and accept an observed directory as covering a claimed file only when the event has `PathIsAmbiguous` set (a fanotify record that lost its name); every other type requires exact string equality. Content is compared by `contentDiffs` only when the types agree (below). Each pair also gets `OutsideInterval` when the claim has an `End` and the event's timestamp lies outside `[Timestamp - slack, End + slack]`, and `Unverified` naming the content fields the claim states and the event does not carry (`unverifiedFields`: `output_hash` on `file_close` and `file_write`, `exit_code` on `process_exit`, `request_hash` on `net_request`).
 9. **Coverage.** `CheckCoverage(part, alignments)` marks every observed event paired by a match or substitution. Unpaired events become `UnexplainedActions`. For each command: a baseline command adds its content to `Baselined`; a command whose exec was paired adds its content to `Explained`; a command with no exec, no exit and no content is `Quiet`; anything else is an `UnexplainedSubtrees` entry. A substituted claim still explains its subtree.
 10. **Outcome** (below).
 
 ### Content comparison and the three-valued nil
 
-`contentDiffs` compares `input_hash`, `output_hash`, `exit_code` and `request_hash`. A nil on either side normally agrees, because a missing capture cannot disprove a claim. Three fields are strict: `output_hash` on `file_close`, `exit_code` on `process_exit` and `request_hash` on `net_request`. For those, a nil claim against a non-nil observation is a mismatch when `Expresses(entry, field)` says the format could have stated it. So a nil means one of three things: the probe captured nothing (benefit of the doubt), the format cannot state the field (no finding), or the agent opted out of a check it could have passed (finding). `input_hash` stays permissive in all cases.
+`contentDiffs` compares `input_hash`, `output_hash`, `exit_code` and `request_hash`. A nil on either side normally agrees, because a missing capture cannot disprove a claim. A nil on the observed side against a stated claim does not confirm it either: the pair is corroborated and listed in `Unverified`, and with no finding the outcome is INCONCLUSIVE, not FAITHFUL (V-22). The probe can be made to drop a hash (a read of the file within the fs settle window does it), so a stated value the probe did not capture is a gap in the evidence, never a pass. Three fields are strict: `output_hash` on `file_close`, `exit_code` on `process_exit` and `request_hash` on `net_request`. For those, a nil claim against a non-nil observation is a mismatch when `Expresses(entry, field)` says the format could have stated it. So a nil means one of three things: the probe captured nothing (benefit of the doubt), the format cannot state the field (no finding), or the agent opted out of a check it could have passed (finding). `input_hash` stays permissive in all cases.
 
 ### Verdict vocabulary
 
@@ -77,7 +77,7 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 | `EditInsertion` | `Unwitnessed` | Claim with no observed action (P2) |
 | `EditDeletion` | `Unrecorded` | Observed top-level action no claim explains (P1) |
 
-Further lists: `OutsideInterval` (pairs outside their claim interval), `Capability` (unclaimable events, never aligned), `Coverage` (the second check), `Alignments` (the per-lane edit script), `Ambiguous`, `Completeness`, `Reasons`, `Advisory`.
+Further lists: `OutsideInterval` (pairs outside their claim interval), `Unverified` (pairs whose claim states content the probe did not capture, with the fields in `Diffs`), `Capability` (unclaimable events, never aligned), `Coverage` (the second check), `Alignments` (the per-lane edit script), `Ambiguous`, `Completeness`, `Reasons`, `Advisory`.
 
 `Verdict.Findings()` counts `Mismatched`, `Unwitnessed`, `Unrecorded`, `OutsideInterval` and `Coverage.UnexplainedSubtrees`. Outside events, capability events, quiet forks and baselined events are reported and are not findings. `Coverage.UnexplainedActions` holds the same events as `Unrecorded` and is not counted twice.
 
@@ -90,6 +90,7 @@ Further lists: `OutsideInterval` (pairs outside their claim interval), `Capabili
 | Findings > 0 | NOT FAITHFUL; `Advisory` when completeness failed or any event has no pid, with the reasons |
 | No findings, some event has no pid | INCONCLUSIVE |
 | No findings, completeness failed (loss counter or missing coverage record) | INCONCLUSIVE |
+| No findings, some pair is unverified | INCONCLUSIVE, with the fields and counts in the reason |
 | Otherwise | FAITHFUL |
 
 `Outcome.ExitCode()` maps FAITHFUL to 0, NOT FAITHFUL to 1 and INCONCLUSIVE to 2, so a script cannot read INCONCLUSIVE as a pass. `cmd/verify` adds 3 for errors ([40_tools.md](40_tools.md)).
@@ -106,6 +107,7 @@ These hold for the code as built and are pinned by tests in `pkg/verification`:
 - A command nothing claims is an unexplained subtree, including a fork that never exec'd but acted; a fork that did nothing is quiet (`TestVerify_ForkWithoutExecIsAnUnexplainedSubtree`, `TestVerify_QuietForkIsNotAFinding`, `TestVerify_ForkWhoseDescendantActsIsNotQuiet`).
 - Listener and AF_UNIX socket events are capability evidence, never `Unrecorded`, and a claim of one never corroborates (`TestVerify_ListenersAreCapabilityNotUnrecorded`, `TestVerify_ListenerClaimNeverCorroborates`).
 - The baseline subtracts only what it recognises and never mutates its input.
+- A claim that states a hash, an exit code or a request hash the probe did not capture is corroborated and unverified, never FAITHFUL (`TestVerify_ClaimedContentTheProbeDidNotCaptureIsInconclusive`, `TestPairedWriteWithoutAnObservedHashIsInconclusive` in the Claude Code adapter).
 - FAITHFUL requires a coverage record with every loss counter at zero and every event placed. Under loss, findings are kept and marked `Advisory`, since a lost fork record can orphan a subtree and a lost event can read as a fabrication. Which findings survive loss is an open question ([decisions/open.md](../decisions/open.md)).
 
 Claims in the `fs` lane must arrive in the order the kernel reports file events (create as a directory-level record, open, modify, close), because pairing within a lane is positional. `cmd/simagent` and the adapters emit claims in that order; see [12_probe_fs.md](12_probe_fs.md) for the event shapes.
@@ -117,7 +119,8 @@ Claims in the `fs` lane must arrive in the order the kernel reports file events 
 - The `other` lane holds `git_commit`, which no probe produces, so a `git_commit` claim is always `Unwitnessed`.
 - A baseline command explains its entire subtree whatever the subtree did; only the command's exec is matched against the baseline.
 - The proc probe's exit record carries the command line of the process's latest exec, so a level-1 process that execs twice has an exit whose target differs from its first exec's and reads as a substitution on an exit claim ([11_probe_proc.md](11_probe_proc.md)).
-- `input_hash` is compared permissively in every case, so an omitted input hash is never a finding.
+- `input_hash` is compared permissively in every case, so an omitted input hash is never a finding, and it is not tracked as unverified either (the fs probe stamps every open with one).
+- An unverified pair is reported in the verdict but not counted by the fs probe: a close published without a hash is not a coverage counter, so `watch` does not warn about it at capture time.
 - Attribution stops at the tracked tree: an action delegated to a daemon outside it (for example over a Unix socket) is visible only as capability evidence, and its effects are not attributed.
 - `Forest.Orphans` is computed but not used by `Verify`, so an orphaned process is reported only through its events landing in `Outside`.
 - Level-0 actions have no subtree, so their alignment rests on order and content alone, and they share the level with the harness baseline.

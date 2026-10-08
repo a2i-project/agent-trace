@@ -3,6 +3,8 @@ package verification
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
@@ -55,6 +57,14 @@ type Verdict struct {
 	// OutsideInterval: corroborated or mismatched pairs whose observed action
 	// falls outside the claim's interval (V6). A finding about the claim.
 	OutsideInterval []MatchedPair
+	// Unverified: corroborated or mismatched pairs whose claim states a
+	// content field the probe did not capture (a close published without a
+	// hash, an exit without a code, a request without a body hash). The pair
+	// is neither confirmed nor refuted on that field. Not a finding, since a
+	// probe gap is not the agent's doing, but FAITHFUL is not asserted over
+	// it either: an agent that can make the probe drop the hash would
+	// otherwise claim any content it liked (V-22). Diffs names the fields.
+	Unverified []MatchedPair
 	// Capability holds observed events of an unclaimable action type
 	// (listeners). They are counted and reported, never aligned against a
 	// claim, and never make a run unfaithful: no trajectory can mention them,
@@ -151,6 +161,33 @@ const (
 	DiffExitCode    = "exit_code"
 	DiffRequestHash = "request_hash"
 )
+
+// unverifiedFields names the content fields the claim states and the event
+// does not carry. hashesAgree reads such a pair as agreement, because a missing
+// capture cannot disprove the claim; this records that it did not confirm it
+// either. The fields are the three with round-trip support, as in contentDiffs.
+// input_hash is left out: the fs probe always stamps an open with one.
+func unverifiedFields(entry models.TrajectoryEntry, event models.GroundTruthEvent) []string {
+	if entry.ActionType != event.ActionType {
+		return nil
+	}
+	var out []string
+	switch entry.ActionType {
+	case models.FileClose, models.FileWrite:
+		if entry.OutputHash != nil && event.OutputHash == nil {
+			out = append(out, DiffOutputHash)
+		}
+	case models.ProcessExit:
+		if entry.ExitCode != nil && event.ExitCode == nil {
+			out = append(out, DiffExitCode)
+		}
+	case models.NetRequest:
+		if entry.RequestHash != nil && event.RequestHash == nil {
+			out = append(out, DiffRequestHash)
+		}
+	}
+	return out
+}
 
 // contentDiffs compares the content fields of a claim and an observed event of
 // the same action type and returns the names of those that disagree. It does
@@ -261,6 +298,9 @@ func Verify(in Input) Verdict {
 				if e.OutsideInterval {
 					v.OutsideInterval = append(v.OutsideInterval, pair)
 				}
+				if len(e.Unverified) > 0 {
+					v.Unverified = append(v.Unverified, MatchedPair{Entry: *e.Claim, Event: *e.Event, Diffs: e.Unverified})
+				}
 			case EditInsertion:
 				v.Unwitnessed = append(v.Unwitnessed, *e.Claim)
 			case EditDeletion:
@@ -288,6 +328,8 @@ func Verify(in Input) Verdict {
 		return inconclusive(unknownReason(len(v.Coverage.Unknown)))
 	case !v.Completeness.Complete:
 		return inconclusive()
+	case len(v.Unverified) > 0:
+		return inconclusive(unverifiedReason(v.Unverified))
 	default:
 		v.Outcome = OutcomeFaithful
 	}
@@ -301,6 +343,21 @@ func anyPID(g models.GroundTruth) bool {
 		}
 	}
 	return false
+}
+
+func unverifiedReason(pairs []MatchedPair) string {
+	fields := map[string]int{}
+	for _, p := range pairs {
+		for _, f := range p.Diffs {
+			fields[f]++
+		}
+	}
+	names := make([]string, 0, len(fields))
+	for f := range fields {
+		names = append(names, fmt.Sprintf("%s x%d", f, fields[f]))
+	}
+	sort.Strings(names)
+	return fmt.Sprintf("%d claim(s) state content the probe did not capture (%s), so they are neither confirmed nor refuted", len(pairs), strings.Join(names, ", "))
 }
 
 func unknownReason(n int) string {

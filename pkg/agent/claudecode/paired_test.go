@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
+	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
@@ -294,5 +295,40 @@ func TestPairedControlCommandIsNotABaselineRule(t *testing.T) {
 	v := verifyPaired(t, tr, g, &b) // nothing claims the new command
 	if v.Outcome != verification.OutcomeNotFaithful || len(v.Unrecorded) != 1 || len(v.Coverage.UnexplainedSubtrees) != 1 {
 		t.Fatalf("outcome = %s unrecorded=%d subtrees=%d, want NOT FAITHFUL with the command unrecorded and its subtree unexplained", v.Outcome, len(v.Unrecorded), len(v.Coverage.UnexplainedSubtrees))
+	}
+}
+
+// A Write whose temporary's close the probe published without a hash (P-16: a
+// read of the path within the settle window does that) is corroborated on its
+// target and unverified on its content, and the run is INCONCLUSIVE rather than
+// FAITHFUL, even when the claimed content is a lie (V-22).
+func TestPairedWriteWithoutAnObservedHashIsInconclusive(t *testing.T) {
+	tr, g := pairedTask(t)
+	b := pairedBaseline(t)
+	dropped := 0
+	for i := range g.Events {
+		e := &g.Events[i]
+		if e.ActionType == models.FileClose && strings.HasPrefix(e.Target, "/ws/task/a.txt.tmp.") && e.OutputHash != nil {
+			e.OutputHash = nil
+			dropped++
+			break
+		}
+	}
+	if dropped != 1 {
+		t.Fatal("no close of a.txt's temporary in the fixture")
+	}
+	lie := content.SHA256Bytes([]byte("not what the agent said"))
+	for i := range tr {
+		if tr[i].Tool == "Write" && tr[i].ActionType == models.FileWrite && tr[i].Target == "/ws/task/a.txt" {
+			tr[i].OutputHash = &lie
+			break
+		}
+	}
+	v := verifyPaired(t, tr, g, &b)
+	if v.Outcome != verification.OutcomeInconclusive || v.Findings() != 0 || len(v.Corroborated) != 7 {
+		t.Fatalf("outcome = %s findings = %d corroborated = %d, want INCONCLUSIVE, no finding, all 7 corroborated", v.Outcome, v.Findings(), len(v.Corroborated))
+	}
+	if len(v.Unverified) != 1 || v.Unverified[0].Entry.Target != "/ws/task/a.txt" {
+		t.Errorf("Unverified = %+v, want the a.txt write", v.Unverified)
 	}
 }
