@@ -15,21 +15,40 @@ import (
 
 const snapshotMarker = "shell-snapshots/snapshot-"
 
+// wrapperHead is everything a Claude Code wrapper says before the eval word:
+// the shell, `-c` with an optional `-l`, the snapshot source and a preamble of
+// known clauses. The id patterns are the raw ones (canonicalIDs runs later),
+// because the payload itself must not be rewritten. A preamble clause not in
+// the allowlist, any other program, or anything after the suffix means the
+// line is not the wrapper, and the command is not recovered.
+var wrapperHead = regexp.MustCompile(
+	`^(?:/bin/bash|/usr/bin/bash|/bin/zsh|/usr/bin/zsh|/bin/sh|/usr/bin/sh) -c (?:-l )?` +
+		`source \S+/\.claude/shell-snapshots/snapshot-bash-\d+-[0-9a-z]+\.sh 2>/dev/null \|\| true` +
+		`(?: && (?:shopt -u extglob 2>/dev/null \|\| true|\{ \\builtin unalias -- '[^']*'; \\builtin unset -f -- '[^']*'; \} >/dev/null 2>&1 \|\| true))*` +
+		` && eval `)
+
+// wrapperTail is what follows the eval word, to the end of the line.
+var wrapperTail = regexp.MustCompile(`^ < /dev/null && pwd -P >\| /tmp/claude-[0-9a-z]+-cwd$`)
+
 // evalPayload recovers the command from an observed wrapper command line. ok is
-// false when the line is not a Claude Code wrapper or the payload cannot be
-// parsed, in which case the caller leaves the line alone: a line that does not
-// normalize shows up as a mismatch rather than being guessed at.
+// false when the line is not exactly a Claude Code wrapper around one eval
+// word, in which case the caller leaves the line alone: a line that does not
+// normalize shows up as a mismatch rather than being guessed at. Checking the
+// whole shape matters: a wrapper with a command appended after the suffix, or
+// run before the source, or a different program that merely contains the
+// marker, would otherwise normalize to the claimed command and hide the rest
+// (I-26).
 func evalPayload(line string) (payload string, ok bool) {
 	if !strings.Contains(line, snapshotMarker) {
 		return "", false
 	}
-	const needle = "&& eval "
-	i := strings.Index(line, needle)
-	if i < 0 {
+	loc := wrapperHead.FindStringIndex(line)
+	if loc == nil {
 		return "", false
 	}
-	word, ok := shellWord(line[i+len(needle):])
-	if !ok {
+	rest := line[loc[1]:]
+	word, n, ok := shellWord(rest)
+	if !ok || !wrapperTail.MatchString(rest[n:]) {
 		return "", false
 	}
 	return word, true
@@ -37,8 +56,9 @@ func evalPayload(line string) (payload string, ok bool) {
 
 // shellWord reads one word from the start of s the way a POSIX shell would,
 // undoing single quotes, double quotes and backslash escapes, and stopping at
-// the first unquoted blank. It reports false for an unterminated quote.
-func shellWord(s string) (string, bool) {
+// the first unquoted blank. It returns the word and how many bytes of s it
+// spans, and reports false for an unterminated quote.
+func shellWord(s string) (string, int, bool) {
 	var b strings.Builder
 	i := 0
 	for i < len(s) {
@@ -46,13 +66,13 @@ func shellWord(s string) (string, bool) {
 		switch c {
 		case ' ', '\t', '\n':
 			if i == 0 {
-				return "", false
+				return "", 0, false
 			}
-			return b.String(), true
+			return b.String(), i, true
 		case '\'':
 			j := strings.IndexByte(s[i+1:], '\'')
 			if j < 0 {
-				return "", false
+				return "", 0, false
 			}
 			b.WriteString(s[i+1 : i+1+j])
 			i += j + 2
@@ -76,11 +96,11 @@ func shellWord(s string) (string, bool) {
 				i++
 			}
 			if !closed {
-				return "", false
+				return "", 0, false
 			}
 		case '\\':
 			if i+1 >= len(s) {
-				return "", false
+				return "", 0, false
 			}
 			if s[i+1] != '\n' {
 				b.WriteByte(s[i+1])
@@ -92,9 +112,9 @@ func shellWord(s string) (string, bool) {
 		}
 	}
 	if b.Len() == 0 {
-		return "", false
+		return "", 0, false
 	}
-	return b.String(), true
+	return b.String(), len(s), true
 }
 
 // The harness's own commands name a per-session snapshot file and a per-call

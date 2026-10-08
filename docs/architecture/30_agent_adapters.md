@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit d1276ff on 2026-10-07.
+Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commit that introduced I-26.
 
 ## Objective
 
@@ -97,7 +97,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 |---|---|
 | `Process` | `ShellPerCommand: true`, `SubagentsInProcess: true`, `IntervalDecision`, `Parallel`, `ExitsClaimed: false` |
 | `Expresses` | `exit_code`: never. `request_hash`: never. `output_hash`: only for `Tool == "Write"`. Other fields: yes. |
-| `Normalize` | For `process_exec` and `process_exit`, if the target contains `shell-snapshots/snapshot-` and `&& eval `, replaces it with the eval payload read as one POSIX shell word (`evalPayload`). Otherwise it replaces the per-run ids (snapshot file, working-directory file, heredoc delimiter) with fixed tokens (I-23) and leaves the rest unchanged, so an unrecognised wrapper shows as a mismatch rather than a guess (D6). |
+| `Normalize` | For `process_exec` and `process_exit`, if the target is exactly the harness's wrapper, replaces it with the eval payload read as one POSIX shell word (`evalPayload`). The wrapper is a known shell (`/bin/bash`, `/usr/bin/bash`, and the same for `zsh` and `sh`) with `-c` and an optional `-l`, `source <...>/.claude/shell-snapshots/snapshot-bash-<id>.sh 2>/dev/null \|\| true`, zero or more preamble clauses from an allowlist (`shopt -u extglob ...`, the `\builtin unalias ... unset -f ...` group), `&& eval <word>`, and exactly ` < /dev/null && pwd -P >\| /tmp/claude-<id>-cwd` to the end of the line. Anything else, including a command appended after the suffix, one run before the source, a second eval word or another program that merely contains the marker, is not recovered (I-26). The line then only has its per-run ids (snapshot file, working-directory file, heredoc delimiter) replaced with fixed tokens (I-23) and shows as a mismatch rather than a guess (D6). |
 | `Normalize`, searches | A command line whose program is `<dir>/claude/versions/<version>` with first argument `--no-config` becomes `claude-code search:glob` (with `--files` and `--null`) or `claude-code search:grep` (without `--files`); the harness's own `--files` start-up listings are left as they are (I-25). |
 | `NormalizeStream` | Folds a finished temp-and-rename (`<path>.tmp.<pid>.<12 hex>`: create on the directory, open, write, close and rename, the close and rename in either order) into one `file_write` of the target carrying the close's hash, and collapses a run of opens of one file by one process into one. Events of other processes, an unfinished replace and a name that is not the harness's pattern are left alone (I-22). |
 | `IsHarnessNoise` | Declares nothing; harness activity comes from the measured baseline (D11). |
@@ -176,7 +176,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - The Claude Code claim shapes rest on one paired capture of one version on one task. A write that does not use a temporary file, a different version, or a tool not exercised (`NotebookEdit`, `MultiEdit`, parallel calls, subagents) is unchecked. The Gemini adapter has not seen a real capture.
 - Some harness activity is occasional (a package-manager probe appeared in two of three control runs). At full agreement it is left out of the baseline and can read as unexplained in a later run.
 - `Concurrency`, `SubagentsInProcess`, `ShellPerCommand` and `IntervalKind` are declarations only; the verifier does not read them.
-- The Claude Code adapter's command recovery and id canonicalisation depend on the current wrapper and snapshot shapes (`shell-snapshots/snapshot-`, `&& eval`, `PATH_END_`), which are harness-version-specific.
+- The Claude Code adapter's command recovery and id canonicalisation depend on the current wrapper and snapshot shapes (the shell, the preamble clauses, `&& eval`, the `pwd -P` suffix, `PATH_END_`), which are harness-version-specific. A version that changes the wrapper makes every Bash claim a mismatch until the allowlist is extended; that is the intended failure (D6, I-26).
 - Collapsing opens loses the count of repeated reads of one file, on both sides.
 - The Gemini adapter does no wrapper recovery, so a wrapped command shows as a mismatch.
 - The Gemini adapter does not follow subtrajectories and does not set `ThreadID`.
