@@ -72,7 +72,7 @@ func buildDfidInfo(handleType int32, handleData []byte) []byte {
 	return buf
 }
 
-func mockResolver(handleType int32, handleData []byte) string {
+func mockResolver(_ fsID, handleType int32, handleData []byte) string {
 	if handleType == 1 {
 		str := string(handleData)
 		if str == "dir123" {

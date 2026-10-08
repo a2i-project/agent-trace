@@ -87,11 +87,15 @@ type builderFunc func(watchConfig) (probe.Observer, error)
 // probeBuilders is the extension point: one entry per probe this harness
 // knows how to run. Add a case here when a new tier's probe lands.
 var probeBuilders = map[string]builderFunc{
+	// The fs probe marks every real filesystem and filters nothing by path:
+	// an agent's file claims may name any path, so the agent's tree is
+	// observed wherever it goes. What other processes did outside the
+	// workspace is dropped by scopeFSEvents once the tree is known.
 	"fs": func(cfg watchConfig) (probe.Observer, error) {
 		return fs.New(fs.Config{
-			Path:         cfg.Workspace,
-			PathFilter:   cfg.Workspace,
-			EventBufSize: cfg.EventBufSize,
+			Path:           cfg.Workspace,
+			AllFilesystems: true,
+			EventBufSize:   cfg.EventBufSize,
 		})
 	},
 	"proc": func(cfg watchConfig) (probe.Observer, error) {
@@ -136,6 +140,38 @@ func buildCoverage(reporters map[string]probe.CoverageReporter) models.Coverage 
 // verifier aligns by position: an unstable sort could swap such ties.
 func sortGround(g models.GroundTruth) {
 	sort.SliceStable(g, func(i, j int) bool { return g[i].Timestamp.Before(g[j].Timestamp) })
+}
+
+// underDir reports whether path is dir or inside it. A plain prefix test
+// would let /ws admit /ws2.
+func underDir(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, strings.TrimSuffix(dir, "/")+"/")
+}
+
+// scopeFSEvents applies the tree-or-workspace rule once the capture is
+// complete and every fork record is known: a file event is kept when the
+// agent's tree caused it, wherever the path is, or when the path is under
+// the workspace, whoever caused it. Every other file event is counted and
+// dropped. Non-file events are kept as they are. The rule is applied here
+// and not in the probe because the probe reads an event some time after the
+// access, when a short-lived child has often already left any live tracked
+// set; the forest built from the fork records has no such race.
+func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept models.GroundTruth, dropped int) {
+	forest := verification.BuildForest(g, root)
+	kept = make(models.GroundTruth, 0, len(g))
+	for _, e := range g {
+		if verification.LaneOf(e.ActionType) != verification.LaneFS {
+			kept = append(kept, e)
+			continue
+		}
+		zone := forest.Attribute(e).Zone
+		if zone == verification.ZoneAgent || zone == verification.ZoneSubtree || underDir(e.Target, workspace) {
+			kept = append(kept, e)
+			continue
+		}
+		dropped++
+	}
+	return kept, dropped
 }
 
 // workspaceAbs is the workspace as an absolute path, which is how the probes
@@ -231,6 +267,7 @@ func runWatch(opts watchOptions) error {
 	reporters := make(map[string]probe.CoverageReporter)
 	var procObs *proc.Observer
 	var netObs *probenet.Observer
+	var fsObs *fs.Observer
 	for _, name := range strings.Split(opts.probes, ",") {
 		name = strings.TrimSpace(name)
 		if name == "" {
@@ -266,6 +303,11 @@ func runWatch(opts watchOptions) error {
 			}
 			netObs = n
 			continue
+		}
+		if name == "fs" {
+			if f, ok := obs.(*fs.Observer); ok {
+				fsObs = f
+			}
 		}
 		others = append(others, obs)
 	}
@@ -463,12 +505,29 @@ func runWatch(opts watchOptions) error {
 		}
 	}
 
+	workspace := workspaceAbs(opts.cfg.Workspace)
+	var scope *models.FSScope
+	if fsObs != nil {
+		marked, unmarked := fsObs.Scope()
+		scope = &models.FSScope{Rule: models.FSScopeUnfiltered, Mounts: marked, Unmarked: unmarked}
+		if groundRoot != 0 {
+			var dropped int
+			ground, dropped = scopeFSEvents(ground, groundRoot, workspace)
+			scope.Rule, scope.DroppedOutside = models.FSScopeTreeOrWorkspace, dropped
+			fmt.Printf("fs scope: %d filesystem(s) marked, %d unmarked; kept the agent tree's file events anywhere and %s for everyone else; dropped %d event(s) by other processes elsewhere\n",
+				len(marked), len(unmarked), workspace, dropped)
+		}
+		for point, why := range unmarked {
+			log.Printf("fs probe could not mark %s: %s", point, why)
+		}
+	}
+
 	sortGround(ground)
 
 	if ground == nil {
 		ground = models.GroundTruth{}
 	}
-	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot, Workspace: workspaceAbs(opts.cfg.Workspace)}, "", "  ")
+	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot, Workspace: workspace, FSScope: scope}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal ground truth: %w", err)
 	}

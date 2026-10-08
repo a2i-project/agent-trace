@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -862,7 +863,7 @@ func TestDiag_RawFanotify(t *testing.T) {
 		}
 
 		// Try path resolution.
-		path, ambiguous := resolveEventPath(infoData, newKernelResolver(mountFD))
+		path, ambiguous := resolveEventPath(infoData, newKernelResolver(mountsOf(mountFD)))
 		t.Logf("  resolved path: %q (ambiguous=%v)", path, ambiguous)
 
 		// Detailed handle resolution debugging for each info record.
@@ -1149,4 +1150,99 @@ func TestObserver_RewriteLoopHashesOnlyTheLastClose(t *testing.T) {
 	if hashes != 1 {
 		t.Errorf("%d closes carried a hash, want only the last", hashes)
 	}
+}
+
+func TestParseMountInfo_KeepsRealFilesystemsOnly(t *testing.T) {
+	const sample = `25 1 0:23 / /sys rw,nosuid - sysfs sysfs rw
+26 1 0:5 / /proc rw - proc proc rw
+28 1 259:7 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p7 rw
+40 28 0:35 / /tmp rw,nosuid - tmpfs tmpfs rw
+41 28 0:36 / /mnt/my\040disk rw - ext4 /dev/sdb1 rw
+42 28 0:40 / /snap/core/1 ro - squashfs /dev/loop0 ro
+43 28 0:41 / /run/user/1000/gvfs rw - fuse.gvfsd-fuse gvfsd-fuse rw
+44 28 0:42 / /sys/fs/cgroup rw - cgroup2 cgroup2 rw
+garbage line
+`
+	got := parseMountInfo(strings.NewReader(sample))
+	want := []mountEntry{{"/", "ext4"}, {"/tmp", "tmpfs"}, {"/mnt/my disk", "ext4"}}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("entry %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// With AllFilesystems the observer sees a write on a filesystem other than the
+// one holding Config.Path, and resolves its path through that filesystem's
+// own mount fd. The test needs a second writable filesystem; it uses the
+// first mount point the probe marked whose id differs from the workspace's.
+func TestObserver_AllFilesystemsSeesASecondMount(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	obs, err := New(Config{Path: dir, AllFilesystems: true, PIDFilter: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = obs.Stop() }()
+	marked, _ := obs.Scope()
+	if len(marked) < 2 {
+		t.Skipf("only one filesystem marked (%v), need a second one", marked)
+	}
+	home, _ := fsidOf(dir)
+	var other string
+	for _, point := range marked {
+		id, err := fsidOf(point)
+		if err != nil || id == home {
+			continue
+		}
+		if f, err := os.CreateTemp(point, "agent-trace-second-mount-*"); err == nil {
+			other = f.Name()
+			_ = f.Close()
+			break
+		}
+	}
+	if other == "" {
+		t.Skip("no writable second filesystem among the marked ones")
+	}
+	defer func() { _ = os.Remove(other) }()
+	obs.Start()
+	time.Sleep(50 * time.Millisecond)
+
+	if err := os.WriteFile(other, []byte("elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	events := collectEvents(obs, 300*time.Millisecond)
+	assertHasEvent(t, events, models.FileWrite, other)
+	assertHasEvent(t, events, models.FileClose, other)
+	// The file was created after the mark, so its creation yields a first
+	// close hashed as empty content; the close of the write carries the
+	// content hash, which proves the hash read went through the second
+	// filesystem's own mount fd.
+	want := content.SHA256Bytes([]byte("elsewhere\n"))
+	var hashes []string
+	for _, e := range events {
+		if e.ActionType == models.FileClose && e.Target == other {
+			if e.OutputHash != nil && *e.OutputHash == want {
+				return
+			}
+			if e.OutputHash != nil {
+				hashes = append(hashes, *e.OutputHash)
+			} else {
+				hashes = append(hashes, "<nil>")
+			}
+		}
+	}
+	t.Errorf("no close on the second filesystem carries the content hash %s; closes had %v", want, hashes)
+}
+
+// mountsOf is the resolver input for a single mount fd: its filesystem id.
+func mountsOf(mountFD int) map[fsID]int {
+	var st unix.Statfs_t
+	if err := unix.Fstatfs(mountFD, &st); err != nil {
+		return nil
+	}
+	return map[fsID]int{{st.Fsid.Val[0], st.Fsid.Val[1]}: mountFD}
 }

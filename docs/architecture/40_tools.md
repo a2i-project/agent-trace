@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 0cb4e28 on 2026-10-08, with the changes in the commits that introduced I-28 and V-22.
+Checked against commit 0cb4e28 on 2026-10-08, with the changes in the commits that introduced I-28, V-22 and P-17.
 
 ## Objective
 
@@ -22,7 +22,7 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--workspace PATH` | (required) | Directory the fs probe watches |
+| `--workspace PATH` | (required) | The agent's working directory: hashed at start, kept for every process in the capture, and named by the baseline placeholder. The fs probe itself watches every real filesystem (P-17) |
 | `--probes LIST` | `fs,proc` | Comma-separated probes from `fs`, `proc`, `net` |
 | `--proc-filter PREFIX` | empty | Only report processes whose command line has this prefix; replaced by ancestry scoping when a command or `--root-pid` is given |
 | `--out PATH` | `ground_truth.json` | Output file |
@@ -33,7 +33,7 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 
 Modes: with a trailing `-- <command> [args]`, `watch` starts the command, makes its pid the proc probe's ancestry root and the net probe's tracked pid, waits for it to exit (Ctrl+C kills it), waits 300 ms for trailing events and writes the file. With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
 
-`watch` requires root (fanotify and eBPF) and refuses a probe that does not implement `probe.CoverageReporter`. The output file is a `models.GroundTruthFile`: `events` sorted by timestamp, `coverage` with an entry for every known probe (`ran: false` for one not selected), and `root_pid`. On exit it prints each probe's loss counters and logs a warning when `verification.Assess` judges the capture incomplete.
+`watch` requires root (fanotify and eBPF) and refuses a probe that does not implement `probe.CoverageReporter`. The output file is a `models.GroundTruthFile`: `events` sorted by timestamp, `coverage` with an entry for every known probe (`ran: false` for one not selected), `root_pid`, `workspace` and `fs_scope`. Before writing, with an fs probe and a root pid, `watch` keeps the file events the agent's tree caused on any marked filesystem and those under the workspace from any process, drops the rest, and records the count ([10_probes_common.md](10_probes_common.md)). It prints one line with the marked and unmarked filesystem counts and the dropped count, and a warning per filesystem it could not mark. On exit it prints each probe's loss counters and logs a warning when `verification.Assess` judges the capture incomplete.
 
 | Exit code | When |
 |---|---|
@@ -189,7 +189,8 @@ Read the adapter section of the report before the verdict: unknown tools, parse 
 ## Known limits
 
 - `watch` exits 1 both for its own errors and for an agent that exited with an error, so its exit code does not separate the two.
-- `watch` without a command or `--root-pid` records with `root_pid` zero, which `verify` can only report as INCONCLUSIVE.
+- `watch` without a command or `--root-pid` records with `root_pid` zero, which `verify` can only report as INCONCLUSIVE; its file events are then unfiltered.
+- The level-0 sequence now holds the harness's own file activity outside the workspace (its configuration directory, the libraries it loads), which the baseline has to explain; a baseline captured before P-17 does not.
 - `watch --root-pid` misses whatever the process did before attaching.
 - `verify` does not compare the baseline's `agent_version` with the agent that produced the session.
 - `simagent` ignores an unknown `--attack` value instead of rejecting it.

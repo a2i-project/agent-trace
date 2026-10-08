@@ -71,6 +71,39 @@ type GroundTruthFile struct {
 	// baseline names it with a placeholder, so a baseline measured in one
 	// directory applies to a run in another. Empty means unknown.
 	Workspace string `json:"workspace,omitempty"`
+	// FSScope says which file events the capture can contain. Nil means the
+	// capture predates the record: the fs probe then kept only paths under
+	// Workspace, from any process.
+	FSScope *FSScope `json:"fs_scope,omitempty"`
+}
+
+// FSScope rules.
+const (
+	// FSScopeTreeOrWorkspace: every file event caused by the agent's process
+	// tree, on any marked filesystem, plus events under Workspace from any
+	// other process. A file claim is therefore always in scope.
+	FSScopeTreeOrWorkspace = "tree-or-workspace"
+	// FSScopeUnfiltered: every file event on the marked filesystems, from any
+	// process. Written when the capture has no root pid to build a tree from.
+	FSScopeUnfiltered = "unfiltered"
+)
+
+// FSScope records where the fs probe was looking and what watch kept, so the
+// verifier can tell an event that did not happen from one that was outside
+// the scope.
+type FSScope struct {
+	// Rule is one of the FSScope constants.
+	Rule string `json:"rule"`
+	// Mounts lists the mount points of the filesystems that were marked, one
+	// per filesystem. An event on an unmarked filesystem is not observable.
+	Mounts []string `json:"mounts"`
+	// Unmarked lists the mount points the probe tried and could not mark,
+	// with the error.
+	Unmarked map[string]string `json:"unmarked,omitempty"`
+	// DroppedOutside counts the file events watch left out under the rule:
+	// events by processes outside the agent's tree on paths outside
+	// Workspace.
+	DroppedOutside int `json:"dropped_outside"`
 }
 
 // ParseGroundTruthFile reads a ground truth file in either form: the current

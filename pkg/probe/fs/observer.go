@@ -29,7 +29,17 @@ var watchMask = uint64(
 type Config struct {
 	// Path identifies the filesystem to watch. Every file operation on the
 	// filesystem containing this path is monitored (across all mount points).
+	// Its regular files are hashed at Start so the first open of each carries
+	// an input hash.
 	Path string
+
+	// AllFilesystems marks every real filesystem mounted on the host, not only
+	// the one holding Path, so an agent's file activity is observed wherever
+	// it goes (a tmpfs /tmp, a separate /home). Pseudo filesystems, read-only
+	// images and fuse mounts are skipped; Scope reports what was marked and
+	// what could not be. Files outside Path are not hashed at Start, so their
+	// first open carries the empty-content hash.
+	AllFilesystems bool
 
 	// PathFilter, if non-empty, restricts emitted events to paths with this
 	// prefix. Useful on shared hosts to scope observation to the agent's
@@ -56,8 +66,16 @@ type Config struct {
 
 // Observer watches filesystem events via fanotify and emits GroundTruthEvents.
 type Observer struct {
-	fanotifyFD       int
-	mountFD          int
+	fanotifyFD int
+	// mountFD is the mount fd of the filesystem holding Config.Path; -1 in
+	// tests that drive the observer without a kernel.
+	mountFD int
+	// mounts holds one mount fd per marked filesystem id, mountFD included.
+	mounts map[fsID]int
+	// marked and unmarked are the mount points the all-filesystems mark
+	// covered and those it could not, for Scope.
+	marked           []string
+	unmarked         map[string]string
 	stopR            int // read end of stop-signal pipe
 	stopW            int // write end of stop-signal pipe
 	events           chan models.GroundTruthEvent
@@ -160,28 +178,39 @@ func New(cfg Config) (*Observer, error) {
 		return nil, err
 	}
 
-	if err := markFilesystem(fd, cfg.Path, watchMask); err != nil {
-		_ = unix.Close(fd)
-		return nil, err
+	var set markedSet
+	if cfg.AllFilesystems {
+		set, err = markAll(fd, cfg.Path, watchMask)
+	} else {
+		set, err = markOne(fd, cfg.Path, watchMask)
 	}
-
-	mountFD, err := openMountFD(cfg.Path)
 	if err != nil {
+		set.close()
 		_ = unix.Close(fd)
 		return nil, err
 	}
+	pathID, err := fsidOf(cfg.Path)
+	if err != nil {
+		set.close()
+		_ = unix.Close(fd)
+		return nil, err
+	}
+	mountFD := set.fds[pathID]
 
 	// Pipe for signaling the read loop to stop.
 	pipeFDs := [2]int{}
 	if err := unix.Pipe2(pipeFDs[:], unix.O_CLOEXEC); err != nil {
+		set.close()
 		_ = unix.Close(fd)
-		_ = unix.Close(mountFD)
 		return nil, fmt.Errorf("pipe2: %w", err)
 	}
 
 	return &Observer{
 		fanotifyFD:          fd,
 		mountFD:             mountFD,
+		mounts:              set.fds,
+		marked:              set.marked,
+		unmarked:            set.unmarked,
 		stopR:               pipeFDs[0],
 		stopW:               pipeFDs[1],
 		events:              make(chan models.GroundTruthEvent, cfg.EventBufSize),
@@ -196,6 +225,44 @@ func New(cfg Config) (*Observer, error) {
 		settleDelay:         settleQuietWindow,
 		hashFD:              content.SHA256FD,
 	}, nil
+}
+
+// markOne marks only the filesystem holding path.
+func markOne(fanotifyFD int, path string, mask uint64) (markedSet, error) {
+	set := markedSet{fds: map[fsID]int{}, unmarked: map[string]string{}}
+	id, err := fsidOf(path)
+	if err != nil {
+		return set, err
+	}
+	if err := markFilesystem(fanotifyFD, path, mask); err != nil {
+		return set, err
+	}
+	fd, err := openMountFD(path)
+	if err != nil {
+		return set, err
+	}
+	set.fds[id] = fd
+	set.marked = []string{path}
+	return set, nil
+}
+
+// Scope reports which filesystems the observer marked, by mount point, and
+// which it could not. With AllFilesystems unset, Marked holds Config.Path.
+func (o *Observer) Scope() (marked []string, unmarked map[string]string) {
+	marked = append(marked, o.marked...)
+	unmarked = make(map[string]string, len(o.unmarked))
+	for k, v := range o.unmarked {
+		unmarked[k] = v
+	}
+	return marked, unmarked
+}
+
+// mountFor returns the mount fd of the filesystem id, or -1.
+func (o *Observer) mountFor(id fsID) int {
+	if fd, ok := o.mounts[id]; ok {
+		return fd
+	}
+	return -1
 }
 
 // Events returns the channel on which GroundTruthEvents are delivered.
@@ -220,8 +287,12 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 
 // Start begins reading fanotify events in a background goroutine.
 func (o *Observer) Start() {
-	if o.cfg.PathFilter != "" {
-		_ = filepath.Walk(o.cfg.PathFilter, func(path string, info os.FileInfo, err error) error {
+	walk := o.cfg.PathFilter
+	if walk == "" {
+		walk = o.cfg.Path
+	}
+	if walk != "" {
+		_ = filepath.Walk(walk, func(path string, info os.FileInfo, err error) error {
 			if err == nil && info.Mode().IsRegular() {
 				if h, err := content.SHA256File(path); err == nil {
 					o.shadowHashes[path] = h
@@ -247,7 +318,9 @@ func (o *Observer) Stop() error {
 	<-o.stopped
 
 	_ = unix.Close(o.fanotifyFD)
-	_ = unix.Close(o.mountFD)
+	for _, fd := range o.mounts {
+		_ = unix.Close(fd)
+	}
 	_ = unix.Close(o.stopR)
 	_ = unix.Close(o.stopW)
 	close(o.events)
@@ -368,7 +441,7 @@ func (o *Observer) drainNonBlocking(buf []byte) {
 		}
 
 		now := time.Now()
-		raw := parseEvents(buf, n, newKernelResolver(o.mountFD))
+		raw := parseEvents(buf, n, newKernelResolver(o.mounts))
 		for i := range raw {
 			o.processRawEvent(&raw[i], now)
 		}
@@ -442,7 +515,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 
 	for _, actionType := range maskToActionTypes(e.Mask) {
 		if actionType == models.FileClose {
-			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, e.HandleType, e.HandleData)
+			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData)
 		} else {
 			event := models.GroundTruthEvent{
 				Timestamp:       ts,
@@ -452,7 +525,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 				PID:             pidOf(e),
 			}
 			if actionType == models.FileOpen {
-				hash := o.lookupShadowHash(e.Path, e.HandleType, e.HandleData)
+				hash := o.lookupShadowHash(e.Path, o.mountFor(e.FSID), e.HandleType, e.HandleData)
 				event.InputHash = &hash
 			}
 			o.events <- event
@@ -474,13 +547,12 @@ const emptyFileHash = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4
 // record can degrade to just the parent directory under load -- see
 // rawEvent.Ambiguous), so a rename can silently orphan the path-keyed entry.
 // Device+inode identifies the file regardless of what it's currently named.
-func (o *Observer) lookupShadowHash(path string, handleType int32, handleData []byte) string {
+func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, handleData []byte) string {
 	o.mu.Lock()
 	if h, ok := o.shadowHashes[path]; ok {
 		o.mu.Unlock()
 		return h
 	}
-	mountFD := o.mountFD
 	o.mu.Unlock()
 
 	if handleData != nil && mountFD >= 0 {
@@ -541,16 +613,16 @@ func inodeKeyFromFD(fd int) (inodeKey, bool) {
 // This, not pathGeneration, is what actually guarantees a hash the observer
 // does attach reflects the eventual final content: a close is never hashed
 // until it has survived a full settle cycle with nothing superseding it.
-func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguous bool, handleType int32, handleData []byte) {
+func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguous bool, mountFD int, handleType int32, handleData []byte) {
 	o.mu.Lock()
 	if o.pendingCloses == nil {
 		o.pendingCloses = make(map[string]*pendingClose)
 	}
 	superseded, existed := o.pendingCloses[path]
 	pathFD := -1
-	if handleData != nil {
+	if handleData != nil && mountFD >= 0 {
 		fh := unix.NewFileHandle(handleType, handleData)
-		pathFD, _ = unix.OpenByHandleAt(o.mountFD, fh, unix.O_RDONLY|unix.O_PATH)
+		pathFD, _ = unix.OpenByHandleAt(mountFD, fh, unix.O_RDONLY|unix.O_PATH)
 	} else if o.mountFD == -1 {
 		pathFD, _ = unix.Open(path, unix.O_RDONLY|unix.O_PATH, 0)
 	}

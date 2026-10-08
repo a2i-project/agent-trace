@@ -1,18 +1,23 @@
 // Package fs provides a filesystem observer using Linux fanotify.
 //
-// The observer watches all file operations on the filesystem containing
-// a given path, using FAN_MARK_FILESYSTEM to capture events across bind
-// mounts. It emits models.GroundTruthEvent values on a channel.
+// The observer watches all file operations on the filesystem containing a
+// given path, or on every real filesystem mounted on the host, using
+// FAN_MARK_FILESYSTEM to capture events across bind mounts. It emits
+// models.GroundTruthEvent values on a channel.
 //
 // Requires CAP_SYS_ADMIN in the initial user namespace.
 package fs
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
@@ -37,10 +42,17 @@ const (
 	metadataSize = 24
 )
 
-// handleResolver maps a kernel file handle (type + raw bytes) to a
-// filesystem path. In production this calls open_by_handle_at + readlink;
-// in tests it returns a predetermined path from a lookup table.
-type handleResolver func(handleType int32, handleData []byte) string
+// fsID is the kernel's __kernel_fsid_t: the filesystem a handle belongs to.
+// fanotify writes it into every info record, and open_by_handle_at needs a
+// mount fd on that same filesystem, so a probe that marks several
+// filesystems keeps one mount fd per id.
+type fsID [2]int32
+
+// handleResolver maps a kernel file handle (filesystem id, type and raw
+// bytes) to a filesystem path. In production this calls open_by_handle_at on
+// the mount fd of that filesystem and readlink; in tests it returns a
+// predetermined path from a lookup table.
+type handleResolver func(fsid fsID, handleType int32, handleData []byte) string
 
 // eventMetadata mirrors struct fanotify_event_metadata.
 type eventMetadata struct {
@@ -62,6 +74,8 @@ type rawEvent struct {
 	// FID handle data if available, to open the file directly via open_by_handle_at
 	HandleType int32
 	HandleData []byte
+	// FSID is the filesystem the FID handle belongs to.
+	FSID fsID
 }
 
 // --- Kernel interaction (requires CAP_SYS_ADMIN) --------------------------
@@ -103,10 +117,154 @@ func openMountFD(path string) (int, error) {
 	return fd, nil
 }
 
-// newKernelResolver returns a handleResolver that resolves file handles
-// via open_by_handle_at on the given mount fd.
-func newKernelResolver(mountFD int) handleResolver {
-	return func(handleType int32, handleData []byte) string {
+// fsidOf returns the filesystem id of the filesystem holding path.
+func fsidOf(path string) (fsID, error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(path, &st); err != nil {
+		return fsID{}, err
+	}
+	return fsID{st.Fsid.Val[0], st.Fsid.Val[1]}, nil
+}
+
+// mountEntry is one line of /proc/self/mountinfo the probe may mark.
+type mountEntry struct {
+	Point  string
+	FSType string
+}
+
+// pseudoFSTypes are the filesystem types that hold no files an agent acts on,
+// or that fanotify cannot mark. They are left out of an all-filesystems mark.
+// squashfs and iso9660 are read-only images (snaps, media); fuse mounts are
+// left out because marking one can fail or hang on an unresponsive daemon.
+var pseudoFSTypes = map[string]bool{
+	"proc": true, "sysfs": true, "cgroup": true, "cgroup2": true, "devpts": true,
+	"mqueue": true, "debugfs": true, "tracefs": true, "securityfs": true,
+	"pstore": true, "bpf": true, "configfs": true, "fusectl": true,
+	"hugetlbfs": true, "binfmt_misc": true, "autofs": true, "efivarfs": true,
+	"devtmpfs": true, "rpc_pipefs": true, "nsfs": true, "squashfs": true,
+	"iso9660": true, "ramfs": true, "selinuxfs": true, "apparmorfs": true,
+}
+
+// parseMountInfo reads /proc/self/mountinfo and returns the mount points of
+// the filesystems worth marking, in file order. The format is
+// "id parent major:minor root point options [optional...] - fstype source
+// superopts"; the mount point has spaces and other characters octal-escaped.
+func parseMountInfo(r io.Reader) []mountEntry {
+	var out []mountEntry
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		sep := -1
+		for i, f := range fields {
+			if f == "-" {
+				sep = i
+				break
+			}
+		}
+		if sep < 5 || sep+1 >= len(fields) {
+			continue
+		}
+		fstype := fields[sep+1]
+		if pseudoFSTypes[fstype] || strings.HasPrefix(fstype, "fuse") {
+			continue
+		}
+		out = append(out, mountEntry{Point: unescapeMountPoint(fields[4]), FSType: fstype})
+	}
+	return out
+}
+
+func unescapeMountPoint(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+3 < len(s) {
+			var v byte
+			ok := true
+			for _, c := range s[i+1 : i+4] {
+				if c < '0' || c > '7' {
+					ok = false
+					break
+				}
+				v = v*8 + byte(c-'0')
+			}
+			if ok {
+				b.WriteByte(v)
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// markedSet is the result of marking filesystems: one mount fd per filesystem
+// id, the mount points that were marked, and those that could not be.
+type markedSet struct {
+	fds      map[fsID]int
+	marked   []string
+	unmarked map[string]string
+}
+
+// markAll marks every real filesystem on the host once, by filesystem id,
+// starting with the one holding path so it is always included. A filesystem
+// that cannot be marked or opened is recorded in unmarked and skipped: the
+// capture then says where it was not looking instead of failing outright.
+func markAll(fanotifyFD int, path string, mask uint64) (markedSet, error) {
+	set := markedSet{fds: map[fsID]int{}, unmarked: map[string]string{}}
+	mark := func(point string) error {
+		id, err := fsidOf(point)
+		if err != nil {
+			return err
+		}
+		if _, done := set.fds[id]; done {
+			return nil
+		}
+		if err := markFilesystem(fanotifyFD, point, mask); err != nil {
+			return err
+		}
+		fd, err := openMountFD(point)
+		if err != nil {
+			return err
+		}
+		set.fds[id] = fd
+		set.marked = append(set.marked, point)
+		return nil
+	}
+	// Mount points first, so the filesystem holding path is named by its
+	// mount point and not by path; then path itself, in case its filesystem
+	// is not listed, which must succeed.
+	if f, err := os.Open("/proc/self/mountinfo"); err == nil {
+		for _, m := range parseMountInfo(f) {
+			if err := mark(m.Point); err != nil {
+				set.unmarked[m.Point] = err.Error()
+			}
+		}
+		_ = f.Close()
+	}
+	if err := mark(path); err != nil {
+		return set, err
+	}
+	sort.Strings(set.marked)
+	return set, nil
+}
+
+func (m markedSet) close() {
+	for _, fd := range m.fds {
+		_ = unix.Close(fd)
+	}
+}
+
+// newKernelResolver returns a handleResolver that resolves file handles via
+// open_by_handle_at on the mount fd of the handle's filesystem.
+func newKernelResolver(mounts map[fsID]int) handleResolver {
+	return func(fsid fsID, handleType int32, handleData []byte) string {
+		mountFD, ok := mounts[fsid]
+		if !ok {
+			return ""
+		}
 		fh := unix.NewFileHandle(handleType, handleData)
 		fd, err := unix.OpenByHandleAt(mountFD, fh, unix.O_RDONLY|unix.O_PATH)
 		if err != nil {
@@ -135,20 +293,21 @@ func parseEvents(buf []byte, n int, resolve handleResolver) []rawEvent {
 		}
 
 		if meta.Mask&unix.FAN_Q_OVERFLOW != 0 {
-			
-		infoStart := offset + int(meta.MetadataLen)
-		infoEnd := offset + int(meta.EventLen)
-		path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve)
-		handleType, handleData := extractFID(buf[infoStart:infoEnd])
 
-		events = append(events, rawEvent{
-			Mask:       meta.Mask,
-			PID:        meta.PID,
-			Path:       path,
-			Ambiguous:  ambiguous,
-			HandleType: handleType,
-			HandleData: handleData,
-		})
+			infoStart := offset + int(meta.MetadataLen)
+			infoEnd := offset + int(meta.EventLen)
+			path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve)
+			fsid, handleType, handleData := extractFID(buf[infoStart:infoEnd])
+
+			events = append(events, rawEvent{
+				Mask:       meta.Mask,
+				PID:        meta.PID,
+				Path:       path,
+				Ambiguous:  ambiguous,
+				HandleType: handleType,
+				HandleData: handleData,
+				FSID:       fsid,
+			})
 			offset += int(meta.EventLen)
 			continue
 		}
@@ -161,7 +320,7 @@ func parseEvents(buf []byte, n int, resolve handleResolver) []rawEvent {
 		infoStart := offset + int(meta.MetadataLen)
 		infoEnd := offset + int(meta.EventLen)
 		path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve)
-		handleType, handleData := extractFID(buf[infoStart:infoEnd])
+		fsid, handleType, handleData := extractFID(buf[infoStart:infoEnd])
 
 		events = append(events, rawEvent{
 			Mask:       meta.Mask,
@@ -170,6 +329,7 @@ func parseEvents(buf []byte, n int, resolve handleResolver) []rawEvent {
 			Ambiguous:  ambiguous,
 			HandleType: handleType,
 			HandleData: handleData,
+			FSID:       fsid,
 		})
 
 		offset += int(meta.EventLen)
@@ -275,7 +435,7 @@ func parseDfidName(record []byte, resolve handleResolver) string {
 		}
 	}
 
-	dirPath := resolve(handleType, handleData)
+	dirPath := resolve(recordFSID(record), handleType, handleData)
 
 	if dirPath == "" {
 		return name
@@ -313,11 +473,17 @@ func parseHandleToPath(record []byte, resolve handleResolver) string {
 	handleData := make([]byte, handleBytes)
 	copy(handleData, record[20:handleDataEnd])
 
-	return resolve(handleType, handleData)
+	return resolve(recordFSID(record), handleType, handleData)
 }
 
-// extractFID extracts the FID (type 1) handle from the info records.
-func extractFID(infoData []byte) (int32, []byte) {
+// recordFSID reads the filesystem id at bytes 4 to 12 of an info record.
+func recordFSID(record []byte) fsID {
+	return fsID{int32(binary.LittleEndian.Uint32(record[4:8])), int32(binary.LittleEndian.Uint32(record[8:12]))}
+}
+
+// extractFID extracts the FID (type 1) handle and its filesystem id from the
+// info records.
+func extractFID(infoData []byte) (fsID, int32, []byte) {
 	offset := 0
 	for offset+4 <= len(infoData) {
 		infoType := infoData[offset]
@@ -334,11 +500,11 @@ func extractFID(infoData []byte) (int32, []byte) {
 				if 20+handleBytes <= len(record) {
 					handleData := make([]byte, handleBytes)
 					copy(handleData, record[20:20+handleBytes])
-					return handleType, handleData
+					return recordFSID(record), handleType, handleData
 				}
 			}
 		}
 		offset += infoLen
 	}
-	return 0, nil
+	return fsID{}, 0, nil
 }

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit d1276ff on 2026-10-07.
+Checked against commit c612b89 on 2026-10-08, with the changes in the commit that introduced P-17.
 
 ## Objective
 
@@ -14,7 +14,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | `cmd/watch/main.go` | `probeBuilders` registry, `runWatch`, `buildCoverage`; writes `ground_truth.json` |
 | `pkg/models/action.go` | `ActionType` values, `IsClaimable`, `IsStructural` |
 | `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth` |
-| `pkg/models/coverage.go` | `ProbeCoverage`, `Coverage`, `GroundTruthFile`, `ParseGroundTruthFile`, `CoverageSchema` |
+| `pkg/models/coverage.go` | `ProbeCoverage`, `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema` |
 | `pkg/verification/completeness.go` | `Assess`: turns coverage counters into Reasons (event loss) and Notes (content gaps) |
 
 ### The probe contract
@@ -25,7 +25,7 @@ All three observers satisfy both interfaces. `proc.Observer` adds `SetRootPID`, 
 
 ### Per-object tracked set
 
-The proc eBPF object (`proc.bpf.c`), the net object (`net.bpf.c`) and the TLS object (`tls.bpf.c`) each declare their own `tracked_pids` hash map. None is pinned or shared. Each object follows descendants itself: its `task_newtask` program (`handle_fork`) inserts the child's pid when the parent's tgid is in its map, and skips the event when `clone_flags` has `CLONE_THREAD`, since a thread shares an already tracked tgid. Each object's `sched_process_exit` program removes a tgid when the thread group leader exits (proc does this only for a process that has an `execs` entry, see [11_probe_proc.md](11_probe_proc.md)). The fs probe has no tracked set; it reports every event on the marked filesystem with the causing PID and leaves attribution to the verifier's forest.
+The proc eBPF object (`proc.bpf.c`), the net object (`net.bpf.c`) and the TLS object (`tls.bpf.c`) each declare their own `tracked_pids` hash map. None is pinned or shared. Each object follows descendants itself: its `task_newtask` program (`handle_fork`) inserts the child's pid when the parent's tgid is in its map, and skips the event when `clone_flags` has `CLONE_THREAD`, since a thread shares an already tracked tgid. Each object's `sched_process_exit` program removes a tgid when the thread group leader exits (proc does this only for a process that has an `execs` entry, see [11_probe_proc.md](11_probe_proc.md)). The fs probe has no tracked set; it reports every event on the marked filesystems with the causing PID and leaves attribution to the verifier's forest. `cmd/watch` applies the scope rule afterwards (`scopeFSEvents`, P-17).
 
 Each eBPF object also keeps its loss counters in one-slot `BPF_MAP_TYPE_PERCPU_ARRAY` maps: `drop_count` (ring buffer output failed), `untracked_count` (`tracked_pids` update failed) and, in proc and net, `state_lost_count` (a per-process or per-connection state map update failed). `tls.bpf.c` adds `faulted_reads`. Userspace sums the per-CPU slots (`sumPerCPU`) and snapshots them in `Stop()` before it closes the maps.
 
@@ -52,7 +52,8 @@ The fs probe uses fanotify through `golang.org/x/sys/unix`; it has no eBPF compo
 7. `stopEverything` stops the other probes, then net, then proc, and waits for the collectors.
 8. `buildCoverage` asks every started probe for `CaptureCoverage()` and writes `ProbeCoverage{Ran: false}` for every known probe that was not selected.
 9. watch prints the loss counters, runs `verification.Assess` and logs a warning with the Reasons when the capture is incomplete.
-10. Events are sorted by timestamp and written with `json.MarshalIndent` as a `models.GroundTruthFile`.
+10. With an fs probe and a root pid, `scopeFSEvents` keeps a file event when the agent's tree caused it (by the forest built from the fork records), wherever the path is, or when the path is under the workspace, whoever caused it; every other file event is counted and dropped. Non-file events are untouched. The rule runs here, after the capture, because the probe reads an event some time after the access, when a short-lived child has often already exited; the fork records have no such race.
+11. Events are sorted by timestamp and written with `json.MarshalIndent` as a `models.GroundTruthFile`, with `fs_scope` saying which filesystems were marked and which rule was applied.
 
 ### Clocks
 
@@ -107,11 +108,12 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
     }
   },
   "root_pid": 4200,
-  "workspace": "/work/project"
+  "workspace": "/work/project",
+  "fs_scope": { "rule": "tree-or-workspace", "mounts": ["/", "/tmp"], "unmarked": {"/run/user/1000/doc": "fanotify_mark on /run/user/1000/doc: invalid argument"}, "dropped_outside": 12 }
 }
 ```
 
-`models.ParseGroundTruthFile` accepts this object or the legacy form, a bare JSON array of events, which yields a nil coverage and a zero `root_pid`. It rejects a coverage `schema` other than `models.CoverageSchema` (1). `ParseGroundTruth` accepts only the bare array, so a caller that ignores coverage fails on the object form instead of silently dropping it. A zero `root_pid` means no tree can be built and the verifier cannot attribute events. `workspace` is the absolute directory the capture watched, written by `watch`; a baseline uses it to name that directory with a placeholder. `watch` sorts events by timestamp with a stable sort, because events read in one batch share a timestamp and the verifier aligns by position.
+`models.ParseGroundTruthFile` accepts this object or the legacy form, a bare JSON array of events, which yields a nil coverage and a zero `root_pid`. It rejects a coverage `schema` other than `models.CoverageSchema` (1). `ParseGroundTruth` accepts only the bare array, so a caller that ignores coverage fails on the object form instead of silently dropping it. A zero `root_pid` means no tree can be built and the verifier cannot attribute events. `workspace` is the absolute directory the capture watched, written by `watch`; a baseline uses it to name that directory with a placeholder. `fs_scope` (`models.FSScope`) says which file events the capture can contain: the marked filesystems by mount point, those that could not be marked, the rule (`tree-or-workspace`, or `unfiltered` when there was no root pid) and how many events the rule dropped. A file without it predates the record and holds only paths under `workspace`, from any process. `watch` sorts events by timestamp with a stable sort, because events read in one batch share a timestamp and the verifier aligns by position.
 
 ## Guarantees and loss accounting
 

@@ -211,3 +211,38 @@ func TestWorkspaceAbsIsAbsolute(t *testing.T) {
 		t.Errorf("workspaceAbs(/already/abs) = %q", got)
 	}
 }
+
+// The tree-or-workspace rule is pure: it needs the fork records and the
+// workspace, nothing from the kernel.
+func TestScopeFSEvents_KeepsTheTreeAnywhereAndTheWorkspaceForEveryone(t *testing.T) {
+	const root, child, stranger = 100, 200, 900
+	ts := time.Now()
+	ev := func(typ models.ActionType, target string, pid, ppid uint32) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: ts, ActionType: typ, Target: target, PID: pid, PPID: ppid}
+	}
+	g := models.GroundTruth{
+		ev(models.ProcessFork, "200", child, root),
+		ev(models.ProcessExec, "/bin/sh -c x", child, root),
+		ev(models.FileWrite, "/ws/in.txt", root, 0),         // agent, in the workspace
+		ev(models.FileWrite, "/home/u/.bashrc", root, 0),    // agent, elsewhere: kept
+		ev(models.FileWrite, "/tmp/tool.cfg", child, root),  // a command's child, elsewhere: kept
+		ev(models.FileOpen, "/ws/in.txt", stranger, 0),      // another process, in the workspace: kept
+		ev(models.FileWrite, "/ws2/other.txt", stranger, 0), // another process, a look-alike prefix: dropped
+		ev(models.FileWrite, "/etc/passwd", stranger, 0),    // another process, elsewhere: dropped
+		ev(models.FileOpen, "/ws/x", 0, 0),                  // no pid, in the workspace: kept
+		ev(models.FileOpen, "/var/x", 0, 0),                 // no pid, elsewhere: dropped
+		ev(models.NetConnect, "example.com", stranger, 0),   // not a file event: untouched
+	}
+	kept, dropped := scopeFSEvents(g, root, "/ws")
+	if dropped != 3 {
+		t.Errorf("dropped = %d, want 3", dropped)
+	}
+	var targets []string
+	for _, e := range kept {
+		targets = append(targets, e.Target)
+	}
+	want := []string{"200", "/bin/sh -c x", "/ws/in.txt", "/home/u/.bashrc", "/tmp/tool.cfg", "/ws/in.txt", "/ws/x", "example.com"}
+	if strings.Join(targets, ",") != strings.Join(want, ",") {
+		t.Errorf("kept = %v\nwant %v", targets, want)
+	}
+}
