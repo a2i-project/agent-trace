@@ -268,6 +268,50 @@ func TestCaptureKeepsOnlyWhatEveryRunDid(t *testing.T) {
 	}
 }
 
+// The control task's own command is what the agent was told to run, not the
+// harness's activity. Excluded, it is neither a rule nor unstable, whatever its
+// action type, and the baseline records the exclusion (I-28).
+func TestCaptureExcludesTheControlTasksOwnCommand(t *testing.T) {
+	a := fake{name: "f"}
+	marker := models.GroundTruth{
+		{Timestamp: t0, ActionType: models.ProcessFork, Target: "y", PID: 300, PPID: 100},
+		ev(models.ProcessExec, ": control-marker", 300, 100),
+		ev(models.ProcessExit, ": control-marker", 300, 100),
+	}
+	runs := []models.GroundTruthFile{nullRun(marker...), nullRun(marker...)}
+	with, err := Capture(a, "v", runs, t0, CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	without, err := Capture(a, "v", runs, t0, CaptureOptions{Exclude: []string{": control-marker"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := func(rs []Rule) (out []string) {
+		for _, r := range rs {
+			if r.Target == ": control-marker" {
+				out = append(out, string(r.ActionType))
+			}
+		}
+		return out
+	}
+	if got := names(with.Rules); len(got) != 2 {
+		t.Fatalf("without an exclusion the marker should be an exec and an exit rule, got %v", got)
+	}
+	if got := names(without.Rules); len(got) != 0 {
+		t.Errorf("the excluded marker became a rule: %v", got)
+	}
+	if got := names(without.Unstable); len(got) != 0 {
+		t.Errorf("the excluded marker was listed as unstable: %v", got)
+	}
+	if len(without.Rules) != len(with.Rules)-2 {
+		t.Errorf("the exclusion removed %d rule(s), want 2", len(with.Rules)-len(without.Rules))
+	}
+	if len(without.Excluded) != 1 || without.Excluded[0] != ": control-marker" {
+		t.Errorf("Excluded = %v, want the marker recorded", without.Excluded)
+	}
+}
+
 func TestCaptureNormalizesBeforeAttributing(t *testing.T) {
 	a := fake{name: "f", norm: func(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 		e.Target = strings.ReplaceAll(e.Target, "/tmp/claude-9999-cwd", "/tmp/claude-N-cwd")

@@ -54,7 +54,7 @@ func TestProjectTaskVerifiesFaithful(t *testing.T) {
 	for _, l := range []string{"control-1", "control-2", "control-3"} {
 		runs = append(runs, projectRun(t, l))
 	}
-	b, err := agent.Capture(Adapter{}, "2.1.286", runs, time.Now(), agent.CaptureOptions{})
+	b, err := agent.Capture(Adapter{}, "2.1.286", runs, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}})
 	if err != nil {
 		t.Fatal(err)
 	}

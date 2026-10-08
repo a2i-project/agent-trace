@@ -82,6 +82,12 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 	return e, true
 }
 
+// ControlCommand is the no-op command the control runs of
+// scripts/capture-claude-code.sh are told to run, so that the harness performs
+// its first-Bash-call setup. It is excluded from the baseline (I-28); the
+// fixture tests exclude it the same way the script does.
+const ControlCommand = ": agent-trace-control-marker"
+
 // capturedVersion is the Claude Code version whose kernel-level behaviour the
 // claim shapes were checked against (scripts/capture-claude-code.sh).
 const capturedVersion = "2.1.286"

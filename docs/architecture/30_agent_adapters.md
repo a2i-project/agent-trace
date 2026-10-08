@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commits that introduced I-26 and I-27.
+Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commits that introduced I-26 to I-28.
 
 ## Objective
 
@@ -138,7 +138,7 @@ A call in a step whose status is not completed (3) is counted as `<tool> (status
 
 A baseline is the harness's own activity, measured by control runs in which the agent is given a task that claims nothing, so everything it does is the harness (D11, V7).
 
-`agent.Capture(a, version, runs, now, opts)` requires at least one run and a root pid in each. For each run it normalizes events with the adapter, builds the forest and partition, and takes the distinct `(action_type, target)` pairs of `Partition.Observed`: the agent's own level-0 events and each command's own exec and exit. Descendants of a command are not rules, since a command explains its subtree. A pair seen in at least `opts.MinAgreement` of the runs (default 1, every run) becomes a `Rule`; a pair seen in fewer goes to `Unstable`, which is recorded for the reader and subtracts nothing. The run's own workspace (recorded by `watch` in the ground truth file) is replaced by `{workspace}` in each target (I-24). Both lists are sorted. The `Baseline` records `Schema`, `Agent`, `AgentVersion`, `Captured` (UTC), `Runs` and `MinAgreement`.
+`agent.Capture(a, version, runs, now, opts)` requires at least one run and a root pid in each. For each run it normalizes events with the adapter, builds the forest and partition, and takes the distinct `(action_type, target)` pairs of `Partition.Observed`: the agent's own level-0 events and each command's own exec and exit. Descendants of a command are not rules, since a command explains its subtree. A pair seen in at least `opts.MinAgreement` of the runs (default 1, every run) becomes a `Rule`; a pair seen in fewer goes to `Unstable`, which is recorded for the reader and subtracts nothing. A target named in `opts.Exclude` becomes neither, whatever its action type: it is for the command the control task itself was told to run, which every control performs and which is not the harness's activity, and the baseline records it in `Excluded` (I-28). The run's own workspace (recorded by `watch` in the ground truth file) is replaced by `{workspace}` in each target (I-24). Both lists are sorted. The `Baseline` records `Schema`, `Agent`, `AgentVersion`, `Captured` (UTC), `Runs`, `MinAgreement` and `Excluded`.
 
 `Baseline.Predicate(workspace)` recognises an event when a rule has exactly its action type and target, with the placeholder expanded to the workspace of the run being verified (a rule that names the placeholder matches nothing when no workspace is known). There is no pattern matching, since a wildcard would explain whatever an attacker made it match. `LoadBaseline` rejects an unknown schema and a baseline that names no agent. `cmd/baseline` additionally refuses a control run with no coverage record or with any loss counter set, since a short baseline reads as false omissions later; `cmd/verify` refuses a baseline captured for a different adapter name ([40_tools.md](40_tools.md)).
 
@@ -169,7 +169,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - A format limit is never read as an opt-out: `Expresses` turns a nil that the format cannot state into no finding, and `ExitsClaimed: false` removes exits from both sides rather than reporting every exit as an omission.
 - Detection never guesses between adapters (`TestDetectRefusesToGuessBetweenAdapters`).
 - The Gemini adapter fails with the field path rather than returning a partial trajectory when the payload layout changes.
-- A baseline only subtracts exact `(action_type, target)` pairs that enough control runs produced, from loss-free runs, for the adapter it was captured with.
+- A baseline only subtracts exact `(action_type, target)` pairs that enough control runs produced, from loss-free runs, for the adapter it was captured with, and never the control task's own command (`TestCaptureExcludesTheControlTasksOwnCommand`, `TestPairedControlCommandIsNotABaselineRule`).
 
 ## Known limits
 

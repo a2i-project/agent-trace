@@ -81,7 +81,7 @@ func loadSession(t *testing.T, c capture) session {
 	for _, l := range []string{"control-1", "control-2", "control-3"} {
 		controls = append(controls, loadRun(t, c, l))
 	}
-	base, err := agent.Capture(claudecode.Adapter{}, "2.1.286", controls, time.Now(), agent.CaptureOptions{})
+	base, err := agent.Capture(claudecode.Adapter{}, "2.1.286", controls, time.Now(), agent.CaptureOptions{Exclude: []string{claudecode.ControlCommand}})
 	if err != nil {
 		t.Fatal(err)
 	}

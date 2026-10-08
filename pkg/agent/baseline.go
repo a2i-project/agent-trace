@@ -52,6 +52,12 @@ type Baseline struct {
 	// them. They are recorded so the person reading the baseline can see what
 	// was left out, and they subtract nothing.
 	Unstable []Rule `json:"unstable,omitempty"`
+	// Excluded lists the targets the caller kept out of the rules: the control
+	// task's own command, which the agent was told to run and which is not the
+	// harness's activity. A rule for it would explain any later command with
+	// that target and its whole subtree without a claim (I-28). Recorded so the
+	// reader can see what was left out.
+	Excluded []string `json:"excluded,omitempty"`
 }
 
 // CaptureOptions tunes Capture.
@@ -59,6 +65,10 @@ type CaptureOptions struct {
 	// MinAgreement is the fraction of runs that must perform an action for it
 	// to become a rule. Zero means one: every run.
 	MinAgreement float64
+	// Exclude lists targets that never become a rule or an unstable entry,
+	// whatever their action type: the command the control task itself was
+	// told to run. Matched exactly against the normalized target.
+	Exclude []string
 }
 
 // Capture builds a baseline from control runs. Each run's ground truth is
@@ -88,6 +98,10 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 	if need < 1 {
 		need = 1
 	}
+	excluded := make(map[string]bool, len(opts.Exclude))
+	for _, t := range opts.Exclude {
+		excluded[t] = true
+	}
 	counts := map[Rule]int{}
 	for i, r := range runs {
 		if r.RootPID == 0 {
@@ -101,6 +115,9 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		}
 		seen := map[Rule]bool{}
 		for _, e := range verification.BuildForest(g, r.RootPID).Partition(g).Observed {
+			if excluded[e.Target] {
+				continue
+			}
 			seen[Rule{ActionType: e.ActionType, Target: templateWorkspace(e.Target, r.Workspace)}] = true
 		}
 		for rule := range seen {
@@ -108,6 +125,8 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		}
 	}
 	b := Baseline{Schema: BaselineSchema, Agent: a.Name(), AgentVersion: version, Captured: now.UTC(), Runs: len(runs), MinAgreement: agreement}
+	b.Excluded = append(b.Excluded, opts.Exclude...)
+	sort.Strings(b.Excluded)
 	for rule, n := range counts {
 		if n >= need {
 			b.Rules = append(b.Rules, rule)

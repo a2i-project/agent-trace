@@ -84,9 +84,12 @@ esac
 # The control claims nothing worth verifying, but it must use Bash once: the
 # harness runs setup commands the first time a session uses Bash (probing the
 # environment, writing a shell snapshot), and a baseline taken without a Bash
-# call would not contain them. The command is a no-op with a marker name, so the
-# rule the baseline records for it hides nothing.
-control_prompt='Use the Bash tool to run exactly this no-op command: : agent-trace-control-marker . Then reply with the single word ok. Do not use any other tool.'
+# call would not contain them. The command is a no-op with a marker name, and it
+# is excluded from the baseline below: it is what the agent was told to run, not
+# the harness's own activity, and as a rule it would explain any later command
+# with that target, and its whole subtree, without a claim.
+control_command=': agent-trace-control-marker'
+control_prompt="Use the Bash tool to run exactly this no-op command: $control_command . Then reply with the single word ok. Do not use any other tool."
 # The control runs must enable the same tools as the task. The shell snapshot
 # command the harness runs at the first Bash call differs with the tool set (it
 # shadows find and grep only when Grep and Glob are disabled), so a baseline
@@ -160,7 +163,7 @@ else
   controls=("$out"/control-*.ground_truth.json)
 fi
 "$root/baseline" --agent claude-code --agent-version "$version" --min-agreement "${MIN_AGREEMENT:-1}" \
-  --out "$out/baseline.json" "${controls[@]}"
+  --exclude "$control_command" --out "$out/baseline.json" "${controls[@]}"
 
 {
   echo "##### verify WITHOUT a baseline"

@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit d1276ff on 2026-10-07, with the changes below.
+Checked against commit 0cb4e28 on 2026-10-08, with the changes in the commit that introduced I-28.
 
 ## Objective
 
@@ -73,7 +73,7 @@ Exit 3 is separate from 1 so that a failure to verify can never be read as NOT F
 Builds a harness baseline from control runs with `agent.Capture` and writes it with `agent.SaveBaseline`.
 
 ```
-baseline --agent NAME --agent-version V [--out FILE] CONTROL_RUN.json...
+baseline --agent NAME --agent-version V [--out FILE] [--exclude TARGET]... CONTROL_RUN.json...
 ```
 
 | Flag | Default | Meaning |
@@ -82,10 +82,11 @@ baseline --agent NAME --agent-version V [--out FILE] CONTROL_RUN.json...
 | `--agent-version V` | (required) | Version of the agent that was run; a baseline holds for one version |
 | `--out PATH` | `baseline.json` | Output file |
 | `--min-agreement F` | `1` | Fraction of control runs that must perform an action for it to become a rule. Lower it for activity the harness does only sometimes, at the cost of a wider baseline (I-24). |
+| `--exclude TARGET` | none | A target that never becomes a rule, whatever its action type. Repeatable. It names the command the control task itself was told to run: every control performs it, it is not the harness's activity, and as a rule it would explain any later command with that target, and its whole subtree, without a claim (I-28). |
 
 Each positional argument is a capture from `watch`. A run with no coverage record, with any loss counter set, or with no root pid is refused. On success it prints how many rules every run produced and how many unstable actions were left out, and warns when given a single run that one run cannot separate stable from incidental activity.
 
-The baseline file is JSON: `schema` (1), `agent`, `agent_version`, `captured`, `runs`, `min_agreement`, `rules` and `unstable`, each rule an `action_type` and `target`. A target names the watched directory as `{workspace}`.
+The baseline file is JSON: `schema` (1), `agent`, `agent_version`, `captured`, `runs`, `min_agreement`, `rules`, `unstable` and `excluded`, each rule an `action_type` and `target`. A target names the watched directory as `{workspace}`.
 
 | Exit code | When |
 |---|---|
@@ -157,7 +158,7 @@ sudo ./watch --workspace /tmp/agent-trace-demo --out ground_truth.json -- \
 
 1. Run the agent several times under `watch` on a task that claims nothing, with the same probes as the real run: `sudo ./watch --probes fs,proc,net --workspace "$PWD" --out runN.json -- <agent command>`.
 2. Check each run reports no loss; `baseline` refuses one that does.
-3. `./baseline --agent claude-code --agent-version <version> --out baseline.json run1.json run2.json run3.json`.
+3. `./baseline --agent claude-code --agent-version <version> --exclude '<the control task's command>' --out baseline.json run1.json run2.json run3.json`.
 4. Read the `unstable` list: those actions will still read as unexplained if they appear in a real run.
 
 ### Verify a real agent session
@@ -172,7 +173,7 @@ Read the adapter section of the report before the verdict: unknown tools, parse 
 
 ### Capture scripts
 
-`scripts/capture-claude-code.sh` does the two workflows above for Claude Code in one run: it records a task run and three control runs under `watch` (as the user, with `setpriv` exec'ing the agent in place so it keeps the pid `watch` records as the root), copies each transcript by session id, builds the baseline and writes `verify` output with and without it. `--task basic|parallel` picks the task (`parallel` adds three Reads in one message, a subagent, Grep, Glob, WebFetch and a Bash pipeline). The control runs enable the same tools as the task, because the harness's shell snapshot command differs with the tool set (I-24). `--baseline-from DIR` reuses the controls of an earlier capture of the same version and tool set and refuses otherwise, before it asks for sudo. It needs root and model quota, so the user runs it. `scripts/make-capture-fixture.py` reduces a capture to a checked-in fixture: paths rewritten, the transcript cut to the fields the adapter reads, the snapshot script elided.
+`scripts/capture-claude-code.sh` does the two workflows above for Claude Code in one run: it records a task run and three control runs under `watch` (as the user, with `setpriv` exec'ing the agent in place so it keeps the pid `watch` records as the root), copies each transcript by session id, builds the baseline with the control's own no-op command excluded, and writes `verify` output with and without it. `--task basic|parallel` picks the task (`parallel` adds three Reads in one message, a subagent, Grep, Glob, WebFetch and a Bash pipeline). The control runs enable the same tools as the task, because the harness's shell snapshot command differs with the tool set (I-24). `--baseline-from DIR` reuses the controls of an earlier capture of the same version and tool set and refuses otherwise, before it asks for sudo. It needs root and model quota, so the user runs it. `scripts/make-capture-fixture.py` reduces a capture to a checked-in fixture: paths rewritten, the transcript cut to the fields the adapter reads, the snapshot script elided.
 
 ### Tests
 

@@ -67,6 +67,37 @@ func TestWritesARuleForWhatEveryRunDid(t *testing.T) {
 	}
 }
 
+func TestExcludeFlagKeepsTheControlCommandOutOfTheRules(t *testing.T) {
+	dir := t.TempDir()
+	marker := models.GroundTruth{
+		{Timestamp: t0, ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: 100},
+		{Timestamp: t0, ActionType: models.ProcessExec, Target: ": marker", PID: 200, PPID: 100},
+		{Timestamp: t0, ActionType: models.ProcessExit, Target: ": marker", PID: 200, PPID: 100},
+		ev(models.NetConnect, "api.example"),
+	}
+	r1 := write(t, dir, "r1.json", models.GroundTruthFile{RootPID: 100, Coverage: cov(models.ProbeCoverage{Ran: true}), Events: marker})
+	outPath := filepath.Join(dir, "b.json")
+	code, out, errOut := baseline(t, "--agent", "generic", "--agent-version", "9.9", "--out", outPath, "--exclude", ": marker", "--exclude", "other", r1)
+	if code != 0 {
+		t.Fatalf("exit %d: %s %s", code, out, errOut)
+	}
+	b, err := agent.LoadBaseline(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range b.Rules {
+		if r.Target == ": marker" {
+			t.Errorf("the excluded command is a rule: %+v", b.Rules)
+		}
+	}
+	if len(b.Rules) != 1 || b.Rules[0].Target != "api.example" {
+		t.Errorf("rules = %+v, want only the connection", b.Rules)
+	}
+	if len(b.Excluded) != 2 || b.Excluded[0] != ": marker" || b.Excluded[1] != "other" {
+		t.Errorf("excluded = %v", b.Excluded)
+	}
+}
+
 func TestWarnsThatOneRunCannotTellStableFromIncidental(t *testing.T) {
 	dir := t.TempDir()
 	r := write(t, dir, "r.json", models.GroundTruthFile{RootPID: 100, Coverage: cov(models.ProbeCoverage{Ran: true}), Events: models.GroundTruth{ev(models.NetConnect, "h")}})
