@@ -313,6 +313,37 @@ func TestNormalizeRefusesAWrapperWithExtraCommands(t *testing.T) {
 	}
 }
 
+// A search is recognised by the harness's own binary path, so a program that
+// merely takes --no-config under a look-alike path is not a search (I-27).
+func TestNormalizeRecognisesSearchesOnlyFromTheInstallDirectory(t *testing.T) {
+	const grepArgs = " --no-config --hidden --glob !.git -l --null seed ."
+	const globArgs = " --no-config --files --null --glob *.txt --sort=modified"
+	for name, tc := range map[string]struct{ program, args, want string }{
+		"grep from the install directory":  {"/home/user/.local/share/claude/versions/2.1.286", grepArgs, SearchGrep},
+		"glob from the install directory":  {"/home/user/.local/share/claude/versions/2.1.286", globArgs, SearchGlob},
+		"root's install directory":         {"/root/.local/share/claude/versions/2.1.286", grepArgs, SearchGrep},
+		"harness startup listing is kept":  {"/home/user/.local/share/claude/versions/2.1.286", " --no-config --files --hidden /ws", ""},
+		"script in the workspace":          {"/ws/task/claude/versions/1", grepArgs, ""},
+		"script in the workspace, dotdirs": {"/ws/task/.local/share/claude/versions/2.1.286", grepArgs, ""},
+		"script in /tmp":                   {"/tmp/x/claude/versions/2.1.286", grepArgs, ""},
+		"relative path":                    {"./claude/versions/2.1.286", grepArgs, ""},
+		"not a full version":               {"/home/user/.local/share/claude/versions/1", grepArgs, ""},
+		"no --no-config":                   {"/home/user/.local/share/claude/versions/2.1.286", " --hidden -l --null seed .", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			line := tc.program + tc.args
+			got, keep := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: models.ProcessExec, Target: line})
+			want := tc.want
+			if want == "" {
+				want = canonicalIDs(line)
+			}
+			if !keep || got.Target != want {
+				t.Errorf("Normalize(%q) = %q, want %q", line, got.Target, want)
+			}
+		})
+	}
+}
+
 func TestNormalizeOnlyTouchesProcessEvents(t *testing.T) {
 	e := models.GroundTruthEvent{ActionType: models.FileWrite, Target: strings.Replace(wrapper, "%s", "'x'", 1)}
 	if got, _ := (Adapter{}).Normalize(e); got.Target != e.Target {

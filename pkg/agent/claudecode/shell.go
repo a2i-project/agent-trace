@@ -157,10 +157,18 @@ const (
 	SearchGlob = "claude-code search:glob"
 )
 
-var embeddedRipgrep = regexp.MustCompile(`^\S*/claude/versions/[0-9][0-9.]* --no-config (.*)$`)
+// The program must be the harness's own binary where the native installer
+// puts it: <home>/.local/share/claude/versions/<semver>, with the home
+// directory directly under /home or being /root. A looser pattern (any path
+// ending in claude/versions/<n>) let a script placed in the workspace or in
+// /tmp pass as a search once a Grep was claimed (I-27). A binary written under
+// the harness's own install directory is a replaced harness, outside the
+// threat model.
+var embeddedRipgrep = regexp.MustCompile(`^(?:/home/[^/\s]+|/root)/\.local/share/claude/versions/\d+\.\d+\.\d+ --no-config (.*)$`)
 
 // searchKind classifies an observed command line as a Grep or a Glob. ok is
-// false for anything else, including the harness's own listings.
+// false for anything else, including the harness's own listings and any
+// program outside the install directory.
 func searchKind(line string) (target string, ok bool) {
 	m := embeddedRipgrep.FindStringSubmatch(line)
 	if m == nil {

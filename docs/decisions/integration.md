@@ -205,3 +205,11 @@ Decision: The observed line must match the wrapper exactly: one of six shell pat
 Consequences: A new harness version that changes the wrapper makes every Bash claim a mismatch until the allowlist is extended, which is what D6 asks for. The preamble allowlist is the version-specific part. The payload itself is not inspected: what the claimed command does is still explained by the claim.
 Alternatives rejected: Checking only that the line ends with the suffix (a command can still be run before the source, and the program is unchecked); canonicalising the whole line before matching (it would rewrite ids inside the claimed command).
 
+
+### I-27: A search is recognised only from the harness's install directory
+Status: Accepted, implemented (`embeddedRipgrep` in `claudecode/shell.go`). Narrows I-25.
+Date: 2026-10-08 (security review of the adapter).
+Context: I-25 recognised a search by a program path ending in `claude/versions/<digits>` with `--no-config`. Any executable at such a path qualified, including one in the workspace or in `/tmp`, so a harness could claim a Grep and run a script of its own, with the script's subtree explained by the claim (**Verified**: `TestNormalizeRecognisesSearchesOnlyFromTheInstallDirectory`, the workspace and `/tmp` cases, failed before the change).
+Decision: The program must be `/home/<user>/.local/share/claude/versions/<major.minor.patch>` or the same under `/root`, the layout of the native installer, which is where the three captures saw it. Everything else keeps its text and shows as an unexplained command or a mismatch.
+Consequences: A binary placed inside the install directory is still recognised, which is the same trust as the harness binary itself (AS-2). Another install layout (npm, a different `XDG_DATA_HOME`) is not recognised until it is measured and added; its searches then read as unexplained commands, which is loud rather than silent.
+Alternatives rejected: Taking the path from the baseline's start-up listing rules (the adapter has no access to the baseline in `Normalize`, and the two would have to be kept in step); checking the arguments' shape (a spoofed binary ignores its arguments).

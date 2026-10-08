@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commit that introduced I-26.
+Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commits that introduced I-26 and I-27.
 
 ## Objective
 
@@ -98,7 +98,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `Process` | `ShellPerCommand: true`, `SubagentsInProcess: true`, `IntervalDecision`, `Parallel`, `ExitsClaimed: false` |
 | `Expresses` | `exit_code`: never. `request_hash`: never. `output_hash`: only for `Tool == "Write"`. Other fields: yes. |
 | `Normalize` | For `process_exec` and `process_exit`, if the target is exactly the harness's wrapper, replaces it with the eval payload read as one POSIX shell word (`evalPayload`). The wrapper is a known shell (`/bin/bash`, `/usr/bin/bash`, and the same for `zsh` and `sh`) with `-c` and an optional `-l`, `source <...>/.claude/shell-snapshots/snapshot-bash-<id>.sh 2>/dev/null \|\| true`, zero or more preamble clauses from an allowlist (`shopt -u extglob ...`, the `\builtin unalias ... unset -f ...` group), `&& eval <word>`, and exactly ` < /dev/null && pwd -P >\| /tmp/claude-<id>-cwd` to the end of the line. Anything else, including a command appended after the suffix, one run before the source, a second eval word or another program that merely contains the marker, is not recovered (I-26). The line then only has its per-run ids (snapshot file, working-directory file, heredoc delimiter) replaced with fixed tokens (I-23) and shows as a mismatch rather than a guess (D6). |
-| `Normalize`, searches | A command line whose program is `<dir>/claude/versions/<version>` with first argument `--no-config` becomes `claude-code search:glob` (with `--files` and `--null`) or `claude-code search:grep` (without `--files`); the harness's own `--files` start-up listings are left as they are (I-25). |
+| `Normalize`, searches | A command line whose program is the harness's own binary in its install directory, `/home/<user>/.local/share/claude/versions/<major.minor.patch>` or the same under `/root`, with first argument `--no-config` becomes `claude-code search:glob` (with `--files` and `--null`) or `claude-code search:grep` (without `--files`); the harness's own `--files` start-up listings are left as they are (I-25). A program under any other path, the workspace or `/tmp` included, is not a search and keeps its text (I-27). |
 | `NormalizeStream` | Folds a finished temp-and-rename (`<path>.tmp.<pid>.<12 hex>`: create on the directory, open, write, close and rename, the close and rename in either order) into one `file_write` of the target carrying the close's hash, and collapses a run of opens of one file by one process into one. Events of other processes, an unfinished replace and a name that is not the harness's pattern are left alone (I-22). |
 | `IsHarnessNoise` | Declares nothing; harness activity comes from the measured baseline (D11). |
 | Degradations | Decision-time start (D13); no exit codes, so exits are not aligned; file-tool claims are one atomic replace as measured on 2.1.286, and a variant not seen shows as unexplained; Write calls with no create or update result assumed to overwrite; unknown tools when present. |
@@ -182,7 +182,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - The Gemini adapter does not follow subtrajectories and does not set `ThreadID`.
 - The Gemini process model (shell per command, subagents, ordering) is unmeasured.
 - Gemini commands run with `RunPersistent` and calls in non-completed steps are not claimed.
-- A Grep or Glob claim does not verify its pattern or path, only that a search of that kind ran. Gemini's search tools (`list_dir`, `grep_search`, `find_by_name`) and `search_web` are reported as unknown tools.
+- A Grep or Glob claim does not verify its pattern or path, only that a search of that kind ran. A search is recognised only from the native installer's layout; another install layout shows its searches as unexplained commands. Gemini's search tools (`list_dir`, `grep_search`, `find_by_name`) and `search_web` are reported as unknown tools.
 - A baseline holds for one agent version and one tool set: the shell snapshot command differs with the enabled tools (I-24).
 - A baseline records `AgentVersion` but `cmd/verify` checks only the agent name, not the version.
 - `Containerized` is not handled by any adapter.
