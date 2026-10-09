@@ -141,19 +141,33 @@ func canonicalIDs(s string) string {
 // named by the workspace, the lock file's temporary, and the fswatch probe
 // directory. Measured on four startups of 2.1.286 (I-29).
 var (
+	uuidPattern   = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
 	sessionFileID = regexp.MustCompile(`(/\.claude/sessions/)\d+(\.json)`)
-	transcriptID  = regexp.MustCompile(`(/\.claude/projects/[^/]+/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\.jsonl)`)
+	sessionKeyID  = regexp.MustCompile(`(/\.claude/sessions/)\d+\.[0-9a-f]{64}(\.key)`)
+	transcriptID  = regexp.MustCompile(`(/\.claude/projects/[^/]+/)` + uuidPattern + `(\.jsonl)`)
+	backupID      = regexp.MustCompile(`(/\.claude/backups/\.claude\.json\.backup\.)\d+`)
+	mcpLogID      = regexp.MustCompile(`(/\.cache/claude-cli-nodejs/[^/]+/mcp-logs-[^/]+/)\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z(\.jsonl)`)
+	taskDirID     = regexp.MustCompile(`(/tmp/claude-\d+/[^/]+/)` + uuidPattern + `(/tasks)`)
+	taskOutputID  = regexp.MustCompile(`(/tasks/)[0-9a-z]+(\.output)`)
 	fswatchID     = regexp.MustCompile(`(/fswatch-probe-)[0-9A-Za-z]+`)
 	lockTmpID     = regexp.MustCompile(`(\.lock\.tmp\.)[0-9a-f]{8}$`)
 	deletedSuffix = regexp.MustCompile(` \(deleted\)$`)
 )
 
-// canonicalFileIDs replaces the per-run ids in a file event's target.
+// canonicalFileIDs replaces the per-run ids in a file event's target. It runs
+// before the atomic-write fold (agent.NormalizeGround), so a temporary it
+// rewrites must still be one the fold recognises (stream.go, tmpName).
 func canonicalFileIDs(s string) string {
 	s = deletedSuffix.ReplaceAllString(s, "")
 	s = sessionFileID.ReplaceAllString(s, "${1}N${2}")
+	s = sessionKeyID.ReplaceAllString(s, "${1}N.KEY${2}")
 	s = transcriptID.ReplaceAllString(s, "${1}SESSION${2}")
+	s = backupID.ReplaceAllString(s, "${1}N")
+	s = mcpLogID.ReplaceAllString(s, "${1}TIME${2}")
+	s = taskDirID.ReplaceAllString(s, "${1}SESSION${2}")
+	s = taskOutputID.ReplaceAllString(s, "${1}N${2}")
 	s = fswatchID.ReplaceAllString(s, "${1}N")
+	s = cwdFileID.ReplaceAllString(s, "/tmp/claude-N-cwd")
 	return lockTmpID.ReplaceAllString(s, "${1}N")
 }
 

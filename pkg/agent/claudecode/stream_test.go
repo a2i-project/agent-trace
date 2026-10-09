@@ -207,10 +207,11 @@ func TestNormalizeCanonicalisesPerRunIdsOnTheHarnessCommands(t *testing.T) {
 			t.Errorf("Normalize(%q) = %q, want %q", tc.in, got.Target, tc.want)
 		}
 	}
-	// A file event naming such a path is not rewritten: only commands are.
+	// A file event naming the cwd file is rewritten too (I-29): the harness
+	// opens it at level 0 after each Bash call.
 	f, _ := a.Normalize(models.GroundTruthEvent{ActionType: models.FileWrite, Target: "/tmp/claude-1a2b-cwd"})
-	if f.Target != "/tmp/claude-1a2b-cwd" {
-		t.Errorf("a file target was rewritten: %q", f.Target)
+	if f.Target != "/tmp/claude-N-cwd" {
+		t.Errorf("the cwd file was not canonicalised: %q", f.Target)
 	}
 }
 
@@ -357,14 +358,18 @@ func TestASearchIsClaimedAsAKindOfSearch(t *testing.T) {
 func TestFoldAtomicWritesRecognisesTheLockTemporary(t *testing.T) {
 	const pid = 7
 	h := "sha256:aa"
-	g := models.GroundTruth{
-		{Timestamp: at(0), ActionType: models.FileOpen, Target: "/h/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1", PID: pid},
-		{Timestamp: at(1), ActionType: models.FileWrite, Target: "/h/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1", PID: pid},
-		{Timestamp: at(2), ActionType: models.FileRename, Target: "/h/.local/state/claude/locks", PID: pid},
-		{Timestamp: at(3), ActionType: models.FileClose, Target: "/h/.local/state/claude/locks/2.1.286.lock", PID: pid, OutputHash: &h},
-	}
-	out := foldAtomicWrites(g)
-	if len(out) != 1 || out[0].ActionType != models.FileWrite || out[0].Target != "/h/.local/state/claude/locks/2.1.286.lock" || out[0].OutputHash == nil {
-		t.Fatalf("fold = %+v", out)
+	// Normalize runs before the fold and rewrites the suffix to N; the fold
+	// accepts both spellings.
+	for _, tmp := range []string{"/h/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1", "/h/.local/state/claude/locks/2.1.286.lock.tmp.N"} {
+		g := models.GroundTruth{
+			{Timestamp: at(0), ActionType: models.FileOpen, Target: tmp, PID: pid},
+			{Timestamp: at(1), ActionType: models.FileWrite, Target: tmp, PID: pid},
+			{Timestamp: at(2), ActionType: models.FileRename, Target: "/h/.local/state/claude/locks", PID: pid},
+			{Timestamp: at(3), ActionType: models.FileClose, Target: "/h/.local/state/claude/locks/2.1.286.lock", PID: pid, OutputHash: &h},
+		}
+		out := foldAtomicWrites(g)
+		if len(out) != 1 || out[0].ActionType != models.FileWrite || out[0].Target != "/h/.local/state/claude/locks/2.1.286.lock" || out[0].OutputHash == nil {
+			t.Fatalf("%s: fold = %+v", tmp, out)
+		}
 	}
 }

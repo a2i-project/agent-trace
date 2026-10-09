@@ -366,10 +366,12 @@ func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
 	}
 }
 
-func TestNormalizeOnlyTouchesProcessEvents(t *testing.T) {
+// Wrapper recovery is for process events only: a file event whose path happens
+// to look like a wrapper is not read as one; only its per-run ids change.
+func TestNormalizeDoesNotRecoverAWrapperFromAFileEvent(t *testing.T) {
 	e := models.GroundTruthEvent{ActionType: models.FileWrite, Target: strings.Replace(wrapper, "%s", "'x'", 1)}
-	if got, _ := (Adapter{}).Normalize(e); got.Target != e.Target {
-		t.Error("a file event was rewritten")
+	if got, _ := (Adapter{}).Normalize(e); got.Target == "x" || got.Target != canonicalFileIDs(e.Target) {
+		t.Errorf("a file event was read as a wrapper: %q", got.Target)
 	}
 }
 
