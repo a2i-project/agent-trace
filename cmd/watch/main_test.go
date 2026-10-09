@@ -246,3 +246,21 @@ func TestScopeFSEvents_KeepsTheTreeAnywhereAndTheWorkspaceForEveryone(t *testing
 		t.Errorf("kept = %v\nwant %v", targets, want)
 	}
 }
+
+// The recorder's own file events are never the agent's. Before this, watch
+// printing an event to a log on a marked filesystem produced the event it
+// printed, without end (2.7 MB of its own log lines in one short capture).
+func TestScopeFSEvents_DropsTheRecordersOwnFileEvents(t *testing.T) {
+	self := uint32(os.Getpid())
+	ts := time.Now()
+	g := models.GroundTruth{
+		{Timestamp: ts, ActionType: models.FileWrite, Target: "/out/capture.log", PID: self},
+		{Timestamp: ts, ActionType: models.FileOpen, Target: "/ws/seed.txt", PID: self}, // the startup walk
+		{Timestamp: ts, ActionType: models.FileWrite, Target: "/ws/a.txt", PID: 100},
+		{Timestamp: ts, ActionType: models.NetConnect, Target: "example.com", PID: self}, // not a file event
+	}
+	kept, dropped := scopeFSEvents(g, 100, "/ws")
+	if dropped != 0 || len(kept) != 2 || kept[0].Target != "/ws/a.txt" || kept[1].Target != "example.com" {
+		t.Errorf("kept=%v dropped=%d", kept, dropped)
+	}
+}

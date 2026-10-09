@@ -61,6 +61,6 @@ The probe never drops on its own channel: `processRawEvent` and the settle code 
 - A rename produces two `file_rename` events, one per name, with nothing linking them.
 - The kernel can merge several modifies into one notification, so the number of `file_write` events for a burst is not stable.
 - Timestamps are taken at userspace read time and are not comparable in order with proc or net timestamps.
-- The startup walk opens every file under the walked directory while the mark is active, and those opens are reported as `file_open` events with watch's own PID.
+- The startup walk opens every file under the walked directory while the mark is active; the probe reports those opens with the recorder's own PID, and `cmd/watch` drops them with every other file event of its own pid.
 - `pathGeneration`, `lastWriteAt` and the shadow hash maps grow for the observer's whole life.
 - PID reuse among short-lived processes is resolved by time in the verifier, which is a heuristic.

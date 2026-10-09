@@ -33,6 +33,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -142,6 +143,11 @@ func sortGround(g models.GroundTruth) {
 	sort.SliceStable(g, func(i, j int) bool { return g[i].Timestamp.Before(g[j].Timestamp) })
 }
 
+// passthrough hides the *os.File behind an io.Writer, so os/exec gives the
+// child a pipe and copies from it, instead of handing the child the file
+// descriptor itself.
+type passthrough struct{ io.Writer }
+
 // underDir reports whether path is dir or inside it. A plain prefix test
 // would let /ws admit /ws2.
 func underDir(path, dir string) bool {
@@ -157,6 +163,7 @@ func underDir(path, dir string) bool {
 // access, when a short-lived child has often already left any live tracked
 // set; the forest built from the fork records has no such race.
 func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept models.GroundTruth, dropped int) {
+	g = dropSelfFSEvents(g, uint32(os.Getpid()))
 	forest := verification.BuildForest(g, root)
 	kept = make(models.GroundTruth, 0, len(g))
 	for _, e := range g {
@@ -172,6 +179,21 @@ func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept mo
 		dropped++
 	}
 	return kept, dropped
+}
+
+// dropSelfFSEvents removes the file events the recorder itself caused: the
+// startup hash walk, the hash reads the probe did not already strip, and the
+// writes of its own log. They are not counted as dropped, since nothing of
+// the agent's is in them.
+func dropSelfFSEvents(g models.GroundTruth, self uint32) models.GroundTruth {
+	out := make(models.GroundTruth, 0, len(g))
+	for _, e := range g {
+		if e.PID == self && verification.LaneOf(e.ActionType) == verification.LaneFS {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // workspaceAbs is the workspace as an absolute path, which is how the probes
@@ -323,11 +345,19 @@ func runWatch(opts watchOptions) error {
 		ground models.GroundTruth
 		wg     sync.WaitGroup
 	)
+	self := uint32(os.Getpid())
 	collect := func(o probe.Observer) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for e := range o.Events() {
+				// The recorder's own file activity is never the agent's: the
+				// startup walk, the hash reads, and this very log line, which
+				// on a marked filesystem would otherwise produce the event it
+				// prints, without end.
+				if e.PID == self && verification.LaneOf(e.ActionType) == verification.LaneFS {
+					continue
+				}
 				fmt.Printf("%s  %-14s %s", e.Timestamp.Format("15:04:05.000"), e.ActionType, e.Target)
 				if e.ExitCode != nil {
 					fmt.Printf("  (exit %d)", *e.ExitCode)
@@ -415,8 +445,12 @@ func runWatch(opts watchOptions) error {
 		time.Sleep(200 * time.Millisecond)
 
 		cmd := exec.Command(opts.agentArgs[0], opts.agentArgs[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		// The agent's output passes through watch on a pipe rather than
+		// inheriting the descriptors: when stdout is a file on a marked
+		// filesystem, every line the agent prints would otherwise be a file
+		// write by the agent, with no claim to explain it.
+		cmd.Stdout = passthrough{os.Stdout}
+		cmd.Stderr = passthrough{os.Stderr}
 		cmd.Stdin = os.Stdin
 		if err := cmd.Start(); err != nil {
 			stopEverything()
@@ -516,6 +550,8 @@ func runWatch(opts watchOptions) error {
 			scope.Rule, scope.DroppedOutside = models.FSScopeTreeOrWorkspace, dropped
 			fmt.Printf("fs scope: %d filesystem(s) marked, %d unmarked; kept the agent tree's file events anywhere and %s for everyone else; dropped %d event(s) by other processes elsewhere\n",
 				len(marked), len(unmarked), workspace, dropped)
+		} else {
+			ground = dropSelfFSEvents(ground, self)
 		}
 		for point, why := range unmarked {
 			log.Printf("fs probe could not mark %s: %s", point, why)
