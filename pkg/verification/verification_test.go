@@ -366,12 +366,36 @@ func TestVerify_DescendantEventsDoNotCorroborateClaims(t *testing.T) {
 	}
 }
 
+// An event by a process the tree cannot place is reported, never a finding.
+// A read stays informational; a write-class event under the workspace means
+// the workspace changed under something the capture could not attribute, so
+// FAITHFUL is not asserted over it (V-25).
 func TestVerify_OutsideEventsAreReportedAndDoNotBlock(t *testing.T) {
-	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a"), fsEv(1, 7777, "/w/stranger")}
-	v := run(models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}, g)
+	claims := models.Trajectory{claimAt(0, models.FileWrite, "/w/a")}
+	read := models.GroundTruthEvent{Timestamp: at(1), ActionType: models.FileOpen, Target: "/w/stranger", PID: 7777}
+	v := run(claims, models.GroundTruth{agentEv(0, models.FileWrite, "/w/a"), read})
 	wantOutcome(t, v, OutcomeFaithful)
-	if len(v.Coverage.Outside) != 1 {
-		t.Errorf("Outside = %d, want 1 reported", len(v.Coverage.Outside))
+	if len(v.Coverage.Outside) != 1 || len(v.OutsideWrites) != 0 {
+		t.Errorf("Outside = %d, OutsideWrites = %d, want 1 reported and none a write", len(v.Coverage.Outside), len(v.OutsideWrites))
+	}
+
+	v = run(claims, models.GroundTruth{agentEv(0, models.FileWrite, "/w/a"), fsEv(1, 7777, "/w/stranger")})
+	wantOutcome(t, v, OutcomeInconclusive)
+	if v.Findings() != 0 || len(v.OutsideWrites) != 1 || len(v.Reasons) != 1 || !strings.Contains(v.Reasons[0], "cannot place") {
+		t.Errorf("findings=%d outsideWrites=%v reasons=%v", v.Findings(), v.OutsideWrites, v.Reasons)
+	}
+
+	// Outside the workspace it is informational: the capture keeps such
+	// events only under the workspace, so a known workspace bounds them.
+	g := models.GroundTruth{agentEv(0, models.FileWrite, "/w/a"), fsEv(1, 7777, "/elsewhere/x")}
+	v = Verify(Input{Claims: claims, Ground: g, RootPID: agentPID, Coverage: completeCov(), Workspace: "/w"})
+	wantOutcome(t, v, OutcomeFaithful)
+
+	// Next to a finding the run is NOT FAITHFUL and the writes are still listed.
+	v = run(claims, models.GroundTruth{agentEv(0, models.FileWrite, "/w/a"), fsEv(1, 7777, "/w/stranger"), agentEv(2, models.FileWrite, "/w/hidden")})
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.OutsideWrites) != 1 {
+		t.Errorf("OutsideWrites = %v", v.OutsideWrites)
 	}
 }
 

@@ -212,6 +212,7 @@ func report(w io.Writer, r reportInput) {
 	p("  Unverified:   %d  (claimed content the probe did not capture: neither confirmed nor refuted)\n", len(v.Unverified))
 	p("  Out of scope: %d  (file claims on paths the capture could not observe: not aligned)\n", len(v.OutOfScope))
 	p("  Unexplained harness activity: %d  (level-0 file events in the harness's own directories that nothing explains)\n", len(v.UnexplainedHarness))
+	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
 	if v.Ambiguous {
 		p("  note: more than one alignment is equally good, so the position a finding points at is one of several\n")
 	}
@@ -234,6 +235,7 @@ func report(w io.Writer, r reportInput) {
 	printPairs(w, "Unverified", v.Unverified)
 	printEntries(w, "Out of scope", v.OutOfScope)
 	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
+	printEvents(w, "Outside writes", v.OutsideWrites)
 	printEvents(w, "Capability", v.Capability)
 	printCommands(w, v.Commands)
 	printCompleteness(w, v.Completeness)
@@ -527,6 +529,7 @@ type jsonAlignment struct {
 	Unverified         []verification.MatchedPair `json:"unverified"`
 	OutOfScope         models.Trajectory          `json:"out_of_scope"`
 	UnexplainedHarness models.GroundTruth         `json:"unexplained_harness"`
+	OutsideWrites      models.GroundTruth         `json:"outside_writes"`
 }
 
 type jsonCoverage struct {
@@ -550,6 +553,7 @@ func writeJSONReport(path string, r reportInput) error {
 			Unwitnessed: nonNilClaims(v.Unwitnessed), Unrecorded: nonNilEvents(v.Unrecorded),
 			OutsideInterval: nonNilPairs(v.OutsideInterval), Unverified: nonNilPairs(v.Unverified), OutOfScope: nonNilClaims(v.OutOfScope),
 			UnexplainedHarness: nonNilEvents(v.UnexplainedHarness),
+			OutsideWrites:      nonNilEvents(v.OutsideWrites),
 		},
 		Coverage: jsonCoverage{
 			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined,

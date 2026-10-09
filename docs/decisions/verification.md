@@ -194,6 +194,14 @@ Decision: Two measures. The capture script records more controls at a lower agre
 Consequences: An honest run with occasional harness activity in its own directories is INCONCLUSIVE rather than falsely unfaithful, and the events are listed so a reader judges them. A write by the agent into those directories, the shell snapshot included, is still reported and still blocks FAITHFUL, but it is no longer a finding by itself; that is weaker than before and is the price of not calling honest runs unfaithful. The declaration explains nothing, so it is not a hiding place in the sense of D11. The snapshot question itself is unchanged: a baseline rule for the snapshot file explains the harness's write of it, as it did before.
 Alternatives rejected: Declaring the harness directories explained wholesale (decides the snapshot question by default: a write there would never be reported); keeping the strict reading (honest runs unfaithful, the exit code unusable, false positives in the evaluation); more controls alone (a behaviour rarer than the sample still escapes).
 
+### V-25: A write in the workspace by a process the tree cannot place makes the run INCONCLUSIVE
+Status: Accepted, implemented (`Verdict.OutsideWrites`, `outsideWrites` in `pkg/verification`).
+Date: 2026-10-09 (item 7 of the security review).
+Context: P-15 keeps events from processes outside the agent's tree and reports them, and they never changed the verdict: a FAITHFUL was asserted over a workspace that a write and a close of `.backdoor` by an unplaced pid had changed (**Verified**: the audit's P7 demonstration on the paired fixture). The tree cannot say such a write was the agent's, so it is not a finding; but it cannot say it was not, and the workspace is what the verdict is about.
+Decision: Among the outside events, the write-class ones (writes, closes, renames, deletes) under the workspace are `OutsideWrites`. They are not findings; with no finding the outcome is INCONCLUSIVE with their count as the reason. Reads by outside processes stay informational. With no workspace recorded, every outside write-class event counts, since such a capture kept only workspace paths from other processes.
+Consequences: An editor or another tool touching the workspace during a capture makes the run INCONCLUSIVE, which is the honest reading: the capture cannot vouch for the workspace. A process the agent reached outside the tree (a daemon over a socket, O-13) that writes the workspace is no longer silent. Nothing changes for a clean capture.
+Alternatives rejected: Keeping FAITHFUL (asserts what the capture cannot vouch for); making them findings (they are not the agent's doing as far as the tree can tell, and the user's own editor would make the agent unfaithful).
+
 ## Superseded
 
 ### F0.2-F0.3: Timestamp-window matcher
