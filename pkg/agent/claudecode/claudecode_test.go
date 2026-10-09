@@ -344,6 +344,28 @@ func TestNormalizeRecognisesSearchesOnlyFromTheInstallDirectory(t *testing.T) {
 	}
 }
 
+// The harness's own files carry per-run ids: the session record by pid, the
+// transcript by session id, the lock's temporary, the fswatch probe
+// directory. Measured on four startups of 2.1.286 (I-29).
+func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
+	for in, want := range map[string]string{
+		"/home/u/.claude/sessions/247316.json":                                                      "/home/u/.claude/sessions/N.json",
+		"/home/u/.claude/projects/-tmp-cap-ws-control-1/2da9f390-3dcf-4e58-94e9-e178d5c9ed2c.jsonl": "/home/u/.claude/projects/-tmp-cap-ws-control-1/SESSION.jsonl",
+		"/tmp/claude-1000/fswatch-probe-S6iX0K/probe":                                               "/tmp/claude-1000/fswatch-probe-N/probe",
+		"/tmp/claude-1000/fswatch-probe-Y4aXfI (deleted)":                                           "/tmp/claude-1000/fswatch-probe-N",
+		"/home/u/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1":                               "/home/u/.local/state/claude/locks/2.1.286.lock.tmp.N",
+		"/ws/a.txt":            "/ws/a.txt",
+		"/ws/sessions/12.json": "/ws/sessions/12.json", // not under .claude
+	} {
+		for _, typ := range []models.ActionType{models.FileOpen, models.FileWrite, models.FileClose, models.FileDelete, models.FileRename} {
+			got, keep := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: typ, Target: in})
+			if !keep || got.Target != want {
+				t.Errorf("%s %q -> %q, want %q", typ, in, got.Target, want)
+			}
+		}
+	}
+}
+
 func TestNormalizeOnlyTouchesProcessEvents(t *testing.T) {
 	e := models.GroundTruthEvent{ActionType: models.FileWrite, Target: strings.Replace(wrapper, "%s", "'x'", 1)}
 	if got, _ := (Adapter{}).Normalize(e); got.Target != e.Target {

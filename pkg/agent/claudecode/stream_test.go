@@ -351,3 +351,20 @@ func TestASearchIsClaimedAsAKindOfSearch(t *testing.T) {
 		t.Errorf("a Glob claimed for a Grep: outcome = %s, want NOT FAITHFUL", v.Outcome)
 	}
 }
+
+// The version lock is written through a temporary with an eight-hex suffix,
+// a different library from the file tools' <pid>.<12 hex>; it folds the same.
+func TestFoldAtomicWritesRecognisesTheLockTemporary(t *testing.T) {
+	const pid = 7
+	h := "sha256:aa"
+	g := models.GroundTruth{
+		{Timestamp: at(0), ActionType: models.FileOpen, Target: "/h/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1", PID: pid},
+		{Timestamp: at(1), ActionType: models.FileWrite, Target: "/h/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1", PID: pid},
+		{Timestamp: at(2), ActionType: models.FileRename, Target: "/h/.local/state/claude/locks", PID: pid},
+		{Timestamp: at(3), ActionType: models.FileClose, Target: "/h/.local/state/claude/locks/2.1.286.lock", PID: pid, OutputHash: &h},
+	}
+	out := foldAtomicWrites(g)
+	if len(out) != 1 || out[0].ActionType != models.FileWrite || out[0].Target != "/h/.local/state/claude/locks/2.1.286.lock" || out[0].OutputHash == nil {
+		t.Fatalf("fold = %+v", out)
+	}
+}

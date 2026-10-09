@@ -28,7 +28,9 @@ import (
 // stay comparable. An unseen variant, such as a direct write with no temporary,
 // is left alone and shows as unexplained rather than being guessed at.
 
-var tmpName = regexp.MustCompile(`^(.+)\.tmp\.\d+\.[0-9a-f]{12}$`)
+// The file tools name the temporary <path>.tmp.<pid>.<12 hex>; the version
+// lock under ~/.local/state/claude/locks names it <path>.tmp.<8 hex>.
+var tmpName = regexp.MustCompile(`^(.+)\.tmp\.(?:\d+\.[0-9a-f]{12}|[0-9a-f]{8})$`)
 
 func isFile(a models.ActionType) bool {
 	switch a {

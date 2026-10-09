@@ -135,6 +135,28 @@ func canonicalIDs(s string) string {
 	return heredocID.ReplaceAllString(s, "PATH_END_N")
 }
 
+// The harness's own files outside the workspace carry per-run ids too, which
+// a capture of every filesystem (P-17) now shows at level 0: the session
+// record named by pid, the transcript named by session id under a directory
+// named by the workspace, the lock file's temporary, and the fswatch probe
+// directory. Measured on four startups of 2.1.286 (I-29).
+var (
+	sessionFileID = regexp.MustCompile(`(/\.claude/sessions/)\d+(\.json)`)
+	transcriptID  = regexp.MustCompile(`(/\.claude/projects/[^/]+/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\.jsonl)`)
+	fswatchID     = regexp.MustCompile(`(/fswatch-probe-)[0-9A-Za-z]+`)
+	lockTmpID     = regexp.MustCompile(`(\.lock\.tmp\.)[0-9a-f]{8}$`)
+	deletedSuffix = regexp.MustCompile(` \(deleted\)$`)
+)
+
+// canonicalFileIDs replaces the per-run ids in a file event's target.
+func canonicalFileIDs(s string) string {
+	s = deletedSuffix.ReplaceAllString(s, "")
+	s = sessionFileID.ReplaceAllString(s, "${1}N${2}")
+	s = transcriptID.ReplaceAllString(s, "${1}SESSION${2}")
+	s = fswatchID.ReplaceAllString(s, "${1}N")
+	return lockTmpID.ReplaceAllString(s, "${1}N")
+}
+
 // Grep and Glob run as ripgrep, which Claude Code embeds in its own binary and
 // starts as a child of the agent, so each search is a level-1 command whose
 // program is <install dir>/claude/versions/<version> and whose first argument is

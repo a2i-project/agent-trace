@@ -20,8 +20,13 @@ const BaselineSchema = 1
 // WorkspacePlaceholder stands for the watched directory inside a rule's target,
 // so a baseline measured in one directory applies to a run in another. The
 // harness inspects the working directory (a git status, a file listing), and
-// those commands name it.
-const WorkspacePlaceholder = "{workspace}"
+// those commands name it. MangledWorkspacePlaceholder stands for the same
+// directory with every slash replaced by a dash, which is how Claude Code
+// names the per-project directory that holds its transcripts.
+const (
+	WorkspacePlaceholder        = "{workspace}"
+	MangledWorkspacePlaceholder = "{workspace-}"
+)
 
 // Rule is one thing the harness does on its own: an action type and the target
 // it acts on, after the adapter's normalization.
@@ -146,8 +151,12 @@ func templateWorkspace(target, workspace string) string {
 	if len(workspace) < 2 {
 		return target
 	}
-	return strings.ReplaceAll(target, workspace, WorkspacePlaceholder)
+	target = strings.ReplaceAll(target, workspace, WorkspacePlaceholder)
+	return strings.ReplaceAll(target, mangle(workspace), MangledWorkspacePlaceholder)
 }
+
+// mangle is the workspace as Claude Code spells it in a directory name.
+func mangle(workspace string) string { return strings.ReplaceAll(workspace, "/", "-") }
 
 func sortRules(r []Rule) {
 	sort.Slice(r, func(i, j int) bool {
@@ -166,11 +175,12 @@ func sortRules(r []Rule) {
 func (b Baseline) Predicate(workspace string) verification.Baseline {
 	set := make(map[Rule]bool, len(b.Rules))
 	for _, r := range b.Rules {
-		if strings.Contains(r.Target, WorkspacePlaceholder) {
+		if strings.Contains(r.Target, WorkspacePlaceholder) || strings.Contains(r.Target, MangledWorkspacePlaceholder) {
 			if len(workspace) < 2 {
 				continue
 			}
 			r.Target = strings.ReplaceAll(r.Target, WorkspacePlaceholder, workspace)
+			r.Target = strings.ReplaceAll(r.Target, MangledWorkspacePlaceholder, mangle(workspace))
 		}
 		set[r] = true
 	}

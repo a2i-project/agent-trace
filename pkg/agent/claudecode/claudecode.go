@@ -68,9 +68,11 @@ func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 
 // Normalize recovers the claimed command from the wrapper argv of a process
-// event (D6). Every other event passes through.
+// event (D6) and replaces the per-run ids in the harness's own file paths
+// (I-23, I-29). Every other event passes through.
 func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
-	if e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit {
+	switch {
+	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
 		if payload, ok := evalPayload(e.Target); ok {
 			e.Target = payload
 		} else if search, ok := searchKind(e.Target); ok {
@@ -78,6 +80,8 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 		} else {
 			e.Target = canonicalIDs(e.Target)
 		}
+	case isFile(e.ActionType):
+		e.Target = canonicalFileIDs(e.Target)
 	}
 	return e, true
 }

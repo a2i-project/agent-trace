@@ -312,6 +312,26 @@ func TestCaptureExcludesTheControlTasksOwnCommand(t *testing.T) {
 	}
 }
 
+// Claude Code names its per-project directory after the workspace with every
+// slash turned into a dash. A rule for a file under it names the workspace by
+// the mangled placeholder and matches a run in another directory (I-29).
+func TestCaptureTemplatesTheMangledWorkspace(t *testing.T) {
+	a := fake{name: "f"}
+	r := runFile(100, models.GroundTruth{ev(models.FileWrite, "/home/u/.claude/projects/-tmp-cap-ws-control-1/SESSION.jsonl", 100, 0)})
+	r.Workspace = "/tmp/cap/ws-control-1"
+	b, err := Capture(a, "v", []models.GroundTruthFile{r}, t0, CaptureOptions{})
+	if err != nil || len(b.Rules) != 1 || b.Rules[0].Target != "/home/u/.claude/projects/"+MangledWorkspacePlaceholder+"/SESSION.jsonl" {
+		t.Fatalf("Capture = %+v, %v", b.Rules, err)
+	}
+	p := b.Predicate("/tmp/cap/ws-task")
+	if !p(ev(models.FileWrite, "/home/u/.claude/projects/-tmp-cap-ws-task/SESSION.jsonl", 100, 0)) {
+		t.Error("the rule does not match the task run's transcript directory")
+	}
+	if p(ev(models.FileWrite, "/home/u/.claude/projects/-tmp-cap-ws-control-1/SESSION.jsonl", 100, 0)) {
+		t.Error("the rule still matches the control's own directory")
+	}
+}
+
 func TestCaptureNormalizesBeforeAttributing(t *testing.T) {
 	a := fake{name: "f", norm: func(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 		e.Target = strings.ReplaceAll(e.Target, "/tmp/claude-9999-cwd", "/tmp/claude-N-cwd")
