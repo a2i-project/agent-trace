@@ -133,6 +133,17 @@ type Observer struct {
 	// pendingHashOpens.
 	lastWriteAt map[string]time.Time
 
+	// lastEmitted records, per path, the last action type emitted for it and
+	// by which pid. A write-class or rename event that repeats the last one
+	// on its path from the same process is not emitted again: the kernel
+	// merges consecutive notifications on one object into one mask when
+	// nothing reads between them and delivers them apart otherwise, so
+	// without this the number of file_write events for one write (the
+	// truncating open and the write) or of file_rename events for one rename
+	// (the two names) depended on timing. Position is what the verifier
+	// pairs on, so the count must not (P-18).
+	lastEmitted map[string]emitted
+
 	// settleDelay is how long a path must be quiet (no write-class event,
 	// see lastWriteAt) before a pending close for it is hashed. Defaults to
 	// settleQuietWindow; left zero by tests that drive
@@ -144,6 +155,12 @@ type Observer struct {
 	hashFD func(int) (string, error)
 
 	mu sync.Mutex
+}
+
+// emitted is what lastEmitted remembers for a path.
+type emitted struct {
+	typ models.ActionType
+	pid uint32
 }
 
 // pendingClose is a FileClose observed for a path but not yet resolved to a
@@ -222,6 +239,7 @@ func New(cfg Config) (*Observer, error) {
 		pathGeneration:      make(map[string]uint64),
 		pendingCloses:       make(map[string]*pendingClose),
 		lastWriteAt:         make(map[string]time.Time),
+		lastEmitted:         make(map[string]emitted),
 		settleDelay:         settleQuietWindow,
 		hashFD:              content.SHA256FD,
 	}, nil
@@ -440,10 +458,16 @@ func (o *Observer) drainNonBlocking(buf []byte) {
 			return
 		}
 
+		// One batch, one clock reading, and one nanosecond per record on top:
+		// the verifier sorts by timestamp (stably) and pairs by position, and a
+		// close is emitted only after its settle window, so without the offset
+		// it sorted after every later record of its batch and lost its place
+		// (P-18). A batch is read in microseconds, so the offsets never reach
+		// the next batch's reading.
 		now := time.Now()
 		raw := parseEvents(buf, n, newKernelResolver(o.mounts))
 		for i := range raw {
-			o.processRawEvent(&raw[i], now)
+			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
 		}
 	}
 }
@@ -514,6 +538,9 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	}
 
 	for _, actionType := range maskToActionTypes(e.Mask) {
+		if o.repeats(e.Path, actionType, pidOf(e)) {
+			continue
+		}
 		if actionType == models.FileClose {
 			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData)
 		} else {
@@ -531,6 +558,27 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 			o.events <- event
 		}
 	}
+}
+
+// repeats records that actionType is being emitted for path by pid and
+// reports whether it repeats the previous emission for that path: a
+// file_write after a file_write, or a file_rename after a file_rename, by
+// the same process, with no other event on the path between. Such a repeat
+// is one of the kernel's unmerged halves of one operation and is dropped
+// (P-18). Any other event resets the path, so two writes separated by a
+// close, or by another process's event, are both emitted.
+func (o *Observer) repeats(path string, actionType models.ActionType, pid uint32) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.lastEmitted == nil {
+		o.lastEmitted = make(map[string]emitted)
+	}
+	prev, ok := o.lastEmitted[path]
+	o.lastEmitted[path] = emitted{typ: actionType, pid: pid}
+	if !ok || prev.pid != pid || prev.typ != actionType {
+		return false
+	}
+	return actionType == models.FileWrite || actionType == models.FileRename
 }
 
 // emptyFileHash is the InputHash attached to a FAN_OPEN when the observer

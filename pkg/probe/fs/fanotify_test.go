@@ -3,6 +3,8 @@ package fs
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,5 +221,46 @@ func TestObserver_ProcessRawEvent(t *testing.T) {
 	}
 	if !obs.Overflow() {
 		t.Errorf("expected overflow to be set")
+	}
+}
+
+// One operation can reach the probe as one merged notification or as several,
+// depending on whether anything read between them. The emitted sequence must
+// not depend on that: a repeated write-class or rename event on one path by
+// one process is one event, and anything else on the path resets it (P-18).
+func TestProcessRawEvent_RepeatedWritesAndRenamesCollapse(t *testing.T) {
+	obs := &Observer{events: make(chan models.GroundTruthEvent, 32), cfg: Config{PathFilter: "/mock"}}
+	now := time.Now()
+	raws := []rawEvent{
+		{Mask: unix.FAN_MODIFY, PID: 1, Path: "/mock/a"},                         // the truncating open
+		{Mask: unix.FAN_MODIFY, PID: 1, Path: "/mock/a"},                         // the write: same operation
+		{Mask: unix.FAN_MODIFY, PID: 1, Path: "/mock/b"},                         // another path
+		{Mask: unix.FAN_MODIFY, PID: 1, Path: "/mock/a"},                         // a changed, b between: still a's run
+		{Mask: unix.FAN_MODIFY, PID: 2, Path: "/mock/a"},                         // another process: emitted
+		{Mask: unix.FAN_OPEN, PID: 1, Path: "/mock/a"},                           // resets a
+		{Mask: unix.FAN_MODIFY, PID: 1, Path: "/mock/a"},                         // emitted again
+		{Mask: unix.FAN_MOVED_FROM, PID: 1, Path: "/mock"},                       // one rename, two notifications
+		{Mask: unix.FAN_MOVED_TO, PID: 1, Path: "/mock"},                         //
+		{Mask: unix.FAN_MOVED_FROM | unix.FAN_MOVED_TO, PID: 1, Path: "/mock/d"}, // merged: one event
+	}
+	for i := range raws {
+		obs.processRawEvent(&raws[i], now.Add(time.Duration(i)))
+	}
+	close(obs.events)
+	var got []string
+	for e := range obs.events {
+		got = append(got, fmt.Sprintf("%s %s %d", e.ActionType, e.Target, e.PID))
+	}
+	want := []string{
+		"file_write /mock/a 1",
+		"file_write /mock/b 1",
+		"file_write /mock/a 2",
+		"file_open /mock/a 1",
+		"file_write /mock/a 1",
+		"file_rename /mock 1",
+		"file_rename /mock/d 1",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("emitted:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

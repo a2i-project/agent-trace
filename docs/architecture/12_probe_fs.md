@@ -1,6 +1,6 @@
 # Filesystem probe
 
-Checked against commit c612b89 on 2026-10-08, with the changes in the commit that introduced P-17.
+Checked against commit c17fb49 on 2026-10-09, with the changes in the commit that introduced P-18.
 
 ## Objective
 
@@ -25,11 +25,12 @@ fanotify through `golang.org/x/sys/unix`, in notification class (`FAN_CLASS_NOTI
 ### Reading and resolving
 
 1. `Start` walks `PathFilter`, or `Path` when there is no filter, and hashes every regular file into `shadowHashes` (by path) and `shadowHashesByInode` (by device and inode), then starts `readLoop`. Files elsewhere are not hashed, so their first open carries the empty-content hash.
-2. `readLoop` polls the fanotify fd and a stop pipe with a 5 ms timeout (`settlePollMs`), so it wakes to judge pending closes even when nothing arrives. Each wakeup drains every available record (`drainNonBlocking`) and stamps the whole batch with one `time.Now()`.
+2. `readLoop` polls the fanotify fd and a stop pipe with a 5 ms timeout (`settlePollMs`), so it wakes to judge pending closes even when nothing arrives. Each wakeup drains every available record (`drainNonBlocking`) and stamps the batch with one `time.Now()` plus one nanosecond per record, so the records keep their kernel order under the verifier's stable sort by timestamp, and a close emitted later, after its settle window, keeps the place of the record that produced it (P-18).
 3. `parseEvents` walks the metadata records. `resolveEventPath` prefers a DFID_NAME record (parent directory handle plus name), then a FID record (the object's own handle), then a DFID record (directory only). Only the last case sets `PathIsAmbiguous`, which happens when the kernel merged events and dropped the name. The FID handle is kept for later inode lookups.
 4. `processRawEvent` sets `overflow` on `FAN_Q_OVERFLOW`, applies `PIDFilter` and `PathFilter`, strips the probe's own hash-read `FAN_OPEN` (tracked in `pendingHashOpens`), and bumps the path's `pathGeneration` and `lastWriteAt` for any create, modify, close-write or open.
 5. `maskToActionTypes` expands one mask into events in a fixed causal order: `FAN_OPEN` to `file_open`, `FAN_CREATE` or `FAN_MODIFY` to one `file_write`, `FAN_CLOSE_WRITE` to `file_close`, then `FAN_DELETE` to `file_delete` and `FAN_MOVED_FROM` or `FAN_MOVED_TO` to `file_rename`. The kernel merges consecutive events on one object into a single mask that has no order; emitting open, write, close in that order makes a merged notification and the same operations delivered separately produce the same sequence (commit 81b3c4d). The verifier aligns by position, so a fixed order matters.
-6. Every event carries `PID` from the fanotify metadata (0 when the kernel caused it). There is no tracked-set filter: `PIDFilter` matches one exact pid and does not follow children. A fanotify event is read some time after the access, a short-lived child has often left any tracked set by then, and a filter consulting the set would drop that child's events with nothing counting the loss. Attribution is the verifier's job (`pkg/verification.Forest.Attribute`).
+6. Before emission, `repeats` drops a `file_write` that follows a `file_write`, or a `file_rename` that follows a `file_rename`, on the same path by the same pid with no other event on the path between (`lastEmitted`). The kernel merges consecutive notifications on one object into one mask when nothing reads between them and delivers them apart otherwise, so a truncating open plus its write, or the two names of one rename, reached the verifier as one event or two depending on timing; now it is one either way (P-18). Any other event on the path, or another process's event, resets the path, so two writes separated by a close are two events.
+7. Every event carries `PID` from the fanotify metadata (0 when the kernel caused it). There is no tracked-set filter: `PIDFilter` matches one exact pid and does not follow children. A fanotify event is read some time after the access, a short-lived child has often left any tracked set by then, and a filter consulting the set would drop that child's events with nothing counting the loss. Attribution is the verifier's job (`pkg/verification.Forest.Attribute`).
 
 ### Hashes
 
@@ -48,6 +49,8 @@ A `file_close` goes through a settle protocol so its `OutputHash` is the content
 
 Paths are resolved by the kernel from file handles, not read from user memory. The probe sees every writer on the marked filesystem, whichever process tree it belongs to, and records the causing PID. A published `OutputHash` is computed only after the path has been quiet for the settle window and survived the generation check; when the probe cannot vouch for it, the hash is absent rather than stale.
 
+The emitted sequence does not depend on whether the kernel merged notifications or on when a close settled: a repeated write or rename on one path by one process is one event, and a record's timestamp is its position in its batch (`TestProcessRawEvent_RepeatedWritesAndRenamesCollapse`, P-18).
+
 The probe never drops on its own channel: `processRawEvent` and the settle code send with a blocking send. A slow consumer backs up into the kernel queue, and a full kernel queue produces `FAN_Q_OVERFLOW`. `CaptureCoverage` reports `Ran: true` and `QueueOverflow`, which `verification.Assess` treats as event loss (INCONCLUSIVE). All other `ProbeCoverage` counters are zero for this probe.
 
 ## Known limits
@@ -58,10 +61,10 @@ The probe never drops on its own channel: `processRawEvent` and the settle code 
 - Attribute and permission changes are not watched.
 - Without `AllFilesystems`, only the filesystem containing `Config.Path` is marked, so activity on tmpfs `/tmp` or any other mount is invisible. With it, fuse mounts, read-only images and any filesystem that refused the mark are still invisible; the capture's `fs_scope` lists them.
 - `PathFilter` is a plain string prefix, so `/work` also admits `/workspace2`. `cmd/watch` no longer uses it; its own workspace test is directory-bounded.
-- A rename produces two `file_rename` events, one per name, with nothing linking them.
+- A rename inside one directory is one `file_rename` on that directory; a rename across directories is one on each, with nothing linking them.
 - A delete inside a tree being removed can arrive after its parent directory is gone, and then no handle resolves: the event has an empty target. `cmd/watch` counts those in `fs_scope.unresolved` and leaves them out of the capture.
-- The kernel can merge several modifies into one notification, so the number of `file_write` events for a burst is not stable.
-- Timestamps are taken at userspace read time and are not comparable in order with proc or net timestamps.
+- Two writes through one open descriptor with no other event on the path between them are one `file_write`: the collapse that makes the count stable cannot tell a second write from the unmerged half of the first.
+- Timestamps are taken at userspace read time, plus the record's position in its batch, and are not comparable in order with proc or net timestamps.
 - The startup walk opens every file under the walked directory while the mark is active; the probe reports those opens with the recorder's own PID, and `cmd/watch` drops them with every other file event of its own pid.
 - `pathGeneration`, `lastWriteAt` and the shadow hash maps grow for the observer's whole life.
 - PID reuse among short-lived processes is resolved by time in the verifier, which is a heuristic.

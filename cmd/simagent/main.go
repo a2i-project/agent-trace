@@ -170,9 +170,9 @@ func main() {
 	delay()
 
 	// 2. Rename
-	// os.Rename triggers:
-	// - FAN_MOVED_FROM (FileRename) on src
-	// - FAN_MOVED_TO (FileRename) on dst
+	// os.Rename triggers FAN_MOVED_FROM and FAN_MOVED_TO on the directory; the
+	// probe emits them as one FileRename whether or not the kernel merged
+	// them (P-18).
 	f2 := filepath.Join(workspace, "file2.txt")
 	addEntry(models.FileRename, f1)
 	err = os.Rename(f1, f2)
