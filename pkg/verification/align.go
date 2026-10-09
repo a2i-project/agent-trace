@@ -3,6 +3,7 @@ package verification
 import (
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/matching"
@@ -209,7 +210,7 @@ func pairCost(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses)
 
 func targetAndContentDiffs(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses) []string {
 	var diffs []string
-	if !matching.TargetsMatch(c, e) {
+	if !matching.TargetsMatch(c, e) && !truncatedPrefix(c, e) {
 		diffs = append(diffs, DiffTarget)
 	}
 	if c.ActionType == e.ActionType {
@@ -305,6 +306,14 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 		la.Edits = append(la.Edits, rev[k])
 	}
 	return la, nil
+}
+
+// truncatedPrefix reports whether the observed target is a truncated record
+// whose text is a prefix of the claim's target. The probe could not record
+// the rest, so the pair is not a mismatch; it is unverified beyond the cap
+// (unverifiedFields, V-26).
+func truncatedPrefix(c models.TrajectoryEntry, e models.GroundTruthEvent) bool {
+	return e.TargetTruncated && c.ActionType == e.ActionType && e.Target != "" && strings.HasPrefix(c.Target, e.Target)
 }
 
 // outsideInterval reports whether an observed action falls outside the claim's

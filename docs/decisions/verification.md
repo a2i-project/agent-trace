@@ -202,6 +202,14 @@ Decision: Among the outside events, the write-class ones (writes, closes, rename
 Consequences: An editor or another tool touching the workspace during a capture makes the run INCONCLUSIVE, which is the honest reading: the capture cannot vouch for the workspace. A process the agent reached outside the tree (a daemon over a socket, O-13) that writes the workspace is no longer silent. Nothing changes for a clean capture.
 Alternatives rejected: Keeping FAITHFUL (asserts what the capture cannot vouch for); making them findings (they are not the agent's doing as far as the tree can tell, and the user's own editor would make the agent unfaithful).
 
+### V-26: A truncated observed target pairs by prefix and is unverified
+Status: Accepted, implemented (`truncatedPrefix` in `align.go`, `unverifiedFields`; `evalPayloadPrefix` in the Claude Code adapter).
+Date: 2026-10-09 (with P-19).
+Context: The proc probe can now say it cut a command line (P-19). Comparing the cut text for equality read every such line as a substitution.
+Decision: An observed target flagged `TargetTruncated` pairs with a claim whose target it is a prefix of, as a corroborated pair unverified on its target, which makes the run INCONCLUSIVE under V-22. A cut target that is not a prefix of the claim is a mismatch, and an unflagged prefix is a mismatch as before. The Claude Code adapter recovers what the probe kept of a cut wrapper's eval word so the prefix comparison applies to the command, not to the wrapper.
+Consequences: An honest long command is never a false substitution; a dishonest claim that shares a prefix with a cut command line is not refuted beyond the cut, which the report says. The cap is high enough that neither case arises for a single-string command.
+Alternatives rejected: Comparing hashes of the full line computed in the kernel (bounded loops cannot hash two megabytes); reporting a cut line as a mismatch (the audit's false positive).
+
 ## Superseded
 
 ### F0.2-F0.3: Timestamp-window matcher

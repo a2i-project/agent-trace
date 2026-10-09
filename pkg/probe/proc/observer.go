@@ -148,6 +148,10 @@ func New(cfg Config) (*Observer, error) {
 	if cfg.ExecsMax != 0 {
 		spec.Maps["execs"].MaxEntries = cfg.ExecsMax
 	}
+	// One scratch slot per possible CPU (P-19): the program indexes the array
+	// by the running CPU, so the map must cover every CPU the kernel may run
+	// it on.
+	spec.Maps["heap"].MaxEntries = uint32(ebpf.MustPossibleCPU())
 	if err := spec.LoadAndAssign(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
@@ -373,12 +377,21 @@ func (o *Observer) emitForkEdge(hdr *bpfEventHdr) {
 	}
 }
 
+// lastExec is what an exit record is joined to: the command line of the
+// latest exec read for the pid, and whether the probe cut it. The kernel
+// keeps only the header per process (P-19), so the join happens here.
+type lastExec struct {
+	target    string
+	truncated bool
+}
+
 func (o *Observer) readLoop() {
 	defer close(o.stopped)
 
 	var hdr bpfEventHdr
 	hdrSize := binary.Size(hdr)
 	const filenameLen = 256 // Matches FILENAME_LEN in proc.bpf.c
+	execs := map[uint32]lastExec{}
 
 	for {
 		record, err := o.reader.Read()
@@ -420,22 +433,38 @@ func (o *Observer) readLoop() {
 			continue
 		}
 
-		// Extract filename and args from the payload
-		var fnBytes, argsBytes []byte
-		if len(record.RawSample) >= hdrSize+filenameLen {
-			fnBytes = record.RawSample[hdrSize : hdrSize+filenameLen]
-			
-			argsStart := hdrSize + filenameLen
-			argsEnd := argsStart + int(hdr.ArgsSize)
-			if argsEnd > len(record.RawSample) {
-				argsEnd = len(record.RawSample)
+		var target string
+		truncated := hdr.ArgsTruncated != 0
+		if actionType == models.ProcessExit {
+			// A header-only record: the command line is the exec's. An exit
+			// whose exec this reader never saw (the ring dropped it, which
+			// drop_count counted) has no command line and is not emitted,
+			// as before, when the kernel kept the exec record itself.
+			le, ok := execs[hdr.Pid]
+			delete(execs, hdr.Pid)
+			if !ok {
+				continue
 			}
-			if argsStart < argsEnd {
-				argsBytes = record.RawSample[argsStart:argsEnd]
+			target, truncated = le.target, le.truncated
+		} else {
+			// Extract filename and args from the payload
+			var fnBytes, argsBytes []byte
+			if len(record.RawSample) >= hdrSize+filenameLen {
+				fnBytes = record.RawSample[hdrSize : hdrSize+filenameLen]
+				argsStart := hdrSize + filenameLen
+				argsEnd := argsStart + int(hdr.ArgsSize)
+				if argsEnd > len(record.RawSample) {
+					argsEnd = len(record.RawSample)
+				}
+				if argsStart < argsEnd {
+					argsBytes = record.RawSample[argsStart:argsEnd]
+				}
+			}
+			target = commandLine(cString(fnBytes), argsBytes, hdr.Nargs)
+			if target != "" {
+				execs[hdr.Pid] = lastExec{target: target, truncated: truncated}
 			}
 		}
-
-		target := commandLine(cString(fnBytes), argsBytes, hdr.Nargs)
 		if target == "" {
 			continue
 		}
@@ -445,12 +474,13 @@ func (o *Observer) readLoop() {
 
 		isTopLevel := hdr.IsToplevel == 1
 		event := models.GroundTruthEvent{
-			Timestamp:  time.Unix(0, hdr.TsNs+o.bootOffsetNs),
-			ActionType: actionType,
-			Target:     target,
-			IsTopLevel: &isTopLevel,
-			PID:        hdr.Pid,
-			PPID:       hdr.Ppid,
+			Timestamp:       time.Unix(0, hdr.TsNs+o.bootOffsetNs),
+			ActionType:      actionType,
+			Target:          target,
+			TargetTruncated: truncated,
+			IsTopLevel:      &isTopLevel,
+			PID:             hdr.Pid,
+			PPID:            hdr.Ppid,
 		}
 		if hdr.HasExitCode != 0 {
 			code := hdr.ExitCode

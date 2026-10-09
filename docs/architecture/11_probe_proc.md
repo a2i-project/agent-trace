@@ -1,6 +1,6 @@
 # Process probe
 
-Checked against commit d1276ff on 2026-10-07.
+Checked against commit c177fe7 on 2026-10-09, with the changes in the commit that introduced P-19.
 
 ## Objective
 
@@ -21,12 +21,12 @@ Kernel maps:
 | `tracked_pids` | hash, 16384 | tgid to `proc_info{is_shell, is_toplevel}` |
 | `config_map` | array, 1 | 1 = ancestry-filtered mode, 0 = host-wide |
 | `root_pid_map` | array, 1 | the root pid |
-| `execs` | hash, 4096 | latest exec record per tgid, kept until exit |
-| `heap` | per-CPU array, 1 | scratch `exec_scratch` (header, 256-byte filename, 16 KiB args area) |
-| `events` | ring buffer, 1 MiB | records to userspace |
+| `execs` | hash, 4096 | the header of the latest exec per tgid, kept until exit; the exit code lands here and the exit record is this header (P-19) |
+| `heap` | array, one entry per possible CPU, sized at load | scratch `exec_scratch` (header, 256-byte filename, 256 KiB args area for a 128 KiB command line), indexed by the running CPU; a per-CPU array value is capped at 32 KiB by the kernel |
+| `events` | ring buffer, 8 MiB | records to userspace; an exec record can be 128 KiB |
 | `drop_count`, `untracked_count`, `state_lost_count` | per-CPU arrays | loss counters |
 
-Record kinds (`event_hdr.kind`): `KIND_EXEC` 0, `KIND_EXIT` 1, `KIND_FORK` 2. A fork record is the header only.
+Record kinds (`event_hdr.kind`): `KIND_EXEC` 0, `KIND_EXIT` 1, `KIND_FORK` 2. A fork record and an exit record are the header only. The header's `args_truncated` says the filename or the arguments did not fit.
 
 `Config` fields: `PIDFilter` (ancestry root set at `New`), `CommandFilter` (command line prefix), `DeferRootPID` (start filtered with an empty tracked set), `EventBufSize` (default 4096), and the test-only capacity overrides `RingbufBytes`, `TrackedPIDsMax` and `ExecsMax`.
 
@@ -43,9 +43,9 @@ eBPF tracepoints loaded with cilium/ebpf, one ring buffer, CO-RE (`BPF_CORE_READ
 ### Kernel side
 
 1. `handle_fork` (filtered mode only) ignores `CLONE_THREAD` clones. If the parent tgid is tracked, it emits a `KIND_FORK` record with `pid` = child and `ppid` = parent, then inserts the child into `tracked_pids`. The child's `is_toplevel` is 1 only when the parent is both a shell and top-level.
-2. `handle_execve` fires at syscall entry, so it records every attempt, including execs that then fail. It reads the filename (up to 256 bytes) with `bpf_probe_read_user_str`, sets `ppid` from `real_parent->tgid` via CO-RE, and stamps `bpf_ktime_get_ns()`. In filtered mode it returns early for an untracked tgid; for a tracked non-root process it re-evaluates `is_shell` by comparing the filename with eight fixed shell paths (`/bin/sh`, `/usr/bin/sh`, and the same for bash, dash and zsh). It copies up to 64 argv strings into the args area, stopping at 8 KiB. It stores the record in `execs` keyed by tgid, then outputs it to the ring buffer.
-3. `handle_exit_group` stores the `exit_group` argument as the exit code in the tgid's `execs` entry and sets `has_exit_code`.
-4. `handle_exit` acts only when the exiting thread is the group leader (`tid == tgid`) and the tgid has an `execs` entry. It copies that entry, changes the kind to `KIND_EXIT` with a fresh timestamp, outputs it, deletes the `execs` entry and, in filtered mode, removes the tgid from `tracked_pids`.
+2. `handle_execve` fires at syscall entry, so it records every attempt, including execs that then fail. It reads the filename (up to 256 bytes) with `bpf_probe_read_user_str`, sets `ppid` from `real_parent->tgid` via CO-RE, and stamps `bpf_ktime_get_ns()`. In filtered mode it returns early for an untracked tgid; for a tracked non-root process it re-evaluates `is_shell` by comparing the filename with eight fixed shell paths (`/bin/sh`, `/usr/bin/sh`, and the same for bash, dash and zsh). It copies up to 64 argv strings into the args area, stopping at 128 KiB, and sets `args_truncated` when a string did not fit, the total did, there were more than 64 arguments, or the filename exceeded 256 bytes. It stores the header in `execs` keyed by tgid, then outputs the record to the ring buffer.
+3. `handle_exit_group` stores the `exit_group` argument as the exit code in the tgid's `execs` header and sets `has_exit_code`.
+4. `handle_exit` acts only when the exiting thread is the group leader (`tid == tgid`) and the tgid has an `execs` entry. It outputs that header with the kind `KIND_EXIT` and a fresh timestamp, deletes the `execs` entry and, in filtered mode, removes the tgid from `tracked_pids`. The command line is not in the kernel's copy: keeping it per process would preallocate a gigabyte, so userspace joins the exit to the exec it read.
 
 ### Userspace side
 
@@ -53,9 +53,10 @@ eBPF tracepoints loaded with cilium/ebpf, one ring buffer, CO-RE (`BPF_CORE_READ
 
 1. A record whose pid equals `cfg.PIDFilter` is dropped: the root is the controller, not an agent action. This covers the root's own exec, which can reach the ring buffer before `SetRootPID` takes effect.
 2. A fork record becomes `process_fork` with `Target` = the child pid as a decimal string, `PID` and `PPID`. It is skipped when `CommandFilter` is set.
-3. An exec or exit record becomes `process_exec` or `process_exit`. `commandLine` builds the target from the kernel-supplied filename followed by `argv[1:]`; `argv[0]` is dropped because the caller controls it. Only when the filename is empty does it fall back to `argv[0]`. A record with an empty command line is dropped, and `CommandFilter` drops non-matching prefixes.
-4. The event carries `PID`, `PPID`, `IsTopLevel` (legacy) and, for an exit with `has_exit_code`, `ExitCode`.
-5. The event is sent without blocking; a full channel increments `Dropped`.
+3. An exec record becomes `process_exec`. `commandLine` builds the target from the kernel-supplied filename followed by `argv[1:]`; `argv[0]` is dropped because the caller controls it. Only when the filename is empty does it fall back to `argv[0]`. The target and the truncation flag are remembered per pid. A record with an empty command line is dropped, and `CommandFilter` drops non-matching prefixes.
+4. An exit record becomes `process_exit` with the target and flag remembered for its pid, which are then forgotten. An exit whose exec this reader never saw (a ring drop, counted by `drop_count`) is not emitted, as before when the kernel kept the exec record itself.
+5. The event carries `PID`, `PPID`, `TargetTruncated`, `IsTopLevel` (legacy) and, for an exit with `has_exit_code`, `ExitCode`.
+6. The event is sent without blocking; a full channel increments `Dropped`.
 
 `Stop` closes the ring buffer reader, waits for `readLoop`, snapshots the three kernel counters, closes the links and maps, and closes the events channel.
 
@@ -76,10 +77,10 @@ All four are event loss and make the verdict INCONCLUSIVE. Tests force each kern
 
 - A process that never execs produces no `process_exit`, because exit records are copies of an `execs` entry.
 - `handle_exit` returns before removing the tgid from `tracked_pids` when there is no `execs` entry, so a tracked process that never exec'd leaves a stale entry that can track an unrelated process if the pid is reused.
-- The exit record copies the most recent exec record for the tgid, and since execs are recorded at syscall entry, that can be a failed attempt's command line.
+- The exit is joined to the most recent exec read for the tgid, and since execs are recorded at syscall entry, that can be a failed attempt's command line.
 - A process killed by a signal never calls `exit_group`, so its exit has no `ExitCode`.
 - Filename and argv are read from user memory at syscall entry, so another thread can change them before the kernel copies them.
-- argv is truncated at 64 arguments or 8 KiB and the filename at 256 bytes, and nothing records the truncation.
+- argv is kept up to 64 arguments and 128 KiB and the filename up to 256 bytes; beyond that the record is cut and `TargetTruncated` says so, and the verifier pairs the cut target by prefix as unverified (V-26). Linux allows one argument of 128 KiB, so a harness's single-string command always fits (`TestObserver_LongCommandLineIsRecordedWhole`, `TestObserver_OverlongCommandLineIsFlagged`).
 - The probe captures no working directory, environment or stdin, so relative paths in argv are unresolved and a script fed through a pipe or heredoc is invisible.
 - In host-wide mode no fork records are emitted, so the forest cannot place processes that never exec.
 - The root pid is inserted after the agent starts, so a fork before `SetRootPID` is untracked and uncounted.

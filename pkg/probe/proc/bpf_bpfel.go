@@ -14,25 +14,26 @@ import (
 )
 
 type bpfEventHdr struct {
-	_           structs.HostLayout
-	Pid         uint32
-	Ppid        uint32
-	Kind        uint32
-	Nargs       uint32
-	TsNs        int64
-	ExitCode    int32
-	HasExitCode uint8
-	IsToplevel  uint8
-	_           [2]byte
-	FilenameLen uint32
-	ArgsSize    uint32
+	_             structs.HostLayout
+	Pid           uint32
+	Ppid          uint32
+	Kind          uint32
+	Nargs         uint32
+	TsNs          int64
+	ExitCode      int32
+	HasExitCode   uint8
+	IsToplevel    uint8
+	ArgsTruncated uint8
+	Pad0          uint8
+	FilenameLen   uint32
+	ArgsSize      uint32
 }
 
 type bpfExecScratch struct {
 	_        structs.HostLayout
 	Hdr      bpfEventHdr
 	Filename [256]int8
-	Args     [16384]int8
+	Args     [262144]int8
 }
 
 type bpfProcInfo struct {

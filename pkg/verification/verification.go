@@ -206,6 +206,9 @@ func unverifiedFields(entry models.TrajectoryEntry, event models.GroundTruthEven
 		return nil
 	}
 	var out []string
+	if truncatedPrefix(entry, event) {
+		out = append(out, DiffTarget)
+	}
 	switch entry.ActionType {
 	case models.FileClose, models.FileWrite:
 		if entry.OutputHash != nil && event.OutputHash == nil {

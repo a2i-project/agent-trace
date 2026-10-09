@@ -408,6 +408,23 @@ func TestParseReportsTheHarnessVersion(t *testing.T) {
 	}
 }
 
+// A wrapper the probe cut keeps what it had of the eval word, with the
+// quoting undone, when the event says it was truncated; the verifier then
+// pairs it as a prefix of the claim. An uncut line is never read that way.
+func TestNormalizeRecoversThePrefixOfATruncatedWrapper(t *testing.T) {
+	cmd := "cat > /ws/big.py <<'EOF'\n" + strings.Repeat("x = 1\n", 1500) + "EOF\n"
+	wrapper := "/bin/bash -c source /home/u/.claude/shell-snapshots/snapshot-bash-1700000000-ab12cd.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && eval '" + strings.ReplaceAll(cmd, "'", `'\''`) + "' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+	cut := wrapper[:8192]
+	got, _ := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: models.ProcessExec, Target: cut, TargetTruncated: true})
+	if !strings.HasPrefix(cmd, got.Target) || len(got.Target) < 7000 || !got.TargetTruncated {
+		t.Errorf("truncated wrapper -> %d bytes (prefix of the command: %v, flag kept: %v)", len(got.Target), strings.HasPrefix(cmd, got.Target), got.TargetTruncated)
+	}
+	plain, _ := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: models.ProcessExec, Target: cut})
+	if strings.HasPrefix(cmd, plain.Target) {
+		t.Error("an uncut line with an unterminated quote was read as a prefix")
+	}
+}
+
 func TestNormalizeDoesNotRecoverAWrapperFromAFileEvent(t *testing.T) {
 	e := models.GroundTruthEvent{ActionType: models.FileWrite, Target: strings.Replace(wrapper, "%s", "'x'", 1)}
 	if got, _ := (Adapter{}).Normalize(e); got.Target == "x" || got.Target != canonicalFileIDs(e.Target) {

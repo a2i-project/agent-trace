@@ -75,6 +75,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `PPID` | `ppid` | proc only, on fork, exec and exit records |
 | `IsTopLevel` | `is_top_level` | legacy: proc on exec and exit, net on `net_connect` and `net_request` (always true); fs leaves it nil |
 | `PathIsAmbiguous` | `path_is_ambiguous` | fs, when only the parent directory resolved |
+| `TargetTruncated` | `target_truncated` | proc, when the command line or the program path did not fit the record (P-19) |
 | `RequestHash` | `request_hash` | net, on `net_request` with a body |
 
 `process_fork`, `net_bind`, `net_listen` and `net_unix_connect` are ground truth only: `ActionType.IsClaimable` rejects them in a trajectory. `process_fork` is also structural (`IsStructural`): the verifier uses it to build the tree and neither aligns nor counts it. No probe emits `file_read`, `net_dns` or `git_commit`.

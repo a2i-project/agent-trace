@@ -865,3 +865,31 @@ func TestVerify_UnexplainedHarnessActivityIsInconclusive(t *testing.T) {
 		}
 	})
 }
+
+// A truncated observed command line pairs with a claim it is a prefix of, as
+// a corroborated pair unverified on its target, so the run is INCONCLUSIVE and
+// not a false substitution. A claim it is not a prefix of is a mismatch, and
+// an untruncated prefix is a mismatch as before (P-19, V-26).
+func TestVerify_TruncatedCommandLinePairsByPrefix(t *testing.T) {
+	long := "/bin/sh -c " + strings.Repeat("echo x; ", 2000)
+	cut := func(truncated bool) models.GroundTruthEvent {
+		e := agentEv(0, models.ProcessExec, long[:100])
+		e.TargetTruncated = truncated
+		return e
+	}
+	v := run(models.Trajectory{claimAt(0, models.ProcessExec, long)}, models.GroundTruth{cut(true)})
+	wantOutcome(t, v, OutcomeInconclusive)
+	if len(v.Corroborated) != 1 || len(v.Unverified) != 1 || v.Unverified[0].Diffs[0] != DiffTarget || v.Findings() != 0 {
+		t.Errorf("corroborated=%d unverified=%v findings=%d", len(v.Corroborated), v.Unverified, v.Findings())
+	}
+	v = run(models.Trajectory{claimAt(0, models.ProcessExec, "/bin/sh -c something else")}, models.GroundTruth{cut(true)})
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Mismatched) != 1 {
+		t.Errorf("a truncated line that is not a prefix must mismatch: %+v", v)
+	}
+	v = run(models.Trajectory{claimAt(0, models.ProcessExec, long)}, models.GroundTruth{cut(false)})
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Mismatched) != 1 {
+		t.Errorf("an untruncated prefix is a different command: %+v", v)
+	}
+}

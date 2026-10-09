@@ -849,3 +849,87 @@ func TestObserver_ForkRecordsPlaceProcessesThatNeverExec(t *testing.T) {
 		}
 	}
 }
+
+// A command line of up to 128 KiB is recorded whole. Linux allows a single
+// argument of up to 128 KiB, so one Bash command of a harness always fits;
+// before P-19 the cap was 8 KiB and a long heredoc mismatched its claim.
+func TestObserver_LongCommandLineIsRecordedWhole(t *testing.T) {
+	skipUnprivileged(t)
+	nonce := fmt.Sprintf("agenttrace-long-%d", time.Now().UnixNano())
+	arg := nonce + strings.Repeat("x", 100<<10)
+	obs, err := New(Config{CommandFilter: "/bin/true", EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	if err := exec.Command("/bin/true", arg).Run(); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	var sawExec, sawExit bool
+	for _, e := range collect(obs) {
+		if !strings.Contains(e.Target, nonce) {
+			continue
+		}
+		if e.Target != "/bin/true "+arg {
+			t.Errorf("%s target has %d bytes, want the whole %d", e.ActionType, len(e.Target), len("/bin/true "+arg))
+		}
+		if e.TargetTruncated {
+			t.Errorf("%s flagged truncated at %d bytes", e.ActionType, len(e.Target))
+		}
+		switch e.ActionType {
+		case models.ProcessExec:
+			sawExec = true
+		case models.ProcessExit:
+			sawExit = true
+		}
+	}
+	if !sawExec || !sawExit {
+		t.Errorf("exec=%v exit=%v, want both with the full command line", sawExec, sawExit)
+	}
+}
+
+// A command line the probe cannot hold whole (here 64 arguments of 4 KiB) is
+// recorded as far as it goes and flagged, on the exec and on the exit that
+// is joined to it.
+func TestObserver_OverlongCommandLineIsFlagged(t *testing.T) {
+	skipUnprivileged(t)
+	nonce := fmt.Sprintf("agenttrace-over-%d", time.Now().UnixNano())
+	args := []string{nonce}
+	for i := 0; i < 63; i++ {
+		args = append(args, strings.Repeat("y", 4<<10))
+	}
+	obs, err := New(Config{CommandFilter: "/bin/true", EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	if err := exec.Command("/bin/true", args...).Run(); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, e := range collect(obs) {
+		if !strings.Contains(e.Target, nonce) {
+			continue
+		}
+		seen++
+		if !e.TargetTruncated {
+			t.Errorf("%s with %d bytes not flagged truncated", e.ActionType, len(e.Target))
+		}
+		if len(e.Target) > 128<<10+len("/bin/true ")+1 {
+			t.Errorf("%s target has %d bytes, over the cap", e.ActionType, len(e.Target))
+		}
+	}
+	if seen != 2 {
+		t.Errorf("saw %d events with the nonce, want the exec and the exit", seen)
+	}
+}

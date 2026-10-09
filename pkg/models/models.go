@@ -83,6 +83,12 @@ type GroundTruthEvent struct {
 	// exact," which is both the common case and the safe default for any
 	// producer that doesn't set it.
 	PathIsAmbiguous bool `json:"path_is_ambiguous,omitempty"`
+	// TargetTruncated is true when the probe could not record the whole
+	// target: the proc probe keeps at most 64 arguments and 128 KiB of a
+	// command line, and 256 bytes of the program path. The target is then a
+	// prefix of the real one, and the verifier pairs it by prefix and marks
+	// the pair unverified rather than mismatched (P-19).
+	TargetTruncated bool `json:"target_truncated,omitempty"`
 	// RequestHash is "sha256:<hex>" of an observed NetRequest's request
 	// body, computed from the plaintext captured pre-encryption. Nil when
 	// the request had no body, or the action isn't a NetRequest.

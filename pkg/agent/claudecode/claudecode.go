@@ -76,6 +76,11 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
 		if payload, ok := evalPayload(e.Target); ok {
 			e.Target = payload
+		} else if prefix, ok := evalPayloadPrefix(e.Target); e.TargetTruncated && ok {
+			// The probe cut the wrapper: what it kept of the eval word is a
+			// prefix of the claimed command, and the verifier pairs it as such
+			// (V-26). The flag stays on the event.
+			e.Target = prefix
 		} else if search, ok := searchKind(e.Target); ok {
 			e.Target = search
 		} else {

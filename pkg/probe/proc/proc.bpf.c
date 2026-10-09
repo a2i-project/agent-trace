@@ -8,7 +8,11 @@
 char LICENSE[] SEC("license") = "GPL";
 
 #define MAX_ARGS 64
-#define MAX_ARGS_BYTES 8192
+// 128 KiB: Linux allows a single argument string of up to 128 KiB
+// (MAX_ARG_STRLEN), so one Bash command of a harness always fits; only a
+// command line of many large arguments exceeds it, and then args_truncated
+// says so (P-19).
+#define MAX_ARGS_BYTES 131072
 #define FILENAME_LEN 256
 
 #define KIND_EXEC 0
@@ -39,6 +43,8 @@ struct event_hdr {
 	__s32 exit_code;
 	__u8  has_exit_code;
 	__u8  is_toplevel;
+	__u8  args_truncated; // the filename or the arguments did not fit
+	__u8  pad0;
 	__u32 filename_len;
 	__u32 args_size;
 };
@@ -89,7 +95,7 @@ static __always_inline __u32 get_root_pid() {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
-	__uint(max_entries, 1 << 20); // 1 MiB
+	__uint(max_entries, 1 << 23); // 8 MiB: an exec record can be 128 KiB
 } events SEC(".maps");
 
 // drop_count counts bpf_ringbuf_output failures on events. A full ring
@@ -154,18 +160,34 @@ static __always_inline void count_state_lost(void)
 		__sync_fetch_and_add(count, 1);
 }
 
+// heap is the scratch record, one slot per CPU. A per-CPU array would be
+// the natural map, but the kernel caps a per-CPU value at 32 KiB and the
+// 128 KiB command line needs 256 KiB (P-19), so this is a plain array with
+// one entry per possible CPU, sized by userspace at load and indexed by the
+// running CPU: a tracepoint program cannot migrate while it runs, so the
+// slot is private to it.
 struct {
-	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-	__uint(max_entries, 1);
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1); // overridden at load to the possible CPU count
 	__type(key, __u32);
 	__type(value, struct exec_scratch);
 } heap SEC(".maps");
 
+static __always_inline struct exec_scratch *scratch(void)
+{
+	__u32 cpu = bpf_get_smp_processor_id();
+	return bpf_map_lookup_elem(&heap, &cpu);
+}
+
+// execs keeps, per tracked process, the header of its latest exec until it
+// exits: the exit code lands here and the exit record is this header. The
+// command line is not kept in the kernel (4096 entries of 256 KiB would be
+// 1 GiB preallocated); userspace joins the exit to the exec it already read.
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 4096);
 	__type(key, __u32);
-	__type(value, struct exec_scratch);
+	__type(value, struct event_hdr);
 } execs SEC(".maps");
 
 struct sys_enter_execve_ctx {
@@ -248,10 +270,9 @@ int handle_fork(struct task_newtask_ctx *ctx)
 SEC("tracepoint/syscalls/sys_enter_execve")
 int handle_execve(struct sys_enter_execve_ctx *ctx)
 {
-	__u32 zero = 0;
 	__u32 pid = bpf_get_current_pid_tgid() >> 32;
 
-	struct exec_scratch *e = bpf_map_lookup_elem(&heap, &zero);
+	struct exec_scratch *e = scratch();
 	if (!e)
 		return 0;
 
@@ -267,10 +288,14 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 	e->hdr.has_exit_code = 0;
 	e->hdr.args_size = 0;
 	e->hdr.nargs = 0;
+	e->hdr.args_truncated = 0;
+	e->hdr.pad0 = 0;
 
 	e->filename[0] = '\0';
 	long fn_len = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), ctx->filename);
 	e->hdr.filename_len = (fn_len > 0) ? fn_len : 0;
+	if (fn_len >= FILENAME_LEN)
+		e->hdr.args_truncated = 1;
 
 	if (get_use_pid_filter()) {
 		struct proc_info *p = bpf_map_lookup_elem(&tracked_pids, &pid);
@@ -298,18 +323,29 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 		long n = bpf_probe_read_user_str(&e->args[offset], MAX_ARGS_BYTES, argp);
 		if (n <= 0)
 			break;
+		if (n >= MAX_ARGS_BYTES)
+			e->hdr.args_truncated = 1; // one string did not fit
 
 		args_size += n;
 		nargs++;
 
-		if (args_size >= MAX_ARGS_BYTES)
+		if (args_size >= MAX_ARGS_BYTES) {
+			e->hdr.args_truncated = 1;
 			break;
+		}
 	}
+	if (nargs == MAX_ARGS && !e->hdr.args_truncated) {
+		const char *more = NULL;
+		if (!bpf_probe_read_user(&more, sizeof(more), &ctx->argv[MAX_ARGS]) && more)
+			e->hdr.args_truncated = 1; // more arguments than MAX_ARGS
+	}
+	if (args_size > MAX_ARGS_BYTES)
+		args_size = MAX_ARGS_BYTES;
 
 	e->hdr.args_size = args_size;
 	e->hdr.nargs = nargs;
 
-	if (bpf_map_update_elem(&execs, &pid, e, BPF_ANY))
+	if (bpf_map_update_elem(&execs, &pid, &e->hdr, BPF_ANY))
 		count_state_lost();
 
 	__u32 out_size = sizeof(struct event_hdr) + FILENAME_LEN + args_size;
@@ -326,12 +362,12 @@ int handle_exit_group(struct sys_enter_exit_group_ctx *ctx)
 {
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 
-	struct exec_scratch *cached = bpf_map_lookup_elem(&execs, &tgid);
+	struct event_hdr *cached = bpf_map_lookup_elem(&execs, &tgid);
 	if (!cached)
 		return 0;
 
-	cached->hdr.exit_code = (__s32)ctx->error_code;
-	cached->hdr.has_exit_code = 1;
+	cached->exit_code = (__s32)ctx->error_code;
+	cached->has_exit_code = 1;
 	return 0;
 }
 
@@ -345,24 +381,17 @@ int handle_exit(struct sched_process_exit_ctx *ctx)
 	if (tgid != tid)
 		return 0;
 
-	struct exec_scratch *cached = bpf_map_lookup_elem(&execs, &tgid);
+	struct event_hdr *cached = bpf_map_lookup_elem(&execs, &tgid);
 	if (!cached)
 		return 0;
 
-	__u32 zero = 0;
-	struct exec_scratch *e = bpf_map_lookup_elem(&heap, &zero);
-	if (e) {
-		bpf_probe_read_kernel(e, sizeof(*e), cached);
-		e->hdr.kind = KIND_EXIT;
-		e->hdr.ts_ns = bpf_ktime_get_ns();
-		
-		__u32 out_size = sizeof(struct event_hdr) + FILENAME_LEN + e->hdr.args_size;
-		if (out_size > sizeof(struct exec_scratch))
-			out_size = sizeof(struct exec_scratch);
-		
-		if (bpf_ringbuf_output(&events, e, out_size, 0))
-			count_drop();
-	}
+	// A header-only record: userspace joins it to the command line of the
+	// exec record it read for this pid.
+	struct event_hdr xh = *cached;
+	xh.kind = KIND_EXIT;
+	xh.ts_ns = bpf_ktime_get_ns();
+	if (bpf_ringbuf_output(&events, &xh, sizeof(xh), 0))
+		count_drop();
 
 	bpf_map_delete_elem(&execs, &tgid);
 	if (get_use_pid_filter()) {

@@ -54,6 +54,47 @@ func evalPayload(line string) (payload string, ok bool) {
 	return word, true
 }
 
+// evalPayloadPrefix recovers what a truncated wrapper kept of its eval word:
+// the head must still be the wrapper's, and the word is read to the end of
+// the line with the quoting undone, an unterminated quote included. ok is
+// false when the head is not the wrapper's or nothing of the word remains.
+func evalPayloadPrefix(line string) (prefix string, ok bool) {
+	loc := wrapperHead.FindStringIndex(line)
+	if loc == nil {
+		return "", false
+	}
+	rest := line[loc[1]:]
+	if word, _, ok := shellWord(rest); ok {
+		return word, true
+	}
+	var b strings.Builder
+	for i := 0; i < len(rest); {
+		switch rest[i] {
+		case '\'':
+			j := strings.IndexByte(rest[i+1:], '\'')
+			if j < 0 {
+				b.WriteString(rest[i+1:])
+				i = len(rest)
+				continue
+			}
+			b.WriteString(rest[i+1 : i+1+j])
+			i += j + 2
+		case '\\':
+			if i+1 < len(rest) {
+				b.WriteByte(rest[i+1])
+			}
+			i += 2
+		default:
+			b.WriteByte(rest[i])
+			i++
+		}
+	}
+	if b.Len() == 0 {
+		return "", false
+	}
+	return b.String(), true
+}
+
 // shellWord reads one word from the start of s the way a POSIX shell would,
 // undoing single quotes, double quotes and backslash escapes, and stopping at
 // the first unquoted blank. It returns the word and how many bytes of s it
