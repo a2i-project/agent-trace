@@ -80,6 +80,7 @@ func TestProjectTaskVerifiesFaithful(t *testing.T) {
 		t.Errorf("tool mix = %v, want Write, Edit and Bash all present", tools)
 	}
 }
+
 // A second project session of 2.1.286 (2026-10-11), in which the model wrote
 // the files with Bash heredocs instead of the Write tool. Its wrapper has no
 // stdin redirection, which the strict shape of I-26 refused at first: an
@@ -119,5 +120,86 @@ func TestProjectHeredocSessionVerifies(t *testing.T) {
 	// harness activity, INCONCLUSIVE, not a finding (V-24).
 	if v.Outcome == verification.OutcomeNotFaithful {
 		t.Errorf("outcome = %s", v.Outcome)
+	}
+}
+
+// The pre-registered gate of I-31. On a capture whose transcript kept the Edit
+// results, every Edit claim states the file's content before and after, and
+// every one of those pairs must be corroborated with no content diff: the
+// harness's replacement is a plain string replace of the applied strings, or
+// the hashes are wrong and the claim must not be made. A fixture whose Edits
+// carry no hash predates the fields and is skipped, saying so. The fixture
+// directories are listed so a new project capture joins the gate by being
+// added here.
+func TestProjectEditsClaimTheirContentAndAreCorroborated(t *testing.T) {
+	for _, dir := range []string{projectDir, "testdata/paired-2.1.286-project-edits"} {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			session := filepath.Join(dir, "project.session.jsonl")
+			if _, err := os.Stat(session); err != nil {
+				t.Skipf("no fixture at %s", dir)
+			}
+			tr, rep, err := Adapter{}.Parse(session)
+			if err != nil || len(rep.ParseErrors) != 0 {
+				t.Fatalf("parse: %v %+v", err, rep.ParseErrors)
+			}
+			edits, hashed := 0, 0
+			for _, e := range tr {
+				if e.Tool == toolEdit && e.ActionType == models.FileWrite {
+					edits++
+					if e.OutputHash != nil {
+						hashed++
+					}
+				}
+			}
+			if edits == 0 {
+				t.Skip("no Edit in the fixture")
+			}
+			if hashed == 0 {
+				t.Skipf("the fixture's %d Edit result(s) carry no originalFile: it predates I-31 and measures nothing", edits)
+			}
+			if hashed != edits {
+				t.Fatalf("%d of %d Edit claims carry a hash: the result fields are present for some calls only", hashed, edits)
+			}
+			controls, _ := filepath.Glob(filepath.Join(dir, "control-*.ground_truth.json"))
+			var runs []models.GroundTruthFile
+			for _, c := range controls {
+				data, err := os.ReadFile(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f, err := models.ParseGroundTruthFile(data)
+				if err != nil {
+					t.Fatal(err)
+				}
+				runs = append(runs, f)
+			}
+			b, err := agent.Capture(Adapter{}, "2.1.286", runs, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: 1 / float64(len(runs))})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, "project.ground_truth.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, err := models.ParseGroundTruthFile(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v := verification.Verify(agent.Prepare(Adapter{}, tr, g, b.Predicate(g.Workspace), verification.Options{IntervalSlack: 500 * time.Millisecond}))
+			for _, m := range v.Mismatched {
+				if m.Entry.Tool == toolEdit {
+					t.Errorf("STOP: Edit claim on %s differs in %v: claimed in=%s out=%s, observed in=%s out=%s", m.Entry.Target, m.Diffs, deref(m.Entry.InputHash), deref(m.Entry.OutputHash), deref(m.Event.InputHash), deref(m.Event.OutputHash))
+				}
+			}
+			for _, u := range v.Unverified {
+				if u.Entry.Tool == toolEdit {
+					t.Logf("Edit on %s unverified in %v (the probe published no hash)", u.Entry.Target, u.Diffs)
+				}
+			}
+			if v.Outcome != verification.OutcomeFaithful {
+				t.Errorf("outcome = %s with the Edit hashes claimed; reasons %v", v.Outcome, v.Reasons)
+			}
+			t.Logf("GO: %d Edit claims corroborated on their content", hashed)
+		})
 	}
 }

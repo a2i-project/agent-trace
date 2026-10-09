@@ -46,8 +46,10 @@ func (Adapter) Process() agent.ProcessModel {
 
 // Expresses declares what the format can state. It states no exit code ever.
 // It states an output hash only for Write, the one file tool whose input holds
-// the final content: Edit carries fragments, so a nil there is nil by format
-// and not an opt-out (V-20). It states no request body for WebFetch.
+// the final content: an Edit's final content is known only when its result
+// record carries the file before and the applied replacement (I-31), so a nil
+// there is a result the format did not keep, not an opt-out (V-20). It states
+// no request body for WebFetch.
 // The hash is the final content of the replaced file, which the observed side
 // takes from the close of the temporary (see stream.go).
 func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
@@ -192,10 +194,31 @@ type block struct {
 }
 
 // toolResult is what a call's result record held: when it came back and, for
-// tools that report one, what kind of result it was.
+// tools that report one, what kind of result it was. For Edit it also holds
+// the file before the edit and the replacement the harness applied, from
+// which the final content follows (I-31).
 type toolResult struct {
 	ts   time.Time
 	kind string
+	edit *editResult
+}
+
+// editResult is the structured result of an Edit call.
+type editResult struct {
+	original   string
+	oldString  string
+	newString  string
+	replaceAll bool
+}
+
+// apply returns the file's content after the edit, as the harness applies
+// it: the first occurrence of the old string replaced, or every occurrence
+// with replace_all.
+func (r editResult) apply() string {
+	if r.replaceAll {
+		return strings.ReplaceAll(r.original, r.oldString, r.newString)
+	}
+	return strings.Replace(r.original, r.oldString, r.newString, 1)
 }
 
 type toolUse struct {
@@ -259,10 +282,17 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 					// results in one record it cannot be attributed to a call.
 					if nResults == 1 {
 						var tr struct {
-							Type string `json:"type"`
+							Type         string  `json:"type"`
+							OriginalFile *string `json:"originalFile"`
+							OldString    *string `json:"oldString"`
+							NewString    *string `json:"newString"`
+							ReplaceAll   bool    `json:"replaceAll"`
 						}
 						if json.Unmarshal(r.ToolUseResult, &tr) == nil {
 							res.kind = tr.Type
+							if tr.OriginalFile != nil && tr.OldString != nil && tr.NewString != nil {
+								res.edit = &editResult{original: *tr.OriginalFile, oldString: *tr.OldString, newString: *tr.NewString, replaceAll: tr.ReplaceAll}
+							}
 						}
 					}
 					results[b.ToolUseID] = res
@@ -314,7 +344,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		if perMessage[u.messageID] > 1 {
 			base.BlockID = u.messageID
 		}
-		entries, why := claimsFor(u, base, res.kind)
+		entries, why := claimsFor(u, base, res)
 		if u.name == toolWrite && why == "" && res.kind != "create" && res.kind != "update" {
 			writeUnknown++
 		}
@@ -359,7 +389,8 @@ const (
 
 // claimsFor maps one tool call to its claims. A non-empty reason means no entry
 // was produced and says why.
-func claimsFor(u toolUse, base models.TrajectoryEntry, resultKind string) ([]models.TrajectoryEntry, string) {
+func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models.TrajectoryEntry, string) {
+	resultKind := res.kind
 	if nonEffectful[u.name] {
 		return nil, reasonNonEffectful
 	}
@@ -399,15 +430,25 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, resultKind string) ([]mod
 			return nil, "no file_path"
 		}
 		write := mk(models.FileWrite, in.FilePath)
+		open := mk(models.FileOpen, in.FilePath)
 		if u.name == toolWrite {
 			write.OutputHash = models.StringPtr(contentHash(in.Content))
+		}
+		// An Edit's result holds the file before the edit and the replacement
+		// the harness applied, so the final content is known: its hash is the
+		// write's, and the file before is the open's (I-31). A result without
+		// them (a transcript cut to the type, or several results in one
+		// record) leaves both nil, which the verifier reads permissively.
+		if u.name == toolEdit && res.edit != nil {
+			open.InputHash = models.StringPtr(contentHash(res.edit.original))
+			write.OutputHash = models.StringPtr(contentHash(res.edit.apply()))
 		}
 		// Edit, and Write over an existing file, first open the target. A Write
 		// that created the file did not.
 		if u.name == toolWrite && resultKind == "create" {
 			return []models.TrajectoryEntry{write}, ""
 		}
-		return []models.TrajectoryEntry{mk(models.FileOpen, in.FilePath), write}, ""
+		return []models.TrajectoryEntry{open, write}, ""
 	case toolGrep:
 		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGrep)}, ""
 	case toolGlob:

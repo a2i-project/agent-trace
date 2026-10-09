@@ -111,13 +111,7 @@ Current behaviour: For Claude Code 2.1.286 the shapes were measured by one paire
 Blocked by: A paired capture of Gemini (needs root and a working Gemini CLI, which has no headless authentication here), and captures of other Claude Code versions.
 
 ### O-17: Is replaying a partial edit ever worth doing?
-Status: Open (low priority).
-Question: `Edit` and `replace_file_content` carry fragments, not final content. Should the verifier replay the edit to obtain an output hash?
-Options: (a) no, nil by format (current); (b) replay, which is reconstruction rather than report.
-Current behaviour: (a), declared through `Expresses` (I-20).
-Blocked by: Nothing; low value.
-
-## Probes and network
+Status: Decided by I-31 on 2026-10-09, pending its measurement: an Edit's result record holds the file before and the applied replacement, so the final content is computed and claimed; the gate is a capture on which every such claim is corroborated.
 
 ### O-13: Out-of-tree tagging (delegation, part 3)
 Status: Open. Premise changed.

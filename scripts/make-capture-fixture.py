@@ -30,7 +30,12 @@ capture, out = sys.argv[1], sys.argv[2]
 task = sys.argv[3] if len(sys.argv) > 3 else "task"
 os.makedirs(out, exist_ok=True)
 home = os.path.expanduser("~")
-labels = [task, "control-1", "control-2", "control-3"]
+# Every control run the capture holds (the capture script takes five by default).
+labels = [task] + sorted(
+    os.path.basename(f)[: -len(".ground_truth.json")]
+    for f in os.listdir(capture)
+    if f.startswith("control-") and f.endswith(".ground_truth.json")
+)
 
 
 def rewrite(s, label):
@@ -81,6 +86,10 @@ def reduce_transcript(src, dst):
             tr = o.get("toolUseResult")
             if isinstance(tr, dict) and "type" in tr:
                 rec["toolUseResult"] = {"type": tr["type"]}
+            elif isinstance(tr, dict) and "originalFile" in tr:
+                # An Edit's result: the adapter computes the final content from
+                # these (I-31). The seeded project's files are not private.
+                rec["toolUseResult"] = {k: tr[k] for k in ("originalFile", "oldString", "newString", "replaceAll") if k in tr}
             elif tr is not None:
                 rec["toolUseResult"] = {}
             kept.append(json.loads(rewrite(json.dumps(rec), task)))

@@ -6,7 +6,7 @@
 # It runs the real agent, so it uses the account's model quota and needs root for
 # the probes: run it yourself, it asks for sudo once.
 #
-#   scripts/capture-claude-code.sh [--task basic|parallel|project] [--baseline-from DIR] [OUTPUT_DIR]
+#   scripts/capture-claude-code.sh [--task basic|parallel|project|edits] [--baseline-from DIR] [OUTPUT_DIR]
 #
 # Tasks (each fixed, so results compare across versions):
 #   basic     Read, Write (create), Edit, Write (overwrite), Bash. Five calls.
@@ -18,6 +18,12 @@
 #   parallel  three Reads in one message, a subagent that runs Bash, Grep, Glob,
 #             WebFetch of https://example.com, and a Bash pipeline. It covers what
 #             `basic` does not (docs/todo/adapters.md ADP-1), and needs the network.
+#   edits     one Write and five Edits of different shapes on one file (first
+#             occurrence with a duplicate present, replace_all, a multi-line
+#             string, quotes and backslashes, an insertion at the end), then one
+#             Bash call. It is the measurement of I-31: the adapter computes each
+#             Edit's final content from the transcript and every claim must be
+#             corroborated. No network.
 #
 # By default the script also runs CONTROLS control runs and builds the baseline
 # from them, with the same tools enabled as the task. With --baseline-from DIR it
@@ -58,7 +64,7 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-case $task in basic|parallel|project) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
+case $task in basic|parallel|project|edits) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
@@ -79,6 +85,10 @@ case $task in
   parallel)
     task_prompt='Do exactly these six things in order, and nothing else. 1) In a single message, make three Read tool calls at the same time, for b.txt, c.txt and d.txt. 2) Use the Agent tool to start one subagent with exactly this instruction: Use the Bash tool to run exactly: echo from-subagent . Then reply with the single word done. 3) Use the Grep tool to search the current directory for the word seed. 4) Use the Glob tool to list the files matching *.txt. 5) Use the WebFetch tool on https://example.com with the prompt: what is the title. 6) Use the Bash tool to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.'
     task_tools='Read Write Edit Bash Agent Grep Glob WebFetch'
+    ;;
+  edits)
+    task_prompt='Do exactly these seven things in order, using the named tool for each, and nothing else. 1) Use the Write tool to create notes.txt with exactly this content (four lines): alpha beta alpha / gamma delta / say "hi" to C:\\temp / end. Write each item separated by slash as its own line, without the slashes. 2) Use the Edit tool to replace the first occurrence of alpha with ALPHA. 3) Use the Edit tool with replace_all set to true to replace every a with 4. 4) Use the Edit tool to replace the two lines g4mm4 delt4 and s4y "hi" to C:\\temp together with the single line merged. 5) Use the Edit tool to replace the line end with the two lines end and really the end. 6) Use the Edit tool to replace ALPHA with alpha. 7) Use the Bash tool to run exactly: cat notes.txt. Then reply with the single word done.'
+    task_tools='Read Write Edit Bash'
     ;;
   project)
     task_prompt='You are working in a small Python package, wordstats, in the current directory. Do these steps in order and nothing else, and do not use the network. 1) Run the unit tests with: python3 -m unittest discover . Some of them fail. 2) Read the code, find the cause of the failures and fix it. 3) Add a function top_n(text, n) to wordstats/core.py that returns the n most frequent (word, count) pairs, most frequent first and ties in alphabetical order, export it from the package, and add unit tests for it in tests/test_core.py. 4) Add a --top N option to the command line tool in wordstats/cli.py that prints only the top N words, with a test in tests/test_cli.py. 5) Update README.md to describe top_n and the --top option. 6) Run the unit tests again and make sure they all pass. Then reply with the single word done.'

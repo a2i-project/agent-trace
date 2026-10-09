@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commits that introduced I-26 to I-30 and P-19.
+Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commits that introduced I-26 to I-31 and P-19.
 
 ## Objective
 
@@ -84,7 +84,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `Read` | `file_open` | `input.file_path` | none |
 | `Write`, result `create` | `file_write` | `input.file_path` | `output_hash` of `input.content` |
 | `Write`, result `update` (or no result kind, assumed) | `file_open`, `file_write` | `input.file_path` | `output_hash` of `input.content` on the write |
-| `Edit` | `file_open`, `file_write` | `input.file_path` | none (fragments only) |
+| `Edit` | `file_open`, `file_write` | `input.file_path` | when the result record carries `originalFile`, `oldString`, `newString` and `replaceAll`: `input_hash` of the file before on the open, `output_hash` of the file after (the applied replacement, first occurrence or all) on the write (I-31); otherwise none |
 | `WebFetch` | `net_connect` | hostname of `input.url` | none |
 | Non-effectful: `Agent`, `Task`, `AskUserQuestion`, `ToolSearch`, `Skill`, `ScheduleWakeup`, `TodoWrite`, `ExitPlanMode`, `EnterPlanMode`, `WebSearch`, `TaskOutput`, `TaskStop`, `SendMessage`, `TaskCreate`, `TaskUpdate`, `TaskGet`, `TaskList` | none, counted in `UnmappedByTool` | | |
 | `Grep` | `process_exec` | `claude-code search:grep` (the kind of search, I-25) | none |
@@ -96,7 +96,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | Declaration | Value |
 |---|---|
 | `Process` | `ShellPerCommand: true`, `SubagentsInProcess: true`, `IntervalDecision`, `Parallel`, `ExitsClaimed: false` |
-| `Expresses` | `exit_code`: never. `request_hash`: never. `output_hash`: only for `Tool == "Write"`. Other fields: yes. |
+| `Expresses` | `exit_code`: never. `request_hash`: never. `output_hash`: only for `Tool == "Write"` (an Edit states one only when its result kept the fields, so a nil there is the format's, not an opt-out). Other fields: yes. |
 | `Normalize` | For `process_exec` and `process_exit`, if the target is exactly the harness's wrapper, replaces it with the eval payload read as one POSIX shell word (`evalPayload`). The wrapper is a known shell (`/bin/bash`, `/usr/bin/bash`, and the same for `zsh` and `sh`) with `-c` and an optional `-l`, `source <...>/.claude/shell-snapshots/snapshot-bash-<id>.sh 2>/dev/null \|\| true`, zero or more preamble clauses from an allowlist (`shopt -u extglob ...`, the `\builtin unalias ... unset -f ...` group), `&& eval <word>`, and exactly ` < /dev/null && pwd -P >\| /tmp/claude-<id>-cwd` to the end of the line, the stdin redirection being absent when the command carries a heredoc. Anything else, including a command appended after the suffix, one run before the source, a second eval word or another program that merely contains the marker, is not recovered (I-26). The line then only has its per-run ids (snapshot file, working-directory file, heredoc delimiter) replaced with fixed tokens (I-23) and shows as a mismatch rather than a guess (D6). |
 | `Normalize`, truncated wrapper | When the event is flagged `TargetTruncated` and the line still starts with the wrapper, the eval word is read to the end of the line with the quoting undone (`evalPayloadPrefix`) and the flag is kept, so the verifier pairs what the probe kept as a prefix of the claim (V-26). An unflagged line is never read that way. |
 | `Normalize`, file events | Replaces the per-run ids in the harness's own file paths with fixed tokens: the session record `~/.claude/sessions/<pid>.json` and key `<pid>.<64 hex>.key`, the transcript `~/.claude/projects/<dir>/<session id>.jsonl`, the backup `~/.claude/backups/.claude.json.backup.<time>`, the MCP logs `~/.cache/claude-cli-nodejs/<dir>/mcp-logs-<server>/<time>.jsonl`, the Bash tool's task directory `/tmp/claude-<uid>/<dir>/<session id>/tasks/<id>.output`, the cwd file `/tmp/claude-<id>-cwd`, the fswatch probe directory `/tmp/claude-<uid>/fswatch-probe-<id>`, the lock temporary `<path>.lock.tmp.<8 hex>`, and a ` (deleted)` suffix on a path (I-29). Claims are not rewritten: a claim naming one of these paths would mismatch, which no honest tool call does. |
@@ -106,7 +106,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `IsHarnessOwned` | `~/.claude/`, `~/.claude.json` and its temporary, `~/.local/state/claude/`, `~/.cache/claude-cli-nodejs/`, `/tmp/claude-<uid>/` and the cwd files `/tmp/claude-<id>-cwd`, for a home under `/home` or `/root` (I-30). Not the install directory, the workspace's own `.claude`, the shell startup files or `~/.ssh`. |
 | Degradations | Decision-time start (D13); no exit codes, so exits are not aligned; file-tool claims are one atomic replace as measured on 2.1.286, and a variant not seen shows as unexplained; Write calls with no create or update result assumed to overwrite; unknown tools when present. |
 
-Claims are rewritten the same way: `collapseOpenClaims` merges adjacent opens of one file among the file claims, since commands and connections are other lanes and do not break a run. The structured result of the call (`toolUseResult.type`, on the user record that carries the `tool_result`) is read only when the record holds a single result.
+Claims are rewritten the same way: `collapseOpenClaims` merges adjacent opens of one file among the file claims, since commands and connections are other lanes and do not break a run. The structured result of the call (`toolUseResult`, on the user record that carries the `tool_result`: `type` for Write, the file before and the applied replacement for Edit) is read only when the record holds a single result.
 
 The exit code is not expressible because the format records only an `is_error` flag, which conflates a failed command with one that never ran.
 
@@ -180,6 +180,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - Some harness activity is occasional (a package-manager probe in two of three control runs; a backup of `~/.claude.json` in a task run and in no control). At full agreement it is left out of the baseline. The capture script therefore takes more controls at a lower agreement threshold, and what still escapes is reported as unexplained harness activity when it is a file event in the harness's own directories (V-24); a connection or a command the controls never showed is still a finding.
 - `Concurrency`, `SubagentsInProcess`, `ShellPerCommand` and `IntervalKind` are declarations only; the verifier does not read them.
 - The Claude Code adapter's command recovery and id canonicalisation depend on the current wrapper and snapshot shapes (the shell, the preamble clauses, `&& eval`, the `pwd -P` suffix, `PATH_END_`), which are harness-version-specific. A version that changes the wrapper makes every Bash claim a mismatch until the allowlist is extended; that is the intended failure (D6, I-26).
+- An Edit's content claims rest on the harness applying a plain string replacement of the strings its result reports. That is the pre-registered gate of I-31 (`TestProjectEditsClaimTheirContentAndAreCorroborated`), measured on a capture whose transcript kept the fields; until one is checked in the claims are made and unmeasured.
 - Collapsing opens loses the count of repeated reads of one file, on both sides.
 - The Gemini adapter does no wrapper recovery, so a wrapped command shows as a mismatch.
 - The Gemini adapter does not follow subtrajectories and does not set `ThreadID`.

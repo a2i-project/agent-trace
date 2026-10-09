@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -430,6 +431,60 @@ func TestNormalizeRecoversThePrefixOfATruncatedWrapper(t *testing.T) {
 	if strings.HasPrefix(cmd, plain.Target) {
 		t.Error("an uncut line with an unterminated quote was read as a prefix")
 	}
+}
+
+// An Edit's result record carries the file before the edit and the applied
+// replacement, so the claim states the file before as the open's input hash
+// and the file after as the write's output hash (I-31). Without the fields
+// both stay nil.
+func TestEditClaimsItsContentFromTheResult(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, lines ...string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	use := `{"type":"assistant","timestamp":"2026-10-09T10:00:00Z","sessionId":"s","version":"2.1.286","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/ws/a.txt","old_string":"b","new_string":"X","replace_all":%s}}]}}`
+	result := `{"type":"user","timestamp":"2026-10-09T10:00:01Z","sessionId":"s","version":"2.1.286","message":{"id":"m2","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]},"toolUseResult":%s}`
+	for name, tc := range map[string]struct {
+		replaceAll string
+		result     string
+		wantIn     *string
+		wantOut    *string
+	}{
+		"first occurrence": {"false", `{"filePath":"/ws/a.txt","oldString":"b","newString":"X","originalFile":"abcb","replaceAll":false}`,
+			models.StringPtr(contentHash("abcb")), models.StringPtr(contentHash("aXcb"))},
+		"every occurrence": {"true", `{"filePath":"/ws/a.txt","oldString":"b","newString":"X","originalFile":"abcb","replaceAll":true}`,
+			models.StringPtr(contentHash("abcb")), models.StringPtr(contentHash("aXcX"))},
+		"empty original": {"false", `{"filePath":"/ws/a.txt","oldString":"","newString":"X","originalFile":"","replaceAll":false}`,
+			models.StringPtr(contentHash("")), models.StringPtr(contentHash("X"))},
+		"result without the fields": {"false", `{"filePath":"/ws/a.txt"}`, nil, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := write(strings.ReplaceAll(name, " ", "-")+".jsonl", fmt.Sprintf(use, tc.replaceAll), fmt.Sprintf(result, tc.result))
+			tr, rep, err := Adapter{}.Parse(p)
+			if err != nil || len(rep.ParseErrors) != 0 || len(tr) != 2 {
+				t.Fatalf("parse: %v %+v %d entries", err, rep.ParseErrors, len(tr))
+			}
+			if tr[0].ActionType != models.FileOpen || !sameHash(tr[0].InputHash, tc.wantIn) {
+				t.Errorf("open input hash = %v, want %v", deref(tr[0].InputHash), deref(tc.wantIn))
+			}
+			if tr[1].ActionType != models.FileWrite || !sameHash(tr[1].OutputHash, tc.wantOut) {
+				t.Errorf("write output hash = %v, want %v", deref(tr[1].OutputHash), deref(tc.wantOut))
+			}
+		})
+	}
+}
+
+func sameHash(a, b *string) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+
+func deref(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return *s
 }
 
 func TestNormalizeDoesNotRecoverAWrapperFromAFileEvent(t *testing.T) {
