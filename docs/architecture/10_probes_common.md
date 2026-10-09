@@ -90,6 +90,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `StateMapFull` | `state_map_full` | proc (`execs`), net (`conns`) | per-process or per-connection state map full | Reason |
 | `ChannelDrops` | `channel_drops` | proc, net | Go events channel full; fs never drops (it blocks) | Reason |
 | `QueueOverflow` | `queue_overflow` | fs | fanotify `FAN_Q_OVERFLOW` seen | Reason |
+| `HashlessCloses` | `hashless_closes` | fs | a close was published without a content hash (P-16, or a failed read) | Note (content gap) |
 | `FaultedReads` | `faulted_reads` | net (TLS) | `SSL_write` plaintext read faulted | Note (content gap) |
 | `Content` | `content` | net | `active`, `identity_only` or `attach_failed` | `attach_failed` is a Note |
 

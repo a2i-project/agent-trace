@@ -68,3 +68,11 @@ func TestAssess_ReasonsAreOrderedByProbeName(t *testing.T) {
 		}
 	}
 }
+
+// A close published without a hash is a content gap: a note, not event loss.
+func TestAssess_HashlessClosesAreANote(t *testing.T) {
+	c := Assess(cov(map[string]models.ProbeCoverage{"fs": {Ran: true, HashlessCloses: 2}}))
+	if !c.Complete || len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "2 file close(s)") {
+		t.Errorf("Assess = %+v, want complete with one note", c)
+	}
+}

@@ -1078,6 +1078,9 @@ func TestObserver_OpenAfterCloseDropsHash(t *testing.T) {
 	if hashed != 0 {
 		t.Errorf("hashFD ran %d time(s): a read that cannot be trusted should not be made", hashed)
 	}
+	if got := obs.CaptureCoverage().HashlessCloses; got != 1 {
+		t.Errorf("HashlessCloses = %d, want 1: the close published without a hash is counted", got)
+	}
 }
 
 // The same holds for a modify after the close.

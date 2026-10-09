@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -82,6 +83,7 @@ type Observer struct {
 	stopped          chan struct{}
 	cfg              Config
 	overflow         bool // true if FAN_Q_OVERFLOW was seen
+	hashlessCloses   atomic.Uint64
 	pendingHashOpens map[string]int
 	shadowHashes     map[string]string
 
@@ -300,7 +302,7 @@ func (o *Observer) Overflow() bool {
 // consumer shows up as backpressure and then as a kernel queue overflow, which
 // is what QueueOverflow reports.
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
-	return models.ProbeCoverage{Ran: true, QueueOverflow: o.Overflow()}
+	return models.ProbeCoverage{Ran: true, QueueOverflow: o.Overflow(), HashlessCloses: o.hashlessCloses.Load()}
 }
 
 // Start begins reading fanotify events in a background goroutine.
@@ -681,6 +683,7 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 		if superseded.pathFD >= 0 {
 			_ = unix.Close(superseded.pathFD)
 		}
+		o.hashlessCloses.Add(1)
 		o.events <- models.GroundTruthEvent{
 			Timestamp:  superseded.ts,
 			ActionType: models.FileClose,
@@ -764,6 +767,8 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 		}
 		if hashed {
 			event.OutputHash = &digest
+		} else {
+			o.hashlessCloses.Add(1)
 		}
 		o.events <- event
 	}

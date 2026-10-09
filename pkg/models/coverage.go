@@ -40,6 +40,12 @@ type ProbeCoverage struct {
 	// ChannelDrops counts events userspace discarded because the Go events
 	// channel was full.
 	ChannelDrops uint64 `json:"channel_drops"`
+	// HashlessCloses counts the file closes the fs probe published without a
+	// content hash: a newer close, a write-class event or an open on the
+	// path arrived before the content settled (P-16), or the read failed.
+	// A content gap, not event loss: the close is in the capture, its
+	// content is not vouched for.
+	HashlessCloses uint64 `json:"hashless_closes,omitempty"`
 	// FaultedReads counts SSL_write calls whose plaintext could not be read.
 	// A content gap, not an event loss. Net probe only.
 	FaultedReads uint64 `json:"faulted_reads,omitempty"`

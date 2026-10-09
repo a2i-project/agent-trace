@@ -51,7 +51,7 @@ Paths are resolved by the kernel from file handles, not read from user memory. T
 
 The emitted sequence does not depend on whether the kernel merged notifications or on when a close settled: a repeated write or rename on one path by one process is one event, and a record's timestamp is its position in its batch (`TestProcessRawEvent_RepeatedWritesAndRenamesCollapse`, P-18).
 
-The probe never drops on its own channel: `processRawEvent` and the settle code send with a blocking send. A slow consumer backs up into the kernel queue, and a full kernel queue produces `FAN_Q_OVERFLOW`. `CaptureCoverage` reports `Ran: true` and `QueueOverflow`, which `verification.Assess` treats as event loss (INCONCLUSIVE). All other `ProbeCoverage` counters are zero for this probe.
+The probe never drops on its own channel: `processRawEvent` and the settle code send with a blocking send. A slow consumer backs up into the kernel queue, and a full kernel queue produces `FAN_Q_OVERFLOW`. `CaptureCoverage` reports `Ran: true`, `QueueOverflow`, which `verification.Assess` treats as event loss (INCONCLUSIVE), and `HashlessCloses`, the closes published without a hash, which is a note: the events are there, their content is not vouched for, and a claim stating it is unverified (V-22). All other `ProbeCoverage` counters are zero for this probe.
 
 ## Known limits
 
