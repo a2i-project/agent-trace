@@ -142,13 +142,16 @@ func (r *Report) Count(tool string) {
 	r.UnmappedByTool[tool]++
 }
 
-// Prepare turns a capture and an adapter into verification input: observed
-// events are normalized, the adapter's noise filter and the measured baseline
-// are combined into one baseline, and the adapter's field declarations and
-// exit handling become options. measured may be nil.
-func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, measured verification.Baseline, opts verification.Options) verification.Input {
-	ground := make(models.GroundTruth, 0, len(g.Events))
-	for _, e := range g.Events {
+// NormalizeGround puts observed events into the form claims use: every event
+// through the adapter's Normalize, dropping those it rejects, then the whole
+// stream through NormalizeStream when the adapter has one. Prepare and the
+// baseline's Capture both use it, so a rule is measured on the same shape the
+// verifier compares against; a baseline normalized by only one of the two
+// steps named the raw temporaries of every atomic write and explained none of
+// them.
+func NormalizeGround(a Adapter, events models.GroundTruth) models.GroundTruth {
+	ground := make(models.GroundTruth, 0, len(events))
+	for _, e := range events {
 		if n, keep := a.Normalize(e); keep {
 			ground = append(ground, n)
 		}
@@ -156,6 +159,15 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 	if sn, ok := a.(StreamNormalizer); ok {
 		ground = sn.NormalizeStream(ground)
 	}
+	return ground
+}
+
+// Prepare turns a capture and an adapter into verification input: observed
+// events are normalized, the adapter's noise filter and the measured baseline
+// are combined into one baseline, and the adapter's field declarations and
+// exit handling become options. measured may be nil.
+func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, measured verification.Baseline, opts verification.Options) verification.Input {
+	ground := NormalizeGround(a, g.Events)
 	baseline := func(e models.GroundTruthEvent) bool {
 		return a.IsHarnessNoise(e) || (measured != nil && measured(e))
 	}

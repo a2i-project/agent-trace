@@ -112,12 +112,7 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		if r.RootPID == 0 {
 			return Baseline{}, fmt.Errorf("control run %d has no root pid, so its events cannot be attributed", i+1)
 		}
-		g := make(models.GroundTruth, 0, len(r.Events))
-		for _, e := range r.Events {
-			if n, keep := a.Normalize(e); keep {
-				g = append(g, n)
-			}
-		}
+		g := NormalizeGround(a, r.Events)
 		seen := map[Rule]bool{}
 		for _, e := range verification.BuildForest(g, r.RootPID).Partition(g).Observed {
 			if excluded[e.Target] {

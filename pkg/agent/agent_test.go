@@ -332,6 +332,46 @@ func TestCaptureTemplatesTheMangledWorkspace(t *testing.T) {
 	}
 }
 
+// foldFake folds every pair of events on one target into the first, as a
+// stand-in for an adapter's atomic-write fold.
+type foldFake struct{ fake }
+
+func (foldFake) NormalizeStream(g models.GroundTruth) models.GroundTruth {
+	var out models.GroundTruth
+	for _, e := range g {
+		if n := len(out); n > 0 && out[n-1].Target == e.Target && out[n-1].PID == e.PID {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// A baseline is measured on the same shape the verifier compares against:
+// the stream normalization runs in Capture as it does in Prepare. Without it
+// the rules named the raw temporaries of every atomic write, which differ in
+// every run, and the folded write the verifier saw had no rule.
+func TestCaptureRunsTheStreamNormalization(t *testing.T) {
+	a := foldFake{fake{name: "f"}}
+	run := func() models.GroundTruthFile {
+		return runFile(100, models.GroundTruth{
+			ev(models.FileOpen, "/h/.cfg.tmp.1", 100, 0),
+			ev(models.FileWrite, "/h/.cfg.tmp.1", 100, 0),
+		})
+	}
+	b, err := Capture(a, "v", []models.GroundTruthFile{run(), run()}, t0, CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Rules) != 1 || b.Rules[0].ActionType != models.FileOpen {
+		t.Errorf("rules = %+v, want the one folded event", b.Rules)
+	}
+	ground := NormalizeGround(a, run().Events)
+	if len(ground) != 1 {
+		t.Errorf("NormalizeGround = %+v", ground)
+	}
+}
+
 func TestCaptureNormalizesBeforeAttributing(t *testing.T) {
 	a := fake{name: "f", norm: func(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 		e.Target = strings.ReplaceAll(e.Target, "/tmp/claude-9999-cwd", "/tmp/claude-N-cwd")
