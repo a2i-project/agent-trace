@@ -20,6 +20,9 @@ type Command struct {
 	// network event of the subtree. Attributed and counted, never aligned
 	// against a claim (D3).
 	Content models.GroundTruth
+	// Capability holds the listener and socket events of the subtree
+	// (unclaimable types), kept with the command for the forensic view.
+	Capability models.GroundTruth
 	// Baseline is set when the harness baseline explains this command, so no
 	// claim is needed for it (V7). See Partition.SubtractBaseline.
 	Baseline bool
@@ -76,6 +79,11 @@ func (f *Forest) Partition(g models.GroundTruth) Partition {
 		a := f.Attribute(e)
 		if !e.ActionType.IsClaimable() {
 			part.Capability = append(part.Capability, AttributedEvent{Event: e, Attribution: a})
+			if a.Zone == ZoneSubtree {
+				if c := byCommand[a.Command]; c != nil {
+					c.Capability = append(c.Capability, e)
+				}
+			}
 			continue
 		}
 		switch a.Zone {

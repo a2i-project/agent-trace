@@ -1,6 +1,6 @@
 # Verifier
 
-Checked against commit 78abc12 on 2026-10-09, with the changes in the commit that introduced V-23.
+Checked against commit 78abc12 on 2026-10-09, with the changes in the commits that introduced V-23 and the forensic view.
 
 ## Objective
 
@@ -55,7 +55,7 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 2. **Preconditions.** `RootPID == 0` returns INCONCLUSIVE. A non-empty G in which no event carries a pid returns INCONCLUSIVE (legacy ground truth).
 3. **Forest.** `BuildForest(G, RootPID)` builds the process tree. Each `process_fork` record creates a `Process` incarnation with the parent edge recorded at creation; an exec record fills in `Process.Exec`, and stands in for a missing fork record (legacy files) using its own ppid. Processes are linked in creation order: level 0 is the agent, level 1 a child of the agent (the root of one command), level 2 and below its descendants, and -1 a process whose chain does not reach the agent. A reused pid has several incarnations; `Forest.Resolve` picks the one alive at the event's timestamp, and an event stamped before every incarnation goes to the earliest one. Time is used for nothing else here.
 4. **Partition.** `Forest.Partition(G)` sorts G by timestamp, skips structural events (`process_fork`), and places each event by `Forest.Attribute`:
-   - unclaimable types (`net_bind`, `net_listen`, `net_unix_connect`) go to `Capability` with their attribution;
+   - unclaimable types (`net_bind`, `net_listen`, `net_unix_connect`) go to `Capability` with their attribution, and, inside a subtree, to the command's own `Capability` as well;
    - no pid goes to `Unknown`; a process outside the tree goes to `Outside`;
    - a level-0 event goes to `Observed` (the aligned sequence) with a nil owner;
    - inside a subtree, the command's own first exec and its own exit go to `Observed` with the command as owner; every other event (later execs of the same pid, descendants' execs and exits, all file and network events of the subtree) goes to `Command.Content` and is never aligned (D3 in [decisions/integration.md](../decisions/integration.md)).
@@ -80,7 +80,7 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 | `EditInsertion` | `Unwitnessed` | Claim with no observed action (P2) |
 | `EditDeletion` | `Unrecorded` | Observed top-level action no claim explains (P1) |
 
-Further lists: `OutsideInterval` (pairs outside their claim interval), `Unverified` (pairs whose claim states content the probe did not capture, with the fields in `Diffs`), `OutOfScope` (file claims the capture could not have witnessed, never aligned), `Capability` (unclaimable events, never aligned), `Coverage` (the second check), `Alignments` (the per-lane edit script), `Ambiguous`, `Completeness`, `Reasons`, `Advisory`.
+`Commands` holds every level-1 subtree in creation order with its exec, its exit, its `Content` and its `Capability` (the listeners and sockets beneath it), whatever the verdict made of it: the forensic record of what each command did, reported by `cmd/verify` and never aligned (D3). Further lists: `OutsideInterval` (pairs outside their claim interval), `Unverified` (pairs whose claim states content the probe did not capture, with the fields in `Diffs`), `OutOfScope` (file claims the capture could not have witnessed, never aligned), `Capability` (unclaimable events, never aligned), `Coverage` (the second check), `Alignments` (the per-lane edit script), `Ambiguous`, `Completeness`, `Reasons`, `Advisory`.
 
 `Verdict.Findings()` counts `Mismatched`, `Unwitnessed`, `Unrecorded`, `OutsideInterval` and `Coverage.UnexplainedSubtrees`. Outside events, capability events, quiet forks and baselined events are reported and are not findings. `Coverage.UnexplainedActions` holds the same events as `Unrecorded` and is not counted twice.
 

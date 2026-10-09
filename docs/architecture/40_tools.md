@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 0cb4e28 on 2026-10-08, with the changes in the commits that introduced I-28, V-22, P-17 and V-23.
+Checked against commit 0cb4e28 on 2026-10-08, with the changes in the commits that introduced I-28, V-22, P-17, V-23 and the forensic view.
 
 ## Objective
 
@@ -54,10 +54,13 @@ Reads a trajectory through an adapter and a capture, runs `verification.Verify`,
 | `--normalized` | off | Read `--trajectory` as normalized trajectory JSON (what `attack` writes), using `--agent` only for the ground truth side |
 | `--interval-slack D` | `500ms` | Widen each claim interval on both sides, because the probes and the agent do not share a clock |
 | `--ignore-exits` | false | Do not align process exits even if the adapter's format records them |
+| `--json PATH` | none | Also write the whole verdict as JSON: the inputs, the parse report, every alignment list, the coverage, and each command with its exec, exit, every event beneath it and its listeners |
 
 Adapter choice: `--agent` selects by name (an unknown name is an error). Without it, `agent.Detect` runs; no match falls back to `generic`, and several matches are an error asking for `--agent`. A baseline whose `agent` differs from the chosen adapter's name is refused. Without a baseline, a non-generic adapter's report gains a degradation saying the harness's own activity will read as unexplained. `--ignore-exits` can only add to the adapter's choice: an adapter with `ExitsClaimed: false` always ignores exits.
 
-The report, on standard output, contains in order: the inputs (entry count, adapter, event count, root pid, the capture's fs scope or a note that it predates the record, baseline rules and runs); the adapter `Report` (tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations); the alignment counts (Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, and an ambiguity note); the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability count; the detail lists; the completeness judgement with notes; and the `VERDICT` line with the reasons when INCONCLUSIVE or advisory.
+The report, on standard output, contains in order: the inputs (entry count, adapter, event count, root pid, the capture's fs scope or a note that it predates the record, baseline rules and runs); the adapter `Report` (tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations); the alignment counts (Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, and an ambiguity note); the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability count; the detail lists; the forensic view; the completeness judgement with notes; and the `VERDICT` line with the reasons when INCONCLUSIVE or advisory.
+
+The forensic view lists every level-1 command, claimed, baselined, unexplained or quiet, with its exit code and what happened beneath it: programs run, files written, opened, renamed and deleted, connections, requests, listeners and Unix sockets, as distinct sorted targets capped at twelve per group. It is what honest trajectories do not record, a tool's own accesses while it runs (D3, P-17), and it is reported so a reader can judge a command the verdict only explains. None of it is a finding. The JSON report carries every event of each command, uncapped. A write error on `--json` is exit 3 after the text report has been printed.
 
 | Exit code | When |
 |---|---|

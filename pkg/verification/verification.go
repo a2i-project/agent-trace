@@ -87,6 +87,12 @@ type Verdict struct {
 	// Coverage is the check that every observed event is explained by a claim
 	// or by the baseline. Its UnexplainedSubtrees are findings.
 	Coverage Coverage
+	// Commands are the level-1 subtrees in creation order, each with its
+	// exec, its exit, every event beneath it and its listeners: the forensic
+	// record of what each claimed or baselined command did. Never aligned
+	// (D3); reported so a reader can judge a command the verdict only
+	// explains.
+	Commands []*Command
 	// Alignments is the per-lane edit script behind the lists above.
 	Alignments []LaneAlignment
 	// Ambiguous is true when any lane has more than one minimum-cost
@@ -323,6 +329,7 @@ func Verify(in Input) Verdict {
 		}
 	}
 	v.Coverage = CheckCoverage(part, alignments)
+	v.Commands = part.Commands
 
 	switch {
 	case v.Findings() > 0:

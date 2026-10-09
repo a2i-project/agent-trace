@@ -292,3 +292,87 @@ func TestNormalizedErrors(t *testing.T) {
 		}
 	}
 }
+
+// The forensic view: what a claimed command did beneath it is listed per
+// command in the text report and in full in the JSON report, and none of it
+// is a finding (D3).
+func TestForensicViewListsWhatEachCommandDid(t *testing.T) {
+	dir := t.TempDir()
+	const root, sh, child = 100, 200, 300
+	ev := func(ms int, typ models.ActionType, target string, pid, ppid uint32) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: t0.Add(time.Duration(ms) * time.Millisecond), ActionType: typ, Target: target, PID: pid, PPID: ppid}
+	}
+	code := int32(0)
+	exit := ev(9, models.ProcessExit, "/bin/sh -c deploy.sh", sh, root)
+	exit.ExitCode = &code
+	g := models.GroundTruthFile{RootPID: root, Coverage: completeCov(), Workspace: "/w", Events: models.GroundTruth{
+		ev(0, models.ProcessFork, "200", sh, root),
+		ev(1, models.ProcessExec, "/bin/sh -c deploy.sh", sh, root),
+		ev(2, models.ProcessFork, "300", child, sh),
+		ev(3, models.ProcessExec, "/usr/bin/curl https://updates.example/pkg", child, sh),
+		ev(4, models.NetConnect, "updates.example", child, 0),
+		ev(5, models.FileWrite, "/w/pkg.tar", child, 0),
+		ev(6, models.FileOpen, "/etc/ssl/certs/ca.pem", child, 0),
+		ev(7, models.NetListen, "0.0.0.0:8080", sh, 0),
+		ev(8, models.NetUnixConnect, "unix:/var/run/docker.sock", sh, 0),
+		exit,
+	}}
+	tr := models.Trajectory{{Timestamp: t0, ActionType: models.ProcessExec, Target: "/bin/sh -c deploy.sh"}}
+	trajectory := writeJSON(t, dir, "t.json", tr)
+	ground := writeJSON(t, dir, "g.json", g)
+	jsonOut := filepath.Join(dir, "report.json")
+
+	exitCode, out, errOut := verify(t, "--trajectory", trajectory, "--ground-truth", ground, "--json", jsonOut, "--ignore-exits")
+	if exitCode != 0 {
+		t.Fatalf("exit %d, stderr %s\n%s", exitCode, errOut, out)
+	}
+	for _, want := range []string{
+		"Commands (forensic view",
+		"pid 200 [claimed, exit 0] /bin/sh -c deploy.sh",
+		"programs run (1): /usr/bin/curl https://updates.example/pkg",
+		"files written (1): /w/pkg.tar",
+		"files opened (1): /etc/ssl/certs/ca.pem",
+		"connections (1): updates.example",
+		"listeners (1): 0.0.0.0:8080",
+		"unix sockets (1): unix:/var/run/docker.sock",
+		"VERDICT: FAITHFUL",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report lacks %q\n%s", want, out)
+		}
+	}
+
+	data, err := os.ReadFile(jsonOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep jsonReport
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatalf("JSON report does not parse: %v", err)
+	}
+	if rep.Outcome != "FAITHFUL" || rep.ExitCode != 0 || rep.Findings != 0 || rep.RootPID != root || rep.Workspace != "/w" {
+		t.Errorf("header = %+v", rep)
+	}
+	if len(rep.Commands) != 1 || rep.Commands[0].PID != sh || rep.Commands[0].Status != "claimed" || rep.Commands[0].Exec == nil || rep.Commands[0].Exit == nil {
+		t.Fatalf("commands = %+v", rep.Commands)
+	}
+	if n := len(rep.Commands[0].Events); n != 4 {
+		t.Errorf("the command's events = %d, want the child's exec, connect, write and open; the command's own exit is in exit, not here", n)
+	}
+	if n := len(rep.Commands[0].Capability); n != 2 {
+		t.Errorf("the command's capability events = %d, want the listener and the socket", n)
+	}
+	if len(rep.Alignment.Corroborated) != 1 || len(rep.Capability) != 2 || !rep.Coverage.Complete || rep.Coverage.Explained != 4 {
+		t.Errorf("lists = %+v", rep)
+	}
+}
+
+func TestJSONReportWriteErrorIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	trajectory := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a")})
+	ground := writeJSON(t, dir, "g.json", models.GroundTruthFile{Events: models.GroundTruth{event(models.FileWrite, "/w/a")}, RootPID: 100, Coverage: completeCov()})
+	code, _, errOut := verify(t, "--trajectory", trajectory, "--ground-truth", ground, "--json", filepath.Join(dir, "missing", "r.json"))
+	if code != exitError || !strings.Contains(errOut, "JSON report") {
+		t.Errorf("exit %d, stderr %q", code, errOut)
+	}
+}

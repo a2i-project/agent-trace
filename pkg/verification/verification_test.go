@@ -764,3 +764,23 @@ func TestVerify_FileClaimsOutsideTheCaptureScopeAreSetAside(t *testing.T) {
 		}
 	})
 }
+
+// Every level-1 subtree reaches the verdict with its exec, its content and
+// its listeners, whatever the verdict made of it, so a reader can see what a
+// command did (D3: reported, never aligned).
+func TestVerify_CommandsCarryTheirSubtrees(t *testing.T) {
+	g := models.GroundTruth{
+		{Timestamp: at(0), ActionType: models.ProcessFork, Target: "200", PID: 200, PPID: agentPID},
+		{Timestamp: at(1), ActionType: models.ProcessExec, Target: "/bin/sh -c x", PID: 200, PPID: agentPID},
+		{Timestamp: at(2), ActionType: models.FileWrite, Target: "/w/out", PID: 200},
+		{Timestamp: at(3), ActionType: models.NetListen, Target: "127.0.0.1:9000", PID: 200},
+	}
+	v := run(models.Trajectory{claimAt(1, models.ProcessExec, "/bin/sh -c x")}, g)
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.Commands) != 1 || v.Commands[0].Exec == nil || len(v.Commands[0].Content) != 1 || len(v.Commands[0].Capability) != 1 {
+		t.Fatalf("Commands = %+v", v.Commands)
+	}
+	if v.Commands[0].Capability[0].Target != "127.0.0.1:9000" || len(v.Capability) != 1 {
+		t.Error("the listener is missing from the command or from the verdict's capability list")
+	}
+}

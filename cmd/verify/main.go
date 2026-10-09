@@ -9,6 +9,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -44,6 +45,8 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.DurationVar(&slack, "interval-slack", 500*time.Millisecond, "Widen each claim's interval by this much on both sides before checking the observed action falls inside it: the probes and the agent do not share a clock")
 	fs.BoolVar(&normalized, "normalized", false, "Read --trajectory as normalized trajectory JSON (what cmd/attack writes) and use --agent only for the ground truth side")
 	fs.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits even if the adapter's format records them")
+	var jsonPath string
+	fs.StringVar(&jsonPath, "json", "", "Also write the whole verdict as JSON to this file: every list, the coverage, and each command with the events beneath it")
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
@@ -118,11 +121,18 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
 	v := verification.Verify(in)
 
-	report(out, reportInput{
+	ri := reportInput{
 		trajectoryPath: trajectoryPath, groundTruthPath: groundTruthPath, adapter: adapter.Name(),
 		reader: readerNote(normalized, adapter.Name()),
 		parse:  rep, baseline: baseline, entries: len(tr), gt: gt, verdict: v,
-	})
+	}
+	report(out, ri)
+	if jsonPath != "" {
+		if err := writeJSONReport(jsonPath, ri); err != nil {
+			_, _ = fmt.Fprintf(errOut, "verify: %v\n", err)
+			return exitError
+		}
+	}
 	return v.Outcome.ExitCode()
 }
 
@@ -213,6 +223,7 @@ func report(w io.Writer, r reportInput) {
 	printPairs(w, "Unverified", v.Unverified)
 	printEntries(w, "Out of scope", v.OutOfScope)
 	printEvents(w, "Capability", v.Capability)
+	printCommands(w, v.Commands)
 	printCompleteness(w, v.Completeness)
 
 	p("\nVERDICT: %s\n", v.Outcome)
@@ -338,4 +349,236 @@ func derefInt(i *int32) string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("%d", *i)
+}
+
+// commandStatus says how the verdict treated a command.
+func commandStatus(c *verification.Command, v verification.Verdict) string {
+	if c.Baseline {
+		return "baseline"
+	}
+	for _, u := range v.Coverage.UnexplainedSubtrees {
+		if u == c {
+			return "unexplained"
+		}
+	}
+	for _, q := range v.Coverage.Quiet {
+		if q == c {
+			return "quiet"
+		}
+	}
+	return "claimed"
+}
+
+// printCommands is the forensic view: what each command did beneath it. The
+// events are the agent's commands' own doing and are never aligned (D3), so
+// nothing here is a finding; it is what a reader needs to judge a command the
+// verdict only explains. Targets are listed distinct and sorted, capped per
+// group; the JSON report has every event.
+func printCommands(w io.Writer, cmds []*verification.Command) {
+	if len(cmds) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "\nCommands (forensic view, not part of the verdict: what each command did beneath it):")
+	for _, c := range cmds {
+		target := "(forked and never exec'd)"
+		if c.Exec != nil {
+			target = c.Exec.Target
+		}
+		status := "claimed"
+		if c.Baseline {
+			status = "baseline"
+		}
+		if c.Exec == nil && c.Exit == nil && len(c.Content) == 0 && len(c.Capability) == 0 {
+			status = "quiet"
+		}
+		exit := ""
+		if c.Exit != nil && c.Exit.ExitCode != nil {
+			exit = fmt.Sprintf(", exit %d", *c.Exit.ExitCode)
+		}
+		_, _ = fmt.Fprintf(w, "  pid %d [%s%s] %s\n", c.Process.PID, status, exit, target)
+		groups := map[string]map[string]bool{}
+		add := func(group, target string) {
+			if groups[group] == nil {
+				groups[group] = map[string]bool{}
+			}
+			groups[group][target] = true
+		}
+		for _, e := range c.Content {
+			switch e.ActionType {
+			case models.FileWrite, models.FileClose:
+				add("files written", e.Target)
+			case models.FileOpen, models.FileRead:
+				add("files opened", e.Target)
+			case models.FileRename:
+				add("files renamed", e.Target)
+			case models.FileDelete:
+				add("files deleted", e.Target)
+			case models.ProcessExec:
+				add("programs run", e.Target)
+			case models.NetConnect:
+				add("connections", e.Target)
+			case models.NetRequest:
+				add("requests", e.Target)
+			case models.ProcessExit:
+			default:
+				add(string(e.ActionType), e.Target)
+			}
+		}
+		for _, e := range c.Capability {
+			switch e.ActionType {
+			case models.NetListen, models.NetBind:
+				add("listeners", e.Target)
+			default:
+				add("unix sockets", e.Target)
+			}
+		}
+		order := []string{"programs run", "files written", "files opened", "files renamed", "files deleted", "connections", "requests", "listeners", "unix sockets"}
+		for name := range groups {
+			seen := false
+			for _, o := range order {
+				if o == name {
+					seen = true
+				}
+			}
+			if !seen {
+				order = append(order, name)
+			}
+		}
+		const cap = 12
+		for _, name := range order {
+			set := groups[name]
+			if len(set) == 0 {
+				continue
+			}
+			targets := make([]string, 0, len(set))
+			for t := range set {
+				targets = append(targets, t)
+			}
+			sort.Strings(targets)
+			shown := targets
+			more := ""
+			if len(shown) > cap {
+				shown = shown[:cap]
+				more = fmt.Sprintf(" (+%d more)", len(targets)-cap)
+			}
+			_, _ = fmt.Fprintf(w, "    %s (%d): %s%s\n", name, len(targets), strings.Join(shown, ", "), more)
+		}
+		if len(c.Content)+len(c.Capability) == 0 && c.Exec != nil {
+			_, _ = fmt.Fprintln(w, "    nothing observed beneath it")
+		}
+	}
+}
+
+// jsonCommand is one command in the JSON report.
+type jsonCommand struct {
+	PID        uint32                   `json:"pid"`
+	Status     string                   `json:"status"`
+	Exec       *models.GroundTruthEvent `json:"exec,omitempty"`
+	Exit       *models.GroundTruthEvent `json:"exit,omitempty"`
+	Events     models.GroundTruth       `json:"events"`
+	Capability models.GroundTruth       `json:"capability,omitempty"`
+}
+
+// jsonReport is the machine-readable verdict.
+type jsonReport struct {
+	Trajectory  string                    `json:"trajectory"`
+	GroundTruth string                    `json:"ground_truth"`
+	Adapter     string                    `json:"adapter"`
+	RootPID     uint32                    `json:"root_pid"`
+	Workspace   string                    `json:"workspace,omitempty"`
+	FSScope     *models.FSScope           `json:"fs_scope,omitempty"`
+	Baseline    *agent.Baseline           `json:"baseline,omitempty"`
+	Parse       agent.Report              `json:"parse"`
+	Outcome     string                    `json:"outcome"`
+	ExitCode    int                       `json:"exit_code"`
+	Findings    int                       `json:"findings"`
+	Advisory    bool                      `json:"advisory"`
+	Ambiguous   bool                      `json:"ambiguous"`
+	Reasons     []string                  `json:"reasons,omitempty"`
+	Alignment   jsonAlignment             `json:"alignment"`
+	Coverage    jsonCoverage              `json:"coverage"`
+	Capability  models.GroundTruth        `json:"capability,omitempty"`
+	Commands    []jsonCommand             `json:"commands"`
+	Complete    verification.Completeness `json:"completeness"`
+}
+
+type jsonAlignment struct {
+	Corroborated    []verification.MatchedPair `json:"corroborated"`
+	Mismatched      []verification.MatchedPair `json:"mismatched"`
+	Unwitnessed     models.Trajectory          `json:"unwitnessed"`
+	Unrecorded      models.GroundTruth         `json:"unrecorded"`
+	OutsideInterval []verification.MatchedPair `json:"outside_interval"`
+	Unverified      []verification.MatchedPair `json:"unverified"`
+	OutOfScope      models.Trajectory          `json:"out_of_scope"`
+}
+
+type jsonCoverage struct {
+	UnexplainedSubtrees []uint32           `json:"unexplained_subtrees"`
+	Explained           int                `json:"explained"`
+	Baselined           int                `json:"baselined"`
+	Quiet               []uint32           `json:"quiet"`
+	Outside             models.GroundTruth `json:"outside"`
+	Unknown             models.GroundTruth `json:"unknown"`
+	Complete            bool               `json:"complete"`
+}
+
+func writeJSONReport(path string, r reportInput) error {
+	v := r.verdict
+	rep := jsonReport{
+		Trajectory: r.trajectoryPath, GroundTruth: r.groundTruthPath, Adapter: r.adapter,
+		RootPID: r.gt.RootPID, Workspace: r.gt.Workspace, FSScope: r.gt.FSScope, Baseline: r.baseline, Parse: r.parse,
+		Outcome: v.Outcome.String(), ExitCode: v.Outcome.ExitCode(), Findings: v.Findings(), Advisory: v.Advisory, Ambiguous: v.Ambiguous, Reasons: v.Reasons,
+		Alignment: jsonAlignment{
+			Corroborated: nonNilPairs(v.Corroborated), Mismatched: nonNilPairs(v.Mismatched),
+			Unwitnessed: nonNilClaims(v.Unwitnessed), Unrecorded: nonNilEvents(v.Unrecorded),
+			OutsideInterval: nonNilPairs(v.OutsideInterval), Unverified: nonNilPairs(v.Unverified), OutOfScope: nonNilClaims(v.OutOfScope),
+		},
+		Coverage: jsonCoverage{
+			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined,
+			Outside: nonNilEvents(v.Coverage.Outside), Unknown: nonNilEvents(v.Coverage.Unknown), Complete: v.Coverage.Complete,
+			UnexplainedSubtrees: []uint32{}, Quiet: []uint32{},
+		},
+		Capability: nonNilEvents(v.Capability), Commands: []jsonCommand{}, Complete: v.Completeness,
+	}
+	for _, c := range v.Coverage.UnexplainedSubtrees {
+		rep.Coverage.UnexplainedSubtrees = append(rep.Coverage.UnexplainedSubtrees, c.Process.PID)
+	}
+	for _, c := range v.Coverage.Quiet {
+		rep.Coverage.Quiet = append(rep.Coverage.Quiet, c.Process.PID)
+	}
+	for _, c := range v.Commands {
+		rep.Commands = append(rep.Commands, jsonCommand{
+			PID: c.Process.PID, Status: commandStatus(c, v), Exec: c.Exec, Exit: c.Exit,
+			Events: nonNilEvents(c.Content), Capability: c.Capability,
+		})
+	}
+	data, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode JSON report: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write JSON report %s: %w", path, err)
+	}
+	return nil
+}
+
+func nonNilPairs(p []verification.MatchedPair) []verification.MatchedPair {
+	if p == nil {
+		return []verification.MatchedPair{}
+	}
+	return p
+}
+
+func nonNilClaims(t models.Trajectory) models.Trajectory {
+	if t == nil {
+		return models.Trajectory{}
+	}
+	return t
+}
+
+func nonNilEvents(g models.GroundTruth) models.GroundTruth {
+	if g == nil {
+		return models.GroundTruth{}
+	}
+	return g
 }
