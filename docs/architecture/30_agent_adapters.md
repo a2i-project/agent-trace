@@ -66,7 +66,7 @@ Each adapter package calls `agent.Register` from `init`. `Register` panics on an
 
 ### From session to verifier input
 
-`agent.Prepare(a, claims, groundTruthFile, measured, opts)` builds a `verification.Input`: it runs every observed event through `a.Normalize` (dropping those it rejects), then through `NormalizeStream` when the adapter implements it, combines `a.IsHarnessNoise` and the measured baseline into one predicate (an event is harness activity if either says so), sets `opts.Expresses = a.Expresses` and `opts.IgnoreExits = !a.Process().ExitsClaimed`, and copies `RootPID` and `Coverage` from the file. Caller options such as `IntervalSlack` are kept.
+`agent.Prepare(a, claims, groundTruthFile, measured, opts)` builds a `verification.Input`: it runs every observed event through `a.Normalize` (dropping those it rejects), then through `NormalizeStream` when the adapter implements it, combines `a.IsHarnessNoise` and the measured baseline into one predicate (an event is harness activity if either says so), sets `opts.Expresses = a.Expresses` and `opts.IgnoreExits = !a.Process().ExitsClaimed`, and copies `RootPID`, `Coverage`, `FSScope` and `Workspace` from the file. Caller options such as `IntervalSlack` are kept.
 
 ### Generic
 

@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 0cb4e28 on 2026-10-08, with the changes in the commits that introduced I-28, V-22 and P-17.
+Checked against commit 0cb4e28 on 2026-10-08, with the changes in the commits that introduced I-28, V-22, P-17 and V-23.
 
 ## Objective
 
@@ -57,7 +57,7 @@ Reads a trajectory through an adapter and a capture, runs `verification.Verify`,
 
 Adapter choice: `--agent` selects by name (an unknown name is an error). Without it, `agent.Detect` runs; no match falls back to `generic`, and several matches are an error asking for `--agent`. A baseline whose `agent` differs from the chosen adapter's name is refused. Without a baseline, a non-generic adapter's report gains a degradation saying the harness's own activity will read as unexplained. `--ignore-exits` can only add to the adapter's choice: an adapter with `ExitsClaimed: false` always ignores exits.
 
-The report, on standard output, contains in order: the inputs (entry count, adapter, event count, root pid, baseline rules and runs); the adapter `Report` (tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations); the alignment counts (Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, and an ambiguity note); the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability count; the detail lists; the completeness judgement with notes; and the `VERDICT` line with the reasons when INCONCLUSIVE or advisory.
+The report, on standard output, contains in order: the inputs (entry count, adapter, event count, root pid, the capture's fs scope or a note that it predates the record, baseline rules and runs); the adapter `Report` (tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations); the alignment counts (Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, and an ambiguity note); the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability count; the detail lists; the completeness judgement with notes; and the `VERDICT` line with the reasons when INCONCLUSIVE or advisory.
 
 | Exit code | When |
 |---|---|

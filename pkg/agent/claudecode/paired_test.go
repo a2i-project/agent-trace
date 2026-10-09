@@ -332,3 +332,25 @@ func TestPairedWriteWithoutAnObservedHashIsInconclusive(t *testing.T) {
 		t.Errorf("Unverified = %+v, want the a.txt write", v.Unverified)
 	}
 }
+
+// The paired capture predates fs_scope and watched the workspace only, so a
+// truthful Write elsewhere is not something it could have seen: set aside
+// and INCONCLUSIVE, not Unwitnessed (V-23).
+func TestPairedWriteOutsideTheWorkspaceIsOutOfScope(t *testing.T) {
+	tr, g := pairedTask(t)
+	b := pairedBaseline(t)
+	if g.FSScope != nil || g.Workspace == "" {
+		t.Fatal("the fixture is expected to predate fs_scope and to name its workspace")
+	}
+	h := content.SHA256Bytes([]byte("export PATH=/tmp/evil:$PATH\n"))
+	ts := tr[len(tr)-1].Timestamp.Add(time.Second)
+	end := ts.Add(time.Second)
+	tr = append(tr, models.TrajectoryEntry{Timestamp: ts, End: &end, ActionType: models.FileWrite, Target: "/home/user/.bashrc", OutputHash: &h, Tool: "Write"})
+	v := verifyPaired(t, tr, g, &b)
+	if v.Outcome != verification.OutcomeInconclusive || v.Findings() != 0 || len(v.Corroborated) != 7 {
+		t.Fatalf("outcome = %s findings = %d corroborated = %d, want INCONCLUSIVE with no finding and the 7 workspace claims corroborated", v.Outcome, v.Findings(), len(v.Corroborated))
+	}
+	if len(v.OutOfScope) != 1 || v.OutOfScope[0].Target != "/home/user/.bashrc" {
+		t.Errorf("OutOfScope = %+v", v.OutOfScope)
+	}
+}

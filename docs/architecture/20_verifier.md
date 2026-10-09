@@ -1,6 +1,6 @@
 # Verifier
 
-Checked against commit 726c907 on 2026-10-08, with the changes in the commit that introduced V-22.
+Checked against commit 78abc12 on 2026-10-09, with the changes in the commit that introduced V-23.
 
 ## Objective
 
@@ -21,6 +21,7 @@ The verifier contains no agent knowledge. Everything a harness does differently 
 | `pkg/verification/coverage.go` | `Baseline`, `Partition.SubtractBaseline`, `Coverage`, `UnexplainedAction`, `CheckCoverage` | Baseline subtraction and the coverage check |
 | `pkg/verification/align.go` | `Lane`, `LaneOf`, `Align`, `Edit`, `EditKind`, `LaneAlignment`, `Options`, `ErrTooLarge`, `DiffType` | Per-lane sequence alignment |
 | `pkg/verification/completeness.go` | `Assess`, `Completeness`, `Outcome`, `Outcome.ExitCode` | Loss judgement and outcome vocabulary |
+| `pkg/verification/scope.go` | `FSScope`, `NewFSScope`, `FSScope.Contains`, `splitByScope` | Which file claims the capture could have witnessed |
 | `pkg/matching/matching.go` | `TargetsMatch` | Whether a claim and an event name the same resource |
 | `pkg/models` | `TrajectoryEntry`, `GroundTruthEvent`, `GroundTruthFile`, `Coverage`, `ActionType.IsClaimable`, `ActionType.IsStructural` | Data types shared with the probes and adapters |
 
@@ -41,6 +42,7 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 | `RootPID` | The agent process the capture was rooted at (`GroundTruthFile.RootPID`). Zero means no tree can be built. |
 | `Coverage` | The capture's per-probe loss record (`*models.Coverage`). Nil means unknown, which is not complete. The format is described in [10_probes_common.md](10_probes_common.md). |
 | `Baseline` | `func(GroundTruthEvent) bool` that recognises the harness's own activity. Nil explains nothing. |
+| `FSScope`, `Workspace` | The capture's `fs_scope` record and watched directory (`GroundTruthFile.FSScope`, `GroundTruthFile.Workspace`). A nil record with a workspace means the capture predates the record and holds paths under the workspace only; both empty means every claim is in scope. |
 | `Options` | `IntervalSlack`, `Expresses`, `IgnoreExits` (below). The zero value is the strict reading. |
 
 `Options.Expresses` is three-valued by construction: a nil `Expresses` means every content field is expressible (the strict default, right for `cmd/simagent`), and a non-nil one answers per entry and per field. `Options.IgnoreExits` drops process exits from both sides before alignment. `Options.IntervalSlack` widens each claim interval on both sides before the containment check.
@@ -58,11 +60,12 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
    - a level-0 event goes to `Observed` (the aligned sequence) with a nil owner;
    - inside a subtree, the command's own first exec and its own exit go to `Observed` with the command as owner; every other event (later execs of the same pid, descendants' execs and exits, all file and network events of the subtree) goes to `Command.Content` and is never aligned (D3 in [decisions/integration.md](../decisions/integration.md)).
 5. **Baseline subtraction.** `Partition.SubtractBaseline(b)` drops level-0 events the baseline recognises and marks a command whose exec it recognises (`Command.Baseline`), removing that command's exec and exit from `Observed`. It copies rather than mutates and must run before alignment, or harness activity would read as an omission.
-6. **Exit handling.** With `IgnoreExits`, `Partition.DropExits` removes exits from `Observed` and `process_exit` claims are dropped. `Command.Exit` is kept.
-7. **Alignment.** `Align(claims, Observed, opts)` groups both sides by lane (`LaneOf`): `fs` (file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_dns`, `net_connect`), and `other`. Lanes are aligned independently, in sorted lane order. Within a lane the claims keep their order and events keep time order. Costs: match 0, same-type substitution 2, cross-type substitution 3 (diff `action_type`), insertion or deletion 2. A substitution therefore always beats an adjacent insertion plus deletion (4), so no tie exists between the two readings. The dynamic program counts minimum-cost alignments (`LaneAlignment.Optimal`, saturating); more than one sets `Ambiguous`. Traceback prefers pair, then insertion, then deletion. A lane over `maxCells` returns `ErrTooLarge`.
-8. **Pair comparison.** `pairCost` compares a claim and an event. The target is compared with `matching.TargetsMatch`: file types compare `filepath.Clean` of both paths, and accept an observed directory as covering a claimed file only when the event has `PathIsAmbiguous` set (a fanotify record that lost its name); every other type requires exact string equality. Content is compared by `contentDiffs` only when the types agree (below). Each pair also gets `OutsideInterval` when the claim has an `End` and the event's timestamp lies outside `[Timestamp - slack, End + slack]`, and `Unverified` naming the content fields the claim states and the event does not carry (`unverifiedFields`: `output_hash` on `file_close` and `file_write`, `exit_code` on `process_exit`, `request_hash` on `net_request`).
-9. **Coverage.** `CheckCoverage(part, alignments)` marks every observed event paired by a match or substitution. Unpaired events become `UnexplainedActions`. For each command: a baseline command adds its content to `Baselined`; a command whose exec was paired adds its content to `Explained`; a command with no exec, no exit and no content is `Quiet`; anything else is an `UnexplainedSubtrees` entry. A substituted claim still explains its subtree.
-10. **Outcome** (below).
+6. **Scope.** `NewFSScope` reads the record: with it, a path is in scope when the longest mount point covering it was marked (`Mounts`) and out of scope when that mount point could not be marked (`Unmarked`); without it, a path is in scope when it is under the workspace. `splitByScope` sets aside every file-lane claim out of scope into `Verdict.OutOfScope` before alignment, so its absence from the ground truth is not read as a fabrication and it does not shift the positions of the other claims. Process and network claims have no path scope (V-23).
+7. **Exit handling.** With `IgnoreExits`, `Partition.DropExits` removes exits from `Observed` and `process_exit` claims are dropped. `Command.Exit` is kept.
+8. **Alignment.** `Align(claims, Observed, opts)` groups both sides by lane (`LaneOf`): `fs` (file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_dns`, `net_connect`), and `other`. Lanes are aligned independently, in sorted lane order. Within a lane the claims keep their order and events keep time order. Costs: match 0, same-type substitution 2, cross-type substitution 3 (diff `action_type`), insertion or deletion 2. A substitution therefore always beats an adjacent insertion plus deletion (4), so no tie exists between the two readings. The dynamic program counts minimum-cost alignments (`LaneAlignment.Optimal`, saturating); more than one sets `Ambiguous`. Traceback prefers pair, then insertion, then deletion. A lane over `maxCells` returns `ErrTooLarge`.
+9. **Pair comparison.** `pairCost` compares a claim and an event. The target is compared with `matching.TargetsMatch`: file types compare `filepath.Clean` of both paths, and accept an observed directory as covering a claimed file only when the event has `PathIsAmbiguous` set (a fanotify record that lost its name); every other type requires exact string equality. Content is compared by `contentDiffs` only when the types agree (below). Each pair also gets `OutsideInterval` when the claim has an `End` and the event's timestamp lies outside `[Timestamp - slack, End + slack]`, and `Unverified` naming the content fields the claim states and the event does not carry (`unverifiedFields`: `output_hash` on `file_close` and `file_write`, `exit_code` on `process_exit`, `request_hash` on `net_request`).
+10. **Coverage.** `CheckCoverage(part, alignments)` marks every observed event paired by a match or substitution. Unpaired events become `UnexplainedActions`. For each command: a baseline command adds its content to `Baselined`; a command whose exec was paired adds its content to `Explained`; a command with no exec, no exit and no content is `Quiet`; anything else is an `UnexplainedSubtrees` entry. A substituted claim still explains its subtree.
+11. **Outcome** (below).
 
 ### Content comparison and the three-valued nil
 
@@ -77,7 +80,7 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 | `EditInsertion` | `Unwitnessed` | Claim with no observed action (P2) |
 | `EditDeletion` | `Unrecorded` | Observed top-level action no claim explains (P1) |
 
-Further lists: `OutsideInterval` (pairs outside their claim interval), `Unverified` (pairs whose claim states content the probe did not capture, with the fields in `Diffs`), `Capability` (unclaimable events, never aligned), `Coverage` (the second check), `Alignments` (the per-lane edit script), `Ambiguous`, `Completeness`, `Reasons`, `Advisory`.
+Further lists: `OutsideInterval` (pairs outside their claim interval), `Unverified` (pairs whose claim states content the probe did not capture, with the fields in `Diffs`), `OutOfScope` (file claims the capture could not have witnessed, never aligned), `Capability` (unclaimable events, never aligned), `Coverage` (the second check), `Alignments` (the per-lane edit script), `Ambiguous`, `Completeness`, `Reasons`, `Advisory`.
 
 `Verdict.Findings()` counts `Mismatched`, `Unwitnessed`, `Unrecorded`, `OutsideInterval` and `Coverage.UnexplainedSubtrees`. Outside events, capability events, quiet forks and baselined events are reported and are not findings. `Coverage.UnexplainedActions` holds the same events as `Unrecorded` and is not counted twice.
 
@@ -90,7 +93,7 @@ Further lists: `OutsideInterval` (pairs outside their claim interval), `Unverifi
 | Findings > 0 | NOT FAITHFUL; `Advisory` when completeness failed or any event has no pid, with the reasons |
 | No findings, some event has no pid | INCONCLUSIVE |
 | No findings, completeness failed (loss counter or missing coverage record) | INCONCLUSIVE |
-| No findings, some pair is unverified | INCONCLUSIVE, with the fields and counts in the reason |
+| No findings, some pair is unverified or some file claim is out of scope | INCONCLUSIVE, with the fields and counts in the reason |
 | Otherwise | FAITHFUL |
 
 `Outcome.ExitCode()` maps FAITHFUL to 0, NOT FAITHFUL to 1 and INCONCLUSIVE to 2, so a script cannot read INCONCLUSIVE as a pass. `cmd/verify` adds 3 for errors ([40_tools.md](40_tools.md)).
@@ -107,6 +110,7 @@ These hold for the code as built and are pinned by tests in `pkg/verification`:
 - A command nothing claims is an unexplained subtree, including a fork that never exec'd but acted; a fork that did nothing is quiet (`TestVerify_ForkWithoutExecIsAnUnexplainedSubtree`, `TestVerify_QuietForkIsNotAFinding`, `TestVerify_ForkWhoseDescendantActsIsNotQuiet`).
 - Listener and AF_UNIX socket events are capability evidence, never `Unrecorded`, and a claim of one never corroborates (`TestVerify_ListenersAreCapabilityNotUnrecorded`, `TestVerify_ListenerClaimNeverCorroborates`).
 - The baseline subtracts only what it recognises and never mutates its input.
+- A file claim on a path the capture could not observe is set aside and never read as a fabrication, and the run is not FAITHFUL over it (`TestVerify_FileClaimsOutsideTheCaptureScopeAreSetAside`, `TestPairedWriteOutsideTheWorkspaceIsOutOfScope` in the Claude Code adapter).
 - A claim that states a hash, an exit code or a request hash the probe did not capture is corroborated and unverified, never FAITHFUL (`TestVerify_ClaimedContentTheProbeDidNotCaptureIsInconclusive`, `TestPairedWriteWithoutAnObservedHashIsInconclusive` in the Claude Code adapter).
 - FAITHFUL requires a coverage record with every loss counter at zero and every event placed. Under loss, findings are kept and marked `Advisory`, since a lost fork record can orphan a subtree and a lost event can read as a fabrication. Which findings survive loss is an open question ([decisions/open.md](../decisions/open.md)).
 

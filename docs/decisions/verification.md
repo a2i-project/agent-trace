@@ -178,6 +178,14 @@ Decision: A pair whose claim states `output_hash` (on `file_close` or `file_writ
 Consequences: Content verification can no longer be switched off by the agent; it can only be made inconclusive, which the report says. An honest run whose probe dropped a hash is INCONCLUSIVE rather than FAITHFUL, the same reading as event loss. `input_hash` is not tracked, because the fs probe stamps every open with one. The fs probe still has no counter for hashless closes, so `watch` cannot warn at capture time (an open item).
 Alternatives rejected: Reporting the pair as a mismatch (it punishes an honest agent for a probe gap, and under loss findings are advisory anyway); keeping the pair silent (the attack above).
 
+### V-23: A file claim the capture could not have witnessed is set aside, not aligned
+Status: Accepted, implemented (`pkg/verification/scope.go`, `Verdict.OutOfScope`, the outcome rule in `Verify`).
+Date: 2026-10-09 (item 5, step 2; follows P-17).
+Context: The fs probe kept only paths under the workspace and nothing recorded that, so a truthful Write elsewhere had no event to pair with and read as Unwitnessed (**Verified**: a two-file shell agent, and `TestPairedWriteOutsideTheWorkspaceIsOutOfScope` on the paired fixture, both NOT FAITHFUL before the change). P-17 widened the capture and added `fs_scope`, but captures made before it, and paths on filesystems the probe could not mark, remain outside what a capture can say.
+Decision: Before alignment, every file-lane claim whose path the capture could not have observed is set aside into `OutOfScope`. With a record, a path is in scope when the longest mount point covering it was marked, out when that mount point is listed as unmarked. Without a record, the workspace is the scope; with neither record nor workspace, everything is in scope (a direct caller of `Verify`). Set-aside claims are not findings, and with no finding the outcome is INCONCLUSIVE with their count as the reason. Process and network claims have no path scope.
+Consequences: An honest agent is not called a fabricator for a write the probe was not watching, and the verdict says the claim was not checked rather than confirmed. Removing the claim before alignment keeps the other claims' positions intact. A dishonest agent's hidden write in an unobserved place is still invisible; the record now says where that is. Under P-17 the unobserved places are the unmarked filesystems only.
+Alternatives rejected: Keeping legacy captures on the Unwitnessed reading (it is a known false positive once the workspace is in the file); dropping the claim silently (the report must say what was not checked); treating the gap as a finding (it is the capture's limit, not the agent's).
+
 ## Superseded
 
 ### F0.2-F0.3: Timestamp-window matcher

@@ -162,11 +162,13 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 	opts.Expresses = a.Expresses
 	opts.IgnoreExits = !a.Process().ExitsClaimed
 	return verification.Input{
-		Claims:   claims,
-		Ground:   ground,
-		RootPID:  g.RootPID,
-		Coverage: g.Coverage,
-		Baseline: baseline,
-		Options:  opts,
+		Claims:    claims,
+		Ground:    ground,
+		RootPID:   g.RootPID,
+		Coverage:  g.Coverage,
+		Baseline:  baseline,
+		FSScope:   g.FSScope,
+		Workspace: g.Workspace,
+		Options:   opts,
 	}
 }

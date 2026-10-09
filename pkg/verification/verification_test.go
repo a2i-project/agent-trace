@@ -699,3 +699,68 @@ func TestVerify_QuietForkThatLaterActsIsNotQuiet(t *testing.T) {
 		t.Error("a fork that wrote a file was reported as quiet")
 	}
 }
+
+// A file claim the capture could not have witnessed is set aside, not aligned:
+// it is neither a fabrication nor confirmed, and FAITHFUL is not asserted over
+// it. Which claims those are comes from the capture's fs_scope record, or from
+// the workspace alone for a capture that predates the record (V-23).
+func TestVerify_FileClaimsOutsideTheCaptureScopeAreSetAside(t *testing.T) {
+	claimOut := claimAt(0, models.FileWrite, "/home/u/.bashrc")
+	claimIn := claimAt(10, models.FileWrite, "/ws/a.txt")
+	eventIn := agentEv(10, models.FileWrite, "/ws/a.txt")
+	verify := func(scope *models.FSScope, workspace string, claims ...models.TrajectoryEntry) Verdict {
+		return Verify(Input{Claims: claims, Ground: models.GroundTruth{eventIn}, RootPID: agentPID, Coverage: completeCov(), FSScope: scope, Workspace: workspace})
+	}
+	t.Run("legacy capture: outside the workspace is out of scope", func(t *testing.T) {
+		v := verify(nil, "/ws", claimOut, claimIn)
+		wantOutcome(t, v, OutcomeInconclusive)
+		if len(v.OutOfScope) != 1 || v.OutOfScope[0].Target != "/home/u/.bashrc" || len(v.Corroborated) != 1 || v.Findings() != 0 {
+			t.Errorf("outOfScope=%v corroborated=%d findings=%d", v.OutOfScope, len(v.Corroborated), v.Findings())
+		}
+		if len(v.Reasons) != 1 || !strings.Contains(v.Reasons[0], "fs_scope") {
+			t.Errorf("reasons = %v", v.Reasons)
+		}
+	})
+	t.Run("legacy capture, a look-alike prefix is outside", func(t *testing.T) {
+		v := verify(nil, "/ws", claimAt(0, models.FileWrite, "/ws2/x"), claimIn)
+		if len(v.OutOfScope) != 1 {
+			t.Errorf("/ws2 was read as inside /ws: %v", v.OutOfScope)
+		}
+	})
+	t.Run("no record and no workspace: everything is in scope", func(t *testing.T) {
+		v := verify(nil, "", claimOut, claimIn)
+		wantOutcome(t, v, OutcomeNotFaithful)
+		if len(v.OutOfScope) != 0 || len(v.Unwitnessed) != 1 {
+			t.Errorf("outOfScope=%v unwitnessed=%v", v.OutOfScope, v.Unwitnessed)
+		}
+	})
+	t.Run("tree-or-workspace with / marked: the home write is in scope and unwitnessed", func(t *testing.T) {
+		scope := &models.FSScope{Rule: models.FSScopeTreeOrWorkspace, Mounts: []string{"/", "/tmp"}}
+		v := verify(scope, "/ws", claimOut, claimIn)
+		wantOutcome(t, v, OutcomeNotFaithful)
+		if len(v.OutOfScope) != 0 || len(v.Unwitnessed) != 1 {
+			t.Errorf("outOfScope=%v unwitnessed=%v", v.OutOfScope, v.Unwitnessed)
+		}
+	})
+	t.Run("a path under an unmarked mount is out of scope, under a marked one in", func(t *testing.T) {
+		scope := &models.FSScope{Rule: models.FSScopeTreeOrWorkspace, Mounts: []string{"/", "/tmp"}, Unmarked: map[string]string{"/var/lib/docker/x/merged": "operation not supported"}}
+		v := verify(scope, "/ws", claimAt(0, models.FileWrite, "/var/lib/docker/x/merged/etc/passwd"), claimAt(1, models.FileOpen, "/var/lib/docker/x/other"), claimIn)
+		wantOutcome(t, v, OutcomeNotFaithful) // the /var/lib/docker/x/other open is in scope and unwitnessed
+		if len(v.OutOfScope) != 1 || v.OutOfScope[0].Target != "/var/lib/docker/x/merged/etc/passwd" {
+			t.Errorf("outOfScope = %v", v.OutOfScope)
+		}
+	})
+	t.Run("other lanes have no path scope", func(t *testing.T) {
+		v := verify(nil, "/ws", claimAt(0, models.ProcessExec, "/usr/bin/true"), claimIn)
+		if len(v.OutOfScope) != 0 || len(v.Unwitnessed) != 1 {
+			t.Errorf("a process claim was scoped by path: outOfScope=%v", v.OutOfScope)
+		}
+	})
+	t.Run("set aside next to a finding", func(t *testing.T) {
+		v := verify(nil, "/ws", claimOut, claimIn, claimAt(20, models.FileWrite, "/ws/ghost"))
+		wantOutcome(t, v, OutcomeNotFaithful)
+		if len(v.OutOfScope) != 1 || len(v.Unwitnessed) != 1 {
+			t.Errorf("outOfScope=%v unwitnessed=%v", v.OutOfScope, v.Unwitnessed)
+		}
+	})
+}

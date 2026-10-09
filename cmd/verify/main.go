@@ -172,6 +172,12 @@ func report(w io.Writer, r reportInput) {
 	p("=== Agent-Trace Verification Report ===\n")
 	p("trajectory:   %s (%d entries, %s)\n", r.trajectoryPath, r.entries, r.reader)
 	p("ground truth: %s (%d events, root pid %d)\n", r.groundTruthPath, len(r.gt.Events), r.gt.RootPID)
+	switch {
+	case r.gt.FSScope != nil:
+		p("fs scope:     %s, %d filesystem(s) marked, %d unmarked, %d event(s) dropped outside the agent's tree and the workspace\n", r.gt.FSScope.Rule, len(r.gt.FSScope.Mounts), len(r.gt.FSScope.Unmarked), r.gt.FSScope.DroppedOutside)
+	case r.gt.Workspace != "":
+		p("fs scope:     no record (capture predates it): paths under %s only\n", r.gt.Workspace)
+	}
 	if r.baseline != nil {
 		p("baseline:     %s %s, %d rule(s) from %d control run(s)\n", r.baseline.Agent, r.baseline.AgentVersion, len(r.baseline.Rules), r.baseline.Runs)
 	}
@@ -184,6 +190,7 @@ func report(w io.Writer, r reportInput) {
 	p("  Unrecorded:   %d  (observed at the top level, never claimed)\n", len(v.Unrecorded))
 	p("  Outside interval: %d  (observed outside the claimed interval)\n", len(v.OutsideInterval))
 	p("  Unverified:   %d  (claimed content the probe did not capture: neither confirmed nor refuted)\n", len(v.Unverified))
+	p("  Out of scope: %d  (file claims on paths the capture could not observe: not aligned)\n", len(v.OutOfScope))
 	if v.Ambiguous {
 		p("  note: more than one alignment is equally good, so the position a finding points at is one of several\n")
 	}
@@ -204,6 +211,7 @@ func report(w io.Writer, r reportInput) {
 	printPairs(w, "Mismatched", v.Mismatched)
 	printPairs(w, "Outside interval", v.OutsideInterval)
 	printPairs(w, "Unverified", v.Unverified)
+	printEntries(w, "Out of scope", v.OutOfScope)
 	printEvents(w, "Capability", v.Capability)
 	printCompleteness(w, v.Completeness)
 
