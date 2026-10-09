@@ -120,6 +120,14 @@ type Options struct {
 	// is for a format that cannot state an exit (I-15), where every
 	// observed exit would otherwise read as an unreported action.
 	IgnoreExits bool
+	// HarnessOwned says whether a path belongs to the harness's own
+	// directories (its configuration, state and cache), as declared by the
+	// adapter. An unexplained level-0 file event there is reported as
+	// unexplained harness activity and makes the run INCONCLUSIVE rather
+	// than NOT FAITHFUL: the harness does some things only sometimes, and a
+	// baseline measured on a few control runs misses them (V-24). Nil
+	// declares nothing.
+	HarnessOwned func(path string) bool
 }
 
 // ErrTooLarge is returned when a lane is too large to align in bounded memory.

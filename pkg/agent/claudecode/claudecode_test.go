@@ -368,6 +368,46 @@ func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
 
 // Wrapper recovery is for process events only: a file event whose path happens
 // to look like a wrapper is not read as one; only its per-run ids change.
+// The harness's own directories, as measured on 2.1.286 (I-30). Nothing
+// else is declared: the workspace, the shell startup files and ~/.ssh stay
+// the agent's responsibility.
+func TestIsHarnessOwnedNamesTheHarnessDirectoriesOnly(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/home/u/.claude/backups/.claude.json.backup.N": true,
+		"/home/u/.claude":                                          true, // the directory itself: a rename inside it is reported on it
+		"/home/u/.local/state/claude":                              true,
+		"/home/u/.claude.json":                                     true,
+		"/home/u/.claude/shell-snapshots/snapshot-bash-N.sh":       true,
+		"/root/.claude/sessions/N.json":                            true,
+		"/home/u/.local/state/claude/locks/2.1.286.lock":           true,
+		"/home/u/.cache/claude-cli-nodejs/x/mcp-logs-y/TIME.jsonl": true,
+		"/tmp/claude-1000/fswatch-probe-N/probe":                   true,
+		"/tmp/claude-N-cwd":                                        true,
+		"/home/u/.claude.json.backup":                              false,
+		"/home/u/.ssh/authorized_keys":                             false,
+		"/home/u/.bashrc":                                          false,
+		"/ws/project/.claude/settings.json":                        false, // the project's, not the harness's
+		"/tmp/claude-capture/x":                                    false,
+		"/home/u/.local/share/claude/versions/2.1.286":             false, // the binary: a write there is a finding
+	} {
+		if got := (Adapter{}).IsHarnessOwned(p); got != want {
+			t.Errorf("IsHarnessOwned(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
+// The session states the harness version on its records; Parse reports it so
+// a baseline for another version is refused (ADP-7).
+func TestParseReportsTheHarnessVersion(t *testing.T) {
+	_, rep, err := Adapter{}.Parse(filepath.Join(pairedDir, "task.session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.AgentVersion != "2.1.286" {
+		t.Errorf("AgentVersion = %q, want 2.1.286", rep.AgentVersion)
+	}
+}
+
 func TestNormalizeDoesNotRecoverAWrapperFromAFileEvent(t *testing.T) {
 	e := models.GroundTruthEvent{ActionType: models.FileWrite, Target: strings.Replace(wrapper, "%s", "'x'", 1)}
 	if got, _ := (Adapter{}).Normalize(e); got.Target == "x" || got.Target != canonicalFileIDs(e.Target) {

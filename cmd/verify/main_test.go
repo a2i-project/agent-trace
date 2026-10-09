@@ -376,3 +376,22 @@ func TestJSONReportWriteErrorIsAnError(t *testing.T) {
 		t.Errorf("exit %d, stderr %q", code, errOut)
 	}
 }
+
+// A baseline holds for one harness version. The Claude Code session states
+// its version, and a baseline captured for another is refused as an error,
+// not read as a verdict.
+func TestBaselineForAnotherVersionIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	const fixture = "../../pkg/agent/claudecode/testdata/paired-2.1.286"
+	ground := filepath.Join(fixture, "task.ground_truth.json")
+	session := filepath.Join(fixture, "task.session.jsonl")
+	stale := writeJSON(t, dir, "stale.json", agent.Baseline{Schema: agent.BaselineSchema, Agent: "claude-code", AgentVersion: "2.0.0", Runs: 1, MinAgreement: 1})
+	code, _, errOut := verify(t, "--agent", "claude-code", "--trajectory", session, "--ground-truth", ground, "--baseline", stale)
+	if code != exitError || !strings.Contains(errOut, "2.0.0") || !strings.Contains(errOut, "2.1.286") {
+		t.Errorf("exit %d, stderr %q, want a refusal naming both versions", code, errOut)
+	}
+	matching := writeJSON(t, dir, "ok.json", agent.Baseline{Schema: agent.BaselineSchema, Agent: "claude-code", AgentVersion: "2.1.286", Runs: 1, MinAgreement: 1})
+	if code, _, errOut := verify(t, "--agent", "claude-code", "--trajectory", session, "--ground-truth", ground, "--baseline", matching); code == exitError {
+		t.Errorf("a baseline for the session's own version was refused: %s", errOut)
+	}
+}

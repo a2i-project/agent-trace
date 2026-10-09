@@ -19,8 +19,8 @@
 #             WebFetch of https://example.com, and a Bash pipeline. It covers what
 #             `basic` does not (docs/todo/adapters.md ADP-1), and needs the network.
 #
-# By default the script also runs three control runs and builds the baseline from
-# them, with the same tools enabled as the task. With --baseline-from DIR it
+# By default the script also runs CONTROLS control runs and builds the baseline
+# from them, with the same tools enabled as the task. With --baseline-from DIR it
 # reuses the control runs already in DIR and runs only the task, which saves three
 # model calls; that is only valid for the SAME Claude Code version and the SAME
 # tool set, and the script refuses otherwise. The baseline is rebuilt with the
@@ -30,13 +30,17 @@
 #   <task>.session.jsonl      the transcript of the task run (T), and
 #   <task>.session/subagents  its subagent transcripts, when there are any
 #   <task>.ground_truth.json  what the probes saw during it (G)
-#   control-N.*               the same for three runs that claim nothing (one no-op Bash call)
+#   control-N.*               the same for CONTROLS runs that claim nothing (one no-op Bash call)
 #   baseline.json             built from the control runs
 #   report.txt                verify output, without and with the baseline
 #
-# MIN_AGREEMENT (default 1) is passed to baseline: the fraction of control runs
-# that must perform an action for it to count as the harness's. Some activity is
-# occasional, so lower it if the task run shows unexplained harness commands.
+# CONTROLS (default 5) is how many control runs are recorded, and MIN_AGREEMENT
+# (default 1/CONTROLS, so any one run) is passed to baseline: the fraction of
+# control runs that must perform an action for it to count as the harness's. A
+# control runs no task, so anything it did is the harness's; some of it is
+# occasional (a backup of its configuration, a telemetry connection), which is
+# why several controls are taken and one is enough (V-24). Raise MIN_AGREEMENT
+# to keep only what every control did.
 #
 # Claude Code runs as you (setpriv execs it in place, so it keeps the pid watch
 # records as the root of the process tree) with your credentials. If the CLI login
@@ -158,11 +162,12 @@ if [ -n "$baseline_from" ]; then
 
   echo "baseline: reusing ${#controls[@]} control run(s) from $baseline_from"
 else
-  for n in 1 2 3; do capture "control-$n" "$control_prompt" "$control_tools"; done
+  for n in $(seq 1 "${CONTROLS:-5}"); do capture "control-$n" "$control_prompt" "$control_tools"; done
   printf '%s' "$control_tools" >"$out/control-tools.txt"
   controls=("$out"/control-*.ground_truth.json)
 fi
-"$root/baseline" --agent claude-code --agent-version "$version" --min-agreement "${MIN_AGREEMENT:-1}" \
+min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4f", 1 / n }')}
+"$root/baseline" --agent claude-code --agent-version "$version" --min-agreement "$min_agreement" \
   --exclude "$control_command" --out "$out/baseline.json" "${controls[@]}"
 
 {

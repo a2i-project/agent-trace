@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -92,6 +93,22 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 // fixture tests exclude it the same way the script does.
 const ControlCommand = ": agent-trace-control-marker"
 
+// harnessOwned matches the directories Claude Code keeps its own files in,
+// the directories themselves included (a rename inside one is reported on
+// the directory),
+// measured on the captures of 2.1.286: the configuration file and directory
+// under the home directory, the version locks under the state directory, the
+// MCP logs under the cache directory, and the per-user temporary directory
+// that holds the cwd files, the task outputs and the fswatch probe. An
+// unexplained level-0 file event there is unexplained harness activity, not
+// an agent's unreported action (V-24, I-30). The list names where the
+// harness keeps files, not what it does; it explains nothing.
+var harnessOwned = regexp.MustCompile(`^(?:/(?:home/[^/]+|root)/(?:\.claude(?:/|$)|\.claude\.json(?:$|\.tmp\.)|\.local/state/claude(?:/|$)|\.cache/claude-cli-nodejs(?:/|$))|/tmp/claude-(?:\d+/|[0-9a-zA-Z]+-cwd$))`)
+
+// IsHarnessOwned reports whether path is under one of the harness's own
+// directories.
+func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchString(path) }
+
 // capturedVersion is the Claude Code version whose kernel-level behaviour the
 // claim shapes were checked against (scripts/capture-claude-code.sh).
 const capturedVersion = "2.1.286"
@@ -149,6 +166,7 @@ type record struct {
 	Type      string    `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
 	SessionID string    `json:"sessionId"`
+	Version   string    `json:"version"`
 	// ToolUseResult is the harness's structured result of the tool call, on the
 	// user record that carries the tool_result. For Write it says whether the
 	// file was created or updated, which decides whether the harness first
@@ -208,6 +226,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
 				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: %v", filepath.Base(file), line, err))
 				continue
+			}
+			if rep.AgentVersion == "" && r.Version != "" && thread == "" {
+				rep.AgentVersion = r.Version
 			}
 			if r.Message == nil || len(r.Message.Content) == 0 || r.Message.Content[0] != '[' {
 				continue

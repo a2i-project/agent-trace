@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commits that introduced I-26 to I-29.
+Checked against commit 9fa13d0 on 2026-10-08, with the changes in the commits that introduced I-26 to I-30.
 
 ## Objective
 
@@ -33,7 +33,7 @@ type Adapter interface {
 }
 ```
 
-`StreamNormalizer` is an optional second interface, `NormalizeStream(models.GroundTruth) models.GroundTruth`, for an adapter whose observed events are comparable only when several are looked at together (I-22). `Name` keys the registry and the baseline file. `Parse` returns entries in claim order, each with its interval (`Timestamp`, `End`), its `ThreadID` where subagents were flattened, its `BlockID` where the format issued several calls at once, and its `Tool`. `Normalize` returns false to drop an event. `IsHarnessNoise` is what the adapter knows statically; the measured baseline is supplied separately. `Expresses` answers for one of the `verification.Diff*` field names.
+`HarnessOwner` is an optional interface, `IsHarnessOwned(path string) bool`, for an adapter that can say where the harness keeps its own files; the verifier reports an unexplained level-0 file event there as unexplained harness activity rather than as the agent's unreported action, and the run is INCONCLUSIVE, not NOT FAITHFUL (V-24, I-30). It declares where, not what: nothing is explained by it. `StreamNormalizer` is an optional second interface, `NormalizeStream(models.GroundTruth) models.GroundTruth`, for an adapter whose observed events are comparable only when several are looked at together (I-22). `Name` keys the registry and the baseline file. `Parse` returns entries in claim order, each with its interval (`Timestamp`, `End`), its `ThreadID` where subagents were flattened, its `BlockID` where the format issued several calls at once, and its `Tool`. `Normalize` returns false to drop an event. `IsHarnessNoise` is what the adapter knows statically; the measured baseline is supplied separately. `Expresses` answers for one of the `verification.Diff*` field names.
 
 ### ProcessModel
 
@@ -50,7 +50,7 @@ Only `ExitsClaimed` changes verifier behaviour today. The other fields are decla
 
 ### Report
 
-`Report` makes what was not measured visible: `ToolCalls` (invocations in the session), `Entries` (claims produced), `UnmappedByTool` (tool calls that produced no entry, by name), `UnknownTools` (tools neither mapped nor declared non-effectful, which may have acted unseen), `ParseErrors`, and `Degradations` (each precision loss in words). `cmd/verify` prints all of them before the verdict.
+`Report` makes what was not measured visible: `ToolCalls` (invocations in the session), `Entries` (claims produced), `AgentVersion` (the harness version the session states, if any), `UnmappedByTool` (tool calls that produced no entry, by name), `UnknownTools` (tools neither mapped nor declared non-effectful, which may have acted unseen), `ParseErrors`, and `Degradations` (each precision loss in words). `cmd/verify` prints all of them before the verdict.
 
 ## Technologies
 
@@ -66,7 +66,7 @@ Each adapter package calls `agent.Register` from `init`. `Register` panics on an
 
 ### From session to verifier input
 
-`agent.Prepare(a, claims, groundTruthFile, measured, opts)` builds a `verification.Input`: it runs the observed events through `agent.NormalizeGround` (every event through `a.Normalize`, dropping those it rejects, then the stream through `NormalizeStream` when the adapter implements it; `Capture` uses the same function, so a rule is measured on the shape the verifier compares against), combines `a.IsHarnessNoise` and the measured baseline into one predicate (an event is harness activity if either says so), sets `opts.Expresses = a.Expresses` and `opts.IgnoreExits = !a.Process().ExitsClaimed`, and copies `RootPID`, `Coverage`, `FSScope` and `Workspace` from the file. Caller options such as `IntervalSlack` are kept.
+`agent.Prepare(a, claims, groundTruthFile, measured, opts)` builds a `verification.Input`: it runs the observed events through `agent.NormalizeGround` (every event through `a.Normalize`, dropping those it rejects, then the stream through `NormalizeStream` when the adapter implements it; `Capture` uses the same function, so a rule is measured on the shape the verifier compares against), combines `a.IsHarnessNoise` and the measured baseline into one predicate (an event is harness activity if either says so), sets `opts.Expresses = a.Expresses`, `opts.IgnoreExits = !a.Process().ExitsClaimed` and, when the adapter is a `HarnessOwner`, `opts.HarnessOwned`, and copies `RootPID`, `Coverage`, `FSScope` and `Workspace` from the file. Caller options such as `IntervalSlack` are kept.
 
 ### Generic
 
@@ -102,6 +102,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `Normalize`, searches | A command line whose program is the harness's own binary in its install directory, `/home/<user>/.local/share/claude/versions/<major.minor.patch>` or the same under `/root`, with first argument `--no-config` becomes `claude-code search:glob` (with `--files` and `--null`) or `claude-code search:grep` (without `--files`); the harness's own `--files` start-up listings are left as they are (I-25). A program under any other path, the workspace or `/tmp` included, is not a search and keeps its text (I-27). |
 | `NormalizeStream` | Folds a finished temp-and-rename (`<path>.tmp.<pid>.<12 hex>`, or the version lock's `<path>.tmp.<8 hex>`: create on the directory, open, write, close and rename, the close and rename in either order) into one `file_write` of the target carrying the close's hash, and collapses a run of opens of one file by one process into one. Events of other processes, an unfinished replace and a name that is not the harness's pattern are left alone (I-22). |
 | `IsHarnessNoise` | Declares nothing; harness activity comes from the measured baseline (D11). |
+| `IsHarnessOwned` | `~/.claude/`, `~/.claude.json` and its temporary, `~/.local/state/claude/`, `~/.cache/claude-cli-nodejs/`, `/tmp/claude-<uid>/` and the cwd files `/tmp/claude-<id>-cwd`, for a home under `/home` or `/root` (I-30). Not the install directory, the workspace's own `.claude`, the shell startup files or `~/.ssh`. |
 | Degradations | Decision-time start (D13); no exit codes, so exits are not aligned; file-tool claims are one atomic replace as measured on 2.1.286, and a variant not seen shows as unexplained; Write calls with no create or update result assumed to overwrite; unknown tools when present. |
 
 Claims are rewritten the same way: `collapseOpenClaims` merges adjacent opens of one file among the file claims, since commands and connections are other lanes and do not break a run. The structured result of the call (`toolUseResult.type`, on the user record that carries the `tool_result`) is read only when the record holds a single result.
@@ -175,7 +176,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 ## Known limits
 
 - The Claude Code claim shapes rest on one paired capture of one version on one task. A write that does not use a temporary file, a different version, or a tool not exercised (`NotebookEdit`, `MultiEdit`, parallel calls, subagents) is unchecked. The Gemini adapter has not seen a real capture.
-- Some harness activity is occasional (a package-manager probe appeared in two of three control runs). At full agreement it is left out of the baseline and can read as unexplained in a later run.
+- Some harness activity is occasional (a package-manager probe in two of three control runs; a backup of `~/.claude.json` in a task run and in no control). At full agreement it is left out of the baseline. The capture script therefore takes more controls at a lower agreement threshold, and what still escapes is reported as unexplained harness activity when it is a file event in the harness's own directories (V-24); a connection or a command the controls never showed is still a finding.
 - `Concurrency`, `SubagentsInProcess`, `ShellPerCommand` and `IntervalKind` are declarations only; the verifier does not read them.
 - The Claude Code adapter's command recovery and id canonicalisation depend on the current wrapper and snapshot shapes (the shell, the preamble clauses, `&& eval`, the `pwd -P` suffix, `PATH_END_`), which are harness-version-specific. A version that changes the wrapper makes every Bash claim a mismatch until the allowlist is extended; that is the intended failure (D6, I-26).
 - Collapsing opens loses the count of repeated reads of one file, on both sides.
@@ -185,5 +186,5 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - Gemini commands run with `RunPersistent` and calls in non-completed steps are not claimed.
 - A Grep or Glob claim does not verify its pattern or path, only that a search of that kind ran. A search is recognised only from the native installer's layout; another install layout shows its searches as unexplained commands. Gemini's search tools (`list_dir`, `grep_search`, `find_by_name`) and `search_web` are reported as unknown tools.
 - A baseline holds for one agent version and one tool set: the shell snapshot command differs with the enabled tools (I-24).
-- A baseline records `AgentVersion` but `cmd/verify` checks only the agent name, not the version.
+- A baseline's `AgentVersion` is checked by `cmd/verify` against the version the session states (`Report.AgentVersion`); only the Claude Code adapter states one.
 - `Containerized` is not handled by any adapter.

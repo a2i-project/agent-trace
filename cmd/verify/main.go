@@ -111,6 +111,13 @@ func run(args []string, out, errOut io.Writer) int {
 			_, _ = fmt.Fprintf(errOut, "verify: baseline %s was captured for %q, not %q\n", baselinePath, b.Agent, adapter.Name())
 			return exitError
 		}
+		// A baseline holds for one harness version: its commands and its own
+		// file paths change between versions, and a stale one reads as
+		// omissions. The session states its version; the baseline must agree.
+		if rep.AgentVersion != "" && b.AgentVersion != rep.AgentVersion {
+			_, _ = fmt.Fprintf(errOut, "verify: baseline %s was captured for %s version %q, but the session was recorded by version %q\n", baselinePath, b.Agent, b.AgentVersion, rep.AgentVersion)
+			return exitError
+		}
 		baseline, measured = &b, b.Predicate(gt.Workspace)
 	} else if adapter.Name() != agent.GenericName {
 		rep.Degradations = append(rep.Degradations, "no baseline supplied: the harness's own activity is reported as unexplained (V7)")
@@ -204,6 +211,7 @@ func report(w io.Writer, r reportInput) {
 	p("  Outside interval: %d  (observed outside the claimed interval)\n", len(v.OutsideInterval))
 	p("  Unverified:   %d  (claimed content the probe did not capture: neither confirmed nor refuted)\n", len(v.Unverified))
 	p("  Out of scope: %d  (file claims on paths the capture could not observe: not aligned)\n", len(v.OutOfScope))
+	p("  Unexplained harness activity: %d  (level-0 file events in the harness's own directories that nothing explains)\n", len(v.UnexplainedHarness))
 	if v.Ambiguous {
 		p("  note: more than one alignment is equally good, so the position a finding points at is one of several\n")
 	}
@@ -225,6 +233,7 @@ func report(w io.Writer, r reportInput) {
 	printPairs(w, "Outside interval", v.OutsideInterval)
 	printPairs(w, "Unverified", v.Unverified)
 	printEntries(w, "Out of scope", v.OutOfScope)
+	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
 	printEvents(w, "Capability", v.Capability)
 	printCommands(w, v.Commands)
 	printCompleteness(w, v.Completeness)
@@ -246,7 +255,11 @@ func report(w io.Writer, r reportInput) {
 
 func printParse(w io.Writer, r agent.Report) {
 	if r.ToolCalls > 0 || len(r.UnmappedByTool) > 0 {
-		_, _ = fmt.Fprintf(w, "session:      %d tool call(s) became %d claim(s)\n", r.ToolCalls, r.Entries)
+		version := ""
+		if r.AgentVersion != "" {
+			version = ", harness version " + r.AgentVersion
+		}
+		_, _ = fmt.Fprintf(w, "session:      %d tool call(s) became %d claim(s)%s\n", r.ToolCalls, r.Entries, version)
 	}
 	if len(r.UnmappedByTool) > 0 {
 		names := make([]string, 0, len(r.UnmappedByTool))
@@ -506,13 +519,14 @@ type jsonReport struct {
 }
 
 type jsonAlignment struct {
-	Corroborated    []verification.MatchedPair `json:"corroborated"`
-	Mismatched      []verification.MatchedPair `json:"mismatched"`
-	Unwitnessed     models.Trajectory          `json:"unwitnessed"`
-	Unrecorded      models.GroundTruth         `json:"unrecorded"`
-	OutsideInterval []verification.MatchedPair `json:"outside_interval"`
-	Unverified      []verification.MatchedPair `json:"unverified"`
-	OutOfScope      models.Trajectory          `json:"out_of_scope"`
+	Corroborated       []verification.MatchedPair `json:"corroborated"`
+	Mismatched         []verification.MatchedPair `json:"mismatched"`
+	Unwitnessed        models.Trajectory          `json:"unwitnessed"`
+	Unrecorded         models.GroundTruth         `json:"unrecorded"`
+	OutsideInterval    []verification.MatchedPair `json:"outside_interval"`
+	Unverified         []verification.MatchedPair `json:"unverified"`
+	OutOfScope         models.Trajectory          `json:"out_of_scope"`
+	UnexplainedHarness models.GroundTruth         `json:"unexplained_harness"`
 }
 
 type jsonCoverage struct {
@@ -535,6 +549,7 @@ func writeJSONReport(path string, r reportInput) error {
 			Corroborated: nonNilPairs(v.Corroborated), Mismatched: nonNilPairs(v.Mismatched),
 			Unwitnessed: nonNilClaims(v.Unwitnessed), Unrecorded: nonNilEvents(v.Unrecorded),
 			OutsideInterval: nonNilPairs(v.OutsideInterval), Unverified: nonNilPairs(v.Unverified), OutOfScope: nonNilClaims(v.OutOfScope),
+			UnexplainedHarness: nonNilEvents(v.UnexplainedHarness),
 		},
 		Coverage: jsonCoverage{
 			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined,

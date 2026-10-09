@@ -230,3 +230,11 @@ Decision: `Normalize` replaces those ids in file events with fixed tokens, as I-
 Consequences: The harness's own writes under its configuration directory become rules by path, so a write there with any content is explained, as it was for the snapshot command; that is the harness's own directory and the same trust as its binary (I-27). A claim that names one of these paths mismatches, which no honest tool call produces. The list is version-specific and is checked against the next capture; an id family not listed shows as unstable in the baseline and as unexplained in a run.
 Alternatives rejected: A pattern language in the baseline (a wildcard explains whatever an attacker makes it match, V-19); excluding `~/.claude` from the capture (the harness's own activity is what the baseline measures, and writes there are what step 4 is for).
 
+### I-30: The Claude Code adapter declares the harness's own directories
+Status: Accepted, implemented (`harnessOwned`, `IsHarnessOwned` in `claudecode/claudecode.go`).
+Date: 2026-10-09 (with V-24).
+Context: V-24 needs to know where the harness keeps its own files. The captures of 2.1.286 show them under `~/.claude/` and `~/.claude.json` (configuration, sessions, transcripts, backups, shell snapshots), `~/.local/state/claude/` (version locks), `~/.cache/claude-cli-nodejs/` (MCP logs) and `/tmp/claude-<uid>/` (task outputs, the fswatch probe), plus the cwd files `/tmp/claude-<id>-cwd`.
+Decision: `IsHarnessOwned` matches exactly those prefixes, for a home directory under `/home` or `/root`. It leaves out the install directory (a write to the binary is a finding), the workspace's own `.claude` directory (the project's, which the agent edits), the shell startup files and `~/.ssh`.
+Consequences: The list is version-specific like the id families of I-29 and is checked against each capture. Declaring where the harness keeps files is not declaring what it does there: a file event under these directories that nothing explains is still reported, and the baseline still has to explain the regular activity.
+Alternatives rejected: Deriving the directories from the baseline's own rules (a baseline is optional, and the declaration must hold without one); taking `HOME` from the environment (the agent's home is not the verifier's).
+

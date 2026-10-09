@@ -56,6 +56,17 @@ type StreamNormalizer interface {
 	NormalizeStream(models.GroundTruth) models.GroundTruth
 }
 
+// HarnessOwner is implemented by an adapter that can say which paths belong
+// to the harness itself: its configuration, state and cache directories. The
+// verifier reports an unexplained level-0 file event there as unexplained
+// harness activity, which makes the run INCONCLUSIVE rather than NOT
+// FAITHFUL (V-24). It is a declaration of where the harness keeps its own
+// files, not of what it does there: nothing is explained by it, so a write
+// there by the agent is still reported and still blocks FAITHFUL.
+type HarnessOwner interface {
+	IsHarnessOwned(path string) bool
+}
+
 // IntervalKind says what an entry's start timestamp means.
 type IntervalKind int
 
@@ -132,6 +143,10 @@ type Report struct {
 	// Degradations names every precision loss the core must report: a
 	// decision-time start, no exit codes, a persistent shell, no baseline.
 	Degradations []string
+	// AgentVersion is the harness version the session records, when the
+	// format states one. A baseline holds for one version, so cmd/verify
+	// refuses a baseline captured for another.
+	AgentVersion string
 }
 
 // Count records a tool call that produced no entry.
@@ -173,6 +188,9 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 	}
 	opts.Expresses = a.Expresses
 	opts.IgnoreExits = !a.Process().ExitsClaimed
+	if ho, ok := a.(HarnessOwner); ok {
+		opts.HarnessOwned = ho.IsHarnessOwned
+	}
 	return verification.Input{
 		Claims:    claims,
 		Ground:    ground,
