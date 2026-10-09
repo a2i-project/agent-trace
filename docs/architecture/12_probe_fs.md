@@ -59,6 +59,7 @@ The probe never drops on its own channel: `processRawEvent` and the settle code 
 - Without `AllFilesystems`, only the filesystem containing `Config.Path` is marked, so activity on tmpfs `/tmp` or any other mount is invisible. With it, fuse mounts, read-only images and any filesystem that refused the mark are still invisible; the capture's `fs_scope` lists them.
 - `PathFilter` is a plain string prefix, so `/work` also admits `/workspace2`. `cmd/watch` no longer uses it; its own workspace test is directory-bounded.
 - A rename produces two `file_rename` events, one per name, with nothing linking them.
+- A delete inside a tree being removed can arrive after its parent directory is gone, and then no handle resolves: the event has an empty target. `cmd/watch` counts those in `fs_scope.unresolved` and leaves them out of the capture.
 - The kernel can merge several modifies into one notification, so the number of `file_write` events for a burst is not stable.
 - Timestamps are taken at userspace read time and are not comparable in order with proc or net timestamps.
 - The startup walk opens every file under the walked directory while the mark is active; the probe reports those opens with the recorder's own PID, and `cmd/watch` drops them with every other file event of its own pid.

@@ -264,3 +264,22 @@ func TestScopeFSEvents_DropsTheRecordersOwnFileEvents(t *testing.T) {
 		t.Errorf("kept=%v dropped=%d", kept, dropped)
 	}
 }
+
+// An event the probe could not name (a delete whose parent directory was
+// already gone) cannot be aligned and would make the file unreadable; it is
+// counted by type in the scope record instead.
+func TestDropUnresolvedFSEvents_CountsNamelessEvents(t *testing.T) {
+	ts := time.Now()
+	g := models.GroundTruth{
+		{Timestamp: ts, ActionType: models.FileDelete, Target: "", PID: 100, PathIsAmbiguous: true},
+		{Timestamp: ts, ActionType: models.FileDelete, Target: "", PID: 100, PathIsAmbiguous: true},
+		{Timestamp: ts, ActionType: models.FileWrite, Target: "/ws/a", PID: 100},
+	}
+	kept, unresolved := dropUnresolvedFSEvents(g)
+	if len(kept) != 1 || kept[0].Target != "/ws/a" || unresolved["file_delete"] != 2 || len(unresolved) != 1 {
+		t.Errorf("kept=%v unresolved=%v", kept, unresolved)
+	}
+	if _, u := dropUnresolvedFSEvents(kept); u != nil {
+		t.Error("a clean capture must record no unresolved map")
+	}
+}

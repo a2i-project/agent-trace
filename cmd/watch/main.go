@@ -163,7 +163,7 @@ func underDir(path, dir string) bool {
 // access, when a short-lived child has often already left any live tracked
 // set; the forest built from the fork records has no such race.
 func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept models.GroundTruth, dropped int) {
-	g = dropSelfFSEvents(g, uint32(os.Getpid()))
+	g, _ = dropUnresolvedFSEvents(dropSelfFSEvents(g, uint32(os.Getpid())))
 	forest := verification.BuildForest(g, root)
 	kept = make(models.GroundTruth, 0, len(g))
 	for _, e := range g {
@@ -179,6 +179,28 @@ func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept mo
 		dropped++
 	}
 	return kept, dropped
+}
+
+// dropUnresolvedFSEvents removes the file events whose path the probe could
+// not resolve (an empty target) and counts them by action type. A delete
+// inside a tree being removed is the usual case: the parent directory's
+// handle is stale by the time the event is read. The verifier cannot align
+// or attribute an event with no path, and the file format rejects one, so
+// the count goes into the scope record instead.
+func dropUnresolvedFSEvents(g models.GroundTruth) (models.GroundTruth, map[string]int) {
+	out := make(models.GroundTruth, 0, len(g))
+	var unresolved map[string]int
+	for _, e := range g {
+		if e.Target == "" && verification.LaneOf(e.ActionType) == verification.LaneFS {
+			if unresolved == nil {
+				unresolved = map[string]int{}
+			}
+			unresolved[string(e.ActionType)]++
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, unresolved
 }
 
 // dropSelfFSEvents removes the file events the recorder itself caused: the
@@ -544,14 +566,16 @@ func runWatch(opts watchOptions) error {
 	if fsObs != nil {
 		marked, unmarked := fsObs.Scope()
 		scope = &models.FSScope{Rule: models.FSScopeUnfiltered, Mounts: marked, Unmarked: unmarked}
+		ground, scope.Unresolved = dropUnresolvedFSEvents(dropSelfFSEvents(ground, self))
 		if groundRoot != 0 {
 			var dropped int
 			ground, dropped = scopeFSEvents(ground, groundRoot, workspace)
 			scope.Rule, scope.DroppedOutside = models.FSScopeTreeOrWorkspace, dropped
 			fmt.Printf("fs scope: %d filesystem(s) marked, %d unmarked; kept the agent tree's file events anywhere and %s for everyone else; dropped %d event(s) by other processes elsewhere\n",
 				len(marked), len(unmarked), workspace, dropped)
-		} else {
-			ground = dropSelfFSEvents(ground, self)
+		}
+		for typ, n := range scope.Unresolved {
+			log.Printf("fs probe: %d %s event(s) had no resolvable path and are counted, not recorded", n, typ)
 		}
 		for point, why := range unmarked {
 			log.Printf("fs probe could not mark %s: %s", point, why)

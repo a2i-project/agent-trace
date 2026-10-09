@@ -104,6 +104,12 @@ type FSScope struct {
 	// events by processes outside the agent's tree on paths outside
 	// Workspace.
 	DroppedOutside int `json:"dropped_outside"`
+	// Unresolved counts the file events whose path the probe could not
+	// resolve at all, by action type: a delete inside a tree being removed,
+	// whose parent directory was gone by the time the event was read. They
+	// are not in Events, since an event with no target cannot be aligned or
+	// attributed to a path; the count says the capture is missing them.
+	Unresolved map[string]int `json:"unresolved,omitempty"`
 }
 
 // ParseGroundTruthFile reads a ground truth file in either form: the current
