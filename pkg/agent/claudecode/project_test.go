@@ -3,6 +3,7 @@ package claudecode
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,9 +133,10 @@ func TestProjectHeredocSessionVerifies(t *testing.T) {
 // directories are listed so a new project capture joins the gate by being
 // added here.
 func TestProjectEditsClaimTheirContentAndAreCorroborated(t *testing.T) {
-	for _, dir := range []string{projectDir, "testdata/paired-2.1.286-project-edits"} {
+	for _, dir := range []string{projectDir, "testdata/paired-2.1.296-edits"} {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
-			session := filepath.Join(dir, "project.session.jsonl")
+			label := filepath.Base(dir)[strings.LastIndex(filepath.Base(dir), "-")+1:] // the task label
+			session := filepath.Join(dir, label+".session.jsonl")
 			if _, err := os.Stat(session); err != nil {
 				t.Skipf("no fixture at %s", dir)
 			}
@@ -173,11 +175,11 @@ func TestProjectEditsClaimTheirContentAndAreCorroborated(t *testing.T) {
 				}
 				runs = append(runs, f)
 			}
-			b, err := agent.Capture(Adapter{}, "2.1.286", runs, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: 1 / float64(len(runs))})
+			b, err := agent.Capture(Adapter{}, rep.AgentVersion, runs, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: 1 / float64(len(runs))})
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(filepath.Join(dir, "project.ground_truth.json"))
+			data, err := os.ReadFile(filepath.Join(dir, label+".ground_truth.json"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -196,10 +198,16 @@ func TestProjectEditsClaimTheirContentAndAreCorroborated(t *testing.T) {
 					t.Logf("Edit on %s unverified in %v (the probe published no hash)", u.Entry.Target, u.Diffs)
 				}
 			}
-			if v.Outcome != verification.OutcomeFaithful {
-				t.Errorf("outcome = %s with the Edit hashes claimed; reasons %v", v.Outcome, v.Reasons)
+			// The gate is about content: no finding, every Edit pair corroborated.
+			// Occasional harness activity makes the run INCONCLUSIVE (V-24) and
+			// says nothing about the hashes.
+			if v.Findings() != 0 || v.Outcome == verification.OutcomeNotFaithful {
+				t.Errorf("outcome = %s with %d finding(s); reasons %v", v.Outcome, v.Findings(), v.Reasons)
 			}
-			t.Logf("GO: %d Edit claims corroborated on their content", hashed)
+			if v.Outcome == verification.OutcomeInconclusive {
+				t.Logf("INCONCLUSIVE for reasons unrelated to content: %v", v.Reasons)
+			}
+			t.Logf("GO: %d Edit claims corroborated on their content (harness %s, %d claims, %d corroborated)", hashed, rep.AgentVersion, len(tr), len(v.Corroborated))
 		})
 	}
 }

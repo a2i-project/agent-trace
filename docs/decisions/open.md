@@ -111,7 +111,7 @@ Current behaviour: For Claude Code 2.1.286 the shapes were measured by one paire
 Blocked by: A paired capture of Gemini (needs root and a working Gemini CLI, which has no headless authentication here), and captures of other Claude Code versions.
 
 ### O-17: Is replaying a partial edit ever worth doing?
-Status: Decided by I-31 on 2026-10-09, pending its measurement: an Edit's result record holds the file before and the applied replacement, so the final content is computed and claimed; the gate is a capture on which every such claim is corroborated.
+Status: Decided by I-31 on 2026-10-09 and measured on 2026-10-11: an Edit's result record holds the file before and the applied replacement, so the final content is computed and claimed, and on a capture of five Edits of different shapes every claim was corroborated on both hashes.
 
 ### O-13: Out-of-tree tagging (delegation, part 3)
 Status: Open. Premise changed.
