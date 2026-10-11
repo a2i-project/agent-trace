@@ -598,19 +598,15 @@ const emptyFileHash = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4
 // rawEvent.Ambiguous), so a rename can silently orphan the path-keyed entry.
 // Device+inode identifies the file regardless of what it's currently named.
 func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, handleData []byte) string {
-	o.mu.Lock()
-	if h, ok := o.shadowHashes[path]; ok {
-		o.mu.Unlock()
-		return h
-	}
-	o.mu.Unlock()
-
+	// The inode first: after an atomic replace the path names a new inode
+	// whose hash was settled under the temporary's name, while the path's
+	// own entry still holds the replaced file's hash. The path is the
+	// fallback for a handle that cannot be resolved (P-20).
 	if handleData != nil && mountFD >= 0 {
 		if key, ok := inodeKeyFromHandle(mountFD, handleType, handleData); ok {
 			o.mu.Lock()
 			h, ok := o.shadowHashesByInode[key]
 			if ok {
-				// Keep the fast path warm for subsequent opens of this path.
 				o.shadowHashes[path] = h
 			}
 			o.mu.Unlock()
@@ -619,7 +615,12 @@ func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, 
 			}
 		}
 	}
-
+	o.mu.Lock()
+	h, ok := o.shadowHashes[path]
+	o.mu.Unlock()
+	if ok {
+		return h
+	}
 	return emptyFileHash
 }
 

@@ -158,3 +158,11 @@ Decision: The args area is 128 KiB, the size Linux allows for a single argument 
 Consequences: A long command verifies; a cut one is paired by prefix and reported unverified (V-26) instead of mismatched. The scratch record is 256 KiB, which exceeds the kernel's 32 KiB cap on a per-CPU array value, so `heap` is a plain array with one slot per possible CPU, sized at load and indexed by the running CPU (a tracepoint program cannot migrate while it runs); the first privileged run failed to load with the per-CPU map. An exit after a ring drop of its exec is not emitted; the drop is counted. The e2e tiers and the paired captures are unchanged.
 Alternatives rejected: Reading argv from procfs (spoofable and racy); chunked records reassembled in userspace (more code and more ways to lose a piece, for a gap nothing reaches); keeping the full record in `execs` with on-demand allocation (256 KiB per live process and allocation failures under pressure).
 
+### P-20: The shadow hash of an opened file is looked up by inode before by path
+Status: Accepted, implemented (`lookupShadowHash` in `pkg/probe/fs/observer.go`).
+Date: 2026-10-11 (the capture for I-31's gate).
+Context: The probe remembers a settled content hash per path and per inode, and looked the path up first. After an atomic replace the path names a new inode whose hash settled under the temporary's name, while the path's entry still holds the replaced file's hash, so the next open of the target carried the old content (**Verified**: two Edit pre-check opens of the `edits` capture reported the content of two edits earlier, and mismatched the claims that stated the file before the edit).
+Decision: The inode is looked up first, the path is the fallback for a handle that cannot be resolved, and a hit refreshes the path's entry.
+Consequences: An open after a replace carries the replaced content's hash, so a claim of the file before an edit (I-31) can be checked. A capture made before this change carries the stale hashes and cannot be the gate's fixture.
+Alternatives rejected: Dropping the path entry on a rename of the directory (the rename record does not name the file).
+

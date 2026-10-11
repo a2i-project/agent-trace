@@ -34,7 +34,7 @@ fanotify through `golang.org/x/sys/unix`, in notification class (`FAN_CLASS_NOTI
 
 ### Hashes
 
-A `file_open` gets an `InputHash` from `lookupShadowHash`: the last settled hash for the path, else the hash for the file's device and inode (which survives a rename), else the SHA-256 of empty content.
+A `file_open` gets an `InputHash` from `lookupShadowHash`: the settled hash for the file's device and inode first (it survives a rename, and after an atomic replace it is the new file's while the path still remembers the replaced one, P-20), else the last settled hash for the path, else the SHA-256 of empty content.
 
 A `file_close` goes through a settle protocol so its `OutputHash` is the content the close described and not a state a later write left behind:
 

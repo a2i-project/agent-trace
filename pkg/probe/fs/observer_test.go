@@ -1249,3 +1249,50 @@ func mountsOf(mountFD int) map[fsID]int {
 	}
 	return map[fsID]int{{st.Fsid.Val[0], st.Fsid.Val[1]}: mountFD}
 }
+
+// After an atomic replace (write a temporary, rename it over the target) the
+// target names a new inode. The next open of the target must carry the new
+// content's hash, which settled under the temporary's name, and not the
+// replaced file's, which the path still remembers (P-20).
+func TestObserver_OpenAfterAtomicReplaceCarriesTheNewHash(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(target, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	obs := startObserver(t, dir)
+	defer func() { _ = obs.Stop() }()
+	time.Sleep(50 * time.Millisecond)
+
+	tmp := target + ".tmp.1.0123456789ab"
+	if err := os.WriteFile(tmp, []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond) // let the temporary's close settle
+	if err := os.Rename(tmp, target); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	f, err := os.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	want := content.SHA256Bytes([]byte("new\n"))
+	var last *string
+	for _, e := range collectEvents(obs, 300*time.Millisecond) {
+		if e.ActionType == models.FileOpen && e.Target == target && e.InputHash != nil {
+			h := *e.InputHash
+			last = &h
+		}
+	}
+	if last == nil || *last != want {
+		got := "<none>"
+		if last != nil {
+			got = *last
+		}
+		t.Errorf("last open of the target carries %s, want the new content %s", got, want)
+	}
+}
