@@ -3,6 +3,7 @@ package attack
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,14 +13,15 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
-// The evaluation tests run every generator over the two real paired captures of
-// Claude Code 2.1.286 checked in under pkg/agent/claudecode/testdata, and score
-// the verifier's verdicts against each mutation's record. They are the Tier 8
-// acceptance: detection, classification and localization against the record, no
-// false findings on the honest control, and A4 suppressing nothing. They are a
-// check of the machinery on two short real sessions, not an evaluation of the
-// verifier on a population: the claim count is small, one agent version and one
-// machine. See docs/methodology/being_data_driven.md before quoting a rate.
+// The evaluation tests run every generator over the real paired captures of
+// Claude Code checked in under pkg/agent/claudecode/testdata (three of 2.1.286
+// and the edits task of 2.1.296), and score the verifier's verdicts against each
+// mutation's record. They are the Tier 8 acceptance: detection, classification
+// and localization against the record, no false findings on the honest control,
+// and A4 suppressing nothing. They are a check of the machinery on four short
+// real sessions, not an evaluation of the verifier on a population: the claim
+// count is small, two agent versions and one machine. See
+// docs/methodology/being_data_driven.md before quoting a rate.
 
 type capture struct {
 	name  string
@@ -35,6 +37,9 @@ var captures = existing([]capture{
 	{"basic", "../agent/claudecode/testdata/paired-2.1.286", "task"},
 	{"parallel", "../agent/claudecode/testdata/paired-2.1.286-parallel", "parallel"},
 	{"project", "../agent/claudecode/testdata/paired-2.1.286-project", "project"},
+	// One Write and five Edits with their content hashes (I-31): the first
+	// capture on which a substitution of an Edit's content is exercised.
+	{"edits", "../agent/claudecode/testdata/paired-2.1.296-edits", "edits"},
 })
 
 func existing(cs []capture) []capture {
@@ -77,11 +82,14 @@ func loadSession(t *testing.T, c capture) session {
 	if err != nil || len(rep.ParseErrors) != 0 {
 		t.Fatalf("%s: %v %v", c.name, err, rep.ParseErrors)
 	}
+	// Every control the fixture holds (three for the 2.1.286 captures, two for
+	// the edits one), at the version the session states.
+	paths, _ := filepath.Glob(filepath.Join(c.dir, "control-*.ground_truth.json"))
 	var controls []models.GroundTruthFile
-	for _, l := range []string{"control-1", "control-2", "control-3"} {
-		controls = append(controls, loadRun(t, c, l))
+	for _, p := range paths {
+		controls = append(controls, loadRun(t, c, strings.TrimSuffix(filepath.Base(p), ".ground_truth.json")))
 	}
-	base, err := agent.Capture(claudecode.Adapter{}, "2.1.286", controls, time.Now(), agent.CaptureOptions{Exclude: []string{claudecode.ControlCommand}})
+	base, err := agent.Capture(claudecode.Adapter{}, rep.AgentVersion, controls, time.Now(), agent.CaptureOptions{Exclude: []string{claudecode.ControlCommand}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,13 +113,29 @@ func (s session) verify(claims models.Trajectory) verification.Verdict {
 	return verification.Verify(s.input(claims))
 }
 
+// honest is what the unmodified control must read as: no finding, and either
+// FAITHFUL or INCONCLUSIVE only for harness activity the baseline did not
+// cover (V-24), which the edits capture has. Never NOT FAITHFUL.
+func honestVerdict(v verification.Verdict) bool {
+	if Findings(v) != 0 {
+		return false
+	}
+	switch v.Outcome {
+	case verification.OutcomeFaithful:
+		return true
+	case verification.OutcomeInconclusive:
+		return len(v.UnexplainedHarness) > 0 && len(v.Unverified) == 0 && len(v.OutOfScope) == 0 && len(v.OutsideWrites) == 0 && v.Completeness.Complete
+	}
+	return false
+}
+
 func TestTheHonestControlHasNoFindings(t *testing.T) {
 	for _, c := range captures {
 		t.Run(c.name, func(t *testing.T) {
 			s := loadSession(t, c)
 			v := s.verify(s.claims)
-			if v.Outcome != verification.OutcomeFaithful || Findings(v) != 0 {
-				t.Fatalf("the honest control: outcome %s, %d findings", v.Outcome, Findings(v))
+			if !honestVerdict(v) {
+				t.Fatalf("the honest control: outcome %s, %d findings, reasons %v", v.Outcome, Findings(v), v.Reasons)
 			}
 		})
 	}
@@ -233,7 +257,7 @@ func TestIntervalWideningSuppressesNothing(t *testing.T) {
 					t.Fatal(err)
 				}
 				v := s.verify(mut)
-				if !SuppressedNothing(honest, v) || v.Outcome != verification.OutcomeFaithful || len(v.OutsideInterval) != 0 {
+				if !SuppressedNothing(honest, v) || !honestVerdict(v) || len(v.OutsideInterval) != 0 {
 					t.Fatalf("%s n=%d seed %d: widening changed the verdict: %s, %d outside interval", c.name, n, seed, v.Outcome, len(v.OutsideInterval))
 				}
 				_ = rec
