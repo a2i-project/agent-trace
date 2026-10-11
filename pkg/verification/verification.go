@@ -305,6 +305,13 @@ func Verify(in Input) Verdict {
 	part, _ = part.SubtractBaseline(in.Baseline)
 	claims, outOfScope := splitByScope(in.Claims, NewFSScope(in.FSScope, in.Workspace))
 	v.OutOfScope = outOfScope
+	// A level-0 file event in the harness's own directories that no claim
+	// names is set aside before alignment, as a baseline event is: left in
+	// the sequence it could pair with a claim and leave a real one unpaired at
+	// the same cost, an ambiguous alignment that reads a fabrication as a
+	// substitution. An event on a path some claim does name stays, so an
+	// honest write there can pair (V-24).
+	part, v.UnexplainedHarness = part.setAsideHarnessOwned(in.Options.HarnessOwned, claimedTargets(claims))
 	if in.Options.IgnoreExits {
 		part = part.DropExits()
 		claims = dropExitClaims(claims)
@@ -342,6 +349,7 @@ func Verify(in Input) Verdict {
 			case EditInsertion:
 				v.Unwitnessed = append(v.Unwitnessed, *e.Claim)
 			case EditDeletion:
+				// A harness-owned event on a claimed path that still found no pair.
 				if isHarnessOwned(*e.Event, in.Options.HarnessOwned) {
 					v.UnexplainedHarness = append(v.UnexplainedHarness, *e.Event)
 					continue
@@ -416,6 +424,38 @@ func unverifiedReason(pairs []MatchedPair) string {
 	}
 	sort.Strings(names)
 	return fmt.Sprintf("%d claim(s) state content the probe did not capture (%s), so they are neither confirmed nor refuted", len(pairs), strings.Join(names, ", "))
+}
+
+// claimedTargets is the set of file paths the claims name.
+func claimedTargets(claims models.Trajectory) map[string]bool {
+	set := map[string]bool{}
+	for _, c := range claims {
+		if LaneOf(c.ActionType) == LaneFS {
+			set[c.Target] = true
+		}
+	}
+	return set
+}
+
+// setAsideHarnessOwned removes from the aligned sequence every level-0 file
+// event under the harness's own directories whose path no claim names, and
+// returns them. Commands and events on claimed paths stay.
+func (p Partition) setAsideHarnessOwned(owned func(string) bool, claimed map[string]bool) (Partition, []models.GroundTruthEvent) {
+	if owned == nil {
+		return p, nil
+	}
+	out := p
+	out.Observed, out.Owner = nil, nil
+	var aside []models.GroundTruthEvent
+	for i, e := range p.Observed {
+		if p.Owner[i] == nil && isHarnessOwned(e, owned) && !claimed[e.Target] {
+			aside = append(aside, e)
+			continue
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	return out, aside
 }
 
 // isHarnessOwned reports whether an observed file event lies under the

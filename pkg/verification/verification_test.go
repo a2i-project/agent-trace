@@ -893,3 +893,36 @@ func TestVerify_TruncatedCommandLinePairsByPrefix(t *testing.T) {
 		t.Errorf("an untruncated prefix is a different command: %+v", v)
 	}
 }
+
+// Harness-owned events no claim names leave the aligned sequence before
+// alignment: left in, a fabricated claim next to them could be read as a
+// substitution with a real claim pushed onto the harness event at the same
+// cost (seen on the edits capture: a fabrication classified as a substitution
+// in two runs of a hundred). An event on a path a claim does name stays, so an
+// honest write into the harness's directory pairs.
+func TestVerify_HarnessOwnedEventsDoNotAbsorbClaims(t *testing.T) {
+	owned := func(p string) bool { return strings.HasPrefix(p, "/home/u/.claude/") }
+	h := sp("sha256:aa")
+	g := models.GroundTruth{
+		withHash(agentEv(0, models.FileWrite, "/home/u/.claude/policy-limits.json"), nil, nil),
+		withHash(agentEv(1, models.FileClose, "/home/u/.claude/policy-limits.json"), nil, h),
+		withHash(agentEv(2, models.FileWrite, "/w/notes.txt"), nil, h),
+	}
+	claims := models.Trajectory{
+		withClaimHash(claimAt(0, models.FileWrite, "/w/report.md"), nil, sp("sha256:fake")), // fabricated
+		withClaimHash(claimAt(2, models.FileWrite, "/w/notes.txt"), nil, h),
+	}
+	v := Verify(Input{Claims: claims, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{HarnessOwned: owned}})
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != "/w/report.md" || len(v.Mismatched) != 0 || len(v.Corroborated) != 1 || len(v.UnexplainedHarness) != 2 || v.Ambiguous {
+		t.Errorf("unwitnessed=%v mismatched=%v corroborated=%d harness=%d ambiguous=%v", v.Unwitnessed, v.Mismatched, len(v.Corroborated), len(v.UnexplainedHarness), v.Ambiguous)
+	}
+
+	// A claim that names the harness path pairs with the event there.
+	claims = models.Trajectory{withClaimHash(claimAt(0, models.FileWrite, "/home/u/.claude/policy-limits.json"), nil, nil)}
+	v = Verify(Input{Claims: claims, Ground: g[:1], RootPID: agentPID, Coverage: completeCov(), Options: Options{HarnessOwned: owned}})
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.Corroborated) != 1 || len(v.UnexplainedHarness) != 0 {
+		t.Errorf("corroborated=%d harness=%d", len(v.Corroborated), len(v.UnexplainedHarness))
+	}
+}
