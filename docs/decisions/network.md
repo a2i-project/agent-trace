@@ -187,3 +187,11 @@ Decision: When both record feeders have closed, the correlator emits every conne
 Consequences: Every connection the probe saw reaches the capture. The stamp is the connect time, so the event sorts where the connection began; a connection with a name was already emitted at its hello and is not emitted twice.
 Alternatives rejected: Emitting every connection at connect time (a connection with a name would then be emitted by address first and by name later, two events for one connection, and the baseline names addresses that change).
 
+### N-22: A connection that sent nothing is capability evidence, not a connection
+Status: Accepted, implemented (`connection.wrote`, `emit` in `pkg/probe/net/observer.go`, `models.NetDial`).
+Date: 2026-10-11 (security review; the IP literals in baseline rules).
+Context: Every baseline held `net_connect` rules naming addresses, `160.79.104.10:443` and an IPv6 twin: the losing halves of the harness's dual-stack connects, which close with no ClientHello and so were emitted by address at their close. The addresses change with DNS, so the rules were tied to the day of the capture, and a rule for an address explained any later connection to it that sent data without a name.
+Decision: A connection that closes, or is flushed at the end, with no name and no byte ever written on it is `net_dial`, ground truth only like `net_bind`: in the capture and the capability list, never aligned, never a rule. A connection that wrote and had no name stays `net_connect` by address, which a claim or a rule must explain.
+Consequences: Baselines no longer name addresses for the harness's losing connects, so they do not rot with DNS, and a data-carrying connection by address is no longer explained by one. A dial carries at most the fact that it happened, a covert channel of one bit per connect, which the report shows. The `wrote` flag comes from the first write the kernel saw on the descriptor, whatever it carried.
+Alternatives rejected: Templating addresses in rules (a wildcard explains whatever an attacker makes it match, V-19); resolving addresses back to names (DNS is not observed, O-20).
+

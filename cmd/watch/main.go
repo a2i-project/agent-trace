@@ -532,8 +532,8 @@ func runWatch(opts watchOptions) error {
 
 	if netObs != nil {
 		nc := netObs.Coverage()
-		fmt.Printf("net probe coverage: connections=%d withHostname=%d withContent=%d unattributed=%d unsupported=%d dns=%d addressProbes=%d openAtStop=%d\n",
-			nc.Connections, nc.WithHostname, nc.WithContent, nc.FramesUnattributed, nc.ContentUnsupported, nc.DNS, nc.AddressProbes, nc.OpenAtStop)
+		fmt.Printf("net probe coverage: connections=%d withHostname=%d withContent=%d unattributed=%d unsupported=%d dns=%d addressProbes=%d openAtStop=%d dials=%d\n",
+			nc.Connections, nc.WithHostname, nc.WithContent, nc.FramesUnattributed, nc.ContentUnsupported, nc.DNS, nc.AddressProbes, nc.OpenAtStop, nc.Dials)
 		if err := netObs.TLSAttachError(); err != nil {
 			log.Printf("net probe TLS attach warning: %v", err)
 		}

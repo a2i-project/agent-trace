@@ -16,6 +16,11 @@ const (
 	// NetBind: capability evidence, never aligned, never a finding (N-20).
 	NetDNS     ActionType = "net_dns"
 	NetConnect ActionType = "net_connect"
+	// NetDial is a connection that closed without a name and without a byte
+	// written: the losing half of a dual-stack connect, or a probe. It
+	// carried nothing. Ground truth only, like NetBind: capability evidence,
+	// never aligned, never a baseline rule naming the day's addresses (N-22).
+	NetDial ActionType = "net_dial"
 	// NetBind and NetListen are listener capability evidence. They exist in
 	// ground truth only: no trajectory format records them, so a trajectory
 	// cannot claim them (see IsClaimable) and the verifier never aligns them.
@@ -45,6 +50,7 @@ var validActionTypes = map[ActionType]bool{
 	NetRequest:     true,
 	NetDNS:         true,
 	NetConnect:     true,
+	NetDial:        true,
 	NetBind:        true,
 	NetListen:      true,
 	NetUnixConnect: true,
@@ -62,6 +68,7 @@ func (a ActionType) IsValid() bool {
 // are valid in ground truth and invalid in a trajectory.
 var unclaimableActionTypes = map[ActionType]bool{
 	NetDNS:         true,
+	NetDial:        true,
 	NetBind:        true,
 	NetListen:      true,
 	NetUnixConnect: true,

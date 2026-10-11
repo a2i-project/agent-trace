@@ -446,11 +446,15 @@ func printCommands(w io.Writer, cmds []*verification.Command) {
 			switch e.ActionType {
 			case models.NetListen, models.NetBind:
 				add("listeners", e.Target)
+			case models.NetDNS:
+				add("dns", e.Target)
+			case models.NetDial:
+				add("dials (nothing sent)", e.Target)
 			default:
 				add("unix sockets", e.Target)
 			}
 		}
-		order := []string{"programs run", "files written", "files opened", "files renamed", "files deleted", "connections", "requests", "listeners", "unix sockets"}
+		order := []string{"programs run", "files written", "files opened", "files renamed", "files deleted", "connections", "requests", "listeners", "unix sockets", "dns", "dials (nothing sent)"}
 		for name := range groups {
 			seen := false
 			for _, o := range order {

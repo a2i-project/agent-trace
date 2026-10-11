@@ -109,6 +109,9 @@ type connection struct {
 	host     string
 	alpn     []string
 	emitted  bool
+	// wrote is set at the first write on the connection, whatever it carried.
+	// A connection closed without one sent nothing (N-22).
+	wrote bool
 }
 
 // Observer watches network connections via eBPF and emits
@@ -937,6 +940,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		if !ok {
 			return
 		}
+		conn.wrote = true
 		hello, err := tlsparse.ParseClientHello(rec.payload)
 		if err != nil || hello.ServerName == "" {
 			return
@@ -1054,6 +1058,16 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 	target := conn.host
 	if target == "" {
 		target = peerAddrPort(conn.family, conn.addr, conn.port)
+		// No name and not a byte written: the losing half of a dual-stack
+		// connect, or a probe. It carried nothing, so it is capability
+		// evidence and never something a claim or a baseline rule must name
+		// (N-22). A connection that did write and had no name is a real
+		// connection by address.
+		if !conn.wrote {
+			o.coverage.Dials++
+			o.emitGroundTruthOnly(models.NetDial, uint32(tgid), target, ts)
+			return
+		}
 	}
 
 	isTopLevel := true

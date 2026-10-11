@@ -853,7 +853,7 @@ func TestEmitSkipsAddressSelectionAndReportsDNS(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			o := &Observer{events: make(chan models.GroundTruthEvent, 4)}
-			conn := &connection{family: afInet, port: tc.port}
+			conn := &connection{family: afInet, port: tc.port, wrote: true} // a connection that carried data (N-22)
 			copy(conn.addr[:], stdnet.ParseIP("192.0.2.7").To4())
 			o.emit(connKeyGo{}, conn, 4242, time.Now())
 			o.emit(connKeyGo{}, conn, 4242, time.Now()) // a close must not emit again
@@ -893,6 +893,9 @@ func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.
 	o.handleNetRecord(rec(netConnect, 4, 0))
 	o.handleNetRecord(rec(netClose, 4, 0))
 	o.handleNetRecord(rec(netConnect, 5, 443))
+	hello := rec(netHello, 5, 443)
+	hello.payload = []byte("x") // wrote something: a connection, not a dial (N-22)
+	o.handleNetRecord(hello)
 	o.handleNetRecord(rec(netClose, 5, 443))
 	close(o.events)
 	var got []string
@@ -943,5 +946,36 @@ func TestFlushOpenConnections_EmitsWhatNeverClosed(t *testing.T) {
 	}
 	if o.coverage.OpenAtStop != 2 {
 		t.Errorf("OpenAtStop = %d, want 2", o.coverage.OpenAtStop)
+	}
+}
+
+// A connection closed without a name and without a byte written is net_dial,
+// capability evidence: the losing half of a dual-stack connect or a probe,
+// which carried nothing and must not become a baseline rule naming the day's
+// address. One that wrote and had no name is a net_connect by address (N-22).
+func TestHandleNetRecord_IdleConnectionsAreDials(t *testing.T) {
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	v4 := [16]byte{192, 0, 2, 9}
+	rec := func(typ uint8, fd uint32, payload []byte) netRecord {
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Family: afInet, Addr: v4, Port: 443, TsNs: 1}, payload: payload}
+	}
+	o.handleNetRecord(rec(netConnect, 3, nil))
+	o.handleNetRecord(rec(netClose, 3, nil)) // nothing written
+	o.handleNetRecord(rec(netConnect, 4, nil))
+	o.handleNetRecord(rec(netHello, 4, []byte("GET / HTTP/1.0\r\n"))) // wrote, no TLS name
+	o.handleNetRecord(rec(netClose, 4, nil))
+	o.handleNetRecord(rec(netConnect, 5, nil)) // never closes: flushed
+	o.flushOpenConnections()
+	close(o.events)
+	var got []string
+	for e := range o.events {
+		got = append(got, string(e.ActionType)+" "+e.Target)
+	}
+	want := []string{"net_dial 192.0.2.9:443", "net_connect 192.0.2.9:443", "net_dial 192.0.2.9:443"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("emitted %v, want %v", got, want)
+	}
+	if o.coverage.Dials != 2 {
+		t.Errorf("Dials = %d, want 2", o.coverage.Dials)
 	}
 }

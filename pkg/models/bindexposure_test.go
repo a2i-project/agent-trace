@@ -34,7 +34,7 @@ func TestClassifyBindTarget(t *testing.T) {
 }
 
 func TestListenerActionTypes(t *testing.T) {
-	for _, at := range []ActionType{NetBind, NetListen, NetUnixConnect, NetDNS} {
+	for _, at := range []ActionType{NetBind, NetListen, NetUnixConnect, NetDNS, NetDial} {
 		if !at.IsValid() {
 			t.Errorf("%s must be a valid ground truth action type", at)
 		}

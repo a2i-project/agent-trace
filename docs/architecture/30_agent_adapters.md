@@ -188,5 +188,6 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - Gemini commands run with `RunPersistent` and calls in non-completed steps are not claimed.
 - A Grep or Glob claim does not verify its pattern or path, only that a search of that kind ran. A search is recognised only from the native installer's layout; another install layout shows its searches as unexplained commands. Gemini's search tools (`list_dir`, `grep_search`, `find_by_name`) and `search_web` are reported as unknown tools.
 - A baseline holds for one agent version and one tool set: the shell snapshot command differs with the enabled tools (I-24).
+- A baseline captured before N-22 holds `net_connect` rules naming the harness's addresses (`160.79.104.10:443`), the losing halves of its dual-stack connects, which change with DNS; from N-22 on those are `net_dial` capability evidence and become no rule. The checked-in fixtures predate it.
 - A baseline's `AgentVersion` is checked by `cmd/verify` against the version the session states (`Report.AgentVersion`); only the Claude Code adapter states one.
 - `Containerized` is not handled by any adapter.
