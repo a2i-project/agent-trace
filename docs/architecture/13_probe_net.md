@@ -1,6 +1,6 @@
 # Network probe
 
-Checked against commit d1276ff on 2026-10-07.
+Checked against commit 6694723 on 2026-10-11, with the changes in the commit that introduced N-20.
 
 ## Objective
 
@@ -47,8 +47,8 @@ Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps
 - `NET_CONNECT` opens the entry and counts `Connections`.
 - `NET_HELLO` runs `tlsparse.ParseClientHello`. With an SNI name it stores host and ALPN, counts `WithHostname` (and `ContentUnsupported` when ALPN offers `h2`), and emits `net_connect` with the hostname as `Target`, stamped at the hello.
 - `NET_CLOSE` emits `net_connect` for a connection that has not been emitted yet, with `ip:port` as `Target`, stamped at the close.
-- `emit` skips any connection to port 53 (DNS) or port 0 (the resolver's source-address selection, N-19) and marks it emitted, without counting it.
-- `NET_SOCK_BIND` and `NET_SOCK_LISTEN` become `net_bind` and `net_listen` with target `host:port` (IPv6 in brackets), `unix:<path>`, `unix:@<abstract>` or `unbound`. `NET_UNIX_CONNECT` becomes `net_unix_connect`. These three types are ground truth only; `models.ClassifyBindTarget` grades a listener as loopback, wildcard, interface, local socket or unknown.
+- `emit` turns a connection to port 53 into `net_dns` with the `ip:port` target, ground truth only like a listener (N-20), and counts it in `Coverage.DNS`; a connection to port 0 (the resolver's source-address selection, N-19) is counted in `Coverage.AddressProbes` and not emitted. Both are marked emitted so their close does not retry.
+- `NET_SOCK_BIND` and `NET_SOCK_LISTEN` become `net_bind` and `net_listen` with target `host:port` (IPv6 in brackets), `unix:<path>`, `unix:@<abstract>` or `unbound`. `NET_UNIX_CONNECT` becomes `net_unix_connect`. These types, with `net_dns`, are ground truth only; `models.ClassifyBindTarget` grades a listener as loopback, wildcard, interface, local socket or unknown.
 
 Every N0 event carries `PID` (the tgid). None carries `PPID`.
 
@@ -60,7 +60,7 @@ Every N0 event carries `PID` (the tgid). None carries `PPID`.
 4. `handleSSLFrame` appends each frame to a `tlsparse.Stream` per (tgid, tid) and calls `ParseHTTP1` until it needs more bytes. A malformed request discards that thread's buffer and counts `FramesUnattributed`.
 5. `emitNetRequest` takes the host from the `Host` header, or from the newest SNI hostname of the same tgid when the header is absent, and counts `FramesUnattributed` when neither exists. It emits `net_request` with `Target` = `models.CanonicalNetTarget(method, host, port, path, query)` (form `METHOD https://host[:port]path[?query]`, host lowercased, port omitted when 443) and `RequestHash` = SHA-256 of the body when there is one. The plaintext is not kept (N-D3).
 
-`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, plus the kernel counters. `cmd/watch` prints them; only the kernel counters reach `ProbeCoverage`.
+`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `DNS`, `AddressProbes`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, plus the kernel counters. `cmd/watch` prints them; only the kernel counters reach `ProbeCoverage`.
 
 ## Guarantees and loss accounting
 
@@ -81,7 +81,7 @@ The hostname comes from the ClientHello the client sent, so it needs no plaintex
 - `writev` is not hooked and `sendmsg` inspects only its first iovec, so a ClientHello sent that way can be missed.
 - The hello capture is 1024 bytes; an SNI extension beyond that is lost and the connection is reported by address.
 - A faulted hello read is dropped without a counter.
-- Connections to port 53 and port 0 are discarded without a counter, so DNS traffic and address-selection probes are not recorded.
+- A connection to port 53 is capability evidence, never a finding: an agent can move data over it and the report shows it, but no trajectory can claim it. Address-selection probes to port 0 are counted and not recorded.
 - UDP is not tracked: `sendto` with an address on an unconnected socket creates no connection, so QUIC and HTTP/3 are invisible.
 - No byte counts or response data are recorded.
 - Encrypted Client Hello would hide the SNI name.

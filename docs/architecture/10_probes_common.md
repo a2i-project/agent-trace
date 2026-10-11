@@ -78,7 +78,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `TargetTruncated` | `target_truncated` | proc, when the command line or the program path did not fit the record (P-19) |
 | `RequestHash` | `request_hash` | net, on `net_request` with a body |
 
-`process_fork`, `net_bind`, `net_listen` and `net_unix_connect` are ground truth only: `ActionType.IsClaimable` rejects them in a trajectory. `process_fork` is also structural (`IsStructural`): the verifier uses it to build the tree and neither aligns nor counts it. No probe emits `file_read`, `net_dns` or `git_commit`.
+`process_fork`, `net_bind`, `net_listen`, `net_unix_connect` and `net_dns` are ground truth only: `ActionType.IsClaimable` rejects them in a trajectory. `process_fork` is also structural (`IsStructural`): the verifier uses it to build the tree and neither aligns nor counts it. No probe emits `file_read` or `git_commit`.
 
 ### ProbeCoverage
 

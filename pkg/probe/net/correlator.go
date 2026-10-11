@@ -18,6 +18,8 @@ var errNotAPort = errors.New("net: not a port")
 // docs/architecture/13_probe_net.md.
 type Coverage struct {
 	Connections        int    // NET_CONNECT seen
+	DNS                int    // connections to port 53, emitted as net_dns capability evidence (N-20)
+	AddressProbes      int    // connections to port 0: the resolver's source-address selection, not emitted
 	WithHostname       int    // SNI parsed from a ClientHello
 	WithContent        int    // at least one HTTP request attributed to a connection
 	FramesUnattributed int    // ssl_frame whose request could not be joined to a connection or parsed

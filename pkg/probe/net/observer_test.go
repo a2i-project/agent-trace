@@ -834,16 +834,20 @@ func TestObserver_ThreadsAreNotTracked(t *testing.T) {
 // 0 to pick a source address. Those are not connections, and their addresses
 // change with DNS, so they must not become events. Port 53 (DNS itself) is
 // filtered the same way, and a real port is emitted.
-func TestEmitSkipsAddressSelectionAndDNS(t *testing.T) {
+// Port 0 is the resolver's address selection and is counted, not emitted
+// (N-19). Port 53 is emitted as net_dns, capability evidence (N-20). Every
+// other port is a net_connect.
+func TestEmitSkipsAddressSelectionAndReportsDNS(t *testing.T) {
 	tests := []struct {
 		name string
 		port uint16
 		want int
+		typ  models.ActionType
 	}{
-		{"port 0 address selection", 0, 0},
-		{"port 53 dns", 53, 0},
-		{"https", 443, 1},
-		{"high port", 8080, 1},
+		{"port 0 address selection", 0, 0, ""},
+		{"port 53 dns", 53, 1, models.NetDNS},
+		{"https", 443, 1, models.NetConnect},
+		{"high port", 8080, 1, models.NetConnect},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -857,9 +861,12 @@ func TestEmitSkipsAddressSelectionAndDNS(t *testing.T) {
 			}
 			if tc.want == 1 {
 				e := <-o.events
-				if e.ActionType != models.NetConnect || e.Target != "192.0.2.7:"+itoa(tc.port) || e.PID != 4242 {
+				if e.ActionType != tc.typ || e.Target != "192.0.2.7:"+itoa(tc.port) || e.PID != 4242 {
 					t.Errorf("event = %+v", e)
 				}
+			}
+			if tc.port == 0 && o.coverage.AddressProbes != 1 {
+				t.Error("an address-selection connect must be counted")
 			}
 			if !conn.emitted {
 				t.Error("a skipped connection must still be marked emitted so its close does not retry")
@@ -869,3 +876,33 @@ func TestEmitSkipsAddressSelectionAndDNS(t *testing.T) {
 }
 
 func itoa(n uint16) string { return strconv.Itoa(int(n)) }
+
+// A connection to port 53 is emitted as net_dns, capability evidence that
+// is never aligned: the resolver makes one per lookup and no trajectory
+// records it, and a connection to that port is also a way to move data, so
+// it must not vanish (N-20). Port 0 stays out of the events and is counted.
+func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.T) {
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	v4 := [16]byte{10, 0, 0, 53}
+	rec := func(typ uint8, fd uint32, port uint16) netRecord {
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Family: afInet, Addr: v4, Port: port, TsNs: 1}}
+	}
+	o.handleNetRecord(rec(netConnect, 3, 53))
+	o.handleNetRecord(rec(netClose, 3, 53))
+	o.handleNetRecord(rec(netConnect, 4, 0))
+	o.handleNetRecord(rec(netClose, 4, 0))
+	o.handleNetRecord(rec(netConnect, 5, 443))
+	o.handleNetRecord(rec(netClose, 5, 443))
+	close(o.events)
+	var got []string
+	for e := range o.events {
+		got = append(got, string(e.ActionType)+" "+e.Target)
+	}
+	want := []string{"net_dns 10.0.0.53:53", "net_connect 10.0.0.53:443"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("emitted %v, want %v", got, want)
+	}
+	if o.coverage.DNS != 1 || o.coverage.AddressProbes != 1 || o.coverage.Connections != 3 {
+		t.Errorf("coverage = %+v", o.coverage)
+	}
+}

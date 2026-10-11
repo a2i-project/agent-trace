@@ -170,3 +170,12 @@ Context: In a paired capture of Claude Code every real connection was preceded b
 Decision: `emit` drops a connection to port 0, like port 53 (N-13), and marks it emitted so its close does not retry.
 Consequences: Ground truth no longer holds the `IP:0` events, so baselines measured earlier carry rules that match nothing (harmless). A real connection to port 0 does not exist, so nothing legitimate is hidden. Like the DNS drop it has no counter.
 Alternatives rejected: Dropping them in the adapter (it is resolver behaviour, not a harness property); recording them as capability evidence (they carry no information about what the agent did).
+
+### N-20: A connection to port 53 is capability evidence, not a dropped event
+Status: Accepted, implemented (`emit` in `pkg/probe/net/observer.go`, `models.NetDNS` unclaimable). Decides O-15.
+Date: 2026-10-11 (security review).
+Context: N0 dropped every connection to port 53 on the reasoning that DNS lookups are the resolver's and no trajectory records them. The filter is on the port, not on the protocol: a TCP connection to port 53 anywhere is a channel for data, and it left no trace in the capture and no counter.
+Decision: A connection to port 53 is emitted as `net_dns` with the `ip:port` target, ground truth only like `net_bind`: in the capture and the report's capability list, never aligned and never a finding, since an honest run makes one per lookup. The count is in `Coverage.DNS`. Port 0, the resolver's address selection, is still not emitted but is counted (`Coverage.AddressProbes`).
+Consequences: Data moved over port 53 is visible to a reader of the report and in the forensic view of the command that did it. It is not a finding, because the probe cannot tell a lookup from an exfiltration, and the resolver's own connections are many. The claimable set loses `net_dns`, which no adapter ever produced.
+Alternatives rejected: Distinguishing UDP from TCP (the connect tracepoint does not see the socket type; a socket hook is more code for a weak signal, since UDP carries data too); treating port 53 as a finding (every honest run resolves names).
+

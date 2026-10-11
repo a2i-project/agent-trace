@@ -129,11 +129,7 @@ Current behaviour: Not verified; `WebSearch` is non-effectful.
 Blocked by: Design choice between (a) and (b), offsets per Bun release for (a), and the unverified join between the transcript `requestId` and the response `request-id` header.
 
 ### O-15: The port-53 filter
-Status: Open (questioned).
-Question: Should DNS stay filtered from ground truth (N-13)?
-Options: (a) keep the filter; (b) record DNS queries and names as unclaimable capability evidence, like listeners; (c) at minimum count what the filter drops.
-Current behaviour: (a). The filter hides DNS exfiltration and has no counter.
-Blocked by: Nothing technical; (b) is part of O-20.
+Status: Decided by N-20 on 2026-10-11: a connection to port 53 is `net_dns`, capability evidence in the capture and the report, never a finding.
 
 ### O-24: Break ties between equal alignments by interval consistency?
 Status: Open.

@@ -10,6 +10,10 @@ const (
 	FileRename ActionType = "file_rename"
 	FileDelete ActionType = "file_delete"
 	NetRequest ActionType = "net_request"
+	// NetDNS is a connection to port 53. The resolver makes one for every
+	// name an agent looks up, so no trajectory records it, and a connection
+	// to that port is also a way to move data. Ground truth only, like
+	// NetBind: capability evidence, never aligned, never a finding (N-20).
 	NetDNS     ActionType = "net_dns"
 	NetConnect ActionType = "net_connect"
 	// NetBind and NetListen are listener capability evidence. They exist in
@@ -57,6 +61,7 @@ func (a ActionType) IsValid() bool {
 // unclaimableActionTypes are observed but never reportable by an agent. They
 // are valid in ground truth and invalid in a trajectory.
 var unclaimableActionTypes = map[ActionType]bool{
+	NetDNS:         true,
 	NetBind:        true,
 	NetListen:      true,
 	NetUnixConnect: true,

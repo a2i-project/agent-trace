@@ -34,7 +34,7 @@ func TestClassifyBindTarget(t *testing.T) {
 }
 
 func TestListenerActionTypes(t *testing.T) {
-	for _, at := range []ActionType{NetBind, NetListen, NetUnixConnect} {
+	for _, at := range []ActionType{NetBind, NetListen, NetUnixConnect, NetDNS} {
 		if !at.IsValid() {
 			t.Errorf("%s must be a valid ground truth action type", at)
 		}
@@ -43,7 +43,7 @@ func TestListenerActionTypes(t *testing.T) {
 		}
 	}
 	for _, at := range []ActionType{FileOpen, FileRead, FileWrite, FileClose, FileRename, FileDelete,
-		NetRequest, NetDNS, NetConnect, ProcessExec, ProcessExit, GitCommit} {
+		NetRequest, NetConnect, ProcessExec, ProcessExit, GitCommit} {
 		if !at.IsClaimable() {
 			t.Errorf("%s was claimable before listeners existed and must stay so", at)
 		}

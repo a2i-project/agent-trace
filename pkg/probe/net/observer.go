@@ -1001,13 +1001,15 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 	if conn.emitted {
 		return
 	}
-	// Port 53 is DNS. DNS lookups are OS-level infrastructure triggered
-	// implicitly by any hostname resolution — the agent does not explicitly
-	// "connect" to a DNS server. Emitting these events would require every
-	// agent trajectory to record DNS connections, which is impractical and
-	// outside the scope of Tier 3's detection goals. Skip silently.
+	// Port 53 is DNS. The resolver connects to it for every name an agent
+	// looks up, so no trajectory records it and it cannot be aligned; but a
+	// connection to that port is also a way to move data, and dropping it
+	// silently hid that. It is capability evidence, like a listener: in the
+	// capture and the report, never a finding (N-20).
 	if conn.port == 53 {
-		conn.emitted = true // prevent double-emit on close
+		conn.emitted = true
+		o.coverage.DNS++
+		o.emitGroundTruthOnly(models.NetDNS, uint32(tgid), peerAddrPort(conn.family, conn.addr, conn.port), ts)
 		return
 	}
 	// Port 0 is not a connection. The resolver connects a datagram socket to
@@ -1016,9 +1018,11 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 	// the real connection. In a paired capture every real connection had such
 	// twins (an IPv4 and an IPv6 address with port 0), with nothing ever sent.
 	// They name the destination's addresses, which change with DNS, so no
-	// trajectory could claim them and no baseline could list them.
+	// trajectory could claim them and no baseline could list them. Counted,
+	// not emitted (N-19).
 	if conn.port == 0 {
 		conn.emitted = true
+		o.coverage.AddressProbes++
 		return
 	}
 	conn.emitted = true
