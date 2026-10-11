@@ -27,8 +27,11 @@ var wrapperHead = regexp.MustCompile(
 		`(?: && (?:shopt -u extglob 2>/dev/null \|\| true|\{ \\builtin unalias -- '[^']*'; \\builtin unset -f -- '[^']*'; \} >/dev/null 2>&1 \|\| true))*` +
 		` && eval `)
 
-// wrapperTail is what follows the eval word, to the end of the line.
-var wrapperTail = regexp.MustCompile(`^ < /dev/null && pwd -P >\| /tmp/claude-[0-9a-z]+-cwd$`)
+// wrapperTail is what follows the eval word, to the end of the line. The
+// stdin redirection is absent when the command carries a heredoc (measured
+// on a project session of 2.1.286, 2026-10-11): the heredoc is the command's
+// stdin.
+var wrapperTail = regexp.MustCompile(`^(?: < /dev/null)? && pwd -P >\| /tmp/claude-[0-9a-z]+-cwd$`)
 
 // evalPayload recovers the command from an observed wrapper command line. ok is
 // false when the line is not exactly a Claude Code wrapper around one eval

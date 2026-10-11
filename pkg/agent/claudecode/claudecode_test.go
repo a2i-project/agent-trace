@@ -245,10 +245,17 @@ func TestNormalizeRecoversTheClaimedCommand(t *testing.T) {
 		{"double quoted", `"echo \"hi\" \$HOME"`, `echo "hi" $HOME`},
 		{"unquoted word", `ls`, "ls"},
 	}
+	// A command with a heredoc gets a wrapper without the stdin redirection.
+	heredoc := strings.Replace(wrapper, " < /dev/null && pwd", " && pwd", 1)
+	tests = append(tests, struct{ name, quoted, want string }{"heredoc, no stdin redirection", "'cat > f <<'\"'\"'EOF'\"'\"'\nx\nEOF\n'", "cat > f <<'EOF'\nx\nEOF\n"})
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			form := wrapper
+			if tc.name == "heredoc, no stdin redirection" {
+				form = heredoc
+			}
 			for _, typ := range []models.ActionType{models.ProcessExec, models.ProcessExit} {
-				e := models.GroundTruthEvent{ActionType: typ, Target: strings.Replace(wrapper, "%s", tc.quoted, 1), PID: 5}
+				e := models.GroundTruthEvent{ActionType: typ, Target: strings.Replace(form, "%s", tc.quoted, 1), PID: 5}
 				got, keep := Adapter{}.Normalize(e)
 				if !keep || got.Target != tc.want {
 					t.Errorf("%s: Normalize = %q, %v, want %q", typ, got.Target, keep, tc.want)

@@ -80,3 +80,44 @@ func TestProjectTaskVerifiesFaithful(t *testing.T) {
 		t.Errorf("tool mix = %v, want Write, Edit and Bash all present", tools)
 	}
 }
+// A second project session of 2.1.286 (2026-10-11), in which the model wrote
+// the files with Bash heredocs instead of the Write tool. Its wrapper has no
+// stdin redirection, which the strict shape of I-26 refused at first: an
+// honest 3.9 KB heredoc command was a mismatch. Kept as the regression
+// fixture for that shape, with two of its five controls.
+func TestProjectHeredocSessionVerifies(t *testing.T) {
+	const dir = "testdata/paired-2.1.286-project-heredoc"
+	tr, rep, err := Adapter{}.Parse(filepath.Join(dir, "project.session.jsonl"))
+	if err != nil || len(rep.ParseErrors) != 0 {
+		t.Fatalf("parse: %v %+v", err, rep.ParseErrors)
+	}
+	if len(tr) != 3 {
+		t.Fatalf("claims = %d, want the three Bash calls", len(tr))
+	}
+	load := func(name string) models.GroundTruthFile {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := models.ParseGroundTruthFile(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	runs := []models.GroundTruthFile{load("control-1.ground_truth.json"), load("control-2.ground_truth.json")}
+	b, err := agent.Capture(Adapter{}, "2.1.286", runs, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: 0.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := load("project.ground_truth.json")
+	v := verification.Verify(agent.Prepare(Adapter{}, tr, g, b.Predicate(g.Workspace), verification.Options{IntervalSlack: 500 * time.Millisecond}))
+	if v.Findings() != 0 || len(v.Corroborated) != 3 {
+		t.Fatalf("findings=%d corroborated=%d mismatched=%v unrecorded=%v", v.Findings(), len(v.Corroborated), v.Mismatched, v.Unrecorded)
+	}
+	// The run backed up its configuration, which no control did: unexplained
+	// harness activity, INCONCLUSIVE, not a finding (V-24).
+	if v.Outcome == verification.OutcomeNotFaithful {
+		t.Errorf("outcome = %s", v.Outcome)
+	}
+}
