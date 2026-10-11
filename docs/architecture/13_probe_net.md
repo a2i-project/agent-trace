@@ -1,6 +1,6 @@
 # Network probe
 
-Checked against commit 6694723 on 2026-10-11, with the changes in the commits that introduced N-20 to N-22.
+Checked against commit a1c95a9 on 2026-10-11.
 
 ## Objective
 
@@ -13,7 +13,7 @@ The network probe (`pkg/probe/net`) records which remote endpoints the agent's p
 | `net.bpf.c` | N0 programs: `trace_connect`, `trace_bind`, `trace_listen`, `trace_write`, `trace_sendto`, `trace_sendmsg`, `trace_close`, `handle_fork`, `handle_exit` |
 | `tls.bpf.c` | N1 programs: `probe_ssl_write` (uprobe), `handle_fork`, `handle_exit` |
 | `generate.go` | the two `bpf2go` directives (`bpf`, `tlsbpf`) |
-| `observer.go` | `Config`, `Observer`, `New`, `prepareTLS`, `attachAndValidateTLS`, `Start`, `Stop`, `TrackPID`, `Coverage`, `CaptureCoverage`, `correlate`, `handleNetRecord`, `emit`, `emitListener`, `unixTarget` |
+| `observer.go` | `Config`, `Observer`, `New`, `prepareTLS`, `attachAndValidateTLS`, `Start`, `Stop`, `TrackPID`, `Coverage`, `CaptureCoverage`, `correlate`, `flushOpenConnections`, `handleNetRecord`, `emit`, `emitListener`, `emitGroundTruthOnly`, `unixTarget` |
 | `correlator.go` | `Coverage` struct, `handleSSLFrame`, `emitNetRequest`, `newestHostForTGID` |
 | `pkg/tlsoffset` | `ScanELF` (find `SSL_write` candidates), `Cache` (validated offsets by ELF build ID) |
 | `pkg/tlsparse` | `ParseClientHello` (SNI and ALPN), `Stream`, `ParseHTTP1` |
@@ -44,9 +44,9 @@ Every program in both objects starts with `is_tracked(tgid)`. There is no host-w
 
 Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps a `connection` per (tgid, fd):
 
-- `NET_CONNECT` opens the entry and counts `Connections`.
-- `NET_HELLO` runs `tlsparse.ParseClientHello`. With an SNI name it stores host and ALPN, counts `WithHostname` (and `ContentUnsupported` when ALPN offers `h2`), and emits `net_connect` with the hostname as `Target`, stamped at the hello.
-- `NET_CLOSE` emits a connection that has not been emitted yet, stamped at the close: `net_connect` with `ip:port` as `Target` if a byte was ever written on it, or `net_dial` with the same target, ground truth only, if nothing was (the losing half of a dual-stack connect, a probe; N-22). `Coverage.Dials` counts the latter.
+- `NET_CONNECT` opens the entry and counts `Connections`. An entry already open for the same (tgid, fd) is replaced without being emitted.
+- `NET_HELLO` marks the entry as written (`wrote`) and runs `tlsparse.ParseClientHello`. With an SNI name it stores host and ALPN, counts `WithHostname` (and `ContentUnsupported` when ALPN offers `h2`), and emits `net_connect` with the hostname as `Target`, stamped at the hello.
+- `NET_CLOSE` emits a connection that has not been emitted yet, stamped at the close: `net_connect` with `ip:port` as `Target` if a `NET_HELLO` was received for it, or `net_dial` with the same target, ground truth only, if nothing was (the losing half of a dual-stack connect, a probe; N-22). `Coverage.Dials` counts the latter.
 - When both feeders have closed, `flushOpenConnections` emits every connection still open, in connect order and stamped with its connect time, and counts them in `Coverage.OpenAtStop` (N-21).
 - `emit` turns a connection to port 53 into `net_dns` with the `ip:port` target, ground truth only like a listener (N-20), and counts it in `Coverage.DNS`; a connection to port 0 (the resolver's source-address selection, N-19) is counted in `Coverage.AddressProbes` and not emitted. Both are marked emitted so their close does not retry.
 - `NET_SOCK_BIND` and `NET_SOCK_LISTEN` become `net_bind` and `net_listen` with target `host:port` (IPv6 in brackets), `unix:<path>`, `unix:@<abstract>` or `unbound`. `NET_UNIX_CONNECT` becomes `net_unix_connect`. These types, with `net_dns` and `net_dial`, are ground truth only; `models.ClassifyBindTarget` grades a listener as loopback, wildcard, interface, local socket or unknown.
@@ -80,6 +80,7 @@ The hostname comes from the ClientHello the client sent, so it needs no plaintex
 
 - All N0 hooks are `sys_enter_*` tracepoints, so socket operations submitted through io_uring are invisible.
 - `writev` is not hooked and `sendmsg` inspects only its first iovec, so a ClientHello sent that way can be missed.
+- `wrote` is set only by a `NET_HELLO`, that is by a `write`, `sendto` or `sendmsg` of the process that made the connect, whose buffer read did not fault. A connection without a name whose data went only through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or was written by another process holding the descriptor (a child after `fork`, or one that received it over `SCM_RIGHTS`), is emitted as `net_dial`: capability evidence, never aligned and never a finding (N-22). Whether that is acceptable while the send side is incomplete is open (O-27).
 - The hello capture is 1024 bytes; an SNI extension beyond that is lost and the connection is reported by address.
 - A faulted hello read is dropped without a counter.
 - A connection to port 53 is capability evidence, never a finding: an agent can move data over it and the report shows it, but no trajectory can claim it. Address-selection probes to port 0 are counted and not recorded.
@@ -87,9 +88,10 @@ The hostname comes from the ClientHello the client sent, so it needs no plaintex
 - No byte counts or response data are recorded.
 - Encrypted Client Hello would hide the SNI name.
 - `connect` is recorded at syscall entry, so a failed connect still appears as a connection.
-- A connection without SNI that wrote something is emitted on `close()`, or at the end of the capture if it never closed (implicitly at process exit, or held open past the stop), then with its connect time; `Coverage.OpenAtStop` counts those.
+- A connection without SNI is emitted on `close()`, or at the end of the capture if it never closed (implicitly at process exit, or held open past the stop), then with its connect time; `Coverage.OpenAtStop` counts every connection emitted at the end, whatever type it became.
+- A connection whose descriptor is closed without `close()` (by `dup2`, `close_range`, or an exec that closes it under `O_CLOEXEC`) stays open in `conns`; if the same process connects again on the same descriptor number, the old entry is replaced in the kernel and in userspace before it is emitted, and nothing counts it.
 - `conns` entries for fds closed implicitly at process exit are never deleted in the kernel.
-- `net_connect` is stamped at the hello or the close, not at the connect.
+- `net_connect` is stamped at the hello or the close, not at the connect, except for a connection emitted at the end of the capture, which carries its connect time.
 - Only `SSL_write` entry is hooked: there is no `SSL_read`, so responses (including server-side tool results) are not seen.
 - `SSL_write` capture is capped at 16 KiB per call.
 - Content is parsed as HTTP/1.1 only; an h2 connection is counted in `ContentUnsupported` and its frames end in `FramesUnattributed` or stay buffered, producing no `net_request`.

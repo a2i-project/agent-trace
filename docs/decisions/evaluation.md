@@ -2,6 +2,8 @@
 
 Why the attack generators and their scoring are what they are. Entries use the prefix E-. The as-built description is [../architecture/50_attack_generators.md](../architecture/50_attack_generators.md).
 
+Entries carry their own dates. Statuses reconciled with the code at commit 35de92b on 2026-10-11.
+
 ### E-1: Generators mutate claims, return a record, and are seeded
 Status: Accepted, implemented (`pkg/attack`).
 Date: 2026-10-07.
@@ -13,7 +15,7 @@ Alternatives rejected: Mutating the session file in the agent's own format (each
 ### E-2: An omission does not re-time the remaining claims by default
 Status: Accepted, implemented (`Options.Retime`, `TestRetimedOmissionIsStillFoundAndTripsTheIntervalCheck`).
 Date: 2026-10-07.
-Context: The evaluation plan said A1 re-times the remaining claims consistently, so the omission leaves no hole in the timeline. The verifier's clock is real (V6), and a claim's interval is checked against the observed action (V-12). Moving a claim off its real time puts the observed action outside the interval the claim states.
+Context: The evaluation plan (local only) said A1 re-times the remaining claims consistently, so the omission leaves no hole in the timeline. The verifier's clock is real (V6), and a claim's interval is checked against the observed action (V-12). Moving a claim off its real time puts the observed action outside the interval the claim states.
 Decision: By default `Omit` leaves timestamps as they were. `Retime` closes the hole and is tested separately. On both captures a retimed omission was still found, classified and located in every run, and about a third of runs also reported later claims as outside their interval.
 Consequences: The default measures the attacker who does not touch the clock, which is the stronger attacker against this verifier, and `Retime` measures the one who hides the hole and pays for it. Both are reported.
 Alternatives rejected: Retiming by default as planned (it would have made the omission look easier to catch than it is against a careful attacker).

@@ -51,6 +51,10 @@ them for a fact a reader needs.
   it), **Reported** (from vendor documentation or source code), **Unverified**
   (a hypothesis, not to be built on before it is tested).
 * Code is referenced by package and symbol, not by line number.
+* Each architecture page starts with `Checked against commit <sha> on <date>.`:
+  the newest commit whose code the page was verified against. A page edited in
+  the same commit as the code it describes names that commit's parent and
+  lists the decision IDs the commit adds.
 * No numbers measured on a private transcript corpus appear in a published
   page.
 * Writing: active voice, no em-dashes, no filler.

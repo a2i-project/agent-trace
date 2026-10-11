@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Checked against commit d1276ff on 2026-10-07.
+Checked against commit a1c95a9 on 2026-10-11.
 
 This page states what agent-trace is for, the threat model it assumes, the
 properties it claims, and how its components fit together. Each component has
@@ -52,8 +52,9 @@ detects target the trajectory, not the host:
 | P7 | Content-level verification | file content hashes, command lines as the kernel resolved them, and request body hashes for HTTP/1.x over a hookable TLS library. Coverage of content is partial and is reported per probe |
 
 P5 originally said the verdict is binary. The code adds INCONCLUSIVE for a
-capture that lost events or cannot be attributed, and reports an ambiguous
-alignment without resolving it. The open decision is recorded in
+capture that cannot support FAITHFUL (below), and reports an ambiguous
+alignment without resolving it. This page states the three outcomes; ratifying
+that wording is open decision O-3 in
 [`../decisions/open.md`](../decisions/open.md).
 
 ## What a verdict does not prove
@@ -63,7 +64,8 @@ nothing observable happened outside them and the harness baseline. It does not
 say that what a claimed command did was benign. An agent that writes
 `helper.sh` and runs it produces a faithful trajectory whatever the script
 does. The report lists the command's subtree and its capability evidence
-(listeners, Unix socket connections), and judging them is out of scope.
+(listeners, Unix socket connections, connections to port 53 and connections
+that sent nothing), and judging them is out of scope.
 
 ## Components
 
@@ -75,7 +77,8 @@ does. The report lists the command's subtree and its capability evidence
 | Network probe | `pkg/probe/net`, `pkg/tlsoffset`, `pkg/tlsparse` | [13_probe_net.md](13_probe_net.md) |
 | Verifier | `pkg/verification`, `pkg/matching` | [20_verifier.md](20_verifier.md) |
 | Agent adapters and baseline | `pkg/agent` | [30_agent_adapters.md](30_agent_adapters.md) |
-| Command-line tools | `cmd/watch`, `cmd/verify`, `cmd/baseline`, `cmd/simagent` | [40_tools.md](40_tools.md) |
+| Command-line tools | `cmd/watch`, `cmd/verify`, `cmd/baseline`, `cmd/attack`, `cmd/simagent` | [40_tools.md](40_tools.md) |
+| Attack generators and scoring | `pkg/attack`, `cmd/attack` | [50_attack_generators.md](50_attack_generators.md) |
 
 ## End-to-end workflow
 
@@ -93,12 +96,21 @@ does. The report lists the command's subtree and its capability evidence
    that claims nothing into exact rules for what the harness does on its own,
    such as its model API connection.
 4. **Verify.** `verify` builds the process forest from fork and exec records,
-   attributes every event by ancestry, removes baseline events, aligns claims
-   against the observed top-level sequence one lane at a time (files,
-   processes, network), and checks that every observed event is explained.
+   attributes every event by ancestry, removes baseline events, sets aside
+   file claims on paths the capture could not observe (scope), aligns the
+   other claims against the observed top-level sequence one lane at a time
+   (files, processes, network), and checks that every observed event is
+   explained.
 5. **Conclude.** FAITHFUL (exit 0), NOT FAITHFUL (exit 1), INCONCLUSIVE
    (exit 2) or error (exit 3), with the edit script, the coverage report, the
-   capability evidence and every limitation the adapter declared.
+   capability evidence and every limitation the adapter declared. A capture
+   with no root pid, or too large to align, is INCONCLUSIVE. With no finding,
+   so is a run whose capture lost events or left some unattributed, and one
+   where a claim states a value the probe did not capture, a file claim is
+   out of scope, harness activity in the harness's own directories is
+   unexplained, a process outside the tree wrote in the workspace, or a
+   truncated command line was paired by prefix. The rules are in
+   [20_verifier.md](20_verifier.md).
 
 Three rules cut across all components:
 
@@ -112,9 +124,14 @@ Three rules cut across all components:
 
 ## Status
 
-The probes, the verifier, the Claude Code and Gemini adapters, and the baseline
-builder are implemented and tested against a simulated agent
-(`cmd/simagent`) and against fixtures. No real agent session has yet been
-captured and verified end to end, so the adapters' assumptions about which
-kernel events a file tool produces remain hypotheses. Known limits of each
-component are listed on its page.
+The probes, the verifier, the Claude Code and Gemini adapters, the baseline
+builder and the attack generators are implemented and tested against a
+simulated agent (`cmd/simagent`) and against fixtures. Five paired captures of
+Claude Code on one machine are checked in, four of version 2.1.286 and one of
+2.1.296: three verify FAITHFUL, and two (a session that wrote files with Bash
+heredocs, and the edits task whose Edit content hashes are all corroborated)
+have no findings and are INCONCLUSIVE over harness activity their kept controls
+did not show. Still unchecked: Gemini on a real session, Claude Code versions
+other than these two, tools and shapes the captures do not exercise (listed in
+[30_agent_adapters.md](30_agent_adapters.md)), and any population of real
+sessions. Known limits of each component are listed on its page.

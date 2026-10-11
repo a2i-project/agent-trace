@@ -74,7 +74,9 @@ The documentation layout and its rules are in [`../README.md`](../README.md).
 In short:
 
 * A change to behaviour updates the matching page in `docs/architecture/` in the
-  same commit, including its "Checked against commit" line.
+  same commit, including its "Checked against commit" line, which then names
+  the commit's parent and the decision IDs the commit adds (rule in
+  [`../README.md`](../README.md), Conventions).
 * A design choice with alternatives gets an entry in `docs/decisions/`. A
   changed decision is marked superseded and a new entry is added. Entries are
   never rewritten into a different decision.
@@ -90,5 +92,6 @@ In short:
 
 `STATE.md` at the repository root is a local, untracked session log for
 agents that switch context often. It holds the current focus, the last results
-and the next steps, and points into `docs/todo/` for the work list. It does not
-hold design: design belongs in `docs/architecture/` and `docs/decisions/`.
+and the next steps, and points into `docs/todo/` (local only) for the work
+list. It does not hold design: design belongs in `docs/architecture/` and
+`docs/decisions/`.

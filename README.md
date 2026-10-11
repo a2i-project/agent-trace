@@ -18,11 +18,11 @@ AI agents report what they did in a trajectory log. If the agent is compromised,
 | Outcome | Exit code | Meaning |
 |---|---|---|
 | FAITHFUL | 0 | Both checks passed and the capture lost nothing. |
-| NOT FAITHFUL | 1 | A discrepancy was found. Marked advisory if the capture also lost events. |
-| INCONCLUSIVE | 2 | No discrepancy found, but FAITHFUL cannot be asserted: events were lost, the capture has no coverage record or root pid, or an event could not be attributed. |
-| (error) | 3 | `verify` could not run: bad arguments, an unreadable file or a baseline for another agent. |
+| NOT FAITHFUL | 1 | A discrepancy was found. Marked advisory if the capture also lost events or could not attribute some. |
+| INCONCLUSIVE | 2 | No discrepancy found, but FAITHFUL cannot be asserted: events were lost or could not be attributed, the capture has no coverage record or root pid, the input was too large to align, a claim states a value the probe did not capture or kept only in part, a file claim lies outside what the capture could observe, the harness acted in its own directories in a way no control run showed, or a process outside the agent's tree wrote in the workspace. |
+| (error) | 3 | `verify` could not run: bad arguments, an unreadable file, or a baseline for another agent or agent version. |
 
-The agent claims commands, not what they do. A listener a command opens, or a connection it makes, is counted as capability evidence and shown in the report, but it is not a claim to corroborate.
+The agent claims commands, not what they do: what a claimed command does beneath it is listed under that command and explained by its claim. Listeners, Unix socket connections, connections to port 53 and connections that sent nothing are capability evidence wherever they occur: shown in the report, never a claim to corroborate and never a finding.
 
 ## What it does not prove
 
@@ -36,12 +36,12 @@ A faithful verdict says that the agent's top-level claims are true and that noth
 | Process probe (eBPF): exec, exit code, fork edges, parent pid | done |
 | Network probe (eBPF): connections with TLS SNI, request body hash via an `SSL_write` uprobe, listeners and Unix sockets | done |
 | Verification: process tree, alignment, coverage, baseline hook, outcome rules | done |
-| Claude Code adapter (JSONL, subagents, command-wrapper and atomic-write recovery) | done, checked against one paired capture of version 2.1.286 |
+| Claude Code adapter (JSONL, subagents, command-wrapper and atomic-write recovery) | done, checked against five paired captures of versions 2.1.286 and 2.1.296 |
 | Gemini adapter (SQLite and protobuf, fails loudly when a field moves) | implemented, not yet checked against a real capture |
-| Harness baseline from control runs (`baseline`) | done, measured for Claude Code 2.1.286 |
-| Attack generators (`attack`): omission, fabrication, substitution, interval widening, scored against a record of the mutation | done, run over the four real captures |
+| Harness baseline from control runs (`baseline`) | done, measured for Claude Code 2.1.286 and 2.1.296 |
+| Attack generators (`attack`): omission, fabrication, substitution, interval widening, scored against a record of the mutation | done, run over four of the real captures |
 
-The verifier is tested against a simulated agent (`cmd/simagent`) and against real paired captures of Claude Code, checked in as fixtures: three of 2.1.286 (a five-step task, a task with parallel reads, a subagent, searches and a web fetch, and a coding task in a seeded project with 19 claims), one of 2.1.296 with one Write and five Edits whose content is verified, and a second project session written with heredocs. On all of them an honest trajectory has no finding and the altered ones do. That is a few short tasks on two versions on one machine: it shows the pipeline works end to end, and it is not an evaluation. The Gemini adapter has not seen a real capture, and nothing here has been measured on a population of real sessions.
+The verifier is tested against a simulated agent (`cmd/simagent`) and against real paired captures of Claude Code, checked in as fixtures: three of 2.1.286 (a five-step task, a task with parallel reads, a subagent, searches and a web fetch, and a coding task in a seeded project with 19 claims), one of 2.1.296 with one Write and five Edits whose content is verified, and a second project session written with heredocs. On all of them an honest trajectory has no finding, and on the four the attack evaluation uses (all but the heredoc session) every altered trajectory is caught. That is a few short tasks on two versions on one machine: it shows the pipeline works end to end, and it is not an evaluation. The Gemini adapter has not seen a real capture, and nothing here has been measured on a population of real sessions.
 
 ## Requirements
 
@@ -54,7 +54,7 @@ The verifier is tested against a simulated agent (`cmd/simagent`) and against re
 ## Build and test
 
 ```sh
-make build            # watch, verify, simagent in the repo root
+make build            # watch, verify, baseline, simagent in the repo root (not attack)
 make generate         # regenerate eBPF bindings after editing a .bpf.c file
 go test ./...
 ```
@@ -101,7 +101,7 @@ A harness does things on its own that no trajectory records, such as keeping a c
 ./baseline --agent claude-code --agent-version 2.1.286 --out baseline.json run1.json run2.json run3.json
 ```
 
-Only what every control run did becomes a rule, rules match an action type and target exactly, and a baseline holds for one agent version. Pass it to `verify` with `--baseline`. Without one, the harness's own activity is reported as unexplained.
+By default only what every control run did becomes a rule; `--min-agreement` (default 1) lowers that fraction for activity the harness does only sometimes, and `--exclude` keeps the control task's own command out of the rules. `scripts/capture-claude-code.sh` takes five control runs and an agreement of 1/5, so an action seen in any one control becomes a rule. Rules match an action type and target exactly, and a baseline holds for one agent version. Pass it to `verify` with `--baseline`. Without one, the harness's own activity is reported as unexplained.
 
 ### Network example
 

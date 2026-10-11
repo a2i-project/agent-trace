@@ -32,8 +32,8 @@ Do not assume all context is listed here. `docs/README.md` explains the layout. 
 - `docs/architecture/00_overview.md`: objective, threat model, properties, end-to-end workflow. Read first.
 - `docs/architecture/1x_*.md`: the probes (common contract and loss accounting, proc, fs, net). Read before touching `pkg/probe`.
 - `docs/architecture/20_verifier.md`: process forest, alignment, coverage, verdict. Read before touching `pkg/verification` or `pkg/matching`.
-- `docs/architecture/30_agent_adapters.md` and `40_tools.md`: adapters, baseline, command-line tools.
-- `docs/decisions/*.md`: why each design choice was made, with stable IDs (`P-`, `N-`, `V`, `D`/`I-`). `docs/decisions/open.md` lists undecided questions. Do not silently resolve an open decision in code; record it.
+- `docs/architecture/30_agent_adapters.md`, `40_tools.md` and `50_attack_generators.md`: adapters, baseline, command-line tools, attack generators.
+- `docs/decisions/*.md`: why each design choice was made, with stable IDs (`P-`, `N-`, `V`, `D`/`I-`, `E-`). `docs/decisions/open.md` lists undecided questions. Do not silently resolve an open decision in code; record it.
 - `docs/methodology/dev_workflow.md`: tests, privileged runs, eBPF bindings, CI, commits, documentation rules.
 - `docs/methodology/being_data_driven.md`: measurement discipline for experiments.
 - `docs/related_work/`: survey of other systems and threat models (`01_threat_models.md` defines TM-A to TM-D).

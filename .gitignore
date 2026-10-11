@@ -14,13 +14,14 @@ STATE.md
 *.out
 /cmd/simagent/simagent
 
-# Live-demo binaries (README "Live demo" section builds these at repo root)
+# Binaries built at the repo root (make build, and go build -o attack ./cmd/attack/)
 /watch
 /simagent
 /verify
 /baseline
+/attack
 
-# Live-demo output (trajectory + ground truth JSON written by the demo)
+# Output of the README Quickstart (trajectory and ground truth JSON)
 /trajectory.json
 /ground_truth.json
 

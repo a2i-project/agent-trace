@@ -1,6 +1,6 @@
 # Process probe
 
-Checked against commit c177fe7 on 2026-10-09, with the changes in the commits that introduced P-19 and P-21.
+Checked against commit a1c95a9 on 2026-10-11.
 
 ## Objective
 
@@ -43,7 +43,7 @@ eBPF tracepoints loaded with cilium/ebpf, one ring buffer, CO-RE (`BPF_CORE_READ
 ### Kernel side
 
 1. `handle_fork` (filtered mode only) ignores `CLONE_THREAD` clones. If the parent tgid is tracked, it emits a `KIND_FORK` record with `pid` = child and `ppid` = parent, then inserts the child into `tracked_pids`. The child's `is_toplevel` is 1 only when the parent is both a shell and top-level.
-2. `handle_execve` and `handle_execveat` fire at syscall entry, so they record every attempt, including execs that then fail. An `execveat` with `AT_EMPTY_PATH`, or an empty pathname, execs the descriptor itself (glibc's `fexecve`): there is no path, and the filename is recorded as `(fexecve)` (P-21). A pathname relative to a directory descriptor is recorded as given, unresolved. It reads the filename (up to 256 bytes) with `bpf_probe_read_user_str`, sets `ppid` from `real_parent->tgid` via CO-RE, and stamps `bpf_ktime_get_ns()`. In filtered mode it returns early for an untracked tgid; for a tracked non-root process it re-evaluates `is_shell` by comparing the filename with eight fixed shell paths (`/bin/sh`, `/usr/bin/sh`, and the same for bash, dash and zsh). It copies up to 64 argv strings into the args area, stopping at 128 KiB, and sets `args_truncated` when a string did not fit, the total did, there were more than 64 arguments, or the filename exceeded 256 bytes. It stores the header in `execs` keyed by tgid, then outputs the record to the ring buffer.
+2. `handle_execve` and `handle_execveat` fire at syscall entry, so they record every attempt, including execs that then fail. An `execveat` with `AT_EMPTY_PATH`, or an empty pathname, execs the descriptor itself (glibc's `fexecve`): there is no path, and the filename is recorded as `(fexecve)` (P-21); a pathname whose first byte cannot be read is recorded the same way. A pathname relative to a directory descriptor is recorded as given, unresolved. Both share `record_exec`, which reads any other filename into a 256-byte buffer with `bpf_probe_read_user_str`, sets `ppid` from `real_parent->tgid` via CO-RE, and stamps `bpf_ktime_get_ns()`. In filtered mode it returns early for an untracked tgid; for a tracked non-root process it re-evaluates `is_shell` by comparing the filename with eight fixed shell paths (`/bin/sh`, `/usr/bin/sh`, and the same for bash, dash and zsh). It copies up to 64 argv strings into the args area, stopping at 128 KiB, and sets `args_truncated` when a string did not fit, the total did, there were more than 64 arguments, or the filename with its terminating NUL filled the 256-byte buffer. It stores the header in `execs` keyed by tgid, then outputs the record to the ring buffer.
 3. `handle_exit_group` stores the `exit_group` argument as the exit code in the tgid's `execs` header and sets `has_exit_code`.
 4. `handle_exit` acts only when the exiting thread is the group leader (`tid == tgid`) and the tgid has an `execs` entry. It outputs that header with the kind `KIND_EXIT` and a fresh timestamp, deletes the `execs` entry and, in filtered mode, removes the tgid from `tracked_pids`. The command line is not in the kernel's copy: keeping it per process would preallocate a gigabyte, so userspace joins the exit to the exec it read.
 
@@ -53,7 +53,7 @@ eBPF tracepoints loaded with cilium/ebpf, one ring buffer, CO-RE (`BPF_CORE_READ
 
 1. A record whose pid equals `cfg.PIDFilter` is dropped: the root is the controller, not an agent action. This covers the root's own exec, which can reach the ring buffer before `SetRootPID` takes effect.
 2. A fork record becomes `process_fork` with `Target` = the child pid as a decimal string, `PID` and `PPID`. It is skipped when `CommandFilter` is set.
-3. An exec record becomes `process_exec`. `commandLine` builds the target from the kernel-supplied filename followed by `argv[1:]`; `argv[0]` is dropped because the caller controls it. Only when the filename is empty does it fall back to `argv[0]`. The target and the truncation flag are remembered per pid. A record with an empty command line is dropped, and `CommandFilter` drops non-matching prefixes.
+3. An exec record becomes `process_exec`. `commandLine` builds the target from the filename recorded at syscall entry (the literal `(fexecve)` for an exec through a descriptor) followed by `argv[1:]`; `argv[0]` is dropped because the caller controls it. Only when the filename is empty does it fall back to `argv[0]`. The target and the truncation flag are remembered per pid. A record with an empty command line is dropped, and `CommandFilter` drops non-matching prefixes.
 4. An exit record becomes `process_exit` with the target and flag remembered for its pid, which are then forgotten. An exit whose exec this reader never saw (a ring drop, counted by `drop_count`) is not emitted, as before when the kernel kept the exec record itself.
 5. The event carries `PID`, `PPID`, `TargetTruncated`, `IsTopLevel` (legacy) and, for an exit with `has_exit_code`, `ExitCode`.
 6. The event is sent without blocking; a full channel increments `Dropped`.
@@ -62,7 +62,7 @@ eBPF tracepoints loaded with cilium/ebpf, one ring buffer, CO-RE (`BPF_CORE_READ
 
 ## Guarantees and loss accounting
 
-The target's first token is the path the kernel was asked to execute, not `argv[0]`, so a process cannot rename itself in the ground truth (`TestObserver_ResistsArgv0Spoofing`). Every tracked process appears through a fork record even if it never execs, which is what lets a subshell's file activity be attributed (`TestObserver_ForkRecordsPlaceProcessesThatNeverExec`). Threads are never inserted into `tracked_pids` (`TestObserver_ThreadsAreNotTracked`).
+The target's first token is the path the kernel was asked to execute (or `(fexecve)` when it was given a descriptor), not `argv[0]`, so a process cannot rename itself in the ground truth (`TestObserver_ResistsArgv0Spoofing`). Every tracked process appears through a fork record even if it never execs, which is what lets a subshell's file activity be attributed (`TestObserver_ForkRecordsPlaceProcessesThatNeverExec`). Threads are never inserted into `tracked_pids` (`TestObserver_ThreadsAreNotTracked`).
 
 | Counter | Incremented when | Coverage field |
 |---|---|---|
@@ -71,7 +71,7 @@ The target's first token is the path the kernel was asked to execute, not `argv[
 | `state_lost_count` | storing an exec in `execs` fails, so its exit record will be missing | `StateMapFull` |
 | `Dropped` (userspace) | the events channel is full | `ChannelDrops` |
 
-All four are event loss and make the verdict INCONCLUSIVE. Tests force each kernel counter through a capacity override (`TestObserver_CountsRingbufDrops`, `TestObserver_CountsUntrackedChildren`, `TestObserver_CountsStateMapFull`) and check that it stays zero when the map fits.
+All four are event loss and make the verdict INCONCLUSIVE. Tests force each kernel counter through a capacity override (`TestObserver_CountsRingbufDrops`, `TestObserver_CountsUntrackedChildren`, `TestObserver_CountsStateMapFull`) and check that the tracked-set and state-map counters stay zero when the map fits.
 
 ## Known limits
 
@@ -80,7 +80,8 @@ All four are event loss and make the verdict INCONCLUSIVE. Tests force each kern
 - The exit is joined to the most recent exec read for the tgid, and since execs are recorded at syscall entry, that can be a failed attempt's command line.
 - A process killed by a signal never calls `exit_group`, so its exit has no `ExitCode`.
 - Filename and argv are read from user memory at syscall entry, so another thread can change them before the kernel copies them.
-- argv is kept up to 64 arguments and 128 KiB and the filename up to 256 bytes; beyond that the record is cut and `TargetTruncated` says so, and the verifier pairs the cut target by prefix as unverified (V-26). Linux allows one argument of 128 KiB, so a harness's single-string command always fits (`TestObserver_LongCommandLineIsRecordedWhole`, `TestObserver_OverlongCommandLineIsFlagged`).
+- An exec through a descriptor names no program: its target is `(fexecve)` followed by the arguments, so a claim that names the program reads as a substitution unless the adapter rewrites one side (P-21, `TestObserver_ExecThroughADescriptorIsRecorded`). An `execveat` pathname relative to a directory descriptor is recorded unresolved.
+- argv is kept up to 64 arguments and 128 KiB in all, and the filename up to 255 bytes; beyond that the record is cut and `TargetTruncated` says so, and the verifier pairs the cut target by prefix as unverified (V-26). Linux allows one argument of 128 KiB, and the shell's own arguments share the 128 KiB area, so a harness's single-string command fits unless it nears that size (`TestObserver_LongCommandLineIsRecordedWhole`, `TestObserver_OverlongCommandLineIsFlagged`).
 - The probe captures no working directory, environment or stdin, so relative paths in argv are unresolved and a script fed through a pipe or heredoc is invisible.
 - In host-wide mode no fork records are emitted, so the forest cannot place processes that never exec.
 - The root pid is inserted after the agent starts, so a fork before `SetRootPID` is untracked and uncounted.

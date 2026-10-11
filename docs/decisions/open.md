@@ -1,8 +1,8 @@
 # Open decisions
 
-The single list of decisions not yet taken. Each entry states the question, the options, what the code does today, and what blocks a decision. When one is decided, it moves to the area file ([probes.md](probes.md), [network.md](network.md), [verification.md](verification.md), [integration.md](integration.md)) and is deleted here.
+The single list of decisions not yet taken. Each entry states the question, the options, what the code does today, and what blocks a decision. When one is decided, it moves to the area file ([probes.md](probes.md), [network.md](network.md), [verification.md](verification.md), [integration.md](integration.md), [evaluation.md](evaluation.md)) and is deleted here.
 
-Checked against commit d0e2c73 on 2026-10-06.
+Statuses reconciled with the code at commit a1c95a9 on 2026-10-11.
 
 Entries O-1 to O-4 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling.
 
@@ -24,18 +24,18 @@ Date: 2026-10-06.
 Question: How should the alignment treat parallel tool calls and flattened subagents, which make the claim order partial?
 Options: (a) linearization checking over the partial order induced by `BlockID` and `ThreadID`; (b) keep two-sequence alignment and report claims sharing a block or thread as a degradation; (c) per-thread alignment, accepting that the thread id is attacker-controlled.
 Current behaviour: V2 requires (a). `Align` reads neither `BlockID` nor `ThreadID`; it aligns claims in slice order. Adapters do set both fields. Gemini's `WaitMsBeforeAsync` (a command outliving its step) also weakens the order assumption and is not handled.
-Blocked by: A paired capture with parallel calls or concurrent subagents; Gemini's concurrency is unmeasured.
+Blocked by: A paired capture in which the members of a parallel block complete out of order, or subagents run concurrently. The parallel fixture (`paired-2.1.286-parallel`) has a parallel block and a subagent, but they ran in an order a total-order alignment accepts. Gemini's concurrency is unmeasured.
 
 ### O-3: P5 says the verdict is binary; the code has three outcomes plus ambiguity
-Status: Open. Contradiction.
+Status: Ratification only: the code and docs/architecture/00_overview.md already follow option (a). Contradiction.
 Date: 2026-10-06.
 Question: Is P5 (deterministic, binary verdict) restated, or is the outcome set reduced?
 Options: (a) restate P5 as "deterministic given G and its coverage record", with INCONCLUSIVE as a precondition failure on G and `Ambiguous` as a statement about localization only; (b) keep P5 literal and fold INCONCLUSIVE into NOT FAITHFUL.
-Current behaviour: Three outcomes (FAITHFUL, NOT FAITHFUL, INCONCLUSIVE, exit codes 0, 1, 2), an `Advisory` flag on NOT FAITHFUL under loss, and `Verdict.Ambiguous` when several minimum-cost alignments exist (V-11, V-13, V-15). The verification model argued for (a) but P5's text was never changed.
+Current behaviour: Three outcomes (FAITHFUL, NOT FAITHFUL, INCONCLUSIVE, exit codes 0, 1, 2), an `Advisory` flag on NOT FAITHFUL under loss, and `Verdict.Ambiguous` when several minimum-cost alignments exist (V-11, V-13, V-15). The verification model argued for (a). Since then [../architecture/00_overview.md](../architecture/00_overview.md) states P5 with three outcomes and no score, which is option (a).
 Blocked by: A wording decision for [../architecture/00_overview.md](../architecture/00_overview.md).
 
 ### O-4: Exit codes, listed open but decided in code
-Status: Open in the plan documents; decided in code (I-15). Contradiction.
+Status: Ratification only: already decided in code by I-15. Contradiction.
 Date: raised 2026-09; decided in code 2026-10-06.
 Question: Does `ExitCode` stay nil for real agents, or is a two-valued claim derived from Claude Code's `is_error`?
 Options: (a) stays nil, exits not aligned; (b) derive success or failure from `is_error`.
@@ -68,9 +68,9 @@ Blocked by: O-2.
 
 ### O-8: Is the V7 baseline sufficient at level 0?
 Status: Open.
-Question: Level 0 has no lineage discriminator and is also where harness activity lives. Can exact-match baseline rules separate harness activity from agent actions there?
+Question: Level 0 has no lineage discriminator and is also where harness activity lives. For level-0 events other than file events in the harness's own directories (connections, commands), can exact-match baseline rules separate harness activity from agent actions? Occasional activity of that kind is O-25.
 Options: (a) exact rules only (current, V-19); (b) add structure, such as per-phase baselines; (c) accept level-0 findings as advisory.
-Current behaviour: (a). No baseline has been captured for a real agent.
+Current behaviour: (a), with two additions. Five paired captures of Claude Code (four of 2.1.286, one of 2.1.296) on one machine carry baselines measured from control runs. The capture script keeps an action seen in any one control (a 1/N threshold, V-24) while `cmd/baseline` keeps what every run did by default (I-24). An unexplained level-0 file event under the harness's own directories makes the run INCONCLUSIVE instead of being a finding (V-24); a level-0 connection that sent data, or a command, is still a finding. Since N-22 a connection that sent nothing is capability evidence and never a finding.
 Blocked by: Null-task baseline capture per agent and version (needs root).
 
 ### O-12: Can any finding survive event loss?
@@ -80,14 +80,38 @@ Options: Candidates are an unexplained event whose full ancestry chain was obser
 Current behaviour: Every finding under loss is NOT FAITHFUL marked `Advisory` (V-15).
 Blocked by: A proof per finding kind that it does not depend on a missing event.
 
+### O-25: Occasional harness activity outside file events
+Status: Open.
+Date: 2026-10-11.
+Question: V-24 turns unexplained harness activity into INCONCLUSIVE only for level-0 file events under the harness's own directories. How should occasional harness network and process activity be treated, such as a telemetry connection seen in only some control runs?
+Options: (a) leave it to the agreement threshold (current); (b) extend V-24 to declared harness endpoints or commands, reported apart and INCONCLUSIVE; (c) more control runs only.
+Current behaviour: (a). At full agreement (the `cmd/baseline` default, I-24) such an action is left out of the baseline and reads as a finding in a run where it occurs; at the capture script's 1/N threshold (V-24) one occurrence in any control makes it a rule that explains it in every later run. A connection that sent nothing (`net_dial`, N-22) or one to port 53 (`net_dns`, N-20) is capability evidence and needs no rule.
+Blocked by: Measurements of how often the harness's network and process activity varies across control runs.
+
+### O-26: Should a content claim on a non-close action be strict when it omits its hash?
+Status: Open.
+Date: 2026-10-11.
+Question: The opt-out rule of V-20 applies to `output_hash` only on `file_close`. Claude Code claims a Write as a `file_write` carrying the hash and never claims a close (I-22), so a Write claim that drops its hash is neither a finding nor unverified (V-22 needs a stated value) and verifies FAITHFUL. Should a nil `output_hash` on a `file_write` whose tool can state it (`Expresses`) be an opt-out finding?
+Options: (a) leave the rule on `file_close` only (current); (b) apply the opt-out rule to `output_hash` on `file_write` where `Expresses` says the tool can state it; (c) have the Claude Code adapter carry the hash on a claimed `file_close`.
+Current behaviour: (a). `contentDiffs` forces the output-hash mismatch only when the claim's action type is `file_close`. Gemini claims `file_close` for `write_to_file`, so the strict rule is live there and not for Claude Code.
+Blocked by: Nothing technical. (b) changes the verdict of any adapter that claims content on a write, so it needs a check against the paired fixtures.
+
 ## Integration
+
+### O-27: Is a connection that sent nothing trustworthy enough to never be a finding?
+Status: Open. Raised by the documentation review of 2026-10-11 against N-22.
+Date: 2026-10-11.
+Question: N-22 makes a connection with no observed send `net_dial`, capability evidence that is never a finding, at any level. The probe sees a send only through `write`, `sendto` or `sendmsg` by the process that made the connect. Data sent through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or written by a child after `fork`, leaves the connection a `net_dial`, so an unclaimed connection that carried data can pass unreported (for example a shell that connects through `/dev/tcp` and pipes a file through a forked `cat`). Should a dial stay non-reportable while the send side is incomplete?
+Options: (a) keep N-22 as is and close the send-side gaps in the probe (hook the missing send paths, follow the socket across fork); (b) keep `net_dial` non-reportable only for the harness's own process at level 0 and report a dial in a command's subtree; (c) revert dials to `net_connect` by address until the send side is complete.
+Current behaviour: (a) without the probe work: every dial is capability evidence and never a finding. A fork that never execs and causes only capability events is `Quiet`.
+Blocked by: Nothing technical. (a) needs probe work on the net lane (the same send paths as the io_uring question, O-18); (b) and (c) bring address rules back into baselines for the cases they cover.
 
 ### O-9: Many-target search tools
 Status: Partly decided. Claude Code `Grep` and `Glob` are settled by I-25. Gemini's search tools are open.
 Question: `list_dir`, `grep_search` and `find_by_name` (Gemini) claim a pattern and touch many files. How are they claimed?
 Options: (a) containers with no enumerable claim, like D2; (b) non-effectful; (c) unknown, named in the report (current for Gemini); (d) the kind-of-search claim of I-25, if they also run as a child process.
 Current behaviour: Claude Code, (d). Gemini, (c).
-Blocked by: A paired capture of Gemini (ADP-4).
+Blocked by: A paired capture of Gemini.
 
 ### O-10: Containers and PID namespace translation
 Status: Open.
@@ -107,18 +131,15 @@ Blocked by: An agent that uses a persistent shell in practice.
 Status: Partly decided. Claude Code is settled by I-22 and I-23. Gemini is open.
 Date: 2026-10-06, updated 2026-10-07.
 Question: Which kernel events does a real file tool produce, and how many?
-Current behaviour: For Claude Code 2.1.286 the shapes were measured by one paired capture (**Verified**, one task on one machine): see I-22. Gemini's file tools still use the guessed open, write, close sequence, and its adapter reports that. Whether other Claude Code versions, or a write that does not use a temporary file, behave the same is **Unverified**.
+Current behaviour: For Claude Code 2.1.286 the shapes were measured on the first paired capture (**Verified**, see I-22) and hold on the four later ones (five fixtures in all, versions 2.1.286 and 2.1.296, one machine), including five Edits whose content hashes are corroborated (I-31). Gemini's file tools still use the guessed open, write, close sequence, and its adapter reports that. Whether other Claude Code versions, or a write that does not use a temporary file, behave the same is **Unverified**.
 Blocked by: A paired capture of Gemini (needs root and a working Gemini CLI, which has no headless authentication here), and captures of other Claude Code versions.
-
-### O-17: Is replaying a partial edit ever worth doing?
-Status: Decided by I-31 on 2026-10-09 and measured on 2026-10-11: an Edit's result record holds the file before and the applied replacement, so the final content is computed and claimed, and on a capture of five Edits of different shapes every claim was corroborated on both hashes.
 
 ### O-13: Out-of-tree tagging (delegation, part 3)
 Status: Open. Premise changed.
 Date: deferred 2026-10-02.
-Question: Should events outside the agent's tree be captured, tagged and surfaced as findings, to catch delegation to daemons?
+Question: To catch delegation to daemons, should out-of-tree process and network events be captured and tagged, and can an `Outside` event ever be a finding?
 Options: (a) as planned: keep out-of-tree fs, net and proc events, tag them, surface them as findings, never let them suppress an unclaimed event; (b) keep them as report-only (current for fs); (c) do nothing more.
-Current behaviour: The plan assumed the fs probe would filter by the tracked set, which would make delegated writes vanish. It does not (P-6), so out-of-tree fs events are already in G, placed in `Partition.Outside` (`ZoneOutside`) and reported, not findings (P-15). Out-of-tree proc and net events are not captured.
+Current behaviour: The plan assumed the fs probe would filter by the tracked set, which would make delegated writes vanish. It does not (P-6). Since P-17, out-of-tree fs events are kept only under the workspace; they are placed in `Partition.Outside` (`ZoneOutside`) and reported, not findings (P-15). Since V-25, a write-class outside event under the workspace makes a run without findings INCONCLUSIVE. Out-of-tree proc and net events are not captured.
 Blocked by: The baseline (whole-host capture brings noise) and a decision on whether `Outside` events can be findings without making every honest run fail.
 
 ### O-14: Verifying Claude Code `WebSearch`
@@ -127,9 +148,6 @@ Question: `WebSearch` runs server-side inside the model API exchange (I-16). How
 Options: (a) capture the API stream with an `SSL_read` uretprobe plus SSE reassembly (O-19); (b) an N2 proxy, which gives framed responses but is detectable and fails on pinning.
 Current behaviour: Not verified; `WebSearch` is non-effectful.
 Blocked by: Design choice between (a) and (b), offsets per Bun release for (a), and the unverified join between the transcript `requestId` and the response `request-id` header.
-
-### O-15: The port-53 filter
-Status: Decided by N-20 on 2026-10-11: a connection to port 53 is `net_dns`, capability evidence in the capture and the report, never a finding.
 
 ### O-24: Break ties between equal alignments by interval consistency?
 Status: Open.
@@ -145,7 +163,7 @@ Blocked by: Nothing technical. A claim interval comes from the trajectory and is
 Status: Proposed.
 Question: Should `net.bpf.c` hook `tcp_connect`, `inet_sendmsg`, `udp_sendmsg` and the `security_socket_connect`/`bind`/`listen` LSM hooks instead of syscall tracepoints?
 Options: Rewrite the net probe; or at minimum detect io_uring use by tracked PIDs and mark the run INCONCLUSIVE.
-Current behaviour: `sys_enter_*` tracepoints only. `IORING_OP_CONNECT` and `IORING_OP_SEND` bypass them, so an io_uring network action reads as no action. `writev` and multi-iovec sends are not fully read.
+Current behaviour: `sys_enter_*` tracepoints only. `IORING_OP_CONNECT` and `IORING_OP_SEND` bypass them, so an io_uring network action reads as no action. `writev` and multi-iovec sends are not fully read. Since N-22 a connection without a name whose data went only through an unhooked path (io_uring, `writev`, `sendfile`, `splice`, `sendmmsg`) or through another process holding the descriptor reads as `net_dial`, capability evidence rather than a connection a claim must explain ([../architecture/13_probe_net.md](../architecture/13_probe_net.md), Known limits).
 Blocked by: Whether Bun uses io_uring for sockets (Unverified); cost of the rewrite.
 
 ### O-19: `SSL_read` uretprobe and SSE reassembly
@@ -155,16 +173,16 @@ Options: Reuse the `ssl_lib.cc` offset machinery for `SSL_read`, which also give
 Current behaviour: `SSL_write` only (N-16).
 Blocked by: O-14.
 
-### O-20: DNS and UDP as capability evidence, larger ClientHello capture
-Status: Proposed.
-Question: Record DNS and UDP `sendto`/`sendmsg` with an address as unclaimable capability evidence, and grow the hello capture beyond 1 KiB or parse SNI across writes?
-Current behaviour: DNS dropped (N-13), UDP not observed, hello capture 1024 bytes of the first write or first iovec.
+### O-20: Unconnected UDP and DNS names as capability evidence, larger ClientHello capture
+Status: Proposed. Narrowed on 2026-10-11: N-20 records every connection to port 53 as `net_dns` capability evidence, which settles the connection part of the DNS question.
+Question: Record UDP `sendto`/`sendmsg` with an address on an unconnected socket (DNS included), and the names looked up, as unclaimable capability evidence, and grow the hello capture beyond 1 KiB or parse SNI across writes?
+Current behaviour: A `connect()` to port 53, TCP or UDP, is `net_dns` with the `ip:port` target (N-20); the query and its name are not recorded. A datagram sent with an address on an unconnected socket creates no connection and is not observed. Hello capture is 1024 bytes of the first write or first iovec.
 Blocked by: Whether Claude Code's ClientHello pushes SNI past 1024 bytes (Unverified).
 
 ### O-21: Synchronous in-kernel file hashing
 Status: Proposed.
-Question: Hash at the moment a change becomes visible (an LSM hook on file release with `bpf_ima_file_hash`, or fentry on `vfs_write` plus a synchronous hash) instead of reopening after `FAN_CLOSE_WRITE`?
-Current behaviour: Userspace hash after close, with a generation check; the race is known (a flaky tier 4 test).
+Question: To close the residual race after a close, hash at the moment a change becomes visible (an LSM hook on file release with `bpf_ima_file_hash`, or fentry on `vfs_write` plus a synchronous hash) instead of reopening after `FAN_CLOSE_WRITE`?
+Current behaviour: Userspace hash after close, with a generation check. P-16 fixed the flaky tier 4 test by publishing a close without a hash when a write-class event follows it. The residual race (a write after the close and outside the generation check's window) is described in the known limits of [../architecture/12_probe_fs.md](../architecture/12_probe_fs.md).
 Blocked by: Whether `bpf_ima_file_hash` is usable on the target kernel configuration (Unverified). Would also put the fs lane on the eBPF clock.
 
 ### O-22: A stdio and pipe probe
@@ -175,6 +193,6 @@ Blocked by: Priority.
 
 ### O-23: Process context at exec
 Status: Proposed.
-Question: Capture cwd at exec, and count argv truncation (64 args or 8 KiB) as a coverage counter?
-Current behaviour: No cwd, no truncation signal (P-3).
+Question: Capture cwd at exec? And should argv truncation, already flagged per event (P-19), also be counted in the coverage record?
+Current behaviour: No cwd. Since P-19 a command line cut at 64 arguments or 128 KiB is flagged per event (`args_truncated` in the record, `TargetTruncated` on the event), not counted, and a cut target is paired by prefix and unverified (V-26).
 Blocked by: Priority.

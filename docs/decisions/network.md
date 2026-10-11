@@ -4,7 +4,7 @@ Why the network probe is layered the way it is, what it deliberately does not ca
 
 **Numbering.** The five decisions resolved on 2026-09-14 were numbered D1 to D5 in the Tier 3 design. They are renamed N-D1 to N-D5 here so they do not clash with the integration decisions D1 to D14 in [integration.md](integration.md). Other network decisions are numbered from N-6.
 
-Checked against commit d0e2c73 on 2026-10-06. Original sources: docs/archive/06_tier3_network_design.md, docs/archive/network_implementation_choices.md, docs/archive/04_design_tradeoffs.md, docs/archive/03_tiers_3_to_6.md (all local only). As-built description: [../architecture/13_probe_net.md](../architecture/13_probe_net.md).
+Entries carry their own dates. Statuses reconciled with the code at commit a1c95a9 on 2026-10-11. Original sources: docs/archive/06_tier3_network_design.md, docs/archive/network_implementation_choices.md, docs/archive/04_design_tradeoffs.md, docs/archive/03_tiers_3_to_6.md (all local only). As-built description: [../architecture/13_probe_net.md](../architecture/13_probe_net.md).
 
 Evidence labels: **Verified** (measured on the development machine), **Reported** (from vendor documentation or third-party source code), **Unverified** (hypothesis).
 
@@ -109,7 +109,7 @@ Consequences: The residual case for content capture is narrow: in-binary HTTP wh
 Alternatives rejected: Content capture for every network action.
 
 ### N-13: Port 53 is filtered from emitted events
-Status: Accepted as made; questioned (O-15 in [open.md](open.md)).
+Status: Superseded by N-20 on 2026-10-11: a connection to port 53 is emitted as `net_dns` capability evidence and counted. Kept as taken; it was questioned as O-15, which N-20 decided.
 Date: 2026-09-15 (Tier 3 S6, commit de08b88).
 Context: DNS lookups are triggered implicitly by hostname resolution, and no trajectory records them, so every DNS connection would read as an omission.
 Decision: `net.Observer.emit` drops any connection to port 53 before it becomes an event.
@@ -164,7 +164,7 @@ Decision and reasons:
 Consequences: Custom eBPF probes plus fanotify remain the stack.
 
 ### N-19: Port-0 connects are not emitted
-Status: Accepted, implemented (`net.Observer.emit`, `TestEmitSkipsAddressSelectionAndDNS`).
+Status: Accepted, implemented (`net.Observer.emit`, `TestEmitSkipsAddressSelectionAndReportsDNS`). Amended 2026-10-11 (commit 4343878): port-0 connects are now counted in `Coverage.AddressProbes`, and port 53 is no longer dropped (N-20), so the comparisons with the DNS drop and the last consequence (no counter) no longer hold.
 Date: 2026-10-07.
 Context: In a paired capture of Claude Code every real connection was preceded by connects to port 0 of the destination's IPv4 and IPv6 addresses, and nothing was sent on them. The resolver connects a datagram socket to each candidate address to ask the kernel which source address it would use (RFC 3484 address selection; **Reported**, glibc behaviour; the twin pattern is **Verified** in that capture). They name addresses that change with DNS, so no trajectory can claim them and a baseline cannot list them. A fetch of a new host left one as an unrecorded action.
 Decision: `emit` drops a connection to port 0, like port 53 (N-13), and marks it emitted so its close does not retry.
@@ -172,7 +172,7 @@ Consequences: Ground truth no longer holds the `IP:0` events, so baselines measu
 Alternatives rejected: Dropping them in the adapter (it is resolver behaviour, not a harness property); recording them as capability evidence (they carry no information about what the agent did).
 
 ### N-20: A connection to port 53 is capability evidence, not a dropped event
-Status: Accepted, implemented (`emit` in `pkg/probe/net/observer.go`, `models.NetDNS` unclaimable). Decides O-15.
+Status: Accepted, implemented (`emit` in `pkg/probe/net/observer.go`, `models.NetDNS` unclaimable). Decides O-15, removed from open.md on 2026-10-11. Supersedes N-13.
 Date: 2026-10-11 (security review).
 Context: N0 dropped every connection to port 53 on the reasoning that DNS lookups are the resolver's and no trajectory records them. The filter is on the port, not on the protocol: a TCP connection to port 53 anywhere is a channel for data, and it left no trace in the capture and no counter.
 Decision: A connection to port 53 is emitted as `net_dns` with the `ip:port` target, ground truth only like `net_bind`: in the capture and the report's capability list, never aligned and never a finding, since an honest run makes one per lookup. The count is in `Coverage.DNS`. Port 0, the resolver's address selection, is still not emitted but is counted (`Coverage.AddressProbes`).
@@ -181,11 +181,12 @@ Alternatives rejected: Distinguishing UDP from TCP (the connect tracepoint does 
 
 ### N-21: Connections still open at the end of the capture are emitted then
 Status: Accepted, implemented (`flushOpenConnections` in `pkg/probe/net/observer.go`).
-Date: 2026-10-11 (security review; OBS-26).
+Date: 2026-10-11 (security review; local todo OBS-26, local only).
 Context: A connection whose ClientHello carried no name was emitted only on its `close()`, with the address as target. One held open until the process exited, or past the end of the capture, was never emitted and nothing counted it: an agent that connected by address, sent, and never closed left no trace.
 Decision: When both record feeders have closed, the correlator emits every connection still open, in connect order, each stamped with its connect time, and counts them in `Coverage.OpenAtStop`.
 Consequences: Every connection the probe saw reaches the capture. The stamp is the connect time, so the event sorts where the connection began; a connection with a name was already emitted at its hello and is not emitted twice.
 Alternatives rejected: Emitting every connection at connect time (a connection with a name would then be emitted by address first and by name later, two events for one connection, and the baseline names addresses that change).
+Note 2026-10-11: "every connection the probe saw" excludes one whose descriptor was closed without `close()` (by `dup2`, `close_range` or an exec under `O_CLOEXEC`) and on which the same process then connected again: the new connect replaces the entry before it is emitted, and nothing counts it ([../architecture/13_probe_net.md](../architecture/13_probe_net.md), Known limits).
 
 ### N-22: A connection that sent nothing is capability evidence, not a connection
 Status: Accepted, implemented (`connection.wrote`, `emit` in `pkg/probe/net/observer.go`, `models.NetDial`).
@@ -194,4 +195,5 @@ Context: Every baseline held `net_connect` rules naming addresses, `160.79.104.1
 Decision: A connection that closes, or is flushed at the end, with no name and no byte ever written on it is `net_dial`, ground truth only like `net_bind`: in the capture and the capability list, never aligned, never a rule. A connection that wrote and had no name stays `net_connect` by address, which a claim or a rule must explain.
 Consequences: Baselines no longer name addresses for the harness's losing connects, so they do not rot with DNS, and a data-carrying connection by address is no longer explained by one. A dial carries at most the fact that it happened, a covert channel of one bit per connect, which the report shows. The `wrote` flag comes from the first write the kernel saw on the descriptor, whatever it carried.
 Alternatives rejected: Templating addresses in rules (a wildcard explains whatever an attacker makes it match, V-19); resolving addresses back to names (DNS is not observed, O-20).
+Note 2026-10-11: the writes the kernel sees are `write`, `sendto` and `sendmsg` by the process that made the connect. A connection without a name whose data went through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or was written by a child that inherited the descriptor, is a `net_dial`, and so is not a finding, even at level 0 ([../architecture/13_probe_net.md](../architecture/13_probe_net.md), Known limits; O-18).
 

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit c612b89 on 2026-10-08, with the changes in the commit that introduced P-17.
+Checked against commit a1c95a9 on 2026-10-11.
 
 ## Objective
 
@@ -21,7 +21,7 @@ agent-trace records what an agent did with three independent host probes: proces
 
 `probe.Observer` has three methods. `Start()` begins emitting events in the background, `Stop() error` releases the probe's resources and closes the channel, and `Events() <-chan models.GroundTruthEvent` returns that channel. `probe.CoverageReporter` adds `CaptureCoverage() models.ProbeCoverage`, valid after `Stop` returns. It is a separate interface so `Observer` stays minimal, but `cmd/watch` refuses to run any probe that does not implement it: a probe that cannot report loss would otherwise be written into the coverage record as clean.
 
-All three observers satisfy both interfaces. `proc.Observer` adds `SetRootPID`, and `net.Observer` adds `TrackPID`, `Coverage` and `TLSAttachError`; `cmd/watch` reaches these through type assertions.
+All three observers satisfy both interfaces. `proc.Observer` adds `SetRootPID`, `net.Observer` adds `TrackPID`, `Coverage` and `TLSAttachError`, and `fs.Observer` adds `Scope`; `cmd/watch` reaches these through type assertions.
 
 ### Per-object tracked set
 
@@ -35,7 +35,7 @@ The eBPF probes use `github.com/cilium/ebpf` for loading, tracepoint and uprobe 
 
 The CI job `bpf-freshness` in `.github/workflows/test.yml` regenerates `pkg/probe/proc` only and fails when a regenerated file other than a `.o` differs from the committed one. The net and TLS bindings have no such check.
 
-The BPF verifier sets one invariant every program follows: a helper's size argument is a compile-time constant or is clamped against one immediately before the call. `net.bpf.c trace_connect` reads the address family with `sizeof(__u16)` and then the whole sockaddr with a per-family constant (16 or 28 bytes) rather than with `addrlen`, because stricter kernels reject a dynamic size even after masking. `proc.bpf.c handle_execve` masks the argv write offset with `MAX_ARGS_BYTES - 1` and pads the scratch buffer to twice that size, and `tls.bpf.c probe_ssl_write` clamps its length to `SSL_CAP_LEN`. A new program must keep to this, or it fails to load on some kernels.
+The BPF verifier sets one invariant every program follows: a helper's size argument is a compile-time constant or is clamped against one immediately before the call. `net.bpf.c trace_connect` reads the address family with `sizeof(__u16)` and then the whole sockaddr with a per-family constant (16 or 28 bytes) rather than with `addrlen`, because stricter kernels reject a dynamic size even after masking. `proc.bpf.c record_exec` (shared by `handle_execve` and `handle_execveat`) masks the argv write offset with `MAX_ARGS_BYTES - 1` and pads the scratch buffer to twice that size, and `tls.bpf.c probe_ssl_write` clamps its length to `SSL_CAP_LEN`. A new program must keep to this, or it fails to load on some kernels.
 
 The fs probe uses fanotify through `golang.org/x/sys/unix`; it has no eBPF component.
 
@@ -46,7 +46,7 @@ The fs probe uses fanotify through `golang.org/x/sys/unix`; it has no eBPF compo
 1. `runWatch` requires `--workspace` and root, and rejects `--root-pid` together with a trailing `-- <command>`.
 2. It sets `AncestryPending` when an agent command or `--root-pid` is given, so the proc probe starts with an empty tracked set (`DeferRootPID`) instead of host-wide mode.
 3. For each name in `--probes` (default `fs,proc`), it calls the builder in `probeBuilders`. Adding a probe means adding one entry there. Any probe that is not a `probe.CoverageReporter` aborts the run.
-4. proc and net are held back. Every other probe (today only fs) gets a collector goroutine and is started at once.
+4. Every probe gets a collector goroutine at once. Every probe other than proc and net (today only fs) is also started at once; proc and net are started later.
 5. In exec-wrap mode watch sleeps 200 ms, starts the agent with `exec.Command`, records its pid as `groundRoot`, calls `proc.Observer.SetRootPID(pid)`, starts proc, then calls `net.Observer.TrackPID(pid)` and runs `net.Observer.Start` in a goroutine (it blocks during TLS offset validation). After the agent exits (or on SIGINT/SIGTERM, which kills it) watch sleeps 300 ms so trailing events drain.
 6. With `--root-pid N`, `groundRoot` is N and the same calls are made for N; watch records until a signal. With neither, `groundRoot` stays 0, proc runs host-wide (optionally narrowed by `--proc-filter`) and net is started with no tracked pid.
 7. `stopEverything` stops the other probes, then net, then proc, and waits for the collectors.
@@ -119,7 +119,7 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 
 ## Guarantees and loss accounting
 
-Every kernel-side failure that loses an event is counted where it happens, and `Assess` turns any non-zero loss counter into INCONCLUSIVE. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
+`Assess` turns any non-zero loss counter into INCONCLUSIVE. Not every loss has a counter: a failed update of the net probe's `binds` map, a net connection whose entry a later connect on the same descriptor overwrote before it was emitted ([13_probe_net.md](13_probe_net.md)), and fanotify records still queued when `Stop` is signalled are counted nowhere, and the file events `watch` counts in `fs_scope.unresolved` are not read by `Assess`. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
 
 ### Adding a loss counter
 

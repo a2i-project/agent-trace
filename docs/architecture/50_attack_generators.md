@@ -1,10 +1,10 @@
 # Attack generators and scoring
 
-Checked against commit 6008e86 on 2026-10-11, with the changes in the commit that added the edits capture.
+Checked against commit a1c95a9 on 2026-10-11.
 
 ## Objective
 
-An evaluation needs manipulations that are reusable, reproducible and recorded. `pkg/attack` has one generator per attack of the threat model and a scorer that checks a verifier's verdict against the record of what a generator changed, so a result can say not only that a run was flagged but that the right entry was flagged, as the right kind of finding. The attacks are defined in the evaluation plan (local): A1 omission, A2 fabrication, A3 substitution, A4 interval widening. The reasons for the design are in [../decisions/evaluation.md](../decisions/evaluation.md).
+An evaluation needs manipulations that are reusable, reproducible and recorded. `pkg/attack` has one generator per attack of the threat model and a scorer that checks a verifier's verdict against the record of what a generator changed, so a result can say not only that a run was flagged but that the right entry was flagged, as the right kind of finding. The attacks are A1 omission, A2 fabrication, A3 substitution and A4 interval widening, each summarized under Generators below (the full evaluation plan is local only). The reasons for the design are in [../decisions/evaluation.md](../decisions/evaluation.md).
 
 Generators work on the normalized `models.Trajectory`, so they apply to any agent whose adapter produces claims. They mutate claims only, never the ground truth.
 
@@ -21,6 +21,10 @@ Generators work on the normalized `models.Trajectory`, so they apply to any agen
 | `pkg/attack/score.go` | `Score`, `Result`, `MutationResult`, `SuppressedNothing`, `Tally`, `Findings` |
 | `cmd/attack/main.go` | the command-line front end |
 | `pkg/attack/eval_test.go` | the evaluation over the four real captures |
+
+## Technologies
+
+Go with the standard library only. Randomness is `math/rand/v2` with a PCG source seeded from `Options.Seed`, so a mutation is reproducible. `score.go` reads `pkg/verification.Verdict`; the generators depend on `pkg/models` alone. `cmd/attack` uses the standard `flag` package and reads sessions through `pkg/agent` with the Claude Code and Gemini adapters registered.
 
 ## Workflow
 
@@ -47,7 +51,7 @@ A `Record` holds the kind, the seed and one `Mutation` per change: the entry's p
 | `Classified` | the finding is of the attack's kind: an omission as an unrecorded action or an unexplained command, a fabrication as an unwitnessed claim, a substitution as a mismatched pair that names the changed field |
 | `Located` | the finding names exactly that entry, not a neighbour |
 
-Detected without classified is the failure the evaluation plan names: the right alarm under the wrong name, as when a substitution is read as a fabrication plus an omission. `Result.Unaccounted` counts findings no mutation explains (one omitted command is reported twice, as an unrecorded exec and as an unexplained subtree, and both belong to it). `Result.Ambiguous` is the verdict's ambiguity flag. `SuppressedNothing(without, with)` is the A4 claim: widening explains no event that was not already explained. `Tally` accumulates rates and also counts **distinct** mutations, because seeds repeat mutations when a trajectory admits few of them: a rate over a hundred seeds of single omissions from a seven-claim trajectory is a rate over seven cases.
+Detected without classified is the failure the scorer exists to expose: the right alarm under the wrong name, as when a substitution is read as a fabrication plus an omission. `Result.Unaccounted` counts findings no mutation explains (one omitted command is reported twice, as an unrecorded exec and as an unexplained subtree, and both belong to it). `Result.Ambiguous` is the verdict's ambiguity flag. `SuppressedNothing(without, with)` is the A4 claim: widening explains no event that was not already explained. `Tally` accumulates rates and also counts **distinct** mutations, because seeds repeat mutations when a trajectory admits few of them: a rate over a hundred seeds of single omissions from a seven-claim trajectory is a rate over seven cases.
 
 ### The command
 
@@ -55,7 +59,7 @@ Detected without classified is the failure the evaluation plan names: the right 
 
 ### The evaluation tests
 
-`pkg/attack/eval_test.go` runs every generator over the four real Claude Code captures (`pkg/agent/claudecode/testdata`: three of 2.1.286 and the edits task of 2.1.296) with a baseline from each capture's own controls, at the version the session states, 100 seeds and 1 to 3 mutations each. On the honest control there are no findings; it is FAITHFUL, or INCONCLUSIVE only for harness activity outside the baseline (V-24), which the edits capture has. Every mutation is detected, classified and located, and the only unaccounted finding is an interval finding on a truthful claim when an omission leaves an ambiguous alignment (O-24; 2 of 100 runs of two omissions and 7 of 100 of three on the project capture). Widening leaves the honest verdict unchanged, and an omission whose neighbours are widened over the omitted moment is found for every position. Distinct mutations per capture: 7, 8, 19 and 12 single omissions, 13 to 29 fabrications, 44 to 151 substitutions. Four captures: basic (7 claims), parallel (8), project (19, a seeded coding task) and edits (12: one Write and five Edits with their content hashes, the first capture on which the substitution of an Edit's content is exercised, 60 of them per run). With `Retime`, omissions are still found and a third of runs also report later claims as outside their interval.
+`pkg/attack/eval_test.go` runs every generator over the four real Claude Code captures (`pkg/agent/claudecode/testdata`: three of 2.1.286 and the edits task of 2.1.296) with a baseline from each capture's own controls, at the version the session states, 100 seeds and 1 to 3 mutations each. On the honest control there are no findings; it is FAITHFUL, or INCONCLUSIVE only for harness activity outside the baseline (V-24), which the edits capture has. Every mutation is detected, classified and located, and the only unaccounted finding is an interval finding on a truthful claim when an omission leaves an ambiguous alignment (O-24; 2 of 100 runs of two omissions and 7 of 100 of three on the project capture). Widening leaves the honest verdict unchanged, and an omission whose neighbours are widened over the omitted moment is found at every position that has a neighbour on both sides. Distinct mutations per capture: 7, 8, 19 and 12 single omissions, 13 to 29 fabrications, 44 to 151 substitutions. Four captures: basic (7 claims), parallel (8), project (19, a seeded coding task) and edits (12: one Write and five Edits with their content hashes, the first capture on which the substitution of an Edit's content is exercised, 60 of them per run). With `Retime`, omissions are still found; on the parallel capture 12 of 100 runs also report later claims as outside their interval, and on the other three none do.
 
 ## Guarantees and loss accounting
 
@@ -69,6 +73,6 @@ Detected without classified is the failure the evaluation plan names: the right 
 - The evaluation covers four captures of two agent versions on one machine, with 7, 8, 19 and 12 claims. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
 - Only Claude Code has real captures. The generators are agent-independent, but nothing has been scored on Gemini.
 - The scorer matches findings to mutations by action type, target and (for claims) timestamp. A mutation that happens to equal another claim could be mis-attributed; `Avoid` makes that unlikely, not impossible.
-- A4 is scored as suppressing nothing, which holds because attribution does not use intervals. What widening can evade is the interval check itself, and catching that needs an observed interval in the ground truth (an open decision, `docs/todo/verifier.md` VER-4).
+- A4 is scored as suppressing nothing, which holds because attribution does not use intervals. What widening can evade is the interval check itself, and catching that needs an observed interval in the ground truth (open decision O-5 in [../decisions/open.md](../decisions/open.md)).
 - Generators change one trajectory at a time. Combinations are made by composing calls with `Indices`, and a combined run is scored with the record of the last step only.
-- Network omission claims hold only for runtimes that do not use io_uring for sockets (`docs/todo/observers.md` OBS-1).
+- Network omission claims hold only for runtimes that do not use io_uring for sockets (open decision O-18 in [../decisions/open.md](../decisions/open.md)).
