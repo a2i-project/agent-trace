@@ -86,6 +86,7 @@ type Config struct {
 type Observer struct {
 	objs          bpfObjects
 	execLink      link.Link
+	execveatLink  link.Link
 	forkLink      link.Link
 	exitLink      link.Link
 	exitGroupLink link.Link
@@ -194,10 +195,18 @@ func New(cfg Config) (*Observer, error) {
 		_ = objs.Close()
 		return nil, fmt.Errorf("attach sys_enter_execve: %w", err)
 	}
+	execveatLink, err := link.Tracepoint("syscalls", "sys_enter_execveat", objs.HandleExecveat, nil)
+	if err != nil {
+		_ = execLink.Close()
+		_ = forkLink.Close()
+		_ = objs.Close()
+		return nil, fmt.Errorf("attach sys_enter_execveat: %w", err)
+	}
 
 	exitGroupLink, err := link.Tracepoint("syscalls", "sys_enter_exit_group", objs.HandleExitGroup, nil)
 	if err != nil {
 		_ = execLink.Close()
+		_ = execveatLink.Close()
 		_ = objs.Close()
 		return nil, fmt.Errorf("attach sys_enter_exit_group: %w", err)
 	}
@@ -206,6 +215,7 @@ func New(cfg Config) (*Observer, error) {
 	if err != nil {
 		_ = exitGroupLink.Close()
 		_ = execLink.Close()
+		_ = execveatLink.Close()
 		_ = objs.Close()
 		return nil, fmt.Errorf("attach sched_process_exit: %w", err)
 	}
@@ -215,6 +225,7 @@ func New(cfg Config) (*Observer, error) {
 		_ = exitLink.Close()
 		_ = exitGroupLink.Close()
 		_ = execLink.Close()
+		_ = execveatLink.Close()
 		_ = objs.Close()
 		return nil, fmt.Errorf("open ring buffer: %w", err)
 	}
@@ -222,6 +233,7 @@ func New(cfg Config) (*Observer, error) {
 	return &Observer{
 		objs:          objs,
 		execLink:      execLink,
+		execveatLink:  execveatLink,
 		forkLink:      forkLink,
 		exitLink:      exitLink,
 		exitGroupLink: exitGroupLink,
@@ -354,6 +366,7 @@ func (o *Observer) Stop() error {
 		_ = o.exitGroupLink.Close()
 		_ = o.forkLink.Close()
 		_ = o.execLink.Close()
+		_ = o.execveatLink.Close()
 		_ = o.objs.Close()
 		close(o.events)
 	})

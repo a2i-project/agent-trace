@@ -166,3 +166,11 @@ Decision: The inode is looked up first, the path is the fallback for a handle th
 Consequences: An open after a replace carries the replaced content's hash, so a claim of the file before an edit (I-31) can be checked. A capture made before this change carries the stale hashes and cannot be the gate's fixture.
 Alternatives rejected: Dropping the path entry on a rename of the directory (the rename record does not name the file).
 
+### P-21: `execveat` is hooked, and an exec through a descriptor is named `(fexecve)`
+Status: Accepted, implemented (`handle_execveat`, `record_exec` in `proc.bpf.c`).
+Date: 2026-10-11 (security review).
+Context: Only `sys_enter_execve` was hooked. A process that exec'd through `execveat` (glibc's `fexecve`, Python's `os.execv` on a descriptor) produced no exec record: at level 1 it showed as a fork with content, an unexplained subtree if it did anything observable, so not a silent pass, but with no command line to read.
+Decision: `sys_enter_execveat` is hooked by the same recording routine. With `AT_EMPTY_PATH` or an empty pathname the descriptor is the program and no path exists, so the filename is the literal `(fexecve)`; a pathname is recorded as given, and one relative to a directory descriptor stays unresolved.
+Consequences: Every exec attempt has a record and an exit. A `(fexecve)` command line has no path to compare, so a claim of it matches only by its arguments; a harness that execs this way would need its adapter to say so. The proc bindings are regenerated.
+Alternatives rejected: Resolving the descriptor to a path in the kernel (a `d_path` from a tracepoint is not available to this program type); leaving it unhooked (a command line missing from the record).
+

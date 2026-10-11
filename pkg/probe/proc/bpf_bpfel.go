@@ -56,6 +56,7 @@ const (
 	bpfMapTrackedPids      = "tracked_pids"
 	bpfMapUntrackedCount   = "untracked_count"
 	bpfProgHandleExecve    = "handle_execve"
+	bpfProgHandleExecveat  = "handle_execveat"
 	bpfProgHandleExit      = "handle_exit"
 	bpfProgHandleExitGroup = "handle_exit_group"
 	bpfProgHandleFork      = "handle_fork"
@@ -104,6 +105,7 @@ type bpfSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
 	HandleExecve    *ebpf.ProgramSpec `ebpf:"handle_execve"`
+	HandleExecveat  *ebpf.ProgramSpec `ebpf:"handle_execveat"`
 	HandleExit      *ebpf.ProgramSpec `ebpf:"handle_exit"`
 	HandleExitGroup *ebpf.ProgramSpec `ebpf:"handle_exit_group"`
 	HandleFork      *ebpf.ProgramSpec `ebpf:"handle_fork"`
@@ -186,6 +188,7 @@ type bpfVariables struct {
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
 	HandleExecve    *ebpf.Program `ebpf:"handle_execve"`
+	HandleExecveat  *ebpf.Program `ebpf:"handle_execveat"`
 	HandleExit      *ebpf.Program `ebpf:"handle_exit"`
 	HandleExitGroup *ebpf.Program `ebpf:"handle_exit_group"`
 	HandleFork      *ebpf.Program `ebpf:"handle_fork"`
@@ -194,6 +197,7 @@ type bpfPrograms struct {
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
 		p.HandleExecve,
+		p.HandleExecveat,
 		p.HandleExit,
 		p.HandleExitGroup,
 		p.HandleFork,

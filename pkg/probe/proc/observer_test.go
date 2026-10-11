@@ -933,3 +933,47 @@ func TestObserver_OverlongCommandLineIsFlagged(t *testing.T) {
 		t.Errorf("saw %d events with the nonce, want the exec and the exit", seen)
 	}
 }
+
+// An exec through a file descriptor (execveat with AT_EMPTY_PATH, glibc's
+// fexecve) was invisible: only execve was hooked. Python's os.execv takes a
+// descriptor and uses exactly that call. The record names the program as
+// "(fexecve)", since there is no path, with the arguments (P-21).
+func TestObserver_ExecThroughADescriptorIsRecorded(t *testing.T) {
+	skipUnprivileged(t)
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not installed")
+	}
+	nonce := fmt.Sprintf("agenttrace-fexecve-%d", time.Now().UnixNano())
+	obs, err := New(Config{CommandFilter: "(fexecve)", EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	script := fmt.Sprintf("import os; fd = os.open('/bin/true', os.O_RDONLY); os.execv(fd, ['true', %q])", nonce)
+	if err := exec.Command("python3", "-c", script).Run(); err != nil {
+		t.Fatalf("python: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	var sawExec, sawExit bool
+	for _, e := range collect(obs) {
+		if !strings.Contains(e.Target, nonce) {
+			continue
+		}
+		if e.Target != "(fexecve) "+nonce {
+			t.Errorf("target %q, want %q", e.Target, "(fexecve) "+nonce)
+		}
+		switch e.ActionType {
+		case models.ProcessExec:
+			sawExec = true
+		case models.ProcessExit:
+			sawExit = true
+		}
+	}
+	if !sawExec || !sawExit {
+		t.Errorf("exec=%v exit=%v, want both for the exec through a descriptor", sawExec, sawExit)
+	}
+}

@@ -199,6 +199,22 @@ struct sys_enter_execve_ctx {
 	const char *const *envp;
 };
 
+// execveat(2): fd, pathname, argv, envp, flags. With AT_EMPTY_PATH the
+// pathname is empty and fd is the file (glibc's fexecve); otherwise a
+// relative pathname is relative to fd, which this program cannot resolve.
+struct sys_enter_execveat_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__s64 fd;
+	const char *filename;
+	const char *const *argv;
+	const char *const *envp;
+	__s64 flags;
+};
+
+#define AT_EMPTY_PATH 0x1000
+
 struct sched_process_exit_ctx {
 	__u64 pad;
 	char comm[16];
@@ -267,8 +283,11 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	return 0;
 }
 
-SEC("tracepoint/syscalls/sys_enter_execve")
-int handle_execve(struct sys_enter_execve_ctx *ctx)
+// record_exec records one exec attempt at syscall entry: the filename as
+// the kernel was asked for it (or "(fexecve)" for an exec through a
+// descriptor, which names no path), then argv. Shared by execve and execveat
+// (P-21).
+static __always_inline int record_exec(const char *filename, const char *const *argv, int via_fd)
 {
 	__u32 pid = bpf_get_current_pid_tgid() >> 32;
 
@@ -292,7 +311,14 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 	e->hdr.pad0 = 0;
 
 	e->filename[0] = '\0';
-	long fn_len = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), ctx->filename);
+	long fn_len;
+	if (via_fd) {
+		static const char fexecve[] = "(fexecve)";
+		__builtin_memcpy(e->filename, fexecve, sizeof(fexecve));
+		fn_len = sizeof(fexecve);
+	} else {
+		fn_len = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), filename);
+	}
 	e->hdr.filename_len = (fn_len > 0) ? fn_len : 0;
 	if (fn_len >= FILENAME_LEN)
 		e->hdr.args_truncated = 1;
@@ -315,7 +341,7 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 #pragma clang loop unroll(full)
 	for (int i = 0; i < MAX_ARGS; i++) {
 		const char *argp = NULL;
-		if (bpf_probe_read_user(&argp, sizeof(argp), &ctx->argv[i]) || !argp)
+		if (bpf_probe_read_user(&argp, sizeof(argp), &argv[i]) || !argp)
 			break;
 
 		__u32 offset = args_size & (MAX_ARGS_BYTES - 1);
@@ -336,7 +362,7 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 	}
 	if (nargs == MAX_ARGS && !e->hdr.args_truncated) {
 		const char *more = NULL;
-		if (!bpf_probe_read_user(&more, sizeof(more), &ctx->argv[MAX_ARGS]) && more)
+		if (!bpf_probe_read_user(&more, sizeof(more), &argv[MAX_ARGS]) && more)
 			e->hdr.args_truncated = 1; // more arguments than MAX_ARGS
 	}
 	if (args_size > MAX_ARGS_BYTES)
@@ -355,6 +381,27 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 	if (bpf_ringbuf_output(&events, e, out_size, 0))
 		count_drop();
 	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_execve")
+int handle_execve(struct sys_enter_execve_ctx *ctx)
+{
+	return record_exec(ctx->filename, ctx->argv, 0);
+}
+
+SEC("tracepoint/syscalls/sys_enter_execveat")
+int handle_execveat(struct sys_enter_execveat_ctx *ctx)
+{
+	// An empty pathname with AT_EMPTY_PATH execs the descriptor itself:
+	// there is no path to record. Otherwise the pathname is recorded as
+	// given; one relative to a directory descriptor is unresolved.
+	int via_fd = (ctx->flags & AT_EMPTY_PATH) != 0;
+	if (!via_fd) {
+		char first = 0;
+		if (bpf_probe_read_user(&first, 1, ctx->filename) || first == '\0')
+			via_fd = 1;
+	}
+	return record_exec(ctx->filename, ctx->argv, via_fd);
 }
 
 SEC("tracepoint/syscalls/sys_enter_exit_group")
