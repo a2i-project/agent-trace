@@ -53,9 +53,8 @@ detects target the trajectory, not the host:
 
 P5 originally said the verdict is binary. The code adds INCONCLUSIVE for a
 capture that cannot support FAITHFUL (below), and reports an ambiguous
-alignment without resolving it. This page states the three outcomes; ratifying
-that wording is open decision O-3 in
-[`../decisions/open.md`](../decisions/open.md).
+alignment without resolving it. The restated wording was ratified on 2026-10-11
+([V-27](../decisions/verification.md)).
 
 ## What a verdict does not prove
 

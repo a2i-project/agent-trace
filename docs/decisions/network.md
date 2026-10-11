@@ -197,3 +197,10 @@ Consequences: Baselines no longer name addresses for the harness's losing connec
 Alternatives rejected: Templating addresses in rules (a wildcard explains whatever an attacker makes it match, V-19); resolving addresses back to names (DNS is not observed, O-20).
 Note 2026-10-11: the writes the kernel sees are `write`, `sendto` and `sendmsg` by the process that made the connect. A connection without a name whose data went through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or was written by a child that inherited the descriptor, is a `net_dial`, and so is not a finding, even at level 0 ([../architecture/13_probe_net.md](../architecture/13_probe_net.md), Known limits; O-18).
 
+### N-23: The send side of a connection is completed in the probe, and `net_dial` stays capability evidence
+Status: Accepted, not yet implemented. Ratified by the user on 2026-10-11 (was O-27, option a). Until it is built, a connection whose data went only through an unobserved send path is `net_dial` and never a finding.
+Date: 2026-10-11.
+Context: N-22 makes a connection with no observed send `net_dial`, capability evidence that is never a finding. The probe sees a send only through `write`, `sendto` or `sendmsg` by the process that made the connect. Data sent through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or written by a child after `fork` (a shell that connects through `/dev/tcp` and pipes a file through a forked `cat`), leaves the connection a `net_dial`, so an unclaimed connection that carried data can pass unreported.
+Decision: Keep N-22. Close the gap in the probe: observe the missing send paths and follow the socket across `fork` and descriptor passing, so that any connection that carried data is a `net_connect`.
+Consequences: Baselines keep no address rules (N-22). Until the probe work lands, the gap is a known limit of the net lane, shared in part with io_uring (O-18).
+Alternatives rejected: (b) reporting a dial only in a command's subtree, and (c) reverting dials to `net_connect` by address: both bring address rules back into baselines for the cases they cover.

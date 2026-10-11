@@ -4,7 +4,7 @@ The single list of decisions not yet taken. Each entry states the question, the 
 
 Statuses reconciled with the code at commit a1c95a9 on 2026-10-11.
 
-Entries O-1 to O-4 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling.
+Entries O-1 and O-2 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). None is decided.
 
@@ -25,22 +25,6 @@ Question: How should the alignment treat parallel tool calls and flattened subag
 Options: (a) linearization checking over the partial order induced by `BlockID` and `ThreadID`; (b) keep two-sequence alignment and report claims sharing a block or thread as a degradation; (c) per-thread alignment, accepting that the thread id is attacker-controlled.
 Current behaviour: V2 requires (a). `Align` reads neither `BlockID` nor `ThreadID`; it aligns claims in slice order. Adapters do set both fields. Gemini's `WaitMsBeforeAsync` (a command outliving its step) also weakens the order assumption and is not handled.
 Blocked by: A paired capture in which the members of a parallel block complete out of order, or subagents run concurrently. The parallel fixture (`paired-2.1.286-parallel`) has a parallel block and a subagent, but they ran in an order a total-order alignment accepts. Gemini's concurrency is unmeasured.
-
-### O-3: P5 says the verdict is binary; the code has three outcomes plus ambiguity
-Status: Ratification only: the code and docs/architecture/00_overview.md already follow option (a). Contradiction.
-Date: 2026-10-06.
-Question: Is P5 (deterministic, binary verdict) restated, or is the outcome set reduced?
-Options: (a) restate P5 as "deterministic given G and its coverage record", with INCONCLUSIVE as a precondition failure on G and `Ambiguous` as a statement about localization only; (b) keep P5 literal and fold INCONCLUSIVE into NOT FAITHFUL.
-Current behaviour: Three outcomes (FAITHFUL, NOT FAITHFUL, INCONCLUSIVE, exit codes 0, 1, 2), an `Advisory` flag on NOT FAITHFUL under loss, and `Verdict.Ambiguous` when several minimum-cost alignments exist (V-11, V-13, V-15). The verification model argued for (a). Since then [../architecture/00_overview.md](../architecture/00_overview.md) states P5 with three outcomes and no score, which is option (a).
-Blocked by: A wording decision for [../architecture/00_overview.md](../architecture/00_overview.md).
-
-### O-4: Exit codes, listed open but decided in code
-Status: Ratification only: already decided in code by I-15. Contradiction.
-Date: raised 2026-09; decided in code 2026-10-06.
-Question: Does `ExitCode` stay nil for real agents, or is a two-valued claim derived from Claude Code's `is_error`?
-Options: (a) stays nil, exits not aligned; (b) derive success or failure from `is_error`.
-Current behaviour: (a) for Claude Code and Gemini (`ExitsClaimed: false`, `Expresses` false for `exit_code`). Reason recorded in the adapter: `is_error` also marks harness failures, so it conflates "failed" with "never ran". The status log and the formats and verification documents still list it as open.
-Blocked by: Ratification only. Revisit if a format starts recording exit status.
 
 ## Verification model
 
@@ -88,23 +72,7 @@ Options: (a) leave it to the agreement threshold (current); (b) extend V-24 to d
 Current behaviour: (a). At full agreement (the `cmd/baseline` default, I-24) such an action is left out of the baseline and reads as a finding in a run where it occurs; at the capture script's 1/N threshold (V-24) one occurrence in any control makes it a rule that explains it in every later run. A connection that sent nothing (`net_dial`, N-22) or one to port 53 (`net_dns`, N-20) is capability evidence and needs no rule.
 Blocked by: Measurements of how often the harness's network and process activity varies across control runs.
 
-### O-26: Should a content claim on a non-close action be strict when it omits its hash?
-Status: Open.
-Date: 2026-10-11.
-Question: The opt-out rule of V-20 applies to `output_hash` only on `file_close`. Claude Code claims a Write as a `file_write` carrying the hash and never claims a close (I-22), so a Write claim that drops its hash is neither a finding nor unverified (V-22 needs a stated value) and verifies FAITHFUL. Should a nil `output_hash` on a `file_write` whose tool can state it (`Expresses`) be an opt-out finding?
-Options: (a) leave the rule on `file_close` only (current); (b) apply the opt-out rule to `output_hash` on `file_write` where `Expresses` says the tool can state it; (c) have the Claude Code adapter carry the hash on a claimed `file_close`.
-Current behaviour: (a). `contentDiffs` forces the output-hash mismatch only when the claim's action type is `file_close`. Gemini claims `file_close` for `write_to_file`, so the strict rule is live there and not for Claude Code.
-Blocked by: Nothing technical. (b) changes the verdict of any adapter that claims content on a write, so it needs a check against the paired fixtures.
-
 ## Integration
-
-### O-27: Is a connection that sent nothing trustworthy enough to never be a finding?
-Status: Open. Raised by the documentation review of 2026-10-11 against N-22.
-Date: 2026-10-11.
-Question: N-22 makes a connection with no observed send `net_dial`, capability evidence that is never a finding, at any level. The probe sees a send only through `write`, `sendto` or `sendmsg` by the process that made the connect. Data sent through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or written by a child after `fork`, leaves the connection a `net_dial`, so an unclaimed connection that carried data can pass unreported (for example a shell that connects through `/dev/tcp` and pipes a file through a forked `cat`). Should a dial stay non-reportable while the send side is incomplete?
-Options: (a) keep N-22 as is and close the send-side gaps in the probe (hook the missing send paths, follow the socket across fork); (b) keep `net_dial` non-reportable only for the harness's own process at level 0 and report a dial in a command's subtree; (c) revert dials to `net_connect` by address until the send side is complete.
-Current behaviour: (a) without the probe work: every dial is capability evidence and never a finding. A fork that never execs and causes only capability events is `Quiet`.
-Blocked by: Nothing technical. (a) needs probe work on the net lane (the same send paths as the io_uring question, O-18); (b) and (c) bring address rules back into baselines for the cases they cover.
 
 ### O-9: Many-target search tools
 Status: Partly decided. Claude Code `Grep` and `Glob` are settled by I-25. Gemini's search tools are open.

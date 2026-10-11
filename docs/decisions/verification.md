@@ -89,7 +89,7 @@ Status: Accepted, implemented (`LaneAlignment.Ambiguous`, `Optimal`, `Verdict.Am
 Date: 2026-10-06.
 Context: When several minimum-cost alignments exist, a report pointing at entry 7 when entry 8 is equally consistent is misleading.
 Decision: Count the minimum-cost alignments (saturating). More than one sets `Ambiguous`; the edits shown are one of them, chosen by a fixed preference, and the report says so. Checked against an independent brute force on random sequences.
-Consequences: A finding's position may be one of several. The outcome does not change (see O-3).
+Consequences: A finding's position may be one of several. The outcome does not change (see V-27).
 Alternatives rejected: Silent resolution by iteration order.
 
 ### V-12: The claim interval is a finding, not a pairing condition
@@ -209,6 +209,22 @@ Context: The proc probe can now say it cut a command line (P-19). Comparing the 
 Decision: An observed target flagged `TargetTruncated` pairs with a claim whose target it is a prefix of, as a corroborated pair unverified on its target, which makes the run INCONCLUSIVE under V-22. A cut target that is not a prefix of the claim is a mismatch, and an unflagged prefix is a mismatch as before. The Claude Code adapter recovers what the probe kept of a cut wrapper's eval word so the prefix comparison applies to the command, not to the wrapper.
 Consequences: An honest long command is never a false substitution; a dishonest claim that shares a prefix with a cut command line is not refuted beyond the cut, which the report says. The cap is high enough that neither case arises for a single-string command.
 Alternatives rejected: Comparing hashes of the full line computed in the kernel (bounded loops cannot hash two megabytes); reporting a cut line as a mismatch (the false positive the security review found).
+
+### V-27: P5 is restated: three outcomes, deterministic given the capture
+Status: Accepted, implemented (`Outcome` in `pkg/verification`; `docs/architecture/00_overview.md` P5). Ratified by the user on 2026-10-11 (was O-3).
+Date: 2026-10-11.
+Context: P5 said the verdict is binary. The verifier returns FAITHFUL, NOT FAITHFUL or INCONCLUSIVE, marks NOT FAITHFUL under loss as `Advisory`, and reports `Ambiguous` when several minimum-cost alignments exist (V-11, V-13, V-15).
+Decision: P5 reads: the verdict is a pure function of the trajectory, the ground truth with its coverage record, the baseline and the options, with three outcomes and no score. INCONCLUSIVE is a failed precondition on the capture, not a confidence level; `Ambiguous` says which entry a finding belongs to and never changes the outcome.
+Consequences: A run that cannot support FAITHFUL is never reported as FAITHFUL or as NOT FAITHFUL without a finding. Exit codes 0, 1, 2 (and 3 for an error) follow the outcome.
+Alternatives rejected: Keeping P5 literal and folding INCONCLUSIVE into NOT FAITHFUL, which would report a lossy capture as a lie by the agent.
+
+### V-28: A nil `output_hash` on a `file_write` the tool can state is an opt-out finding
+Status: Accepted, not yet implemented. Ratified by the user on 2026-10-11 (was O-26, option b). Until it is built, a Claude Code Write that drops its hash verifies FAITHFUL.
+Date: 2026-10-11.
+Context: The opt-out rule of V-20 (a claim that omits a value its format can state, where the probe captured it, is a finding) applies to `output_hash` only on `file_close`. Claude Code claims a Write as a `file_write` carrying the hash and never claims a close (I-22), so a Write claim that drops its hash is neither a finding nor unverified (V-22 needs a stated value).
+Decision: Apply the opt-out rule to `output_hash` on a `file_write` claim whose tool `Expresses` the field, exactly as on `file_close`.
+Consequences: A Write that omits content its format records becomes a Mismatched finding. An Edit is unaffected while its declaration stays as it is (I-31 claims the hash when the result record has it). The paired fixtures must keep their outcomes; the change is checked against them when built.
+Alternatives rejected: (a) leaving the rule on `file_close` only, a silent pass on a content claim; (c) having the Claude Code adapter claim a `file_close` carrying the hash, which invents a claim the format does not make.
 
 ## Superseded
 

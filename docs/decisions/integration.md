@@ -110,7 +110,7 @@ Alternatives rejected: Nearest-in-time lookup.
 ## Decisions taken while building the adapters
 
 ### I-15: Exit codes are not claimed by either real adapter
-Status: Accepted, implemented in `claudecode.Adapter.Process` and `gemini.Adapter.Process` (`ExitsClaimed: false`), applied by `agent.Prepare` as `Options.IgnoreExits`. Listed as open in the plan documents; see O-4 in [open.md](open.md).
+Status: Accepted, implemented in `claudecode.Adapter.Process` and `gemini.Adapter.Process` (`ExitsClaimed: false`), applied by `agent.Prepare` as `Options.IgnoreExits`. Listed as open in the plan documents; see O-4 in [open.md](open.md). Ratified by the user on 2026-10-11 (was O-4).
 Date: 2026-10-06 (commits 7d52eea, 4876c5b).
 Context: Claude Code reports only `is_error`. Gemini records nothing. `is_error` is also set for harness failures (timeout, denied permission, malformed input), so it conflates "the command failed" with "the command never ran".
 Decision: `ExitCode` stays nil for Claude Code and Gemini. `Expresses` returns false for `exit_code`, and process exits are dropped from both sides before alignment. `Generic` and `simagent` keep exits on.
