@@ -48,10 +48,22 @@ func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
 }
 
 // foldAtomicWrites replaces each complete temp-and-rename write with one
-// FileWrite of the target.
+// FileWrite of the target. Two shapes reach the probe (I-22, I-32):
+//
+//   - read before the rename: a create on the directory, then open, write and
+//     close on <path>.tmp.<pid>.<hex>, then the rename on the directory; the
+//     close may already name the target;
+//   - read after the rename, all in one batch: the directory's create and
+//     rename merged into one notification ahead of the file's open, write
+//     and close, every one of which names the target, since the temporary's
+//     handle resolves to its final name by then.
+//
+// A direct write of the target has neither a create nor a rename on the
+// directory around it and is left alone, so an unseen variant stays visible.
 func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 	used := make([]bool, len(g))
 	replace := map[int]models.GroundTruthEvent{}
+	foldRenamedFirst(g, used, replace)
 
 	for o, open := range g {
 		if used[o] || open.ActionType != models.FileOpen || open.PID == 0 {
@@ -129,13 +141,86 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 	return out
 }
 
+// foldRenamedFirst folds the read-after-rename shape: for one pid, a create
+// and a rename on the directory (either order, adjacent, the directory
+// events the probe reports as ambiguous) immediately followed by open,
+// write(s) and close of a file in that directory, all named by the final
+// path. The close's hash is the content.
+func foldRenamedFirst(g models.GroundTruth, used []bool, replace map[int]models.GroundTruthEvent) {
+	for o, open := range g {
+		if used[o] || open.ActionType != models.FileOpen || open.PID == 0 || tmpName.MatchString(open.Target) {
+			continue
+		}
+		dir, pid := filepath.Dir(open.Target), open.PID
+		// The directory events just before the open, by this pid: the create
+		// and the rename, and sometimes an open of the directory itself (the
+		// fsync of the directory an atomic write ends with), all reported as
+		// ambiguous directory-level records.
+		var dirIdx []int
+		seen := map[models.ActionType]bool{}
+		for i := o - 1; i >= 0 && len(dirIdx) < 3; i-- {
+			if used[i] || g[i].PID != pid {
+				continue
+			}
+			e := g[i]
+			if e.Target == dir && e.PathIsAmbiguous && !seen[e.ActionType] && (e.ActionType == models.FileWrite || e.ActionType == models.FileRename || e.ActionType == models.FileOpen) {
+				dirIdx = append(dirIdx, i)
+				seen[e.ActionType] = true
+				continue
+			}
+			break
+		}
+		if !seen[models.FileWrite] || !seen[models.FileRename] {
+			continue
+		}
+		// Then the file's write(s) and close, with nothing else of this pid between.
+		var burst []int
+		closeIdx := -1
+		for i := o + 1; i < len(g) && closeIdx < 0; i++ {
+			if used[i] || g[i].PID != pid {
+				continue
+			}
+			e := g[i]
+			switch {
+			case e.Target == open.Target && e.ActionType == models.FileWrite:
+				burst = append(burst, i)
+			case e.Target == open.Target && e.ActionType == models.FileClose:
+				closeIdx = i
+			default:
+				i = len(g) // another event of this pid: not the shape
+			}
+		}
+		if closeIdx < 0 {
+			continue
+		}
+		start := dirIdx[len(dirIdx)-1]
+		for _, i := range dirIdx {
+			used[i] = true
+		}
+		used[o], used[closeIdx] = true, true
+		for _, i := range burst {
+			used[i] = true
+		}
+		replace[start] = models.GroundTruthEvent{
+			Timestamp:  g[start].Timestamp,
+			ActionType: models.FileWrite,
+			Target:     open.Target,
+			PID:        pid,
+			OutputHash: g[closeIdx].OutputHash,
+		}
+	}
+}
+
 // collapseOpens keeps the first of a run of opens of one file by one process. A
-// run is broken by any other file event of that process.
+// run is broken by any other file event of that process, except one on the
+// harness's own files (I-30): the harness appends to its transcript and reads
+// its configuration between the opens a tool makes, and a claim knows nothing
+// of that.
 func collapseOpens(g models.GroundTruth) models.GroundTruth {
 	last := map[uint32]*models.GroundTruthEvent{}
 	out := make(models.GroundTruth, 0, len(g))
 	for _, e := range g {
-		if !isFile(e.ActionType) || e.PID == 0 {
+		if !isFile(e.ActionType) || e.PID == 0 || harnessOwned.MatchString(e.Target) {
 			out = append(out, e)
 			continue
 		}

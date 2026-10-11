@@ -373,3 +373,63 @@ func TestFoldAtomicWritesRecognisesTheLockTemporary(t *testing.T) {
 		}
 	}
 }
+
+// The read-after-rename shape, as a capture of 2.1.286 on 2026-10-11 showed
+// it: the directory's create and rename merged ahead of the file's open,
+// write and close, every one naming the target (I-32). It folds into one
+// write of the target with the close's hash; a direct write with no directory
+// events around it is left alone.
+func TestFoldAtomicWritesReadAfterTheRename(t *testing.T) {
+	const pid = 553142
+	h := "sha256:f08d"
+	amb := func(ms int, typ models.ActionType) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at(ms), ActionType: typ, Target: "/ws", PID: pid, PathIsAmbiguous: true}
+	}
+	g := models.GroundTruth{
+		amb(0, models.FileOpen), // the directory's fsync, when the kernel reports it apart
+		amb(0, models.FileWrite),
+		amb(0, models.FileRename),
+		{Timestamp: at(0), ActionType: models.FileOpen, Target: "/ws/notes.txt", PID: pid},
+		{Timestamp: at(0), ActionType: models.FileWrite, Target: "/ws/notes.txt", PID: pid},
+		{Timestamp: at(0), ActionType: models.FileClose, Target: "/ws/notes.txt", PID: pid, OutputHash: &h},
+		// a plain in-place write later: no fold
+		{Timestamp: at(10), ActionType: models.FileOpen, Target: "/ws/other.txt", PID: pid},
+		{Timestamp: at(11), ActionType: models.FileWrite, Target: "/ws/other.txt", PID: pid},
+		{Timestamp: at(12), ActionType: models.FileClose, Target: "/ws/other.txt", PID: pid, OutputHash: &h},
+	}
+	out := foldAtomicWrites(g)
+	if len(out) != 4 || out[0].ActionType != models.FileWrite || out[0].Target != "/ws/notes.txt" || out[0].OutputHash == nil || *out[0].OutputHash != h {
+		t.Fatalf("fold = %+v", out)
+	}
+	for _, e := range out[1:] {
+		if e.Target != "/ws/other.txt" {
+			t.Errorf("the in-place write was touched: %+v", out)
+		}
+	}
+}
+
+// The harness reads its own files between the opens a tool makes (a plugin
+// list between an Edit's two pre-check opens, in a capture of 2026-10-11).
+// Those events do not break a run of opens; a tool's own write does.
+func TestCollapseOpensIgnoresTheHarnessOwnFiles(t *testing.T) {
+	const pid = 9
+	ev := func(ms int, typ models.ActionType, target string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at(ms), ActionType: typ, Target: target, PID: pid}
+	}
+	g := models.GroundTruth{
+		ev(0, models.FileOpen, "/ws/notes.txt"),
+		ev(1, models.FileOpen, "/home/u/.claude/plugins/installed_plugins.json"),
+		ev(2, models.FileOpen, "/ws/notes.txt"), // collapsed: only a harness read between
+		ev(3, models.FileWrite, "/ws/notes.txt"),
+		ev(4, models.FileOpen, "/ws/notes.txt"), // kept: a write between
+	}
+	out := collapseOpens(g)
+	var got []string
+	for _, e := range out {
+		got = append(got, string(e.ActionType)+" "+e.Target)
+	}
+	want := []string{"file_open /ws/notes.txt", "file_open /home/u/.claude/plugins/installed_plugins.json", "file_write /ws/notes.txt", "file_open /ws/notes.txt"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("got %v\nwant %v", got, want)
+	}
+}
