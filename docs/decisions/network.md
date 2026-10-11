@@ -179,3 +179,11 @@ Decision: A connection to port 53 is emitted as `net_dns` with the `ip:port` tar
 Consequences: Data moved over port 53 is visible to a reader of the report and in the forensic view of the command that did it. It is not a finding, because the probe cannot tell a lookup from an exfiltration, and the resolver's own connections are many. The claimable set loses `net_dns`, which no adapter ever produced.
 Alternatives rejected: Distinguishing UDP from TCP (the connect tracepoint does not see the socket type; a socket hook is more code for a weak signal, since UDP carries data too); treating port 53 as a finding (every honest run resolves names).
 
+### N-21: Connections still open at the end of the capture are emitted then
+Status: Accepted, implemented (`flushOpenConnections` in `pkg/probe/net/observer.go`).
+Date: 2026-10-11 (security review; OBS-26).
+Context: A connection whose ClientHello carried no name was emitted only on its `close()`, with the address as target. One held open until the process exited, or past the end of the capture, was never emitted and nothing counted it: an agent that connected by address, sent, and never closed left no trace.
+Decision: When both record feeders have closed, the correlator emits every connection still open, in connect order, each stamped with its connect time, and counts them in `Coverage.OpenAtStop`.
+Consequences: Every connection the probe saw reaches the capture. The stamp is the connect time, so the event sorts where the connection began; a connection with a name was already emitted at its hello and is not emitted twice.
+Alternatives rejected: Emitting every connection at connect time (a connection with a name would then be emitted by address first and by name later, two events for one connection, and the baseline names addresses that change).
+

@@ -47,6 +47,7 @@ Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps
 - `NET_CONNECT` opens the entry and counts `Connections`.
 - `NET_HELLO` runs `tlsparse.ParseClientHello`. With an SNI name it stores host and ALPN, counts `WithHostname` (and `ContentUnsupported` when ALPN offers `h2`), and emits `net_connect` with the hostname as `Target`, stamped at the hello.
 - `NET_CLOSE` emits `net_connect` for a connection that has not been emitted yet, with `ip:port` as `Target`, stamped at the close.
+- When both feeders have closed, `flushOpenConnections` emits every connection still open, in connect order and stamped with its connect time, and counts them in `Coverage.OpenAtStop` (N-21).
 - `emit` turns a connection to port 53 into `net_dns` with the `ip:port` target, ground truth only like a listener (N-20), and counts it in `Coverage.DNS`; a connection to port 0 (the resolver's source-address selection, N-19) is counted in `Coverage.AddressProbes` and not emitted. Both are marked emitted so their close does not retry.
 - `NET_SOCK_BIND` and `NET_SOCK_LISTEN` become `net_bind` and `net_listen` with target `host:port` (IPv6 in brackets), `unix:<path>`, `unix:@<abstract>` or `unbound`. `NET_UNIX_CONNECT` becomes `net_unix_connect`. These types, with `net_dns`, are ground truth only; `models.ClassifyBindTarget` grades a listener as loopback, wildcard, interface, local socket or unknown.
 
@@ -60,7 +61,7 @@ Every N0 event carries `PID` (the tgid). None carries `PPID`.
 4. `handleSSLFrame` appends each frame to a `tlsparse.Stream` per (tgid, tid) and calls `ParseHTTP1` until it needs more bytes. A malformed request discards that thread's buffer and counts `FramesUnattributed`.
 5. `emitNetRequest` takes the host from the `Host` header, or from the newest SNI hostname of the same tgid when the header is absent, and counts `FramesUnattributed` when neither exists. It emits `net_request` with `Target` = `models.CanonicalNetTarget(method, host, port, path, query)` (form `METHOD https://host[:port]path[?query]`, host lowercased, port omitted when 443) and `RequestHash` = SHA-256 of the body when there is one. The plaintext is not kept (N-D3).
 
-`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `DNS`, `AddressProbes`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, plus the kernel counters. `cmd/watch` prints them; only the kernel counters reach `ProbeCoverage`.
+`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `DNS`, `AddressProbes`, `OpenAtStop`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, plus the kernel counters. `cmd/watch` prints them; only the kernel counters reach `ProbeCoverage`.
 
 ## Guarantees and loss accounting
 
@@ -86,7 +87,7 @@ The hostname comes from the ClientHello the client sent, so it needs no plaintex
 - No byte counts or response data are recorded.
 - Encrypted Client Hello would hide the SNI name.
 - `connect` is recorded at syscall entry, so a failed connect still appears as a connection.
-- A connection without SNI is emitted only on `close()`; one still open when capture stops, or closed implicitly at process exit, is never emitted and nothing counts it.
+- A connection without SNI is emitted on `close()`, or at the end of the capture if it never closed (implicitly at process exit, or held open past the stop), then with its connect time; `Coverage.OpenAtStop` counts those.
 - `conns` entries for fds closed implicitly at process exit are never deleted in the kernel.
 - `net_connect` is stamped at the hello or the close, not at the connect.
 - Only `SSL_write` entry is hooked: there is no `SSL_read`, so responses (including server-side tool results) are not seen.

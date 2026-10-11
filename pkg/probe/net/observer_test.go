@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -904,5 +905,43 @@ func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.
 	}
 	if o.coverage.DNS != 1 || o.coverage.AddressProbes != 1 || o.coverage.Connections != 3 {
 		t.Errorf("coverage = %+v", o.coverage)
+	}
+}
+
+// A connection without an SNI name is emitted on its close. One still open
+// when the capture stops is emitted then, stamped with its connect time, and
+// counted; one already emitted is not emitted again (N-21).
+func TestFlushOpenConnections_EmitsWhatNeverClosed(t *testing.T) {
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	v4 := [16]byte{192, 0, 2, 9}
+	rec := func(typ uint8, fd uint32, port uint16, ts int64) netRecord {
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Family: afInet, Addr: v4, Port: port, TsNs: uint64(ts)}}
+	}
+	o.handleNetRecord(rec(netConnect, 3, 443, 2000))  // never closes
+	o.handleNetRecord(rec(netConnect, 4, 8080, 1000)) // never closes, connected earlier
+	o.handleNetRecord(rec(netConnect, 5, 22, 3000))
+	o.handleNetRecord(rec(netClose, 5, 22, 3500)) // closed: emitted at the close
+	o.flushOpenConnections()
+	close(o.events)
+	var targets []string
+	var nanos []int64
+	for e := range o.events {
+		targets = append(targets, e.Target)
+		nanos = append(nanos, e.Timestamp.UnixNano()) // bootOffsetNs is zero here
+	}
+	// the closed one first (emitted at its close), then the open ones in
+	// connect order, each stamped with its connect time
+	wantTargets := []string{"192.0.2.9:22", "192.0.2.9:8080", "192.0.2.9:443"}
+	wantNanos := []int64{3500, 1000, 2000}
+	if len(targets) != 3 || strings.Join(targets, ",") != strings.Join(wantTargets, ",") {
+		t.Fatalf("emitted %v, want %v", targets, wantTargets)
+	}
+	for i := range wantNanos {
+		if nanos[i] != wantNanos[i] {
+			t.Errorf("%s stamped %d ns, want %d", targets[i], nanos[i], wantNanos[i])
+		}
+	}
+	if o.coverage.OpenAtStop != 2 {
+		t.Errorf("OpenAtStop = %d, want 2", o.coverage.OpenAtStop)
 	}
 }

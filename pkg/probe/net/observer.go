@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -795,6 +796,7 @@ func (o *Observer) correlate() {
 	// always ready, so leaving it in the select would spin this goroutine at
 	// 100% CPU until the other feeder finished. A nil channel blocks forever
 	// and drops out of the select instead.
+	defer o.flushOpenConnections()
 	for netCh != nil || sslCh != nil {
 		select {
 		case rec, ok := <-netCh:
@@ -890,6 +892,28 @@ func (o *Observer) sslFeed(out chan<- sslRecord) {
 		}
 		payload := append([]byte(nil), record.RawSample[hdrSize:payloadEnd]...)
 		out <- sslRecord{hdr: hdr, payload: payload}
+	}
+}
+
+// flushOpenConnections emits every connection still open when the capture
+// stops: one without an SNI name is otherwise emitted only on its close, so
+// a connection held open until the process exits, or past the end of the
+// capture, was never emitted and nothing counted it (N-21). Each is stamped
+// with its connect time, which is when it happened; the order among the
+// probe's events is by that stamp. Runs once, from correlate, after both
+// feeders have closed.
+func (o *Observer) flushOpenConnections() {
+	keys := make([]connKeyGo, 0, len(o.conns))
+	for k, c := range o.conns {
+		if !c.emitted {
+			keys = append(keys, k)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool { return o.conns[keys[i]].openedAt.Before(o.conns[keys[j]].openedAt) })
+	for _, k := range keys {
+		c := o.conns[k]
+		o.coverage.OpenAtStop++
+		o.emit(k, c, int32(k.tgid), c.openedAt)
 	}
 }
 
