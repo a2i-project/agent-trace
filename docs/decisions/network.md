@@ -4,7 +4,7 @@ Why the network probe is layered the way it is, what it deliberately does not ca
 
 **Numbering.** The five decisions resolved on 2026-09-14 were numbered D1 to D5 in the Tier 3 design. They are renamed N-D1 to N-D5 here so they do not clash with the integration decisions D1 to D14 in [integration.md](integration.md). Other network decisions are numbered from N-6.
 
-Entries carry their own dates. Statuses reconciled with the code at commit a1c95a9 on 2026-10-11. Original sources: docs/archive/06_tier3_network_design.md, docs/archive/network_implementation_choices.md, docs/archive/04_design_tradeoffs.md, docs/archive/03_tiers_3_to_6.md (all local only). As-built description: [../architecture/13_probe_net.md](../architecture/13_probe_net.md).
+Entries carry their own dates. Statuses reconciled with the code at commit 1391cbe on 2026-10-11. Original sources: docs/archive/06_tier3_network_design.md, docs/archive/network_implementation_choices.md, docs/archive/04_design_tradeoffs.md, docs/archive/03_tiers_3_to_6.md (all local only). As-built description: [../architecture/13_probe_net.md](../architecture/13_probe_net.md).
 
 Evidence labels: **Verified** (measured on the development machine), **Reported** (from vendor documentation or third-party source code), **Unverified** (hypothesis).
 
@@ -93,12 +93,12 @@ Consequences: N2-sourced evidence is recorded as in-path and detectable. A pinne
 Alternatives rejected: Calling the proxy fully non-cooperative; defeating pinning by binary patching (breaks agent independence).
 
 ### N-11: The response side is not hash-verifiable
-Status: Accepted (scope boundary, Tier 5 F5.2).
+Status: Accepted (scope boundary: the response side is attested by status, volume and timing, never hashed).
 Date: 2026-09-12.
 Context: For `WebFetch`-style tools the trajectory holds a model-written summary of the response, not the body (measured on a local transcript corpus, design input only (local only: docs/research/harness_corpus.md)). Comparing a summary with a page is entailment, not equality.
 Decision: Verify the request side by hash. Treat response capture, if any, as attestation of status, volume and timing, never as content to hash. Shelled-out `curl` is the exception: the raw body is on stdout.
 Consequences: Perfect plaintext from any layer does not close the gap. Summary faithfulness is a separate study, outside this system.
-Alternatives rejected: "Hash of request body plus response body", the original F4.2 wording.
+Alternatives rejected: "Hash of request body plus response body", the original plan's wording for network content verification.
 
 ### N-12: Shelled-out network commands need no network probe for their target
 Status: Accepted.
@@ -110,7 +110,7 @@ Alternatives rejected: Content capture for every network action.
 
 ### N-13: Port 53 is filtered from emitted events
 Status: Superseded by N-20 on 2026-10-11: a connection to port 53 is emitted as `net_dns` capability evidence and counted. Kept as taken; it was questioned as O-15, which N-20 decided.
-Date: 2026-09-15 (Tier 3 S6, commit de08b88).
+Date: 2026-09-15 (the privileged integration step of the network probe, commit de08b88).
 Context: DNS lookups are triggered implicitly by hostname resolution, and no trajectory records them, so every DNS connection would read as an omission.
 Decision: `net.Observer.emit` drops any connection to port 53 before it becomes an event.
 Consequences: DNS exfiltration is invisible by design, and the drop has no counter, so nothing in the coverage record says it happened.
@@ -181,7 +181,7 @@ Alternatives rejected: Distinguishing UDP from TCP (the connect tracepoint does 
 
 ### N-21: Connections still open at the end of the capture are emitted then
 Status: Accepted, implemented (`flushOpenConnections` in `pkg/probe/net/observer.go`).
-Date: 2026-10-11 (security review; local todo OBS-26, local only).
+Date: 2026-10-11 (security review, local only).
 Context: A connection whose ClientHello carried no name was emitted only on its `close()`, with the address as target. One held open until the process exited, or past the end of the capture, was never emitted and nothing counted it: an agent that connected by address, sent, and never closed left no trace.
 Decision: When both record feeders have closed, the correlator emits every connection still open, in connect order, each stamped with its connect time, and counts them in `Coverage.OpenAtStop`.
 Consequences: Every connection the probe saw reaches the capture. The stamp is the connect time, so the event sorts where the connection began; a connection with a name was already emitted at its hello and is not emitted twice.
@@ -198,9 +198,10 @@ Alternatives rejected: Templating addresses in rules (a wildcard explains whatev
 Note 2026-10-11: the writes the kernel sees are `write`, `sendto` and `sendmsg` by the process that made the connect. A connection without a name whose data went through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or was written by a child that inherited the descriptor, is a `net_dial`, and so is not a finding, even at level 0 ([../architecture/13_probe_net.md](../architecture/13_probe_net.md), Known limits; O-18).
 
 ### N-23: The send side of a connection is completed in the probe, and `net_dial` stays capability evidence
-Status: Accepted, not yet implemented. Ratified by the user on 2026-10-11 (was O-27, option a). Until it is built, a connection whose data went only through an unobserved send path is `net_dial` and never a finding.
+Status: Accepted, not yet implemented. Ratified by the user on 2026-10-11 (was O-27 in open.md). Until it is built, a connection whose data went only through an unobserved send path is `net_dial` and never a finding.
 Date: 2026-10-11.
 Context: N-22 makes a connection with no observed send `net_dial`, capability evidence that is never a finding. The probe sees a send only through `write`, `sendto` or `sendmsg` by the process that made the connect. Data sent through `writev`, `sendfile`, `splice`, `sendmmsg` or io_uring, or written by a child after `fork` (a shell that connects through `/dev/tcp` and pipes a file through a forked `cat`), leaves the connection a `net_dial`, so an unclaimed connection that carried data can pass unreported.
 Decision: Keep N-22. Close the gap in the probe: observe the missing send paths and follow the socket across `fork` and descriptor passing, so that any connection that carried data is a `net_connect`.
 Consequences: Baselines keep no address rules (N-22). Until the probe work lands, the gap is a known limit of the net lane, shared in part with io_uring (O-18).
-Alternatives rejected: (b) reporting a dial only in a command's subtree, and (c) reverting dials to `net_connect` by address: both bring address rules back into baselines for the cases they cover.
+Alternatives rejected: Reporting a dial only in a command's subtree, and reverting dials to `net_connect` by address: both bring address rules back into baselines for the cases they cover.
+Note 2026-10-11 (docs review): scope of this entry. Sends through `writev`, `sendmmsg`, `sendfile` and `splice`, a multi-iovec `sendmsg`, and a connection written by another process that holds the descriptor (a child after `fork`, or a process that received it over `SCM_RIGHTS`) are in scope. Sends through io_uring are covered by O-18 (moving the hooks to the socket layer), which would also close this entry's gaps.

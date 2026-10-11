@@ -1,15 +1,15 @@
 # Verifier
 
-Checked against commit a1c95a9 on 2026-10-11.
+Checked against commit 1391cbe on 2026-10-11.
 
 ## Objective
 
 The verifier decides whether a self-reported trajectory T (the claims) is faithful to an independently observed ground truth G (the events the probes recorded). It answers two separate questions and reports them apart (V8 in [decisions/verification.md](../decisions/verification.md)):
 
-1. Alignment: does every claim correspond to an observed top-level action, and does every observed top-level action correspond to a claim? This detects fabrication (P2), omission at the top level (P1) and substitution (P3).
+1. Alignment: does every claim correspond to a top-level action, and does every top-level action correspond to a claim? This detects fabrication (P2), omission at the top level (P1) and substitution (P3).
 2. Coverage: is every observed event explained, either by a claimed command whose subtree contains it or by the harness baseline? This detects omission of whole commands.
 
-The verifier contains no agent knowledge. Everything a harness does differently reaches it as data: normalized events, a baseline predicate and an `Expresses` declaration, all supplied by an adapter (see [30_agent_adapters.md](30_agent_adapters.md)). The objective of the project as a whole and its threat model are in [00_overview.md](00_overview.md).
+The verifier contains no agent knowledge. Everything a harness does differently reaches it as data: normalized events, a baseline predicate and an `Expresses` declaration, all supplied by an adapter (see [30_agent_adapters.md](30_agent_adapters.md)). The objective of the project as a whole and its threat model are in [00_overview.md](00_overview.md), and the terms this page uses are defined there ([Terms](00_overview.md#terms)).
 
 ## Structure
 
@@ -17,7 +17,7 @@ The verifier contains no agent knowledge. Everything a harness does differently 
 |---|---|---|
 | `pkg/verification/verification.go` | `Input`, `Verdict`, `MatchedPair`, `Verify`, `Expresses`, `contentDiffs`, `Diff*` constants | Entry point, outcome rules, content comparison |
 | `pkg/verification/forest.go` | `Forest`, `Process`, `Zone`, `Attribution`, `BuildForest`, `Forest.Attribute`, `Forest.Resolve`, `Forest.Commands`, `Forest.Orphans` | Process tree rooted at the agent, attribution by ancestry |
-| `pkg/verification/partition.go` | `Partition`, `Command`, `AttributedEvent`, `Forest.Partition`, `Partition.DropExits` | Splits G into the aligned sequence, command subtrees, capability, outside and unknown |
+| `pkg/verification/partition.go` | `Partition`, `Command`, `AttributedEvent`, `Forest.Partition`, `Partition.DropExits` | Splits G into the aligned sequence, command subtrees, capability evidence, outside events and unplaced events |
 | `pkg/verification/coverage.go` | `Baseline`, `Partition.SubtractBaseline`, `Coverage`, `UnexplainedAction`, `CheckCoverage` | Baseline subtraction and the coverage check |
 | `pkg/verification/align.go` | `Lane`, `LaneOf`, `Align`, `Edit`, `EditKind`, `LaneAlignment`, `Options`, `ErrTooLarge`, `DiffType` | Per-lane sequence alignment |
 | `pkg/verification/completeness.go` | `Assess`, `Completeness`, `Outcome`, `Outcome.ExitCode` | Loss judgement and outcome vocabulary |
@@ -51,19 +51,19 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 
 `Verify(in)` runs these stages in order.
 
-1. **Completeness.** `Assess(in.Coverage)` judges whether G can support FAITHFUL. A nil record yields a reason. For each probe that ran, a non-zero `RingbufDrops`, `UntrackedChildren`, `StateMapFull` or `ChannelDrops`, or a `QueueOverflow`, yields a reason. `HashlessCloses`, `FaultedReads` and `Content == attach_failed` yield notes only: they limit content checks, not the event set.
+1. **Completeness.** `Assess(in.Coverage)` judges whether G can support FAITHFUL: a nil record or an event-loss counter yields a reason, a content gap a note. Which coverage field is which is in [10_probes_common.md](10_probes_common.md#probecoverage).
 2. **Preconditions.** `RootPID == 0` returns INCONCLUSIVE. A non-empty G in which no event carries a pid returns INCONCLUSIVE (legacy ground truth).
-3. **Forest.** `BuildForest(G, RootPID)` builds the process tree. Each `process_fork` record creates a `Process` incarnation with the parent edge recorded at creation; an exec record fills in `Process.Exec`, and stands in for a missing fork record (legacy files) using its own ppid. Processes are linked in creation order: level 0 is the agent, level 1 a child of the agent (the root of one command), level 2 and below its descendants, and -1 a process whose chain does not reach the agent. A reused pid has several incarnations; `Forest.Resolve` picks the one alive at the event's timestamp, and an event stamped before every incarnation goes to the earliest one. Time is used for nothing else here.
+3. **Forest.** `BuildForest(G, RootPID)` builds the process tree. Each `process_fork` record creates a `Process` incarnation with the parent edge recorded at creation; an exec record fills in `Process.Exec`, and stands in for a missing fork record (legacy files) using its own ppid. Processes are linked in creation order, and each gets its [level](00_overview.md#terms). A reused pid has several incarnations; `Forest.Resolve` picks the one alive at the event's timestamp, and an event stamped before every incarnation goes to the earliest one. Time is used for nothing else here.
 4. **Partition.** `Forest.Partition(G)` sorts G by timestamp, skips structural events (`process_fork`), and places each event by `Forest.Attribute`:
-   - unclaimable types (`net_bind`, `net_listen`, `net_unix_connect`, `net_dns`, `net_dial`) go to `Capability` with their attribution, and, inside a subtree, to the command's own `Capability` as well;
-   - no pid goes to `Unknown`; a process outside the tree goes to `Outside`;
+   - capability evidence goes to `Capability` with its attribution, and, inside a subtree, to the command's own `Capability` as well;
+   - an unplaced event goes to `Unknown`, an outside event to `Outside`;
    - a level-0 event goes to `Observed` (the aligned sequence) with a nil owner;
    - inside a subtree, the command's own first exec and its own exit go to `Observed` with the command as owner; every other event (later execs of the same pid, descendants' execs and exits, all file and network events of the subtree) goes to `Command.Content` and is never aligned (D3 in [decisions/integration.md](../decisions/integration.md)).
 5. **Baseline subtraction.** `Partition.SubtractBaseline(b)` drops level-0 events the baseline recognises and marks a command whose exec it recognises (`Command.Baseline`), removing that command's exec and exit from `Observed`. It copies rather than mutates and must run before alignment, or harness activity would read as an omission.
-6. **Harness-owned events.** With a `HarnessOwned` declaration, every level-0 file event under the harness's own directories whose path no claim names leaves the aligned sequence into `UnexplainedHarness` (`Partition.setAsideHarnessOwned`), before alignment, so it can neither pair with a claim nor leave a real one unpaired. An event on a path a claim names stays and pairs normally; one that still finds no pair joins the same list after alignment (V-24).
-7. **Scope.** `NewFSScope` reads the record: with it, a path is in scope when the longest mount point covering it was marked (`Mounts`) and out of scope when that mount point could not be marked (`Unmarked`); without it, a path is in scope when it is under the workspace. `splitByScope` sets aside every file-lane claim out of scope into `Verdict.OutOfScope` before alignment, so its absence from the ground truth is not read as a fabrication and it does not shift the positions of the other claims. Process and network claims have no path scope (V-23).
+6. **Scope.** `NewFSScope` reads the record: with it, a path is in scope when the longest mount point covering it was marked (`Mounts`), and out of scope when that mount point could not be marked (`Unmarked`) or when no listed mount point covers it (a record that lists none puts every path in scope); without it, a path is in scope when it is under the workspace. `splitByScope` sets aside every out-of-scope claim of the `fs` lane into `Verdict.OutOfScope` before alignment, so its absence from the ground truth is not read as a fabrication and it does not shift the positions of the other claims. Claims of the other lanes have no path scope (V-23).
+7. **Harness-owned events.** With a `HarnessOwned` declaration, every level-0 file event under the harness's own directories whose path no in-scope file claim names leaves the aligned sequence into `UnexplainedHarness` (`Partition.setAsideHarnessOwned`), before alignment, so it can neither pair with a claim nor leave a real one unpaired. An event on a path a claim names stays and pairs normally; one that still finds no pair joins the same list after alignment (V-24).
 8. **Exit handling.** With `IgnoreExits`, `Partition.DropExits` removes exits from `Observed` and `process_exit` claims are dropped. `Command.Exit` is kept.
-9. **Alignment.** `Align(claims, Observed, opts)` groups both sides by lane (`LaneOf`): `fs` (file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_connect`), and `other`. Lanes are aligned independently, in sorted lane order. Within a lane the claims keep their order and events keep time order. Costs: match 0, same-type substitution 2, cross-type substitution 3 (diff `action_type`), insertion or deletion 2. A substitution therefore always beats an adjacent insertion plus deletion (4), so no tie exists between the two readings. The dynamic program counts minimum-cost alignments (`LaneAlignment.Optimal`, saturating); more than one sets `Ambiguous`. Traceback prefers pair, then insertion, then deletion. A lane over `maxCells` returns `ErrTooLarge`.
+9. **Alignment.** `Align(claims, Observed, opts)` groups both sides by [lane](00_overview.md#terms) (`LaneOf`). Lanes are aligned independently, in sorted lane order. Within a lane the claims keep their order and events keep time order. Costs: match 0, same-type substitution 2, cross-type substitution 3 (diff `action_type`), insertion or deletion 2. A substitution therefore always beats an adjacent insertion plus deletion (4), so no tie exists between the two readings. The dynamic program counts minimum-cost alignments (`LaneAlignment.Optimal`, saturating); more than one sets `Ambiguous`. Traceback prefers pair, then insertion, then deletion. A lane over `maxCells` returns `ErrTooLarge`.
 10. **Pair comparison.** `pairCost` compares a claim and an event. The target is compared with `matching.TargetsMatch`: file types compare `filepath.Clean` of both paths, and accept an observed directory as covering a claimed file only when the event has `PathIsAmbiguous` set (a fanotify record that lost its name); every other type requires exact string equality, except that an observed target flagged `TargetTruncated` pairs with a claim it is a prefix of, as an unverified target rather than a mismatch (`truncatedPrefix`, V-26). Content is compared by `contentDiffs` only when the types agree (below). Each pair also gets `OutsideInterval` when the claim has an `End` and the event's timestamp lies outside `[Timestamp - slack, End + slack]`, and `Unverified` naming the content fields the claim states and the event does not carry (`unverifiedFields`: `output_hash` on `file_close` and `file_write`, `exit_code` on `process_exit`, `request_hash` on `net_request`), or the `target` when the event's was truncated and paired by prefix.
 11. **Coverage.** `CheckCoverage(part, alignments)` marks every observed event paired by a match or substitution. Unpaired events become `UnexplainedActions`. For each command: a baseline command adds its content to `Baselined`; a command whose exec was paired adds its content to `Explained`; a command with no exec, no exit and no content is `Quiet`; anything else is an `UnexplainedSubtrees` entry. A substituted claim still explains its subtree.
 12. **Outcome** (below).
@@ -79,11 +79,25 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 | `EditMatch` | `Corroborated` | Claim and observed action at the same position agree |
 | `EditSubstitution` | `Mismatched` (with `Diffs`) | Same position, different target, content or type (P3) |
 | `EditInsertion` | `Unwitnessed` | Claim with no observed action (P2) |
-| `EditDeletion` | `Unrecorded` | Observed top-level action no claim explains (P1) |
+| `EditDeletion` | `Unrecorded` | Top-level action no claim explains (P1) |
 
-`OutsideWrites` holds the write-class file events (writes, closes, renames, deletes) under the workspace by a process the tree cannot place: the workspace changed under something the capture could not attribute. With no workspace recorded, every outside write-class event counts, since such a capture kept only workspace paths from other processes. Not a finding, since the tree cannot say it was the agent, and not FAITHFUL either (V-25); reads by outside processes stay informational in `Coverage.Outside`. `UnexplainedHarness` holds the level-0 file events under the harness's own directories that no claim names, set aside before alignment, plus any on a claimed path the alignment left unpaired: the baseline is measured on a few control runs and the harness does some things only sometimes, so these are neither the agent's doing nor explained. They are removed from `Unrecorded` and from `Coverage.UnexplainedActions`, are not findings, and block FAITHFUL (V-24). A file event elsewhere and a command under those directories stay findings. `Commands` holds every level-1 subtree in creation order with its exec, its exit, its `Content` and its `Capability` (the unclaimable events beneath it: listeners, Unix socket connections, connections to port 53 and connections that sent nothing), whatever the verdict made of it: the forensic record of what each command did, reported by `cmd/verify` and never aligned (D3). Further lists: `OutsideInterval` (pairs outside their claim interval), `Unverified` (pairs whose claim states content the probe did not capture, with the fields in `Diffs`), `OutOfScope` (file claims the capture could not have witnessed, never aligned), `Capability` (unclaimable events, never aligned), `Coverage` (the second check), `Alignments` (the per-lane edit script), `Ambiguous`, `Completeness`, `Reasons`, `Advisory`.
+The verdict holds these other lists:
 
-`Verdict.Findings()` counts `Mismatched`, `Unwitnessed`, `Unrecorded`, `OutsideInterval` and `Coverage.UnexplainedSubtrees`. Outside events, capability events, quiet forks and baselined events are reported and are not findings. `Coverage.UnexplainedActions` holds the same events as `Unrecorded` and is not counted twice.
+| List | Holds | Effect on the outcome |
+|---|---|---|
+| `OutsideInterval` | pairs outside their interval | finding |
+| `Unverified` | pairs whose claim states content the probe did not capture, or whose truncated target was paired by prefix, with the fields in `Diffs` | blocks FAITHFUL (V-22, V-26) |
+| `OutOfScope` | out-of-scope file claims, never aligned | blocks FAITHFUL (V-23) |
+| `OutsideWrites` | outside writes. With no workspace recorded, every write-class outside event counts, since such a capture kept only workspace paths from other processes. Outside reads stay in `Coverage.Outside`, informational | blocks FAITHFUL, not a finding (V-25) |
+| `UnexplainedHarness` | the level-0 file events under the harness's own directories that no claim names, set aside before alignment, plus any on a claimed path the alignment left unpaired. They are removed from `Unrecorded` and from `Coverage.UnexplainedActions`. A file event elsewhere and a command under those directories stay findings | blocks FAITHFUL, not a finding (V-24) |
+| `Capability` | capability evidence, never aligned | none |
+| `Commands` | every command in creation order with its exec, its exit, its `Content` and its `Capability`, whatever the verdict made of it: the forensic record of what each command did, reported by `cmd/verify` and never aligned (D3) | none |
+| `Coverage` | the second check (stage 11) | its `UnexplainedSubtrees` are findings |
+| `Alignments` | the per-lane edit script | none |
+| `Ambiguous` | whether some lane has more than one minimum-cost alignment | none, reported |
+| `Completeness`, `Reasons`, `Advisory` | the loss judgement, why the outcome is INCONCLUSIVE or the findings advisory, and whether they are | see Outcome rules |
+
+`Verdict.Findings()` counts `Mismatched`, `Unwitnessed`, `Unrecorded`, `OutsideInterval` and `Coverage.UnexplainedSubtrees`. Outside events, capability evidence, quiet forks and baselined events are reported and are not findings. `Coverage.UnexplainedActions` holds the same events as `Unrecorded` and is not counted twice.
 
 ### Outcome rules
 
@@ -94,7 +108,7 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 | Findings > 0 | NOT FAITHFUL; `Advisory` when completeness failed or any event has no pid, with the reasons |
 | No findings, some event has no pid | INCONCLUSIVE |
 | No findings, completeness failed (loss counter or missing coverage record) | INCONCLUSIVE |
-| No findings, some pair is unverified (a stated value the probe did not capture, or a truncated target paired by prefix), some file claim is out of scope, some harness-owned file event is unexplained, or an outside process wrote in the workspace | INCONCLUSIVE, with the fields and counts in the reason |
+| No findings, and some pair is unverified (a stated value the probe did not capture, or a truncated target paired by prefix), some file claim is out of scope, some harness-owned file event is unexplained, or some outside write exists | INCONCLUSIVE, with the fields and counts in the reason |
 | Otherwise | FAITHFUL |
 
 `Outcome.ExitCode()` maps FAITHFUL to 0, NOT FAITHFUL to 1 and INCONCLUSIVE to 2, so a script cannot read INCONCLUSIVE as a pass. `cmd/verify` adds 3 for errors ([40_tools.md](40_tools.md)).
@@ -111,9 +125,9 @@ These hold for the code as built and are pinned by tests in `pkg/verification`:
 - A command nothing claims is an unexplained subtree, including a fork that never exec'd but acted; a fork that did nothing is quiet (`TestVerify_ForkWithoutExecIsAnUnexplainedSubtree`, `TestVerify_QuietForkIsNotAFinding`, `TestVerify_ForkWhoseDescendantActsIsNotQuiet`).
 - Listener and AF_UNIX socket events are capability evidence, never `Unrecorded`, and a claim of one never corroborates (`TestVerify_ListenersAreCapabilityNotUnrecorded`, `TestVerify_ListenerClaimNeverCorroborates`). `net_dns` and `net_dial` follow the same rule, since `IsClaimable` rejects them.
 - The baseline subtracts only what it recognises and never mutates its input.
-- A write-class event in the workspace by a process outside the tree is never a finding and never FAITHFUL; a read is informational (`TestVerify_OutsideEventsAreReportedAndDoNotBlock`).
+- An outside write is never a finding and never FAITHFUL; an outside read is informational (`TestVerify_OutsideEventsAreReportedAndDoNotBlock`).
 - An unexplained level-0 file event under the harness's own directories is never a finding and never FAITHFUL; elsewhere it is a finding, and a command is a finding wherever its program lives (`TestVerify_UnexplainedHarnessActivityIsInconclusive`).
-- A file claim on a path the capture could not observe is set aside and never read as a fabrication, and the run is not FAITHFUL over it (`TestVerify_FileClaimsOutsideTheCaptureScopeAreSetAside`, `TestPairedWriteOutsideTheWorkspaceIsOutOfScope` in the Claude Code adapter).
+- An out-of-scope file claim is set aside and never read as a fabrication, and the run is not FAITHFUL over it (`TestVerify_FileClaimsOutsideTheCaptureScopeAreSetAside`, `TestPairedWriteOutsideTheWorkspaceIsOutOfScope` in the Claude Code adapter).
 - A claim that states a hash, an exit code or a request hash the probe did not capture is corroborated and unverified, never FAITHFUL (`TestVerify_ClaimedContentTheProbeDidNotCaptureIsInconclusive`, `TestPairedWriteWithoutAnObservedHashIsInconclusive` in the Claude Code adapter).
 - FAITHFUL requires a coverage record with every loss counter at zero and every event placed. Under loss, findings are kept and marked `Advisory`, since a lost fork record can orphan a subtree and a lost event can read as a fabrication. Which findings survive loss is open decision O-12 ([decisions/open.md](../decisions/open.md)).
 
@@ -128,9 +142,9 @@ Claims in the `fs` lane must arrive in the order the kernel reports file events 
 - The proc probe's exit record carries the command line of the process's latest exec, so a level-1 process that execs twice has an exit whose target differs from its first exec's and reads as a substitution on an exit claim ([11_probe_proc.md](11_probe_proc.md)).
 - `input_hash` is compared permissively in every case, so an omitted input hash is never a finding, and it is not tracked as unverified either (the fs probe stamps every open with one).
 - A nil `output_hash` on a `file_write` claim is never a mismatch, so a format that states a write's content on a `file_write` (Claude Code's Write) can drop the hash and still verify FAITHFUL (V-28 in [decisions/verification.md](../decisions/verification.md) makes it strict; not yet implemented).
-- A level-1 process that never exec'd and whose only events are capability evidence is `Quiet`, not an unexplained subtree: capability events are not `Content`. A fork that opens a listener, or makes a connection that reads as `net_dial` ([13_probe_net.md](13_probe_net.md)), is therefore reported and not a finding.
-- Attribution stops at the tracked tree: an action delegated to a daemon outside it (for example over a Unix socket) is visible only as capability evidence, and its effects are not attributed.
+- A level-1 process that never exec'd and whose only events are capability evidence is `Quiet`, not an unexplained subtree: capability evidence is not `Content`. A fork that opens a listener, or makes a connection that reads as `net_dial` ([13_probe_net.md](13_probe_net.md)), is therefore reported and not a finding.
+- Attribution stops at the tracked tree: an action delegated to a daemon that is an outside process (for example over a Unix socket) is visible only as capability evidence, and its effects are not attributed.
 - `Forest.Orphans` is computed but not used by `Verify`, so an orphaned process is reported only through its events landing in `Outside`.
-- Level-0 actions have no subtree, so their alignment rests on order and content alone, and they share the level with the harness baseline.
+- Level-0 events have no subtree, so their alignment rests on order and content alone, and they share the level with the harness baseline.
 - Long-lived descendants stay attributed to the command that created them for the whole capture; attribution does not expire.
 - Containers are not handled: no pid or path namespace translation exists.

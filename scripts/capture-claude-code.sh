@@ -17,7 +17,7 @@
 #             it gives the evaluation far more claims than the others. No network.
 #   parallel  three Reads in one message, a subagent that runs Bash, Grep, Glob,
 #             WebFetch of https://example.com, and a Bash pipeline. It covers what
-#             `basic` does not (docs/todo/adapters.md ADP-1), and needs the network.
+#             `basic` does not (parallel tool calls, subagents, searches), and needs the network.
 #   edits     one Write and five Edits of different shapes on one file (first
 #             occurrence with a duplicate present, replace_all, a multi-line
 #             string, quotes and backslashes, an insertion at the end), then one

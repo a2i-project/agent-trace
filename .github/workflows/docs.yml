@@ -1,0 +1,36 @@
+name: Docs
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  docs:
+    name: Documentation consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Lint the published docs
+        run: python3 scripts/check-docs.py lint
+
+      - name: Check every new commit (Docs trailer, pages updated with code)
+        # The rules are in docs/methodology/dev_workflow.md, Documentation.
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$PR_BASE" ]; then
+            base="$PR_BASE"; head="$PR_HEAD"
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            base="$AFTER^"; head="$AFTER"
+          else
+            base="$BEFORE"; head="$AFTER"
+          fi
+          python3 scripts/check-docs.py commits "$base" "$head"

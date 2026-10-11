@@ -2,7 +2,7 @@
 
 Why trajectories and observed events are normalized the way they are, and why agent-specific knowledge lives in `pkg/agent` adapters rather than in the core. D1 to D14 keep the numbering of the original integration design; entries added during implementation are numbered from I-15.
 
-Entries carry their own dates. Statuses reconciled with the code at commit 35de92b on 2026-10-11. Original source: docs/archive/07_trajectory_formats.md (local only). Related: [verification.md](verification.md), [open.md](open.md), [../architecture/30_agent_adapters.md](../architecture/30_agent_adapters.md).
+Entries carry their own dates. Statuses reconciled with the code at commit 1391cbe on 2026-10-11. Original source: docs/archive/07_trajectory_formats.md (local only). Related: [verification.md](verification.md), [open.md](open.md), [../architecture/30_agent_adapters.md](../architecture/30_agent_adapters.md).
 
 Evidence from the maintainers' own Claude Code and Gemini sessions was used as design input only. It has no paired ground truth and is not an evaluation set, so no figure from it appears here.
 
@@ -18,6 +18,7 @@ Alternatives rejected: One global rule for every claim, which cannot express bot
 
 ### D2: A shell-command entry is a container
 Status: Accepted, implemented in `pkg/verification.Forest.Attribute` and `CheckCoverage`. Amended 2026-10-06 (commit b1709a8): wording corrected when the entry moved here from the original design; the parenthesis in Decision says what changed.
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commits 4f83cfb, 2130154).
 Context: Compound shell commands are common, so one claim routinely corresponds to several executions plus their file and network activity (measured on a local transcript corpus, design input only (local only: docs/research/harness_corpus.md)).
 Decision: A shell-command entry matches on its recovered command string and owns every event in the subtree of its level-1 process. Ownership is by process ancestry, not by a time window. (The original wording, "owns every descendant event in its window", predates the forest model and is corrected here; D4 and V1 already required ancestry.)
 Consequences: A command that runs for hours, or is approved after a long pause, owns its events the same way as a fast one.
@@ -25,13 +26,15 @@ Alternatives rejected: Expanding a compound command into one entry per program. 
 
 ### D3: Level 2 and below are never matched against trajectory entries
 Status: Accepted, implemented in `Forest.Partition` (descendant events are content of a command, never in the aligned sequence).
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commit a147518).
 Context: The agent did not claim what its commands' descendants did.
 Decision: Descendant events can be neither corroborated nor unrecorded. They are attributed and counted toward coverage.
-Consequences: A request made by a forked `curl` is attributed to the command's subtree and cannot be an e2e claim (this moved the Tier 5 request-hash substitution case to unit level).
+Consequences: A request made by a forked `curl` is attributed to the command's subtree and cannot be an end-to-end claim (so a request-hash substitution is tested at unit level, not by an end-to-end test with a forked `curl`).
 Alternatives rejected: Aligning descendants against claims, which would require claims nobody writes.
 
 ### D4: Level-2 ancestry is load-bearing for the verdict, negatively
 Status: Accepted, implemented in `BuildForest` and `CheckCoverage` (V3).
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commits 4f83cfb, 2130154).
 Context: A `net_connect` or `file_write` inside a claimed command needs no claim of its own. Without ancestry such events are orphans and an honest trajectory reads as NOT FAITHFUL.
 Decision: Attribution is by ancestry, never by time. Whatever suppresses an event from the unclaimed set is what an attacker attacks: suppression by lineage needs a real causal link, suppression by a time window only needs coincidence, and the claim interval is adversary-controlled.
 Consequences: Descendant `process_exec` records may be dropped under volume pressure only if the PID-to-command ancestry survives. Lost tree records are counted as event loss (P-10 in [probes.md](probes.md)).
@@ -39,6 +42,7 @@ Alternatives rejected: Time-window attribution (see F0.2-F0.3 in [verification.m
 
 ### D5: Level 2 is also the capability record, judged in a separate layer
 Status: Accepted, implemented as `Verdict.Capability` and the per-command content in `Partition`.
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commits ec68569, a147518).
 Context: Whether `make test` should have opened a socket has no counterpart in the trajectory, so matching cannot decide it.
 Decision: Capture and attribute level-2 events, and keep their judgment out of the faithfulness verdict.
 Consequences: Laundering through a script (an agent writes `helper.sh` and runs it) stays FAITHFUL, correctly, but becomes visible as a subtree with content. FAITHFUL is not integrity, and reports must say so.
@@ -46,6 +50,7 @@ Alternatives rejected: Discarding descendant events, which the first engine did.
 
 ### D6: The observed argv is not the claimed command
 Status: Accepted, implemented in `claudecode.Adapter.Normalize` (`evalPayload`). Gemini's `Normalize` is the identity because its wrapping is unmeasured.
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commit 7d52eea).
 Context: Claude Code runs each Bash call through a wrapper that sources a shell snapshot, adjusts options and ends with `eval '<command>'` plus a `pwd -P` write.
 Decision: `Normalize` extracts the `eval` payload and undoes shell quoting with a small POSIX word parser. A line that is not a wrapper, or cannot be parsed, is left alone so it shows as a mismatch instead of being guessed at. The wrapper is versioned inside the adapter, never in `pkg/matching`.
 Consequences: A wrapper change in a new harness version surfaces as substitutions on every Bash claim, which is loud rather than silent.
@@ -53,6 +58,7 @@ Alternatives rejected: Loosening target comparison in the core.
 
 ### D7: Never assume a level-1 exec exists
 Status: Accepted. Partly implemented: Gemini `RunPersistent` commands are not claimed (I-17). Degraded verification for persistent shells is open (O-11 in [open.md](open.md)).
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commits 53d4f48, 4876c5b).
 Context: An agent with a persistent shell writes commands to stdin and produces no per-call exec. Gemini's `run_command` carries a `RunPersistent` flag.
 Decision: The adapter declares the process model (`ProcessModel.ShellPerCommand`) instead of the core assuming one.
 Consequences: Without a level-1 child, both coverage and alignment lose their subject for that claim.
@@ -60,6 +66,7 @@ Alternatives rejected: Assuming one exec per shell claim for every agent.
 
 ### D8: Parsing a Claude Code session means merging its `subagents/` directory
 Status: Accepted, implemented in `claudecode.Adapter.Parse`.
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commit 7d52eea).
 Context: Subagent turns are never inline in the main transcript. They live in `<session>/subagents/agent-<id>.jsonl`, share the session id, and interleave by timestamp.
 Decision: Parse merges the subagent files into the main claim sequence.
 Consequences: A session read without its directory misses claims and reads as omissions.
@@ -67,6 +74,7 @@ Alternatives rejected: Reading only the main transcript.
 
 ### D9: Flatten subagents, keeping the originating thread id as metadata
 Status: Accepted, implemented (`TrajectoryEntry.ThreadID`). The alignment does not yet use it (O-2).
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commits 56fef6e, 7d52eea).
 Context: A `/proc` ancestry check on a live Claude Code session showed that a subagent's shell commands are children of the same agent PID as the main thread's. Nothing in the observed data distinguishes a subagent call.
 Decision: Flatten subagent claims into one sequence and keep the thread id on each entry. Forced by the observation, not chosen.
 Consequences: Concurrent subagents make the claim order partial (V2). The thread id comes from the trajectory, which the attacker controls.
@@ -74,6 +82,7 @@ Alternatives rejected: Nesting subagent claims under the `Agent` call, which has
 
 ### D10: Non-effectful tools must not become entries
 Status: Accepted, implemented in each adapter's `nonEffectful` set and `Report`.
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commits 53d4f48, 7d52eea).
 Context: Control-flow and UI tools perform no syscall. Emitting them produces permanent Unwitnessed entries, a false fabrication signal.
 Decision: The adapter supplies the allowlist. The core requires that unmapped tools be counted, never silently dropped: a tool that is neither mapped nor declared non-effectful is named in `Report.UnknownTools` and in `Degradations`.
 Consequences: An unknown tool that did act shows up as an unexplained event plus a named degradation, not as a silent pass.
@@ -81,6 +90,7 @@ Alternatives rejected: Dropping unknown tools silently, or treating them as non-
 
 ### D11: The harness generates its own unclaimed events, which must be filtered
 Status: Accepted. Implemented as a measured baseline (V7, `agent.Baseline`, `cmd/baseline`); see I-19.
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commit 5b551d7).
 Context: Measured on Claude Code: persistent connections from the agent process (model API and telemetry) and one file read plus one file write per shell call from the wrapper. Left unfiltered, no real trajectory can be FAITHFUL.
 Decision: Every adapter's harness noise is removed before coverage is evaluated. The membership is agent-specific and established by measurement, not by hand.
 Consequences: Verification without a baseline for the agent version reports a degradation.
@@ -88,6 +98,7 @@ Alternatives rejected: A hardcoded list of addresses and globs, which rots silen
 
 ### D12: The claim interval comes from the format, never from configuration
 Status: Accepted, implemented (`TrajectoryEntry.Timestamp` and `End`).
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commit 56fef6e).
 Context: Both surveyed formats bracket execution: Claude Code pairs `tool_use` with `tool_result`, Gemini records created, started and completed.
 Decision: An entry carries the interval the trajectory supplies. Where the format has no end, the entry is a point and the adapter records the degradation rather than synthesizing a width.
 Consequences: The interval is adversary-controlled, so it is used only as a consistency finding (V-12), never to attribute or pair.
@@ -95,6 +106,7 @@ Alternatives rejected: A configured tolerance window.
 
 ### D13: A reported start is a decision time, not an execution time, unless the format says otherwise
 Status: Accepted, implemented as `ProcessModel.IntervalKind` (`IntervalDecision` for Claude Code, `IntervalExecution` for Gemini).
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commit 53d4f48).
 Context: Claude Code stamps `tool_use` when the model emits the call. The permission prompt comes after, so human approval latency sits inside the interval. Call durations have a long tail dominated by approval waits (measured on a local transcript corpus, design input only (local only: docs/research/harness_corpus.md)).
 Decision: An adapter declares what its start timestamp means. Gemini's `started` field is a real execution anchor.
 Consequences: Claude Code intervals cannot bound execution. Gemini intervals can.
@@ -102,6 +114,7 @@ Alternatives rejected: Treating every start as execution time.
 
 ### D14: Entry-to-exec pairing is an order-preserving assignment
 Status: Accepted, implemented by the per-lane alignment (V4, V-9).
+Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commit a147518).
 Context: A nearest-in-time lookup fails under approval latency and long commands, and mispairs repeated identical commands under clock skew.
 Decision: For a sequential agent the nth shell claim corresponds to the nth level-1 child. Adapters must preserve claim order and expose what the format knows about concurrency (block and thread ids).
 Consequences: The clock is used only for relative order, so a constant offset between the agent's clock and the kernel's is harmless.
@@ -110,7 +123,7 @@ Alternatives rejected: Nearest-in-time lookup.
 ## Decisions taken while building the adapters
 
 ### I-15: Exit codes are not claimed by either real adapter
-Status: Accepted, implemented in `claudecode.Adapter.Process` and `gemini.Adapter.Process` (`ExitsClaimed: false`), applied by `agent.Prepare` as `Options.IgnoreExits`. Listed as open in the plan documents; see O-4 in [open.md](open.md). Ratified by the user on 2026-10-11 (was O-4).
+Status: Accepted, implemented in `claudecode.Adapter.Process` and `gemini.Adapter.Process` (`ExitsClaimed: false`), applied by `agent.Prepare` as `Options.IgnoreExits`. Listed as open in the plan documents as O-4, which the user closed on 2026-10-11 by ratifying this entry.
 Date: 2026-10-06 (commits 7d52eea, 4876c5b).
 Context: Claude Code reports only `is_error`. Gemini records nothing. `is_error` is also set for harness failures (timeout, denied permission, malformed input), so it conflates "the command failed" with "the command never ran".
 Decision: `ExitCode` stays nil for Claude Code and Gemini. `Expresses` returns false for `exit_code`, and process exits are dropped from both sides before alignment. `Generic` and `simagent` keep exits on.
@@ -119,7 +132,7 @@ Alternatives rejected: A two-valued exit claim derived from `is_error`, which in
 
 ### I-16: Claude Code `WebSearch` is non-effectful; Gemini `search_web` is unknown
 Status: Accepted, implemented in the adapters' `nonEffectful` sets.
-Date: 2026-10-02 (Test C), built 2026-10-06.
+Date: 2026-10-02 (the traced run in Context), built 2026-10-06.
 Context: A traced run of Claude Code 2.1.286 (strace on `connect`, `sendto`, `sendmsg`, `write`, one run, Verified) showed `WebSearch` opens no connection to any search or content host, only to the model API and telemetry. The same method confirmed `WebFetch` connects directly from the agent process. Whether Gemini's `search_web` runs server-side is unverified.
 Decision: `WebSearch` is in Claude Code's non-effectful set, so it produces no entry. Gemini's `search_web` is neither mapped nor declared non-effectful, so it is named in `UnknownTools` and `Degradations`.
 Consequences: A Claude Code web search is not verified by this system; verifying it needs the model API stream (O-14). A false non-effectful declaration would hide a real client-side action, which is why Gemini's stays unknown.
@@ -193,7 +206,7 @@ Note 2026-10-11: V-24 adopts a 1/N threshold in the capture script (`MIN_AGREEME
 ### I-25: Claude Code Grep and Glob are claimed as the kind of search
 Status: Accepted; narrowed by I-27 (only the native installer's path is recognised). Implemented (`searchKind`, `SearchGrep`, `SearchGlob` in `claudecode/shell.go`).
 Date: 2026-10-07 (paired capture of Claude Code 2.1.286, **Verified** on one task).
-Context: Grep and Glob run as ripgrep embedded in Claude Code's own binary, started as a level-1 child of the agent whose first argument is `--no-config`. Left unmapped (O-9, option c) each search was an unexplained command. The pattern is not recoverable from the arguments in general, and what a search reads is not something a claim is verified against.
+Context: Grep and Glob run as ripgrep embedded in Claude Code's own binary, started as a level-1 child of the agent whose first argument is `--no-config`. Left unmapped, and so named as unknown in the report (option (c) of O-9 in [open.md](open.md)), each search was an unexplained command. The pattern is not recoverable from the arguments in general, and what a search reads is not something a claim is verified against.
 Decision: A Grep or Glob call is a `process_exec` claim with the fixed target `claude-code search:grep` or `claude-code search:glob`. `Normalize` rewrites an observed command line to the same target when its program is `<dir>/claude/versions/<version>` and its first argument is `--no-config`: with `--files` and `--null` it is a Glob, without `--files` a Grep. The harness's own start-up listings (`--files` without `--null`) keep their exact text so a baseline names them.
 Consequences: A search that happened is verified to have been claimed, in order, and an unclaimed search is an omission. The pattern and path are not verified. Only the harness's own binary path is recognised, so another program that takes `--no-config` is not rewritten. A search whose arguments change shape in another version can be misclassified (a Glob without `--null`), which shows as a mismatch.
 Alternatives rejected: Parsing ripgrep's arguments for the pattern (fragile, and low value); declaring the tools non-effectful (a search is an observable process).
@@ -201,11 +214,10 @@ Alternatives rejected: Parsing ripgrep's arguments for the pattern (fragile, and
 ### I-26: The wrapper is recovered only when the whole command line is the wrapper
 Status: Accepted, implemented (`evalPayload`, `wrapperHead`, `wrapperTail` in `claudecode/shell.go`). Amended 2026-10-11 (commit 7d266c9), see Decision.
 Date: 2026-10-08 (a security review of the adapter, local only).
-Context: `evalPayload` recognised a wrapper by the presence of `shell-snapshots/snapshot-` and the first `&& eval `, and returned the eval word. Everything else on the line was discarded: a command appended after the `pwd -P` suffix, one run before the `source`, a second word after the eval, or a different program whose arguments contained the marker all normalized to the claimed command. A harness that did that ran arbitrary code under an honest-looking Bash claim, and the subtree was explained by the claim (**Verified**: `TestPairedWrapperWithAppendedCommandIsNotFaithful` failed before the change).
-Decision: The observed line must match the wrapper exactly: one of six shell paths, `-c` with an optional `-l`, the snapshot source clause, preamble clauses from an allowlist, `&& eval `, one shell word, and the known suffix to the end of the line. Amended 2026-10-11 (commit 7d266c9): the suffix's `< /dev/null` is absent when the command carries a heredoc, which is the command's stdin (measured on a project session of 2.1.286 on 2026-10-11, where the strict suffix had made an honest heredoc command a mismatch). A line that does not match keeps its text (with I-23's id replacement) and shows as a mismatch.
+Context: `evalPayload` recognised a wrapper by the snapshot marker and the first `&& eval `, returned the eval word and discarded the rest of the line. A command appended after the suffix, one run before the `source`, a second word after the eval, or another program whose arguments contained the marker all normalized to the claimed command, so a harness could run arbitrary code under an honest-looking Bash claim, with the subtree explained by the claim (**Verified**: `TestPairedWrapperWithAppendedCommandIsNotFaithful` failed before the change).
+Decision: The observed line must match the wrapper exactly, from the shell to the known suffix at the end of the line, with only preamble clauses from an allowlist and one eval word between (the full shape is in [../architecture/30_agent_adapters.md](../architecture/30_agent_adapters.md), Claude Code adapter). A line that does not match keeps its text (with I-23's id replacement) and shows as a mismatch. Amended 2026-10-11 (commit 7d266c9): the suffix's `< /dev/null` is absent when the command carries a heredoc, which is the command's stdin (measured on a project session of 2.1.286 on 2026-10-11, where the strict suffix had made an honest heredoc command a mismatch).
 Consequences: A new harness version that changes the wrapper makes every Bash claim a mismatch until the allowlist is extended, which is what D6 asks for. The preamble allowlist is the version-specific part. The payload itself is not inspected: what the claimed command does is still explained by the claim.
 Alternatives rejected: Checking only that the line ends with the suffix (a command can still be run before the source, and the program is unchecked); canonicalising the whole line before matching (it would rewrite ids inside the claimed command).
-
 
 ### I-27: A search is recognised only from the harness's install directory
 Status: Accepted, implemented (`embeddedRipgrep` in `claudecode/shell.go`). Narrows I-25.
@@ -226,10 +238,10 @@ Alternatives rejected: Excluding every level-1 exec from the baseline (the harne
 ### I-29: The harness's own file paths are canonicalised on the observed side
 Status: Accepted, implemented (`canonicalFileIDs` in `claudecode/shell.go`, the lock temporary in `tmpName`, `MangledWorkspacePlaceholder` in `pkg/agent/baseline.go`).
 Date: 2026-10-09 (audit item 5, step 4, of a security review on 2026-10-08, local only; first capture under P-17).
-Context: With every filesystem marked, a Claude Code startup shows about 230 level-0 file events outside the workspace: CA certificates, libraries, its configuration, and files it writes under `~/.claude`, `~/.local/state/claude` and `/tmp/claude-<uid>`. Most are the same in every run and become baseline rules as they are. Five families carry a per-run id and would never agree between control runs (**Verified**: 43 unstable entries over three startups of 2.1.286, all of these families): the session record named by pid, the transcript named by session id under a directory named by the mangled workspace, the version lock's temporary with an eight-hex suffix, the fswatch probe directory, and a ` (deleted)` suffix the kernel adds to a removed directory's name. The first full sessions (2026-10-09, three controls with a Bash call) added five more: the session key `<pid>.<64 hex>.key` written through the same eight-hex temporary, the startup backup `~/.claude/backups/.claude.json.backup.<time>`, the MCP log files `~/.cache/claude-cli-nodejs/<dir>/mcp-logs-<server>/<time>.jsonl`, the Bash tool's task output directory `/tmp/claude-<uid>/<dir>/<session id>/tasks/<id>.output`, and the cwd file, which I-23 rewrote in commands only.
-Decision: `Normalize` replaces those ids in file events with fixed tokens, as I-23 does for the snapshot and cwd files in commands; the atomic-write fold also accepts the eight-hex temporary, before and after its suffix is rewritten (the rewrite runs first); and the baseline names the mangled workspace by `{workspace-}`, expanded by `Predicate` like `{workspace}`. Claims are left alone.
-Consequences: The harness's own writes under its configuration directory become rules by path, so a write there with any content is explained, as it was for the snapshot command; that is the harness's own directory and the same trust as its binary (I-27). A claim that names one of these paths mismatches, which no honest tool call produces. The list is version-specific and is checked against the next capture; an id family not listed shows as unstable in the baseline and as unexplained in a run.
-Alternatives rejected: A pattern language in the baseline (a wildcard explains whatever an attacker makes it match, V-19); excluding `~/.claude` from the capture (the harness's own activity is what the baseline measures, and writes there are what that step is for).
+Context: With every filesystem marked (P-17), a Claude Code startup shows level-0 file events outside the workspace: CA certificates, libraries, its configuration, and files it writes under `~/.claude`, `~/.local/state/claude` and `/tmp/claude-<uid>`. Most are the same in every run and become baseline rules as they are. Some families carry a per-run id (a pid, a session id, a timestamp, a random suffix) and would never agree between control runs (**Verified**: 43 unstable entries over three startups of 2.1.286, all of such families; the first full sessions on 2026-10-09 showed more). The families are listed in [../architecture/30_agent_adapters.md](../architecture/30_agent_adapters.md) (`Normalize`, file events).
+Decision: `Normalize` replaces those ids in file events with fixed tokens, as I-23 does in commands; the atomic-write fold also accepts the version lock's eight-hex temporary, before and after its suffix is rewritten; and the baseline names the directory derived from the workspace path by `{workspace-}`, expanded by `Predicate` like `{workspace}`. Claims are left alone.
+Consequences: The harness's own writes under its configuration directory become rules by path, so a write there with any content is explained, as it was for the snapshot command; that is the harness's own directory and the same trust as its binary (I-27). A claim that names one of these paths mismatches, which no honest tool call produces. The list is version-specific and is checked against each capture; an id family not listed shows as unstable in the baseline and as unexplained in a run.
+Alternatives rejected: A pattern language in the baseline (a wildcard explains whatever an attacker makes it match, V-19); excluding `~/.claude` from the capture (the harness's own activity is what the baseline measures).
 
 ### I-30: The Claude Code adapter declares the harness's own directories
 Status: Accepted, implemented (`harnessOwned`, `IsHarnessOwned` in `claudecode/claudecode.go`).
@@ -240,18 +252,18 @@ Consequences: The list is version-specific like the id families of I-29 and is c
 Alternatives rejected: Deriving the directories from the baseline's own rules (a baseline is optional, and the declaration must hold without one); taking `HOME` from the environment (the agent's home is not the verifier's).
 
 ### I-31: An Edit claims the file's content before and after, from its result record
-Status: Accepted, implemented (`editResult` in `claudecode.go`, the reducer keeps the fields). Decides O-17 ("Is replaying a partial edit ever worth doing?"), removed from open.md on 2026-10-11. Supersedes the Edit-without-hash part of I-22 and outdates part of I-20's Context. Output hashes **Verified** on 2026-10-11 (the `edits` task: one Write and five Edits of different shapes, first occurrence with a duplicate present, replace_all, a multi-line string, quotes and backslashes, an insertion; every computed hash equal to the observed one, six of six). Input hashes **Verified** on a second capture of the same task with P-20 in the probe, which also moved the harness to 2.1.296 (an auto-update between the captures): twelve claims of twelve corroborated, the five Edits on both their input and their output hash (`testdata/paired-2.1.296-edits`, two of its five controls kept; `TestProjectEditsClaimTheirContentAndAreCorroborated` is the gate and passes).
-Date: 2026-10-09 (audit item 6 of a security review on 2026-10-08, local only; decides O-17).
-Context: An Edit claim carried no content, and the adapter declared the field inexpressible, so a file could end with any content under a FAITHFUL verdict (**Verified**: audit case 6 of that review, on the paired fixture). The transcript's result record for an Edit holds `originalFile`, the applied `oldString` and `newString`, and `replaceAll`, so the file after the edit is computable: the first occurrence replaced, or every occurrence.
-Decision: When a single result record carries those fields, the Edit's open claims the hash of the file before and its write the hash of the file after; otherwise both stay nil and the verifier reads them permissively. The fixture reducer keeps the fields. The gate, fixed before any capture: on a capture whose transcript kept them, every Edit claim must be corroborated with no content diff (`TestProjectEditsClaimTheirContentAndAreCorroborated`); one mismatch means the harness's replacement is not a plain string replace and the claims are withdrawn.
-Consequences: Once measured, substitution of an Edit's content is a Mismatched finding like a Write's, and an Edit applied to a file other than the one the transcript shows is a mismatch on the input hash. The claims rest on what the harness reports it applied, which is what an honest transcript contains; a transcript that lies about the replacement produces a hash that disagrees with the observed content. An input hash the probe could not settle is nil on the observed side and permissive.
+Status: Accepted, implemented (`editResult` in `claudecode.go`, the fixture reducer keeps the fields). Decides O-17 (whether replaying a partial edit is ever worth doing), removed from open.md on 2026-10-11. Supersedes the Edit-without-hash part of I-22 and outdates part of I-20's Context. Gate passed on 2026-10-11: on the `edits` task captured with Claude Code 2.1.296 and P-20 in the probe (`testdata/paired-2.1.296-edits`), all twelve claims are corroborated, the five Edits on both their input and output hash (`TestProjectEditsClaimTheirContentAndAreCorroborated`). An earlier capture of the same task on 2.1.286 had corroborated the output hashes, six of six.
+Date: 2026-10-09 (audit item 6 of a security review on 2026-10-08, local only).
+Context: An Edit claim carried no content, and the adapter declared the field inexpressible, so a file could end with any content under a FAITHFUL verdict (**Verified** on the paired fixture). The transcript's result record for an Edit holds `originalFile`, the applied `oldString` and `newString`, and `replaceAll`, so the file after the edit is computable: the first occurrence replaced, or every occurrence.
+Decision: When a single result record carries those fields, the Edit's open claims the hash of the file before and its write the hash of the file after; otherwise both stay nil and the verifier reads them permissively. The gate was fixed before any capture: on a capture whose transcript kept the fields, every Edit claim must be corroborated with no content diff, and one mismatch would mean the harness's replacement is not a plain string replace and the claims are withdrawn.
+Consequences: Substitution of an Edit's content is a Mismatched finding like a Write's, and an Edit applied to a file other than the one the transcript shows is a mismatch on the input hash. The claims rest on what the harness reports it applied, which is what an honest transcript contains; a transcript that lies about the replacement produces a hash that disagrees with the observed content. An input hash the probe could not settle is nil on the observed side and permissive.
 Alternatives rejected: Claiming only the input hash (verifies the premise, not the result); replaying `structuredPatch` (the same information in a harder form); leaving O-17 open (the most used write tool outside P3).
 
 ### I-32: The atomic-write fold knows the read-after-rename shape, and harness events do not break a run of opens
 Status: Accepted, implemented (`foldRenamedFirst`, `collapseOpens` in `claudecode/stream.go`).
 Date: 2026-10-11 (the capture for I-31's gate).
-Context: With every filesystem marked (P-17) the probe reads larger batches later, and the first capture of the `edits` task showed a Write and three of five Edits read after their rename: the temporary's handle resolved to the final name for the open, the write and the close, and the directory's create and rename arrived merged ahead of them, once with the directory's own open (the fsync). The fold knew only the temporary-name shape, so those writes stayed as five raw events each and shifted the alignment (14 unrecorded, two false mismatches, four unverified on an honest run). The harness also read its plugin list between an Edit's two pre-check opens, which broke their collapse and left one open unrecorded.
-Decision: A second fold shape: for one pid, the directory's create and rename, an open of the directory allowed among them, immediately followed by open, write(s) and close of a file in that directory, folds to one write with the close's hash. A direct write with no directory events around it is left alone. In the collapse of opens, an event on the harness's own files (I-30) does not break a run.
-Consequences: Both shapes of one write compare equal to the claim. The fold now rests on the directory records being reported as ambiguous directory-level events, which fanotify does for a merged notification. A harness write between two tool opens of a file no longer splits them, which is right for the claim side, which never saw it.
-Alternatives rejected: Reading batches sooner to see the temporary (the timing is the kernel's and the load's); claiming the raw five events (the claim is the tool call, I-22).
+Context: With every filesystem marked (P-17) the probe reads larger batches later. On the first capture of the `edits` task a Write and three of five Edits were read after their rename: the temporary's handle already resolved to the final name, and the directory's create and rename arrived merged ahead of the file's open, write and close. The fold knew only the temporary-name shape, so each of those writes stayed as raw events and shifted the alignment of an honest run into false findings. The harness also read its plugin list between an Edit's two pre-check opens, which broke their collapse and left one open unrecorded.
+Decision: A second fold shape: for one pid, the directory's create and rename (an open of the directory allowed among them), immediately followed by open, write and close of a file in that directory, fold to one write with the close's hash. A direct write with no directory events around it is left alone. In the collapse of opens, an event on the harness's own files (I-30) does not break a run.
+Consequences: Both shapes of one write compare equal to the claim. The fold now relies on fanotify reporting the directory records of a merged notification as ambiguous directory-level events. A harness event between two tool opens of a file no longer splits them, which is right for the claim side, which never saw it.
+Alternatives rejected: Reading batches sooner to see the temporary (the timing is the kernel's and the load's); claiming the raw events (the claim is the tool call, I-22).
 

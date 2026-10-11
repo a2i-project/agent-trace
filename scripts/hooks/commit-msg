@@ -1,0 +1,5 @@
+#!/bin/sh
+# Rejects a commit whose message breaks the documentation rules
+# (docs/methodology/dev_workflow.md, Documentation). Install once per clone:
+#   git config core.hooksPath scripts/hooks
+exec python3 "$(git rev-parse --show-toplevel)/scripts/check-docs.py" commit-msg "$1"

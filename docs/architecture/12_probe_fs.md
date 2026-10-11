@@ -14,7 +14,7 @@ The filesystem probe (`pkg/probe/fs`) records file opens, writes, closes, creati
 | `observer.go` | `Config`, `Observer`, `New`, `markOne`, `Scope`, `Start`, `Stop`, `readLoop`, `drainNonBlocking`, `processRawEvent`, `registerClose`, `resolveSettled`, `hashSettledFD`, `lookupShadowHash`, `maskToActionTypes` |
 | `pkg/content/hash.go` | `SHA256File`, `SHA256FD`, `SHA256Bytes`; digests are written as `sha256:<hex>` |
 
-`Config` fields: `Path` (required; selects the filesystem, and the directory hashed at `Start`), `AllFilesystems` (mark every real filesystem on the host, P-17), `PathFilter` (string prefix on the resolved path), `PIDFilter` (exact pid, test use), `EventBufSize` (default 4096). `cmd/watch` sets `Path` to `--workspace` and `AllFilesystems`, with no `PathFilter`: the agent's file claims may name any path, so the probe filters nothing and `watch` applies the scope rule once the process tree is known ([40_tools.md](40_tools.md)).
+`Config` fields: `Path` (required; selects the filesystem, and the directory hashed at `Start`), `AllFilesystems` (mark every real filesystem on the host, P-17), `PathFilter` (string prefix on the resolved path), `PIDFilter` (exact pid, test use), `EventBufSize` (default 4096). `cmd/watch` sets `Path` to `--workspace` and `AllFilesystems`, with no `PathFilter`: the agent's file claims may name any path, so the probe filters nothing and `watch` applies the scope rule once the process tree is known ([10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes)).
 
 ## Technologies
 
@@ -51,12 +51,12 @@ Paths are resolved by the kernel from file handles, not read from user memory. T
 
 The emitted sequence does not depend on whether the kernel merged notifications or on when a close settled: a repeated write or rename on one path by one process is one event, and a record's timestamp is its position in its batch (`TestProcessRawEvent_RepeatedWritesAndRenamesCollapse`, P-18).
 
-The probe never drops on its own channel: `processRawEvent` and the settle code send with a blocking send. A slow consumer backs up into the kernel queue, and a full kernel queue produces `FAN_Q_OVERFLOW`. `CaptureCoverage` reports `Ran: true`, `QueueOverflow`, which `verification.Assess` treats as event loss (INCONCLUSIVE), and `HashlessCloses`, the closes published without a hash, which is a note: the events are there, their content is not vouched for, and a claim stating it is unverified (V-22). All other `ProbeCoverage` counters are zero for this probe.
+The probe never drops on its own channel: `processRawEvent` and the settle code send with a blocking send. A slow consumer backs up into the kernel queue, and a full kernel queue produces `FAN_Q_OVERFLOW`. `CaptureCoverage` reports `Ran: true`, `QueueOverflow` (event loss) and `HashlessCloses`, the closes published without a hash (a content gap: the events are there, their content is not vouched for). How `Assess` reads each is in [10_probes_common.md](10_probes_common.md#probecoverage), and how the verifier treats a claim on a hashless close in [20_verifier.md](20_verifier.md#content-comparison-and-the-three-valued-nil). All other `ProbeCoverage` counters are zero for this probe.
 
 ## Known limits
 
 - The `OutputHash` is computed in userspace after the close, so a write that lands between the close and the read, outside the generation check's window, can still make the hash describe later content. The probe errs towards publishing no hash: any open of the path after the close drops it, including a plain read, so a file read within the settle window of being written is published without a hash.
-- Only the directory walked at `Start` is hashed in advance (P-17). The first open of any other file carries the empty-content hash, whatever the file holds, until the probe has settled a close of it. A claimed `input_hash` on such a file (a Claude Code Edit, I-31) disagrees with the observed one.
+- Only the directory walked at `Start` is hashed in advance (P-17). The first open of any other file carries the empty-content hash, whatever the file holds, until the probe has settled a close of it. A claimed `input_hash` on such a file (a Claude Code Edit, I-31) disagrees with the observed one. An Edit's claimed `input_hash` is compared with that stamp (O-28).
 - Writes through a shared `mmap` do not raise `FAN_MODIFY`.
 - Records still in the fanotify queue when `Stop` is signalled are discarded (`readLoop` flushes the pending closes and returns without draining), and nothing counts them.
 - `FAN_ACCESS` and `FAN_CLOSE_NOWRITE` are not in the mask, so reads are invisible beyond the open and the probe never emits `file_read`.

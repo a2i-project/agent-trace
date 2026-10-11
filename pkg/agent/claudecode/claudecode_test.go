@@ -405,7 +405,7 @@ func TestIsHarnessOwnedNamesTheHarnessDirectoriesOnly(t *testing.T) {
 }
 
 // The session states the harness version on its records; Parse reports it so
-// a baseline for another version is refused (ADP-7).
+// cmd/verify can refuse a baseline measured on another version.
 func TestParseReportsTheHarnessVersion(t *testing.T) {
 	_, rep, err := Adapter{}.Parse(filepath.Join(pairedDir, "task.session.jsonl"))
 	if err != nil {

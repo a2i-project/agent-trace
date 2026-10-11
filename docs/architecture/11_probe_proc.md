@@ -71,7 +71,7 @@ The target's first token is the path the kernel was asked to execute (or `(fexec
 | `state_lost_count` | storing an exec in `execs` fails, so its exit record will be missing | `StateMapFull` |
 | `Dropped` (userspace) | the events channel is full | `ChannelDrops` |
 
-All four are event loss and make the verdict INCONCLUSIVE. Tests force each kernel counter through a capacity override (`TestObserver_CountsRingbufDrops`, `TestObserver_CountsUntrackedChildren`, `TestObserver_CountsStateMapFull`) and check that the tracked-set and state-map counters stay zero when the map fits.
+All four are event loss ([10_probes_common.md](10_probes_common.md#probecoverage)). Tests force each kernel counter through a capacity override (`TestObserver_CountsRingbufDrops`, `TestObserver_CountsUntrackedChildren`, `TestObserver_CountsStateMapFull`) and check that the tracked-set and state-map counters stay zero when the map fits.
 
 ## Known limits
 
@@ -84,6 +84,6 @@ All four are event loss and make the verdict INCONCLUSIVE. Tests force each kern
 - argv is kept up to 64 arguments and 128 KiB in all, and the filename up to 255 bytes; beyond that the record is cut and `TargetTruncated` says so, and the verifier pairs the cut target by prefix as unverified (V-26). Linux allows one argument of 128 KiB, and the shell's own arguments share the 128 KiB area, so a harness's single-string command fits unless it nears that size (`TestObserver_LongCommandLineIsRecordedWhole`, `TestObserver_OverlongCommandLineIsFlagged`).
 - The probe captures no working directory, environment or stdin, so relative paths in argv are unresolved and a script fed through a pipe or heredoc is invisible.
 - In host-wide mode no fork records are emitted, so the forest cannot place processes that never exec.
-- The root pid is inserted after the agent starts, so a fork before `SetRootPID` is untracked and uncounted.
+- The root pid is inserted after the agent starts, so a fork before `SetRootPID` is untracked and uncounted ([10_probes_common.md](10_probes_common.md#known-limits)).
 - The shell test is a comparison against eight fixed paths and only feeds the legacy `IsTopLevel` field.
 - `PPID` is the parent at exec time; a later reparenting is not reflected in the exit record.

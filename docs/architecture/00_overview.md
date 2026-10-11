@@ -22,7 +22,7 @@ detects target the trajectory, not the host:
 
 | Attack | Meaning | Detected as |
 |---|---|---|
-| T1 omission | the agent acted and did not report it | an unexplained subtree or level-0 event (coverage), or an unrecorded aligned position |
+| T1 omission | the agent acted and did not report it | an unexplained subtree or level-0 event (coverage), or an unrecorded top-level action |
 | T2 fabrication | the agent reported an action it never performed | an insertion in the alignment |
 | T3 substitution | the agent reported A and performed B | a substitution at an aligned position, in target or in content |
 
@@ -39,32 +39,64 @@ detects target the trajectory, not the host:
 * **AS-4, local execution.** The agent runs on a host the operator controls.
   Agents executed on vendor infrastructure are out of scope.
 
+## Terms
+
+Every architecture page uses these terms in the sense given here, each named
+after its code identifier. Identifiers without a package are in
+`pkg/verification`.
+
+| Term | Meaning | Code |
+|---|---|---|
+| claim | one action the agent's trajectory (T) reports, as an adapter produced it | `models.TrajectoryEntry` |
+| observed event | one event a probe recorded; the ground truth (G) is the list of them | `models.GroundTruthEvent` |
+| capture | the file `watch` writes: the observed events, the coverage record, the root pid, the workspace and the fs scope record | `models.GroundTruthFile` |
+| fs scope record, scope rule | the capture's `fs_scope`: which filesystems the fs probe marked and which rule `watch` applied to file events ([10_probes_common.md](10_probes_common.md#ground_truthjson)) | `models.FSScope` |
+| level | a process's depth in the agent's process tree: level 0 is the agent process, level 1 a command it started, level 2 and below that command's descendants, -1 a process whose chain does not reach the agent | `Process.Level` |
+| command | a level-1 process with everything beneath it (its subtree) | `Command` |
+| zone | where an observed event sits, by the level of the process that caused it: `ZoneAgent` (level 0), `ZoneSubtree` (level 1 and below), `ZoneOutside` (level -1, or a pid the tree never recorded), `ZoneUnknown` (no pid) | `Zone`, `Attribution` |
+| outside process, outside event | a process the agent's tree does not reach, and an event it caused (`ZoneOutside`) | `Partition.Outside`, `Coverage.Outside` |
+| unplaced event | an observed event with no pid (`ZoneUnknown`) | `Partition.Unknown`, `Coverage.Unknown` |
+| aligned sequence | the observed events claims are aligned against: level-0 events and each command's own first exec and exit, in time order | `Partition.Observed` |
+| top-level action | one event of the aligned sequence | an element of `Partition.Observed` |
+| lane | a group of action types aligned on its own: `fs` (the file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_connect`, `net_dns`), `other` (every other type; of the claimable ones only `git_commit`) | `Lane`, `LaneOf` |
+| capability evidence | observed events of the unclaimable types `net_bind`, `net_listen`, `net_unix_connect`, `net_dns` and `net_dial`: listeners, Unix socket connections, connections to port 53 and connections that sent nothing. Reported, never aligned, never a finding | `Verdict.Capability`, `Command.Capability`, `models.ActionType.IsClaimable` |
+| structural event | `process_fork`: builds the tree, neither aligned nor counted as capability evidence | `models.ActionType.IsStructural` |
+| outside write | a write-class file event (`file_write`, `file_close`, `file_rename`, `file_delete`) under the workspace by an outside process | `Verdict.OutsideWrites` |
+| outside its interval | a pair whose claim has an end and whose observed event lies outside the claim's interval widened by the slack | `Verdict.OutsideInterval` |
+| outside the workspace | a path not under the directory the capture watched | `models.GroundTruthFile.Workspace` |
+| out of scope | a file claim on a path the capture could not observe, by its fs scope record | `Verdict.OutOfScope`, `FSScope` |
+| dropped by the scope rule | a file event `watch` left out of the capture: caused by no process of the agent's tree, on a path outside the workspace | `models.FSScope.DroppedOutside` |
+| finding | a discrepancy counted against the agent: a mismatched pair, an unwitnessed claim, an unrecorded top-level action, a pair outside its interval, or an unexplained subtree | `Verdict.Findings` |
+| outcome | the conclusion of a run: FAITHFUL, NOT FAITHFUL or INCONCLUSIVE | `Outcome` |
+| verdict | the whole result of a run: the outcome, the finding lists, the coverage check, the commands and the reasons | `Verdict` |
+
+`net_dns` belongs to the `net` lane but, being unclaimable, never reaches the
+alignment. "Level" describes a process and "zone" the placement of an event;
+a level-0 event is one caused by the agent process.
+
 ## Properties
 
 | ID | Property | Mechanism |
 |---|---|---|
 | P1 | Omission detection | coverage check: an observed subtree or level-0 event that no claim and no baseline rule explains (V3) |
-| P2 | Fabrication detection | insertion in the alignment of claims against the observed top-level sequence (V4, V5) |
+| P2 | Fabrication detection | insertion in the alignment of claims against the aligned sequence (V4, V5) |
 | P3 | Substitution detection | substitution at an aligned position. Pairing by position, not by target equality, makes a changed target reportable (V4, V5) |
 | P4 | Agent independence | verification uses host observations only. Adapters read the agent's own session files and require no change to the agent |
 | P5 | Deterministic verdict | the verdict is a pure function of the trajectory, the ground truth, the baseline and the options. It has three outcomes, FAITHFUL, NOT FAITHFUL and INCONCLUSIVE, and no score |
 | P6 | Composability | agent-trace provides recording-time faithfulness. Integrity of the stored record, anomaly detection and authorization are separate layers it composes with |
 | P7 | Content-level verification | file content hashes, command lines as the kernel resolved them, and request body hashes for HTTP/1.x over a hookable TLS library. Coverage of content is partial and is reported per probe |
 
-P5 originally said the verdict is binary. The code adds INCONCLUSIVE for a
-capture that cannot support FAITHFUL (below), and reports an ambiguous
-alignment without resolving it. The restated wording was ratified on 2026-10-11
-([V-27](../decisions/verification.md)).
+P5 is worded as restated in V-27
+([`../decisions/verification.md`](../decisions/verification.md)).
 
 ## What a verdict does not prove
 
-A FAITHFUL verdict says that the agent's top-level claims are true and that
-nothing observable happened outside them and the harness baseline. It does not
+A FAITHFUL outcome says that the agent's claims are true and that
+nothing observable happened that they and the harness baseline do not explain. It does not
 say that what a claimed command did was benign. An agent that writes
 `helper.sh` and runs it produces a faithful trajectory whatever the script
-does. The report lists the command's subtree and its capability evidence
-(listeners, Unix socket connections, connections to port 53 and connections
-that sent nothing), and judging them is out of scope.
+does. The report lists the command's subtree and its
+[capability evidence](#terms), and judging them is out of scope.
 
 ## Components
 
@@ -96,20 +128,14 @@ that sent nothing), and judging them is out of scope.
    such as its model API connection.
 4. **Verify.** `verify` builds the process forest from fork and exec records,
    attributes every event by ancestry, removes baseline events, sets aside
-   file claims on paths the capture could not observe (scope), aligns the
-   other claims against the observed top-level sequence one lane at a time
-   (files, processes, network), and checks that every observed event is
-   explained.
-5. **Conclude.** FAITHFUL (exit 0), NOT FAITHFUL (exit 1), INCONCLUSIVE
-   (exit 2) or error (exit 3), with the edit script, the coverage report, the
-   capability evidence and every limitation the adapter declared. A capture
-   with no root pid, or too large to align, is INCONCLUSIVE. With no finding,
-   so is a run whose capture lost events or left some unattributed, and one
-   where a claim states a value the probe did not capture, a file claim is
-   out of scope, harness activity in the harness's own directories is
-   unexplained, a process outside the tree wrote in the workspace, or a
-   truncated command line was paired by prefix. The rules are in
-   [20_verifier.md](20_verifier.md).
+   out-of-scope file claims, aligns the other claims against the aligned
+   sequence one lane at a time (`fs`, `proc`, `net`, `other`), and checks that
+   every observed event is explained.
+5. **Conclude.** `verify` prints the verdict: the outcome, the edit script,
+   the coverage report, the capability evidence and every limitation the
+   adapter declared. The rules that decide the outcome are in
+   [20_verifier.md](20_verifier.md#outcome-rules), and the exit codes in
+   [40_tools.md](40_tools.md#verify).
 
 Three rules cut across all components:
 
@@ -125,12 +151,10 @@ Three rules cut across all components:
 
 The probes, the verifier, the Claude Code and Gemini adapters, the baseline
 builder and the attack generators are implemented and tested against a
-simulated agent (`cmd/simagent`) and against fixtures. Five paired captures of
-Claude Code on one machine are checked in, four of version 2.1.286 and one of
-2.1.296: three verify FAITHFUL, and two (a session that wrote files with Bash
-heredocs, and the edits task whose Edit content hashes are all corroborated)
-have no findings and are INCONCLUSIVE over harness activity their kept controls
-did not show. Still unchecked: Gemini on a real session, Claude Code versions
-other than these two, tools and shapes the captures do not exercise (listed in
-[30_agent_adapters.md](30_agent_adapters.md)), and any population of real
-sessions. Known limits of each component are listed on its page.
+simulated agent (`cmd/simagent`) and against fixtures. Paired captures of real
+Claude Code sessions are checked in; each one, its agent version and its
+outcome are listed in [30_agent_adapters.md](30_agent_adapters.md#objective).
+Still unchecked: Gemini on a real session, Claude Code versions other than
+those captured, tools and shapes the captures do not exercise (listed in
+[30_agent_adapters.md](30_agent_adapters.md#known-limits)), and any population
+of real sessions. Known limits of each component are listed on its page.

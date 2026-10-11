@@ -67,14 +67,16 @@ Every N0 event carries `PID` (the tgid). None carries `PPID`.
 
 The hostname comes from the ClientHello the client sent, so it needs no plaintext and no cooperation from the agent, and it works for any TLS client. Request content is hashed, never stored.
 
-| Counter | Incremented when | Coverage field | `Assess` |
-|---|---|---|---|
-| net and TLS `drop_count` | a ring buffer output fails | `RingbufDrops` (summed) | event loss |
-| net and TLS `untracked_count` | a child cannot enter a `tracked_pids` map | `UntrackedChildren` (summed) | event loss |
-| net `state_lost_count` | a `conns` update fails, so the connection gets no hello and no close and is never emitted | `StateMapFull` | event loss |
-| `Dropped` (userspace) | the events channel is full | `ChannelDrops` | event loss |
-| `faulted_reads` | an `SSL_write` buffer read faults | `FaultedReads` | note |
-| N1 state | `ExePath` empty, attach failed, or active | `Content` | `attach_failed` is a note |
+| Counter | Incremented when | Coverage field |
+|---|---|---|
+| net and TLS `drop_count` | a ring buffer output fails | `RingbufDrops` (summed) |
+| net and TLS `untracked_count` | a child cannot enter a `tracked_pids` map | `UntrackedChildren` (summed) |
+| net `state_lost_count` | a `conns` update fails, so the connection gets no hello and no close and is never emitted | `StateMapFull` |
+| `Dropped` (userspace) | the events channel is full | `ChannelDrops` |
+| `faulted_reads` | an `SSL_write` buffer read faults | `FaultedReads` |
+| N1 state | `ExePath` empty, attach failed, or active | `Content` |
+
+Which of these fields `Assess` reads as event loss and which as a content gap is in [10_probes_common.md](10_probes_common.md#probecoverage).
 
 ## Known limits
 

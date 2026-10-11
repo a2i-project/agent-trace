@@ -52,9 +52,13 @@ them for a fact a reader needs.
   (a hypothesis, not to be built on before it is tested).
 * Code is referenced by package and symbol, not by line number.
 * Each architecture page starts with `Checked against commit <sha> on <date>.`:
-  the newest commit whose code the page was verified against. A page edited in
-  the same commit as the code it describes names that commit's parent and
-  lists the decision IDs the commit adds.
+  the commit whose code the page was verified against. A commit that changes a
+  component's code and its page together names its own parent there: the page
+  describes the parent's code plus that commit's change. CI accepts any commit
+  whose code for that component is identical to the parent's.
+* Every commit keeps the docs consistent with the code it changes, and says so
+  in a `Docs:` trailer. The contract and its enforcement are in
+  [methodology/dev_workflow.md](methodology/dev_workflow.md), Documentation.
 * No numbers measured on a private transcript corpus appear in a published
   page.
 * Writing: active voice, no em-dashes, no filler.

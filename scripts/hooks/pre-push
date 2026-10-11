@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs the published-docs lint and the per-commit checks before a push, as CI
+# does; locally the per-commit check also verifies Closes-Todo against docs/todo. Install once per clone:
+#   git config core.hooksPath scripts/hooks
+root="$(git rev-parse --show-toplevel)"
+python3 "$root/scripts/check-docs.py" lint || exit 1
+zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    base="$(git merge-base "$local_sha" origin/main 2>/dev/null || echo "$local_sha^")"
+  else
+    base="$remote_sha"
+  fi
+  python3 "$root/scripts/check-docs.py" commits "$base" "$local_sha" || exit 1
+done

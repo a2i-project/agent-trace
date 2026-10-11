@@ -31,9 +31,9 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 | `--net-exe-path PATH` | empty | TLS library (for example `libssl.so.3`) for the `SSL_write` uprobe; empty means identity only |
 | `--net-cache-path PATH` | `$TMPDIR/agent-trace-tlsoffset-cache.json` | Cache of computed TLS offsets |
 
-Modes: with a trailing `-- <command> [args]`, `watch` starts the command with its stdout and stderr piped through `watch` (so its console output is not a file write of the agent's, whatever `watch`'s stdout is), makes its pid the proc probe's ancestry root and the net probe's tracked pid, waits for it to exit (Ctrl+C kills it), waits 300 ms for trailing events and writes the file. With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
+Modes: with a trailing `-- <command> [args]`, `watch` starts the command, makes its pid the proc probe's ancestry root and the net probe's tracked pid, waits for it to exit (Ctrl+C kills it) and writes the file; the launch sequence, the output pipe and the wait for trailing events are in [10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes). With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
 
-`watch` requires root (fanotify and eBPF) and refuses a probe that does not implement `probe.CoverageReporter`. The output file is a `models.GroundTruthFile`: `events` sorted by timestamp, `coverage` with an entry for every known probe (`ran: false` for one not selected), `root_pid`, `workspace` and `fs_scope`. Before writing, with an fs probe and a root pid, `watch` keeps the file events the agent's tree caused on any marked filesystem and those under the workspace from any process, drops the rest, and records the count ([10_probes_common.md](10_probes_common.md)). It prints one line with the marked and unmarked filesystem counts and the dropped count, a warning per action type with the count of file events whose path could not be resolved (counted, not recorded), and a warning per filesystem it could not mark. On exit it prints the net probe's diagnostic counts when it ran (connections, with a hostname, with content, unattributed, unsupported, DNS connections, address probes, connections emitted at the stop, dials; [13_probe_net.md](13_probe_net.md)), each probe's loss counters, `hashlessCloses` included, and logs a warning when `verification.Assess` judges the capture incomplete.
+`watch` requires root (fanotify and eBPF) and refuses a probe that does not implement `probe.CoverageReporter`. The output file is a `models.GroundTruthFile` ([10_probes_common.md](10_probes_common.md#ground_truthjson)); before writing it, `watch` applies the scope rule to file events ([10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes)). It prints one line with the marked and unmarked filesystem counts and the count dropped by the scope rule, a warning per action type with the count of file events whose path could not be resolved (counted, not recorded), and a warning per filesystem it could not mark. On exit it prints the net probe's diagnostic counts when it ran (connections, with a hostname, with content, unattributed, unsupported, DNS connections, address probes, connections emitted at the stop, dials; [13_probe_net.md](13_probe_net.md)), each probe's loss counters, `hashlessCloses` included, and logs a warning when `verification.Assess` judges the capture incomplete.
 
 | Exit code | When |
 |---|---|
@@ -58,9 +58,18 @@ Reads a trajectory through an adapter and a capture, runs `verification.Verify`,
 
 Adapter choice: `--agent` selects by name (an unknown name is an error). Without it, `agent.Detect` runs; no match falls back to `generic`, and several matches are an error asking for `--agent`. A baseline whose `agent` differs from the chosen adapter's name is refused, and so is one whose `agent_version` differs from the version the session states (the Claude Code transcript records it on every line; a format that states none is not checked). Without a baseline, a non-generic adapter's report gains a degradation saying the harness's own activity will read as unexplained. `--ignore-exits` can only add to the adapter's choice: an adapter with `ExitsClaimed: false` always ignores exits.
 
-The report, on standard output, contains in order: the inputs (entry count, adapter, event count, root pid, the capture's fs scope or a note that it predates the record, baseline rules and runs); the adapter `Report` (tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations); the alignment counts (Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, Unexplained harness activity, Outside writes, and an ambiguity note); the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability count; the detail lists; the forensic view; the completeness judgement with notes; and the `VERDICT` line with the reasons when INCONCLUSIVE or advisory.
+The report, on standard output, contains in order:
 
-The forensic view lists every level-1 command, claimed, baselined, unexplained or quiet, with its exit code and what happened beneath it: programs run, files written, opened, renamed and deleted, connections, requests, listeners, Unix sockets, DNS connections (`dns`) and connections that sent nothing (`dials (nothing sent)`), as distinct sorted targets capped at twelve per group. It is what honest trajectories do not record, a tool's own accesses while it runs (D3, P-17), and it is reported so a reader can judge a command the verdict only explains. None of it is a finding. The JSON report carries every event of each command, uncapped. A write error on `--json` is exit 3 after the text report has been printed.
+1. the inputs: entry count, adapter, event count, root pid, the capture's fs scope or a note that it predates the record, baseline rules and runs;
+2. the adapter `Report`: tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations;
+3. the alignment counts: Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, Unexplained harness activity, Outside writes, and an ambiguity note;
+4. the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability evidence count;
+5. the detail lists;
+6. the forensic view;
+7. the completeness judgement with notes;
+8. the `VERDICT` line, with the reasons when the outcome is INCONCLUSIVE or the findings advisory.
+
+The forensic view lists every command, claimed, baselined, unexplained or quiet, with its exit code and what happened beneath it: programs run, files written, opened, renamed and deleted, connections, requests, listeners, Unix sockets, DNS connections (`dns`) and connections that sent nothing (`dials (nothing sent)`), as distinct sorted targets capped at twelve per group. It is what honest trajectories do not record, a tool's own accesses while it runs (D3, P-17), and it is reported so a reader can judge a command the verdict only explains. None of it is a finding. The JSON report carries every event of each command, uncapped. A write error on `--json` is exit 3 after the text report has been printed.
 
 | Exit code | When |
 |---|---|
@@ -85,11 +94,11 @@ baseline --agent NAME --agent-version V [--out FILE] [--exclude TARGET]... CONTR
 | `--agent-version V` | (required) | Version of the agent that was run; a baseline holds for one version |
 | `--out PATH` | `baseline.json` | Output file |
 | `--min-agreement F` | `1` | Fraction of control runs that must perform an action for it to become a rule. Lower it for activity the harness does only sometimes, at the cost of a wider baseline (I-24). |
-| `--exclude TARGET` | none | A target that never becomes a rule, whatever its action type. Repeatable. It names the command the control task itself was told to run: every control performs it, it is not the harness's activity, and as a rule it would explain any later command with that target, and its whole subtree, without a claim (I-28). |
+| `--exclude TARGET` | none | A target that never becomes a rule, whatever its action type. Repeatable. It names the command the control task itself was told to run (I-28; semantics in [30_agent_adapters.md](30_agent_adapters.md#baseline-construction)). |
 
 Each positional argument is a capture from `watch`. A run with no coverage record, with any loss counter set, or with no root pid is refused. On success it prints the number of rules, runs and the agreement used, and how many unstable actions were left out, and notes when given a single run that one run cannot separate stable from incidental activity.
 
-The baseline file is JSON: `schema` (1), `agent`, `agent_version`, `captured`, `runs`, `min_agreement`, `rules`, `unstable` and `excluded`, each rule an `action_type` and `target`. A target names the watched directory as `{workspace}`.
+The baseline file format, and the placeholder that names the watched directory, are in [30_agent_adapters.md](30_agent_adapters.md#baseline-construction).
 
 | Exit code | When |
 |---|---|
@@ -155,14 +164,14 @@ sudo ./watch --workspace /tmp/agent-trace-demo --out ground_truth.json -- \
 ./verify --trajectory trajectory.json --ground-truth ground_truth.json
 ```
 
-`verify` finds no adapter for the JSON trajectory and uses `generic`. Adding `--drop-entry 0` or an `--attack` mode to `simagent` turns the verdict into NOT FAITHFUL with the finding in the table above. Adding `--probes fs,proc,net --net-exe-path <libssl>` to `watch` and `--fetch-url ... --fetch-via-curl` to `simagent` exercises network content capture.
+`verify` finds no adapter for the JSON trajectory and uses `generic`. Adding `--drop-entry 0` or an `--attack` mode to `simagent` turns the outcome into NOT FAITHFUL with the finding in the table above. Adding `--probes fs,proc,net --net-exe-path <libssl>` to `watch` and `--fetch-url ... --fetch-via-curl` to `simagent` exercises network content capture.
 
 ### Build a baseline for a real agent
 
 1. Run the agent several times, five or more, under `watch` on a task that claims nothing, with the same probes as the real run: `sudo ./watch --probes fs,proc,net --workspace "$PWD" --out runN.json -- <agent command>`.
 2. Check each run reports no loss; `baseline` refuses one that does.
-3. `./baseline --agent claude-code --agent-version <version> --exclude '<the control task's command>' --min-agreement 0.2 --out baseline.json run1.json ... run5.json`. One run in five is enough for an action to be the harness's: a control runs no task. Full agreement keeps only what every run did and leaves occasional activity out, which then reads as unexplained.
-4. Read the `unstable` list: those actions were seen in fewer runs than the threshold and will read as unexplained if they appear in a real run; in the harness's own directories they are reported as unexplained harness activity and make the run INCONCLUSIVE (V-24).
+3. `./baseline --agent claude-code --agent-version <version> --exclude '<the control task's command>' --min-agreement 0.2 --out baseline.json run1.json ... run5.json`. The agreement of one run in five is the capture script's default (below; I-24, V-24).
+4. Read the `unstable` list: those actions were seen in fewer runs than the threshold and will read as unexplained if they appear in a real run; in the harness's own directories they are reported as unexplained harness activity ([20_verifier.md](20_verifier.md#verdict-vocabulary)).
 
 ### Verify a real agent session
 
@@ -176,7 +185,7 @@ Read the adapter section of the report before the verdict: unknown tools, parse 
 
 ### Capture scripts
 
-`scripts/capture-claude-code.sh` does the two workflows above for Claude Code in one run: it records a task run and `CONTROLS` control runs (default five) under `watch` (as the user, with `setpriv` exec'ing the agent in place so it keeps the pid `watch` records as the root), copies each transcript by session id, builds the baseline with the control's own no-op command excluded and `MIN_AGREEMENT` defaulting to one run in `CONTROLS` (a control runs no task, so anything it did is the harness's, and some of that is occasional, V-24), and writes `verify` output with and without it. `--task basic|parallel|project|edits` picks the task: `parallel` adds three Reads in one message, a subagent, Grep, Glob, WebFetch and a Bash pipeline; `project` is a coding task in a seeded Python package (`scripts/seed/project`); `edits` writes one file and makes five Edits of it, including a `replace_all`. The control runs enable the same tools as the task, because the harness's shell snapshot command differs with the tool set (I-24). `--baseline-from DIR` reuses the controls of an earlier capture of the same version and tool set and refuses otherwise, before it asks for sudo. It needs root and model quota, so the user runs it. `scripts/make-capture-fixture.py` reduces a capture to a checked-in fixture: paths rewritten, the transcript cut to the fields the adapter reads, the snapshot script elided.
+`scripts/capture-claude-code.sh` does the two workflows above for Claude Code in one run: it records a task run and `CONTROLS` control runs (default five) under `watch` (as the user, with `setpriv` exec'ing the agent in place so it keeps the pid `watch` records as the root), copies each transcript by session id, builds the baseline with the control's own no-op command excluded and `MIN_AGREEMENT` defaulting to one run in `CONTROLS` (V-24), and writes `verify` output with and without it. `--task basic|parallel|project|edits` picks the task; each is described with its fixture in [30_agent_adapters.md](30_agent_adapters.md#objective), and `project` seeds its package from `scripts/seed/project`. The control runs enable the same tools as the task, because the harness's shell snapshot command differs with the tool set (I-24). `--baseline-from DIR` reuses the controls of an earlier capture of the same version and tool set and refuses otherwise, before it asks for sudo. It needs root and model quota, so the user runs it. `scripts/make-capture-fixture.py` reduces a capture to a checked-in fixture: paths rewritten, the transcript cut to the fields the adapter reads, the snapshot script elided.
 
 ### Tests
 
@@ -193,8 +202,8 @@ Read the adapter section of the report before the verdict: unknown tools, parse 
 
 - `watch` exits 1 both for its own errors and for an agent that exited with an error, so its exit code does not separate the two.
 - `watch` without a command or `--root-pid` records with `root_pid` zero, which `verify` can only report as INCONCLUSIVE; its file events are then unfiltered.
-- The level-0 sequence now holds the harness's own file activity outside the workspace (its configuration directory, the libraries it loads), which the baseline has to explain; a baseline captured before P-17 does not.
+- The level-0 events of the aligned sequence hold the harness's own file activity outside the workspace (its configuration directory, the libraries it loads), which the baseline has to explain; a baseline captured before P-17 does not.
 - `watch --root-pid` misses whatever the process did before attaching.
 - `verify` checks the baseline's `agent_version` only against a session that states its version; the generic and Gemini formats state none.
 - `simagent` ignores an unknown `--attack` value instead of rejecting it.
-- `simagent` covers one fixed script; it is not a substitute for a real agent session. Real sessions verified end to end are the five Claude Code captures (four of 2.1.286, one of 2.1.296) described in [30_agent_adapters.md](30_agent_adapters.md).
+- `simagent` covers one fixed script; it is not a substitute for a real agent session. Real sessions verified end to end are the Claude Code captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective).

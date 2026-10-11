@@ -2,7 +2,7 @@
 
 Why the verifier builds a process forest, checks coverage and aligns sequences instead of joining two lists on a time window. V1 to V8 keep the numbering of the original model; decisions taken while building it are numbered from V-9.
 
-Entries carry their own dates. Statuses reconciled with the code at commit a1c95a9 on 2026-10-11. Original source: docs/archive/08_verification_model.md (local only). As-built description: [../architecture/20_verifier.md](../architecture/20_verifier.md). Related: [integration.md](integration.md), [open.md](open.md).
+Entries carry their own dates. Statuses reconciled with the code at commit 1391cbe on 2026-10-11. Original source: docs/archive/08_verification_model.md (local only). As-built description: [../architecture/20_verifier.md](../architecture/20_verifier.md). Related: [integration.md](integration.md), [open.md](open.md).
 
 ## Model decisions
 
@@ -16,6 +16,7 @@ Alternatives rejected: Time-window attribution (F0.2-F0.3 below).
 
 ### V2: T and the level-1 sequence of G should be the same sequence
 Status: Accepted. Partly implemented: totally ordered sequences are aligned; the partial-order case is not (O-2 in [open.md](open.md)).
+Date: design 2026-09 (in the archived verification model, before 2026-09-19); `BlockID` and `ThreadID` added 2026-10-06 (commit 56fef6e).
 Context: A blocking agent emits one call, waits, emits the next, so its children appear in claim order. In the design corpus claim order was total in practice (measured on a local transcript corpus, design input only (local only: docs/research/harness_corpus.md)), but parallel tool calls and flattened subagents (D9) make it partial.
 Decision: The design must tolerate a partial order: the observed sequence must be a valid linearization of the order T induces, using block and thread ids.
 Consequences: Adapters carry `BlockID` and `ThreadID`. `Align` does not read them yet.
@@ -39,20 +40,22 @@ Alternatives rejected: Content-keyed pairing (circular).
 
 ### V5: The edit script is the finding report
 Status: Accepted, implemented in `Verify` (match = Corroborated, substitution = Mismatched, insertion = Unwitnessed, deletion = Unrecorded).
-Context: The three attacks are the three edit operations: insertion is fabrication (P2), deletion is omission (P1), substitution is substitution (P3).
+Date: design 2026-09 (in the archived verification model, before 2026-09-19); built 2026-10-06 (commits a147518, eec9735).
+Context: The three attacks that edit claims (see [Attack definitions](evaluation.md#attack-definitions)) are the three edit operations: insertion is fabrication (P2), deletion is omission (P1), substitution is substitution (P3).
 Decision: Report findings as the edit script, with both claimed and observed values on a substitution. The cost model separates content from structural disagreement (V-10), and ambiguity is reported (V-11).
 Consequences: Evaluation can score classification and localization, not only detection.
 Alternatives rejected: Deriving the four sets from a set difference.
 
 ### V6: The clock orders events, it does not pair them
 Status: Accepted, implemented; refined by V-9 and V-12.
+Date: design 2026-09 (in the archived verification model, before 2026-09-19); built 2026-10-06 (commits a147518, 5e17be5).
 Context: A constant clock offset, long durations and approval latency are fatal to a window and harmless to an order.
 Decision: Time is used for ordering and for one consistency check on claimed intervals. No tunable window remains.
 Consequences: The original text also said a crossing of aligned pairs is itself a finding. As built, order within a lane is monotone by construction, and cross-lane order is neither checked nor reported (V-9).
 Alternatives rejected: `matching.Config.Delta` (removed, V-18).
 
 ### V7: The harness baseline is measured by a null-task control run
-Status: Accepted, implemented in `agent.Baseline`, `agent.Capture`, `cmd/baseline` and `Partition.SubtractBaseline`. No baseline has been captured for a real agent yet.
+Status: Accepted, implemented in `agent.Baseline`, `agent.Capture`, `cmd/baseline` and `Partition.SubtractBaseline`. Amended 2026-10-11 (docs review): baselines are measured for Claude Code 2.1.286 and 2.1.296, from the control runs kept with the five paired fixtures (`docs/architecture/30_agent_adapters.md`); none exists for Gemini.
 Date: built 2026-10-06 (commit 5b551d7).
 Context: A hand-maintained noise list is version-specific and rots silently into false omissions.
 Decision: Run the agent on a task that claims nothing and record everything it does. All of it is harness activity, keyed on agent and version, and subtracted before alignment and coverage. Rule details are V-19.
@@ -61,6 +64,7 @@ Alternatives rejected: Static lists in the adapter (I-19 in [integration.md](int
 
 ### V8: FAITHFUL requires both checks, reported separately
 Status: Accepted, implemented (`Verdict.Alignments` and `Verdict.Coverage`).
+Date: design 2026-09 (in the archived verification model, before 2026-09-19); built 2026-10-06 (commit eec9735).
 Context: An empty edit script says every claim happened. Complete coverage says nothing happened that no claim explains. They fail for different reasons.
 Decision: Report the two checks apart; FAITHFUL requires both, plus a complete capture (V-15).
 Consequences: Neither check is integrity: laundering through a script stays FAITHFUL, but becomes visible as a subtree with content (D5).
@@ -97,7 +101,7 @@ Status: Accepted, implemented (`Options.IntervalSlack`, `Verdict.OutsideInterval
 Date: 2026-10-06.
 Context: D12 puts the interval in the trajectory, which the attacker controls. The agent and the probes do not share a clock.
 Decision: A matched pair whose observed action falls outside the claim's `[Timestamp, End]`, widened by `IntervalSlack`, is flagged `OutsideInterval` and stays matched. `OutsideInterval` counts as a finding.
-Consequences: Widening an interval suppresses nothing (attack A4). It only evades this one consistency finding.
+Consequences: Widening an interval (attack A4 in [evaluation.md](evaluation.md#attack-definitions)) suppresses nothing. It only evades this one consistency finding.
 Alternatives rejected: Refusing the pair outside the interval, which reintroduces the time window.
 
 ### V-13: Ground truth records its own completeness
@@ -140,7 +144,8 @@ Consequences: Old captures cannot be re-verified to a verdict.
 Alternatives rejected: Keeping the old engine as a fallback for legacy files, which would keep the time window alive.
 
 ### V-18: `matching.Match`, `Config` and `Delta` are removed
-Status: Accepted, implemented (commit 5e17be5, 2026-10-06).
+Status: Accepted, implemented (commit 5e17be5).
+Date: 2026-10-06 (commit 5e17be5).
 Context: After the alignment, nothing called `Match`, and its target-equality precondition was what made substitution unreportable.
 Decision: Only `matching.TargetsMatch` remains: per-action-type target normalization and the directory fallback gated on `PathIsAmbiguous`, with no timestamp or type condition. Content comparison lives in `verification.contentDiffs`.
 Consequences: No time constant has to be justified anywhere. `cmd/verify --delta` is gone.
@@ -173,9 +178,9 @@ Alternatives rejected: Not recorded at the time.
 ### V-22: A stated value the probe did not capture is unverified, and FAITHFUL is not asserted over it
 Status: Accepted, implemented (`unverifiedFields`, `Edit.Unverified`, `Verdict.Unverified`, the outcome rule in `Verify`). Amends V-20 and the last consequence of P-16.
 Date: 2026-10-08 (a security review of the verifier, local only).
-Context: V-20 reads a nil on the observed side as agreement, because a missing capture cannot disprove a claim. The fs probe publishes a close without a hash whenever a write-class event, an open included, follows it within the settle window (P-16), and nothing counts that. An agent that reads its file back right after writing it therefore made the probe drop the hash, and any claimed content was then corroborated (**Verified**: `TestPairedWriteWithoutAnObservedHashIsInconclusive` verified FAITHFUL with a false hash before the change).
+Context: V-20 reads a nil on the observed side as agreement, because a missing capture cannot disprove a claim. The fs probe publishes a close without a hash whenever a write-class event, an open included, follows it within the settle window (P-16). An agent that reads its file back right after writing it therefore made the probe drop the hash, and any claimed content was then corroborated (**Verified**: `TestPairedWriteWithoutAnObservedHashIsInconclusive` verified FAITHFUL with a false hash before the change).
 Decision: A pair whose claim states `output_hash` (on `file_close` or `file_write`), `exit_code` (on `process_exit`) or `request_hash` (on `net_request`) and whose observed event does not carry it is corroborated and listed as unverified, with the fields named. It is not a finding, since a probe gap is not the agent's doing. With no finding, the outcome is INCONCLUSIVE with the fields and counts as the reason. `Expresses` is not consulted: the claim did state the value.
-Consequences: Content verification can no longer be switched off by the agent; it can only be made inconclusive, which the report says. An honest run whose probe dropped a hash is INCONCLUSIVE rather than FAITHFUL, the same reading as event loss. `input_hash` is not tracked, because the fs probe stamps every open with one. Amended 2026-10-09 (commit c89cc84): the fs probe counts hashless closes (`HashlessCloses`, a note in `Assess`), so `watch` says at capture time how many closes it could not vouch for.
+Consequences: The agent can no longer switch content verification off, only make it inconclusive, which the report says. An honest run whose probe dropped a hash is INCONCLUSIVE rather than FAITHFUL, the same reading as event loss. `input_hash` is not tracked, because the fs probe stamps every open with one. Amended 2026-10-09 (commit c89cc84): the fs probe counts hashless closes (`HashlessCloses`, a note in `Assess`), so `watch` says at capture time how many closes it could not vouch for.
 Alternatives rejected: Reporting the pair as a mismatch (it punishes an honest agent for a probe gap, and under loss findings are advisory anyway); keeping the pair silent (the attack above).
 
 ### V-23: A file claim the capture could not have witnessed is set aside, not aligned
@@ -187,12 +192,12 @@ Consequences: An honest agent is not called a fabricator for a write the probe w
 Alternatives rejected: Keeping legacy captures on the Unwitnessed reading (it is a known false positive once the workspace is in the file); dropping the claim silently (the report must say what was not checked); treating the gap as a finding (it is the capture's limit, not the agent's).
 
 ### V-24: Unexplained file events in the harness's own directories are reported apart and make the run INCONCLUSIVE
-Status: Accepted, implemented (`Options.HarnessOwned`, `Verdict.UnexplainedHarness`, `isHarnessOwned` in `pkg/verification`; `agent.HarnessOwner`). Amends V-19: the capture script's default agreement threshold is 1/N. Since N-22, a connection that sent nothing is capability evidence, so "a connection" below means one that sent data.
+Status: Accepted, implemented (`Options.HarnessOwned`, `Verdict.UnexplainedHarness`, `isHarnessOwned` in `pkg/verification`; `agent.HarnessOwner`). Amends V-19: the capture script's default agreement threshold is 1/N.
 Date: 2026-10-09 (taken after the first full capture under P-17).
-Context: The baseline is measured on a few control runs and keeps what enough of them did (V7, V-19, I-24). The harness does some things only sometimes: a backup of its configuration on some startups, a telemetry connection, a package-manager probe. When one of them happens in the run being verified and in no control, the verifier reports it as an unreported action and an honest run is NOT FAITHFUL (**Verified**: the basic task of 2.1.286 on 2026-10-09, seven claims corroborated, NOT FAITHFUL on six events of a backup of `~/.claude.json` that none of three controls made). No number of controls sees every occasional behaviour.
-Decision: Two measures. The capture script records more controls at a lower agreement threshold (option 1: an action seen in any control is the harness's, since a control runs no task). And the verifier takes from the adapter a declaration of where the harness keeps its own files (`HarnessOwner`), and reports an unexplained level-0 file event there as `UnexplainedHarness`: not a finding, and not FAITHFUL, so the outcome is INCONCLUSIVE with the count as the reason. A file event elsewhere, a connection, and a command under those directories stay findings. Amended 2026-10-11 (commit 25e243d): such an event whose path no claim names is set aside before alignment, as a baseline event is, rather than taken out of the findings after it. Left in the sequence it could pair with a fabricated claim while a real claim was pushed onto it at the same cost, an ambiguous alignment that read the fabrication as a substitution (**Verified**: two runs of a hundred on the edits capture, which has two such events). An event on a path some claim does name stays, so an honest write into the harness's directory pairs with it.
-Consequences: An honest run with occasional harness activity in its own directories is INCONCLUSIVE rather than falsely unfaithful, and the events are listed so a reader judges them. A write by the agent into those directories, the shell snapshot included, is still reported and still blocks FAITHFUL, but it is no longer a finding by itself; that is weaker than before and is the price of not calling honest runs unfaithful. The declaration explains nothing, so it is not a hiding place in the sense of D11. The snapshot question itself is unchanged: a baseline rule for the snapshot file explains the harness's write of it, as it did before.
-Alternatives rejected: Declaring the harness directories explained wholesale (decides the snapshot question by default: a write there would never be reported); keeping the strict reading (honest runs unfaithful, the exit code unusable, false positives in the evaluation); more controls alone (a behaviour rarer than the sample still escapes).
+Context: The baseline keeps what enough control runs did (V7, V-19, I-24). The harness does some things only sometimes: a backup of its configuration on some startups, a telemetry connection, a package-manager probe. When one of them happens in the run being verified and in no control, it reads as an unreported action and an honest run is NOT FAITHFUL (**Verified**: the basic task of 2.1.286 on 2026-10-09, seven claims corroborated, NOT FAITHFUL on six events of a backup of `~/.claude.json` that none of three controls made). No number of controls sees every occasional behaviour.
+Decision: Two measures. The capture script records more controls and keeps an action seen in any one of them (a 1/N agreement threshold), since a control runs no task, so whatever it does is the harness's. And the adapter declares where the harness keeps its own files (`HarnessOwner`); an unexplained level-0 file event there is reported as `UnexplainedHarness`, which is neither a finding nor FAITHFUL, so a run without findings is INCONCLUSIVE with the count as the reason. A file event elsewhere, a connection that sent data (since N-22 one that sent nothing is capability evidence), and a command under those directories stay findings. Amended 2026-10-11 (commit 25e243d): such an event whose path no claim names is set aside before alignment, as a baseline event is, instead of being taken out of the findings after it. Left in the sequence it could pair with a fabricated claim through an ambiguous alignment that read the fabrication as a substitution (**Verified**: two runs in a hundred on the edits capture, which has two such events). An event on a path some claim names stays, so an honest write into the harness's directory pairs with it.
+Consequences: An honest run with occasional harness activity in its own directories is INCONCLUSIVE rather than falsely unfaithful, and the events are listed so a reader can judge them. A write by the agent into those directories, the shell snapshot that every later Bash call sources included, is still reported and still blocks FAITHFUL, but is no longer a finding by itself; that is weaker than before and is the price of not calling honest runs unfaithful. The declaration explains nothing, so it is not a hiding place in the sense of D11. This entry does not change how the harness's own write of the shell snapshot is explained: a baseline rule for the snapshot file explains it, as before.
+Alternatives rejected: Declaring the harness directories explained wholesale (a write there, the shell snapshot included, would never be reported); keeping the strict reading (honest runs unfaithful, the exit code unusable, false positives in the evaluation); more controls alone (a behaviour rarer than the sample still escapes).
 
 ### V-25: A write in the workspace by a process the tree cannot place makes the run INCONCLUSIVE
 Status: Accepted, implemented (`Verdict.OutsideWrites`, `outsideWrites` in `pkg/verification`).
@@ -219,12 +224,12 @@ Consequences: A run that cannot support FAITHFUL is never reported as FAITHFUL o
 Alternatives rejected: Keeping P5 literal and folding INCONCLUSIVE into NOT FAITHFUL, which would report a lossy capture as a lie by the agent.
 
 ### V-28: A nil `output_hash` on a `file_write` the tool can state is an opt-out finding
-Status: Accepted, not yet implemented. Ratified by the user on 2026-10-11 (was O-26, option b). Until it is built, a Claude Code Write that drops its hash verifies FAITHFUL.
+Status: Accepted, not yet implemented. Ratified by the user on 2026-10-11 (was O-26 in open.md). Until it is built, a Claude Code Write that drops its hash verifies FAITHFUL.
 Date: 2026-10-11.
 Context: The opt-out rule of V-20 (a claim that omits a value its format can state, where the probe captured it, is a finding) applies to `output_hash` only on `file_close`. Claude Code claims a Write as a `file_write` carrying the hash and never claims a close (I-22), so a Write claim that drops its hash is neither a finding nor unverified (V-22 needs a stated value).
 Decision: Apply the opt-out rule to `output_hash` on a `file_write` claim whose tool `Expresses` the field, exactly as on `file_close`.
 Consequences: A Write that omits content its format records becomes a Mismatched finding. An Edit is unaffected while its declaration stays as it is (I-31 claims the hash when the result record has it). The paired fixtures must keep their outcomes; the change is checked against them when built.
-Alternatives rejected: (a) leaving the rule on `file_close` only, a silent pass on a content claim; (c) having the Claude Code adapter claim a `file_close` carrying the hash, which invents a claim the format does not make.
+Alternatives rejected: Leaving the rule on `file_close` only (a silent pass on a content claim); having the Claude Code adapter claim a `file_close` carrying the hash, which invents a claim the format does not make.
 
 ## Superseded
 
@@ -237,5 +242,6 @@ Why superseded: The pairing was circular (substitution unreportable), one claim 
 
 ### P1-P3 (original wording)
 Status: Superseded by V3 (P1), V4 and V5 (P2, P3). The restated properties are in [../architecture/00_overview.md](../architecture/00_overview.md).
+Date: original wording 2026-09 (archived protocol architecture); superseded in design before 2026-09-19 and in code on 2026-10-06.
 Context: The original properties named the mechanism: omission as G events with no matching T entry, fabrication as T entries with no matching G event, substitution as entries that "match an event in G by timestamp but differ in content".
 Why superseded: The claims are unchanged; the mechanism is not. P3's wording described a matcher that was never built, since `Match` never paired on timestamp alone.
