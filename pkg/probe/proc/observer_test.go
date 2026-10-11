@@ -935,7 +935,7 @@ func TestObserver_OverlongCommandLineIsFlagged(t *testing.T) {
 }
 
 // An exec through a file descriptor (execveat with AT_EMPTY_PATH, glibc's
-// fexecve) was invisible: only execve was hooked. Python's os.execv takes a
+// fexecve) was invisible: only execve was hooked. Python's os.execve takes a
 // descriptor and uses exactly that call. The record names the program as
 // "(fexecve)", since there is no path, with the arguments (P-21).
 func TestObserver_ExecThroughADescriptorIsRecorded(t *testing.T) {
@@ -950,7 +950,9 @@ func TestObserver_ExecThroughADescriptorIsRecorded(t *testing.T) {
 	}
 	obs.Start()
 	time.Sleep(150 * time.Millisecond)
-	script := fmt.Sprintf("import os; fd = os.open('/bin/true', os.O_RDONLY); os.execv(fd, ['true', %q])", nonce)
+	// Only os.execve accepts a descriptor as the program; it then calls
+	// execveat(fd, "", argv, envp, AT_EMPTY_PATH).
+	script := fmt.Sprintf("import os; fd = os.open('/bin/true', os.O_RDONLY); os.execve(fd, ['true', %q], os.environ)", nonce)
 	if err := exec.Command("python3", "-c", script).Run(); err != nil {
 		t.Fatalf("python: %v", err)
 	}
