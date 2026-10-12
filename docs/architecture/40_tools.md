@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 268220d on 2026-10-12.
+Checked against commit f97b1a2 on 2026-10-12.
 
 ## Objective
 
@@ -31,7 +31,7 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 | `--net-exe-path PATH` | empty | TLS library (for example `libssl.so.3`) for the `SSL_write` uprobe; empty means identity only |
 | `--net-cache-path PATH` | `$TMPDIR/agent-trace-tlsoffset-cache.json` | Cache of computed TLS offsets |
 
-Modes: with a trailing `-- <command> [args]`, `watch` starts the command, makes its pid the proc probe's ancestry root and the net probe's tracked pid, waits for it to exit (Ctrl+C kills it) and writes the file; the launch sequence, the output pipe and the wait for trailing events are in [10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes). With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
+Modes: with a trailing `-- <command> [args]`, `watch` starts the command stopped before its exec, makes its pid the proc probe's ancestry root and the net probe's tracked pid, then lets it run (P-23), waits for it to exit (Ctrl+C kills it) and writes the file; the launch sequence, the output pipe and the wait for trailing events are in [10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes). With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
 
 `watch` requires root (fanotify and eBPF) and refuses a probe that does not implement `probe.CoverageReporter`. The output file is a `models.GroundTruthFile` ([10_probes_common.md](10_probes_common.md#ground_truthjson)); before writing it, `watch` applies the scope rule to file events ([10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes)). It prints one line with the marked and unmarked filesystem counts and the count dropped by the scope rule, a warning per action type with the count of file events whose path could not be resolved (counted, not recorded), and a warning per filesystem it could not mark. On exit it prints the net probe's diagnostic counts when it ran (connections, with a hostname, with content, unattributed, unsupported, DNS connections, address probes, connections emitted at the stop, dials; [13_probe_net.md](13_probe_net.md)), each probe's loss counters, `hashlessCloses` included, and logs a warning when `verification.Assess` judges the capture incomplete.
 
@@ -204,6 +204,7 @@ Read the adapter section of the report before the verdict: unknown tools, parse 
 - `watch` without a command or `--root-pid` records with `root_pid` zero, which `verify` can only report as INCONCLUSIVE; its file events are then unfiltered.
 - The level-0 events of the aligned sequence hold the harness's own file activity outside the workspace (its configuration directory, the libraries it loads), which the baseline has to explain; a baseline captured before P-17 does not.
 - `watch --root-pid` misses whatever the process did before attaching.
+- A command `watch` launches gets the resolved program path as `argv[0]`, and a file without a `#!` line that the kernel refuses to exec is run as a shell script by the hold script's `exec` (P-23).
 - `verify` checks the baseline's `agent_version` only against a session that states its version; the generic and Gemini formats state none.
 - `simagent` ignores an unknown `--attack` value instead of rejecting it.
 - `simagent` covers one fixed script; it is not a substitute for a real agent session. Real sessions verified end to end are the Claude Code captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective).

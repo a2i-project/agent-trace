@@ -8,9 +8,10 @@
 // Invocation modes:
 //
 //   - watch --workspace PATH -- <agent command> [args...]
-//     watch launches the agent itself, records its PID as the proc probe's
-//     ancestry root (so the agent's own exec is suppressed and only its
-//     descendants count as agent actions), runs it to completion, then
+//     watch launches the agent itself, held before its exec until its PID
+//     is registered with the probes (P-23), records that PID as the proc
+//     probe's ancestry root (so the agent's own exec is suppressed and only
+//     its descendants count as agent actions), runs it to completion, then
 //     writes the ground truth. This is the mode that makes ancestry
 //     tracking actually work.
 //
@@ -216,6 +217,63 @@ func dropSelfFSEvents(g models.GroundTruth, self uint32) models.GroundTruth {
 		out = append(out, e)
 	}
 	return out
+}
+
+// holdScript runs in the launched process before the agent. It blocks on
+// descriptor 3 until watch writes a line, closes the descriptor, and execs
+// the agent in place, so the agent keeps the pid watch registered with the
+// probes and is tracked from its first instruction (P-23). End of file
+// without a line means watch gave up, and the agent never runs.
+const holdScript = `read -r _ <&3 || exit 1; exec 3<&-; exec "$@"`
+
+// heldAgent is an agent process started by startHeld and not yet released.
+type heldAgent struct {
+	cmd  *exec.Cmd
+	gate *os.File // write end of the pipe the hold script reads
+}
+
+// startHeld starts args under holdScript. The command is resolved here, so a
+// missing program is an error from watch, as with exec.Command, and not an
+// exit status of the shell. The process exists when startHeld returns, but
+// runs nothing of the agent's until release.
+func startHeld(args []string, stdin io.Reader, stdout, stderr io.Writer) (*heldAgent, error) {
+	path, err := exec.LookPath(args[0])
+	if err != nil {
+		return nil, err
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("/bin/sh", append([]string{"-c", holdScript, "agent-trace-hold", path}, args[1:]...)...)
+	cmd.ExtraFiles = []*os.File{r}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+	err = cmd.Start()
+	_ = r.Close()
+	if err != nil {
+		_ = w.Close()
+		return nil, err
+	}
+	return &heldAgent{cmd: cmd, gate: w}, nil
+}
+
+// pid is the pid the agent will run under.
+func (h *heldAgent) pid() int { return h.cmd.Process.Pid }
+
+// release lets the held process exec the agent.
+func (h *heldAgent) release() error {
+	_, err := h.gate.Write([]byte("\n"))
+	if cerr := h.gate.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// abort ends a held process that was never released; the agent never runs.
+func (h *heldAgent) abort() {
+	_ = h.gate.Close()
+	_ = h.cmd.Process.Kill()
+	_ = h.cmd.Wait()
 }
 
 // workspaceAbs is the workspace as an absolute path, which is how the probes
@@ -466,32 +524,37 @@ func runWatch(opts watchOptions) error {
 		// Give the fs probe a moment to be fully reading before the agent runs.
 		time.Sleep(200 * time.Millisecond)
 
-		cmd := exec.Command(opts.agentArgs[0], opts.agentArgs[1:]...)
 		// The agent's output passes through watch on a pipe rather than
 		// inheriting the descriptors: when stdout is a file on a marked
 		// filesystem, every line the agent prints would otherwise be a file
 		// write by the agent, with no claim to explain it.
-		cmd.Stdout = passthrough{os.Stdout}
-		cmd.Stderr = passthrough{os.Stderr}
-		cmd.Stdin = os.Stdin
-		if err := cmd.Start(); err != nil {
+		held, err := startHeld(opts.agentArgs, os.Stdin, passthrough{os.Stdout}, passthrough{os.Stderr})
+		if err != nil {
 			stopEverything()
 			return fmt.Errorf("start agent %q: %w", opts.agentArgs[0], err)
 		}
-		groundRoot = uint32(cmd.Process.Pid)
-		// SetRootPID after Start (PID must exist) but before the proc readLoop
-		// starts, so the root's buffered execve is dropped by PID match.
+		pid := held.pid()
+		groundRoot = uint32(pid)
+		// The process is held before the agent's exec, so registering its pid
+		// now covers everything the agent does (P-23). SetRootPID also comes
+		// before the proc readLoop starts, so the root's own exec is dropped
+		// by pid match.
 		if procObs != nil {
-			if err := procObs.SetRootPID(int32(cmd.Process.Pid)); err != nil {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
+			if err := procObs.SetRootPID(int32(pid)); err != nil {
+				held.abort()
 				stopEverything()
 				return fmt.Errorf("set proc probe root pid: %w", err)
 			}
 			startProc()
 		}
 		// Wire the agent's PID into the net probe so its connections are visible.
-		startNet(int32(cmd.Process.Pid))
+		startNet(int32(pid))
+		cmd := held.cmd
+		if err := held.release(); err != nil {
+			held.abort()
+			stopEverything()
+			return fmt.Errorf("release agent %q: %w", opts.agentArgs[0], err)
+		}
 		fmt.Printf("watching %s (probes: %s) -- running %s\n",
 			opts.cfg.Workspace, opts.probes, strings.Join(opts.agentArgs, " "))
 

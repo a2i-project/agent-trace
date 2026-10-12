@@ -38,8 +38,8 @@ func TestRunWatch_ExecWrapSuppressesRootSeesChild(t *testing.T) {
 	ws := t.TempDir()
 	out := filepath.Join(t.TempDir(), "ground_truth.json")
 	nonce := fmt.Sprintf("watch-3a-%d", time.Now().UnixNano())
-	// sleep 2 prevents a scheduler race where the child shell runs and forks
-	// before the parent watch process has a chance to call SetRootPID.
+	// The child forks after a delay; TestRunWatch_ImmediateForkIsTracked
+	// covers a fork at the agent's first instruction.
 	script := "sleep 2 && /bin/echo " + nonce + " & wait"
 
 	opts := watchOptions{
@@ -104,6 +104,95 @@ func TestRunWatch_ExecWrapSuppressesRootSeesChild(t *testing.T) {
 	}
 	if !sawChild {
 		t.Errorf("child exec (echo %s) missing from ground truth; events: %+v", nonce, ground)
+	}
+}
+
+// TestRunWatch_ImmediateForkIsTracked checks that a child the agent forks at
+// once is in the tree: the agent is held before its exec until its pid is
+// registered with the probes (P-23), so there is no window in which a fork is
+// untracked. Before that, watch registered the pid after the agent started and
+// such a child could be missed on a slow runner. A single run passes by luck
+// as often as not without the hold; run it with -count=50 to judge the fix.
+func TestRunWatch_ImmediateForkIsTracked(t *testing.T) {
+	skipUnprivileged(t)
+
+	out := filepath.Join(t.TempDir(), "ground_truth.json")
+	nonce := fmt.Sprintf("watch-immediate-%d", time.Now().UnixNano())
+	opts := watchOptions{
+		cfg:       watchConfig{Workspace: t.TempDir(), EventBufSize: 256},
+		probes:    "proc",
+		out:       out,
+		agentArgs: []string{"/bin/sh", "-c", "/bin/echo " + nonce + " & wait"},
+	}
+	if err := runWatch(opts); err != nil {
+		t.Fatalf("runWatch: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read %s: %v", out, err)
+	}
+	file, err := models.ParseGroundTruthFile(data)
+	if err != nil {
+		t.Fatalf("parse ground truth: %v", err)
+	}
+	var forked, execd bool
+	for _, e := range file.Events {
+		if e.ActionType == models.ProcessFork && e.PPID == file.RootPID {
+			forked = true
+		}
+		if e.ActionType == models.ProcessExec && e.Target == "/bin/echo "+nonce {
+			execd = true
+		}
+	}
+	if !forked || !execd {
+		t.Errorf("immediate child missing (fork from root %d: %v, exec of echo: %v); events: %+v", file.RootPID, forked, execd, file.Events)
+	}
+}
+
+// A held agent runs nothing until it is released, and then runs under the pid
+// it was held with, which is the pid watch registers with the probes (P-23).
+// Needs no privileges.
+func TestStartHeld_RunsTheAgentOnlyAfterReleaseUnderTheSamePID(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "pid")
+	held, err := startHeld([]string{"sh", "-c", `echo $$ > "$1"`, "agent", marker}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("startHeld: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		held.abort()
+		t.Fatal("the agent ran before it was released")
+	}
+	if err := held.release(); err != nil {
+		held.abort()
+		t.Fatalf("release: %v", err)
+	}
+	if err := held.cmd.Wait(); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("the agent did not run after release: %v", err)
+	}
+	if want := fmt.Sprint(held.pid()); strings.TrimSpace(string(got)) != want {
+		t.Errorf("agent ran as pid %s, want the held pid %s", strings.TrimSpace(string(got)), want)
+	}
+}
+
+// An agent that is never released never runs, and a missing program is
+// reported by watch before any process is started.
+func TestStartHeld_AbortAndMissingProgram(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "ran")
+	held, err := startHeld([]string{"/bin/sh", "-c", `: > "$1"`, "agent", marker}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("startHeld: %v", err)
+	}
+	held.abort()
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("an aborted agent ran")
+	}
+	if _, err := startHeld([]string{"agent-trace-no-such-program"}, nil, nil, nil); err == nil {
+		t.Error("startHeld accepted a program that does not exist")
 	}
 }
 
