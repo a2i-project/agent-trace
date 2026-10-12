@@ -9,7 +9,22 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
     and each is cut to the fields the adapter reads: a result's text only for
     a Write whose text starts with the create or update sentence (I-35),
     is_error when set, an Edit's and a NotebookEdit's structured result (I-31,
-    I-37), and a structured result's type;
+    I-37), a Read's structured result (I-40, below), and any other structured
+    result's type. A call's input is kept whole, so a Read's offset and limit
+    stay;
+  * a Read's structured result keeps type, file.filePath, file.startLine,
+    file.numLines, file.totalLines and file.truncatedByTokenCap, so the
+    adapter decides as on the raw capture whether the Read was of the whole
+    file (I-40). file.content, whose sha256 the adapter claims as the open's
+    input hash, is kept only when the file read lies in the run's workspace or
+    in the harness's per-session task directory of that workspace
+    (/tmp/claude-<uid>/<mangled workspace>/<session>/tasks/, where a background
+    command's output goes), and only when it holds nothing the rewriting below
+    would change and no e-mail address. Any other content is dropped, so the
+    adapter claims no hash for that Read. Kept content is never rewritten: the
+    probe's measured hash is of the bytes as read, and a rewritten text would
+    no longer match it. A private string inside content therefore drops the
+    content rather than rewriting it;
   * each run's workspace becomes /ws/<label> and the capture directory
     /capture, both as paths and in the form Claude Code names its per-project
     directories with (every character but a letter or digit a dash), so the
@@ -29,11 +44,11 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
     ~/.claude/sessions/<pid>.<hex>.key, becomes zeros. The key itself is the
     file's content, which no capture holds, but the name is per session.
 
-Before it finishes, the script checks every file it wrote for the home
-directory, the user name, the organisation ids, every e-mail address found in
-the raw transcripts, the recorded and the current capture directory in either
-form, and any session key name left unrewritten, and deletes its output and
-fails if one is left.
+Before it finishes, the script checks every file it wrote, kept Read content
+included, for the home directory, the user name, the organisation ids, every
+e-mail address found in the raw transcripts, the recorded and the current
+capture directory in either form, and any session key name left unrewritten,
+and deletes its output and fails if one is left.
 
 Ground truth events, pids, timestamps and coverage are kept as captured.
 
@@ -138,6 +153,37 @@ WRITE_TEXTS = ("File created successfully at: ", "The file ")
 # A NotebookEdit's structured result, as the adapter reads it (I-37), with the
 # call's own fields beside it. The seeded notebook is not private.
 NOTEBOOK_FIELDS = ("notebook_path", "original_file", "updated_file", "error", "edit_mode", "cell_id", "new_source", "old_source")
+# A Read's structured result, as the adapter reads it (I-40). content is
+# handled apart, by read_content.
+READ_FILE_FIELDS = ("filePath", "startLine", "numLines", "totalLines", "truncatedByTokenCap")
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+def readable(path):
+    """Whether a Read of path may keep its content: a file in the task run's
+    workspace, or in the harness's per-session task directory of that
+    workspace, both as recorded."""
+    if not isinstance(path, str) or not path.startswith("/") or os.path.normpath(path) != path:
+        return False
+    for root in roots:
+        ws = root + "/ws-" + task
+        if path.startswith(ws + "/"):
+            return True
+        if re.fullmatch(r"/tmp/claude-\d+/" + re.escape(mangle(ws)) + r"/[0-9a-f-]+/tasks/[^/]+", path):
+            return True
+    return False
+
+
+def read_content(file, call_input):
+    """The content of a Read's result to keep, or None to drop it."""
+    content = file.get("content")
+    if not isinstance(content, str) or not readable(file.get("filePath")):
+        return None
+    if isinstance(call_input, dict) and call_input.get("file_path") != file.get("filePath"):
+        return None
+    if rewrite(content, task) != content or EMAIL.search(content):
+        return None
+    return content
 
 
 def result_text(content):
@@ -152,6 +198,7 @@ def result_text(content):
 def reduce_transcript(src, dst):
     kept = []
     names = {}  # tool_use id -> tool name, from the calls read so far
+    inputs = {}  # tool_use id -> the call's input
     with open(src) as f:
         for line in f:
             o = json.loads(line)
@@ -165,6 +212,7 @@ def reduce_transcript(src, dst):
             for b in blocks:
                 if b["type"] == "tool_use":
                     names[b["id"]] = b["name"]
+                    inputs[b["id"]] = b["input"]
                     slim.append({"type": "tool_use", "id": b["id"], "name": b["name"], "input": b["input"]})
                 else:
                     text = result_text(b.get("content"))
@@ -179,17 +227,27 @@ def reduce_transcript(src, dst):
             if o.get("isSidechain"):
                 rec["isSidechain"] = True
             tr = o.get("toolUseResult")
+            results = [b for b in blocks if b["type"] == "tool_result"]
+            read_id = results[0]["tool_use_id"] if len(results) == 1 and names.get(results[0]["tool_use_id"]) == "Read" else None
+            content = None
             if isinstance(tr, dict) and "notebook_path" in tr:
                 rec["toolUseResult"] = {k: tr[k] for k in NOTEBOOK_FIELDS if k in tr}
             elif isinstance(tr, dict) and "type" in tr:
                 rec["toolUseResult"] = {"type": tr["type"]}
+                if read_id and isinstance(tr.get("file"), dict):
+                    rec["toolUseResult"]["file"] = {k: tr["file"][k] for k in READ_FILE_FIELDS if k in tr["file"]}
+                    content = read_content(tr["file"], inputs.get(read_id))
             elif isinstance(tr, dict) and "originalFile" in tr:
                 # An Edit's result: the adapter computes the final content from
                 # these (I-31). The seeded project's files are not private.
                 rec["toolUseResult"] = {k: tr[k] for k in ("originalFile", "oldString", "newString", "replaceAll") if k in tr}
             elif tr is not None:
                 rec["toolUseResult"] = {}
-            kept.append(json.loads(rewrite(json.dumps(rec), task)))
+            rec = json.loads(rewrite(json.dumps(rec), task))
+            # Kept content goes in after the rewriting, which must not touch it.
+            if content is not None:
+                rec["toolUseResult"]["file"]["content"] = content
+            kept.append(rec)
     os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
     with open(dst, "w") as f:
         for r in kept:
