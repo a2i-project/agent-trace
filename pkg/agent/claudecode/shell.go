@@ -183,12 +183,17 @@ func canonicalIDs(s string) string {
 // a capture of every filesystem (P-17) now shows at level 0: the session
 // record named by pid, the transcript named by session id under a directory
 // named by the workspace, the lock file's temporary, and the fswatch probe
-// directory. Measured on four startups of 2.1.286 (I-29).
+// directory. Measured on four startups of 2.1.286 (I-29). A subagent's files
+// were added from the tools capture of 2.1.296 (I-38).
 var (
 	uuidPattern   = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
 	sessionFileID = regexp.MustCompile(`(/\.claude/sessions/)\d+(\.json)`)
 	sessionKeyID  = regexp.MustCompile(`(/\.claude/sessions/)\d+\.[0-9a-f]{64}(\.key)`)
 	transcriptID  = regexp.MustCompile(`(/\.claude/projects/[^/]+/)` + uuidPattern + `(\.jsonl)`)
+	// A subagent's transcript and metadata live in a directory named by the
+	// session id, and are named by the subagent's id (I-38).
+	sessionDirID  = regexp.MustCompile(`(/\.claude/projects/[^/]+/)` + uuidPattern + `(/subagents(?:/|$))`)
+	subagentID    = regexp.MustCompile(`(/\.claude/projects/[^/]+/SESSION/subagents/agent-)[0-9a-z]+(\.jsonl|\.meta\.json)`)
 	backupID      = regexp.MustCompile(`(/\.claude/backups/\.claude\.json\.backup\.)\d+`)
 	mcpLogID      = regexp.MustCompile(`(/\.cache/claude-cli-nodejs/[^/]+/mcp-logs-[^/]+/)\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z(\.jsonl)`)
 	taskDirID     = regexp.MustCompile(`(/tmp/claude-\d+/[^/]+/)` + uuidPattern + `(/tasks)`)
@@ -206,6 +211,8 @@ func canonicalFileIDs(s string) string {
 	s = sessionFileID.ReplaceAllString(s, "${1}N${2}")
 	s = sessionKeyID.ReplaceAllString(s, "${1}N.KEY${2}")
 	s = transcriptID.ReplaceAllString(s, "${1}SESSION${2}")
+	s = sessionDirID.ReplaceAllString(s, "${1}SESSION${2}")
+	s = subagentID.ReplaceAllString(s, "${1}N${2}")
 	s = backupID.ReplaceAllString(s, "${1}N")
 	s = mcpLogID.ReplaceAllString(s, "${1}TIME${2}")
 	s = taskDirID.ReplaceAllString(s, "${1}SESSION${2}")

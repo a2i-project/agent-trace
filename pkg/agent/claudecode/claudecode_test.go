@@ -359,7 +359,8 @@ func TestNormalizeRecognisesSearchesOnlyFromTheInstallDirectory(t *testing.T) {
 
 // The harness's own files carry per-run ids: the session record by pid, the
 // transcript by session id, the lock's temporary, the fswatch probe
-// directory. Measured on four startups of 2.1.286 (I-29).
+// directory. Measured on four startups of 2.1.286 (I-29), and a subagent's
+// files on the tools capture of 2.1.296 (I-38).
 func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
 	for in, want := range map[string]string{
 		"/home/u/.claude/sessions/247316.json":                                                      "/home/u/.claude/sessions/N.json",
@@ -369,6 +370,17 @@ func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
 		"/home/u/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1":                               "/home/u/.local/state/claude/locks/2.1.286.lock.tmp.N",
 		"/ws/a.txt":            "/ws/a.txt",
 		"/ws/sessions/12.json": "/ws/sessions/12.json", // not under .claude
+		// A subagent's transcript, its metadata and their directory, named by
+		// the session and agent ids, and the background Bash's output file
+		// (tools capture of 2.1.296, I-38).
+		"/home/u/.claude/projects/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/subagents":                                                "/home/u/.claude/projects/-tmp-cap-ws-tools/SESSION/subagents",
+		"/home/u/.claude/projects/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/subagents/agent-a556a28b177cacb1b.jsonl":                  "/home/u/.claude/projects/-tmp-cap-ws-tools/SESSION/subagents/agent-N.jsonl",
+		"/home/u/.claude/projects/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/subagents/agent-a556a28b177cacb1b.meta.json":              "/home/u/.claude/projects/-tmp-cap-ws-tools/SESSION/subagents/agent-N.meta.json",
+		"/home/u/.claude/projects/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/subagents/agent-a556a28b177cacb1b.meta.json.tmp.800a075d": "/home/u/.claude/projects/-tmp-cap-ws-tools/SESSION/subagents/agent-N.meta.json.tmp.800a075d",
+		"/tmp/claude-1000/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/tasks/b18jddo1a.output":                                           "/tmp/claude-1000/-tmp-cap-ws-tools/SESSION/tasks/N.output",
+		"/home/u/.claude/sessions/1142436.74821b1a692244346c03ff21ee8811b6eceaf464cb010e1baac32b8891041deb.key":                                    "/home/u/.claude/sessions/N.KEY.key",
+		"/ws/subagents/agent-a556a28b177cacb1b.jsonl":                                                                                              "/ws/subagents/agent-a556a28b177cacb1b.jsonl", // not under .claude/projects
+		"/home/u/.claude/projects/-ws/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/notes/agent-a5.jsonl":                                                   "/home/u/.claude/projects/-ws/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/notes/agent-a5.jsonl",
 	} {
 		for _, typ := range []models.ActionType{models.FileOpen, models.FileWrite, models.FileClose, models.FileDelete, models.FileRename} {
 			got, keep := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: typ, Target: in})
