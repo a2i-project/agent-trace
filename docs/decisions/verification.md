@@ -160,7 +160,7 @@ Consequences: A baseline cannot be widened into a wildcard. A harness that varie
 Alternatives rejected: Glob or regex rules.
 
 ### V-20: Nil is three-valued in the content comparison
-Status: Accepted; amended by V-22 (a stated value the probe did not capture is Unverified and makes the run INCONCLUSIVE). Implemented in `contentDiffs` with `Options.Expresses`.
+Status: Accepted; amended by V-22 (a stated value the probe did not capture is Unverified and makes the run INCONCLUSIVE) and by V-28 (the opt-out also applies to `OutputHash` on `FileWrite`). Implemented in `contentDiffs` with `Options.Expresses`.
 Date: 2026-10-06 (commit eec9735).
 Context: The first engine forced a mismatch whenever the claim had no exit code, output hash or request hash and the probe captured one. No real format holds all three, so honest trajectories failed, more often as the probes improved.
 Decision: A nil is a probe gap (benefit of the doubt), a format limit (not a finding) or an opt-out (a finding). The opt-out applies only where `Expresses` says the format can state the field, the probe captured it, and the field is one of `OutputHash` on `FileClose`, `ExitCode` on `ProcessExit`, `RequestHash` on `NetRequest`. `InputHash` stays permissive. `Options.IgnoreExits` drops exits from both sides.
@@ -224,7 +224,7 @@ Consequences: A run that cannot support FAITHFUL is never reported as FAITHFUL o
 Alternatives rejected: Keeping P5 literal and folding INCONCLUSIVE into NOT FAITHFUL, which would report a lossy capture as a lie by the agent.
 
 ### V-28: A nil `output_hash` on a `file_write` the tool can state is an opt-out finding
-Status: Accepted, not yet implemented. Ratified by the user on 2026-10-11 (was O-26 in open.md). Until it is built, a Claude Code Write that drops its hash verifies FAITHFUL.
+Status: Accepted, implemented (`contentDiffs`, `TestVerify_AWriteThatDropsAHashItsToolStatesIsAMismatch`). Ratified by the user on 2026-10-11 (was O-26 in open.md).
 Date: 2026-10-11.
 Context: The opt-out rule of V-20 (a claim that omits a value its format can state, where the probe captured it, is a finding) applies to `output_hash` only on `file_close`. Claude Code claims a Write as a `file_write` carrying the hash and never claims a close (I-22), so a Write claim that drops its hash is neither a finding nor unverified (V-22 needs a stated value).
 Decision: Apply the opt-out rule to `output_hash` on a `file_write` claim whose tool `Expresses` the field, exactly as on `file_close`.

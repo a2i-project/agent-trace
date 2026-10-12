@@ -156,6 +156,16 @@ func TestVerify_ThreeValuedNil(t *testing.T) {
 		e.OutputHash = out
 		return e
 	}
+	wc := func(out *string) models.TrajectoryEntry {
+		c := claimAt(0, models.FileWrite, "/w/f")
+		c.OutputHash = out
+		return c
+	}
+	we := func(out *string) models.GroundTruthEvent {
+		e := agentEv(0, models.FileWrite, "/w/f")
+		e.OutputHash = out
+		return e
+	}
 	xc := func(code *int32) models.TrajectoryEntry {
 		c := claimAt(0, models.ProcessExit, "/bin/true")
 		c.ExitCode = code
@@ -183,6 +193,10 @@ func TestVerify_ThreeValuedNil(t *testing.T) {
 		{"file_close: probe captured nothing", fc(h), fe(nil), DiffOutputHash, false, false, false, "probe gap gets the benefit of the doubt"},
 		{"file_close: both nil", fc(nil), fe(nil), DiffOutputHash, false, false, false, ""},
 		{"file_close: both set, differ", fc(other), fe(h), DiffOutputHash, true, true, true, "a stated value that differs is always a finding"},
+		{"file_write: agent opted out", wc(nil), we(h), DiffOutputHash, false, true, true, "V-28: as on file_close"},
+		{"file_write: probe captured nothing", wc(h), we(nil), DiffOutputHash, false, false, false, ""},
+		{"file_write: both nil", wc(nil), we(nil), DiffOutputHash, false, false, false, ""},
+		{"file_write: both set, differ", wc(other), we(h), DiffOutputHash, true, true, true, ""},
 		{"exit: agent opted out", xc(nil), xe(&zero), DiffExitCode, false, true, true, ""},
 		{"exit: probe captured nothing", xc(&zero), xe(nil), DiffExitCode, false, false, false, ""},
 		{"exit: both set, differ", xc(&zero), xe(&one), DiffExitCode, true, true, true, ""},
@@ -289,6 +303,43 @@ func TestVerify_UnverifiedIsOnlyAStatedValueTheProbeMissed(t *testing.T) {
 	wantOutcome(t, withFinding, OutcomeNotFaithful)
 	if len(withFinding.Unverified) != 1 {
 		t.Error("the unverified pair must still be reported next to the finding")
+	}
+}
+
+// V-28: an adapter that claims a write's content on the file_write, as Claude
+// Code does for Write and Edit, cannot drop the hash of a tool whose format
+// states it. A Write claim with no output_hash against a write the probe
+// hashed is a content mismatch; an Edit, whose format may not keep its final
+// content, is corroborated. Neither is unverified: that needs a stated value
+// the probe missed, the opposite case.
+func TestVerify_AWriteThatDropsAHashItsToolStatesIsAMismatch(t *testing.T) {
+	h := sp("sha256:aa")
+	ex := func(e models.TrajectoryEntry, field string) bool {
+		return field != DiffOutputHash || e.Tool == "Write"
+	}
+	claim := func(tool string) models.TrajectoryEntry {
+		c := claimAt(0, models.FileWrite, "/w/f")
+		c.Tool = tool
+		return c
+	}
+	g := models.GroundTruth{withHash(agentEv(0, models.FileWrite, "/w/f"), nil, h)}
+	verify := func(c models.TrajectoryEntry) Verdict {
+		return Verify(Input{Claims: models.Trajectory{c}, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{Expresses: ex}})
+	}
+
+	write := verify(claim("Write"))
+	wantOutcome(t, write, OutcomeNotFaithful)
+	if len(write.Mismatched) != 1 || len(write.Mismatched[0].Diffs) != 1 || write.Mismatched[0].Diffs[0] != DiffOutputHash {
+		t.Errorf("Write: Mismatched = %+v, want one pair differing on output_hash", write.Mismatched)
+	}
+	if len(write.Unwitnessed)+len(write.Unrecorded)+len(write.Unverified) != 0 {
+		t.Errorf("Write: unwitnessed = %v unrecorded = %v unverified = %v, want only the mismatch", write.Unwitnessed, write.Unrecorded, write.Unverified)
+	}
+
+	edit := verify(claim("Edit"))
+	wantOutcome(t, edit, OutcomeFaithful)
+	if len(edit.Corroborated) != 1 || len(edit.Unverified) != 0 {
+		t.Errorf("Edit: corroborated = %d unverified = %+v, want the pair corroborated and nothing unverified", len(edit.Corroborated), edit.Unverified)
 	}
 }
 

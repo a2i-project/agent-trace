@@ -145,11 +145,11 @@ func (ex Expresses) can(entry models.TrajectoryEntry, field string) bool {
 // A mismatch requires both sides to have a non-nil, different value.
 //
 // NOTE: Verify applies a stricter override on top of this for specific
-// action types. For a FileClose entry whose OutputHash is nil while the
-// ground truth captured one, the nil is the agent opting out of a check it
-// could have passed, not a probe gap, and Verify forces a mismatch. This
-// function's permissive rule still governs every other case (any nil on the
-// ground-truth side, and InputHash until Tier 4.2 lands on both sides).
+// action types. For a FileClose or FileWrite entry whose OutputHash is nil
+// while the ground truth captured one, the nil is the agent opting out of a
+// check it could have passed, not a probe gap, and Verify forces a mismatch.
+// This function's permissive rule still governs every other case (any nil on
+// the ground-truth side, and a nil InputHash on either side).
 func hashesAgree(a, b *string) bool {
 	if a == nil || b == nil {
 		return true
@@ -246,9 +246,11 @@ func unverifiedFields(entry models.TrajectoryEntry, event models.GroundTruthEven
 //     the agent opted out of a check it could have passed, which is a finding.
 //
 // The third state applies to three fields only, the ones with complete
-// round-trip support: OutputHash on FileClose, ExitCode on ProcessExit and
-// RequestHash on NetRequest. InputHash stays permissive until Tier 4.2 lands
-// on both sides. A nil ex means every field is expressible, which is right for
+// round-trip support: OutputHash on FileClose and on FileWrite (V-28: an
+// adapter can claim a write's content on the write, as Claude Code does),
+// ExitCode on ProcessExit and RequestHash on NetRequest. It needs a nil claim
+// and a captured value, so it never meets the unverified case, which needs the
+// opposite (unverifiedFields). InputHash stays permissive. A nil ex means every field is expressible, which is right for
 // simagent and wrong for a real agent, whose adapter must declare its limits.
 func contentDiffs(entry models.TrajectoryEntry, event models.GroundTruthEvent, ex Expresses) []string {
 	var diffs []string
@@ -256,7 +258,8 @@ func contentDiffs(entry models.TrajectoryEntry, event models.GroundTruthEvent, e
 		diffs = append(diffs, DiffInputHash)
 	}
 	outputOK := hashesAgree(entry.OutputHash, event.OutputHash)
-	if entry.ActionType == models.FileClose && entry.OutputHash == nil && event.OutputHash != nil && ex.can(entry, DiffOutputHash) {
+	writesContent := entry.ActionType == models.FileClose || entry.ActionType == models.FileWrite
+	if writesContent && entry.OutputHash == nil && event.OutputHash != nil && ex.can(entry, DiffOutputHash) {
 		outputOK = false
 	}
 	if !outputOK {
