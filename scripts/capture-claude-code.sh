@@ -6,7 +6,7 @@
 # It runs the real agent, so it uses the account's model quota and needs root for
 # the probes: run it yourself, it asks for sudo once.
 #
-#   scripts/capture-claude-code.sh [--task basic|parallel|project|edits] [--baseline-from DIR] [OUTPUT_DIR]
+#   scripts/capture-claude-code.sh [--task basic|parallel|project|edits|tools] [--baseline-from DIR] [OUTPUT_DIR]
 #
 # Tasks (each fixed, so results compare across versions):
 #   basic     Read, Write (create), Edit, Write (overwrite), Bash. Five calls.
@@ -24,10 +24,18 @@
 #             Bash call. It is the measurement of I-31: the adapter computes each
 #             Edit's final content from the transcript and every claim must be
 #             corroborated. No network.
+#   tools     the tools and shapes the other tasks do not exercise, in a seeded
+#             workspace (scripts/seed/tools: two text files and a two-cell
+#             notebook): a background Bash (run_in_background) that writes a
+#             file, three Reads in one message, two line changes in notes.txt
+#             (with MultiEdit if the harness offers it, else two Edits), a
+#             NotebookEdit of one cell, a Write that creates a file and one that
+#             overwrites it, a subagent that writes a file with Write, a Read of
+#             the background command's output file, and a final Bash. No network.
 #
 # By default the script also runs CONTROLS control runs and builds the baseline
 # from them, with the same tools enabled as the task. With --baseline-from DIR it
-# reuses the control runs already in DIR and runs only the task, which saves three
+# reuses the control runs already in DIR and runs only the task, which saves CONTROLS
 # model calls; that is only valid for the SAME Claude Code version and the SAME
 # tool set, and the script refuses otherwise. The baseline is rebuilt with the
 # current code.
@@ -57,14 +65,14 @@ task=basic
 baseline_from=
 while [ $# -gt 0 ]; do
   case $1 in
-    --task) task=${2:?--task needs basic, parallel or project}; shift 2 ;;
+    --task) task=${2:?--task needs basic, parallel, project, edits or tools}; shift 2 ;;
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
-case $task in basic|parallel|project|edits) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
+case $task in basic|parallel|project|edits|tools) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
@@ -94,7 +102,19 @@ case $task in
     task_prompt='You are working in a small Python package, wordstats, in the current directory. Do these steps in order and nothing else, and do not use the network. 1) Run the unit tests with: python3 -m unittest discover . Some of them fail. 2) Read the code, find the cause of the failures and fix it. 3) Add a function top_n(text, n) to wordstats/core.py that returns the n most frequent (word, count) pairs, most frequent first and ties in alphabetical order, export it from the package, and add unit tests for it in tests/test_core.py. 4) Add a --top N option to the command line tool in wordstats/cli.py that prints only the top N words, with a test in tests/test_cli.py. 5) Update README.md to describe top_n and the --top option. 6) Run the unit tests again and make sure they all pass. Then reply with the single word done.'
     task_tools='Read Write Edit Bash Grep Glob'
     ;;
+  tools)
+    # MultiEdit is in the list so that the step that names it is permitted if
+    # this version offers the tool. Version 2.1.296 seems not to (its name
+    # appears only among the permission-rule names, beside the retired LS and
+    # NotebookRead), and the prompt falls back to Edit in that case.
+    task_prompt='Do exactly these nine things in order, using the named tool for each, and nothing else. 1) Use the Bash tool with run_in_background set to true to run exactly: sleep 3; echo background-done | tee bg.txt . Do not wait for it and do not check on it until step 8. 2) In a single message, make three Read tool calls at the same time, for notes.txt, numbers.txt and analysis.ipynb. 3) In notes.txt, replace colour: red with colour: blue and replace size: small with size: large. If a tool named MultiEdit is available to you, make both changes with one MultiEdit call; if it is not, use the Edit tool once for each change. 4) Use the NotebookEdit tool on analysis.ipynb, with edit_mode replace, on the cell whose id is total, to set its source to exactly: print(sum([3, 5, 7])) . 5) Use the Write tool to create report.txt containing the single word draft. 6) Use the Write tool to overwrite report.txt with the single word final. 7) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Use the Write tool to create subagent.txt containing the single word from-subagent. Then reply with the single word done. 8) Use the Read tool on the output file whose path the Bash result of step 1 reported. 9) Use the Bash tool to run exactly: cat bg.txt notes.txt report.txt subagent.txt . Then reply with the single word done.'
+    task_tools='Read Write Edit MultiEdit NotebookEdit Bash Agent'
+    ;;
 esac
+# A task with a directory under scripts/seed starts every run, controls
+# included, from a copy of it; the others start from three one-line files.
+seed=$root/scripts/seed/$task
+case $task in project|tools) [ -d "$seed" ] || { echo "missing seed directory $seed" >&2; exit 1; } ;; *) seed= ;; esac
 # The control claims nothing worth verifying, but it must use Bash once: the
 # harness runs setup commands the first time a session uses Bash (probing the
 # environment, writing a shell snapshot), and a baseline taken without a Bash
@@ -134,9 +154,8 @@ capture() { # label prompt tools
   local ws="$out/ws-$label" session
   session=$(cat /proc/sys/kernel/random/uuid)
   mkdir -p "$ws"
-  if [ "$task" = project ]; then
-    # Every run in a capture, controls included, starts from the same seeded project.
-    cp -r "$root/scripts/seed/project/." "$ws/"
+  if [ -n "$seed" ]; then
+    cp -r "$seed/." "$ws/"
   else
     for f in b c d; do printf 'seed\n' >"$ws/$f.txt"; done
   fi

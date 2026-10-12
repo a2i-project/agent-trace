@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 6556815 on 2026-10-12.
+Checked against commit 3e242f2 on 2026-10-12.
 
 ## Objective
 
@@ -16,6 +16,8 @@ The Claude Code adapter has been checked against six paired captures (real sessi
 | `paired-2.1.286-project-heredoc` | 2.1.286 | 2 of 5 | a second session of the project task in which the model wrote files with Bash heredocs (three Bash claims) | every claim corroborated and no finding; INCONCLUSIVE, not FAITHFUL, because the harness backed up its configuration, which no kept control did (V-24). The regression fixture for the heredoc wrapper |
 | `paired-2.1.286-p17` | 2.1.286 | 5 | the basic task again, recorded after the fs probe began marking every real filesystem (P-17) | FAITHFUL at the capture script's default agreement of 1/N (0.2), all seven claims corroborated and the harness's activity across the filesystem explained by the baseline: the evidence behind V-24's defaults. FAITHFUL up to an agreement of four controls in five; at full agreement INCONCLUSIVE, never NOT FAITHFUL, on a write of the harness's policy file under `~/.claude` that not every control made. The capture predates P-18, so twice in the task, and in two controls, the rename of the harness's rewrite of `~/.claude.json` is recorded as two renames of the home directory, which the fold takes whole (I-33). The only fixture with five controls; it predates N-20 to N-22 |
 | `paired-2.1.296-edits` | 2.1.296 | 2 of 5 | the edits task, made after I-31 and P-20: one Write, five Edits of different shapes (one a `replace_all`), one Bash | twelve claims of twelve corroborated, the five Edits on both their input and output hash; INCONCLUSIVE only on two harness events no kept control made. The gate fixture of I-31 |
+
+The capture script has a sixth task, `tools`, prepared and **not yet captured**, so it has no fixture and no result. It targets what the captures above leave unchecked (the known limits below), in a workspace seeded from `scripts/seed/tools`: a background Bash (`run_in_background`) that writes a file, three Reads in one message, two line changes in one file (with `MultiEdit` if the harness offers it, otherwise two Edits; 2.1.296 appears not to offer it), a `NotebookEdit` of one cell of a small notebook, a Write that creates a file and one that overwrites it, a subagent that creates a file with Write, a Read of the background command's output file, and a closing Bash. The adapter maps neither `MultiEdit` nor `NotebookEdit` yet; whether to map them is decided after the capture.
 
 In the parallel capture the parallel Reads were observed in the order the model emitted them (one observation, so O-2 stays open), and the subagent's Bash appeared as a level-1 command of the agent's own process.
 
