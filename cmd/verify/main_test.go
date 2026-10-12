@@ -395,3 +395,57 @@ func TestBaselineForAnotherVersionIsRefused(t *testing.T) {
 		t.Errorf("a baseline for the session's own version was refused: %s", errOut)
 	}
 }
+
+// --- the p5 demo (P-18, close order) ---
+
+// testdata/p5 is a real capture under watch (2026-10-09, the fs probe after
+// P-17 and P-18) of a two-line shell "agent" that writes one file inside the
+// workspace and one next to it, both from its own process. Paths are rewritten
+// to /p5. P-18 sorts a close where its record was read, so each file's close
+// sits before the next file's open, and an honest trajectory that claims open,
+// write and close per file in that order aligns exactly. The baseline is the
+// shell's own loads.
+func TestP5CloseOrderDemo(t *testing.T) {
+	const dir = "testdata/p5"
+	gt := filepath.Join(dir, "ground_truth.json")
+	base := filepath.Join(dir, "baseline.json")
+
+	// The capture itself: the inside close is recorded before the outside open.
+	data, err := os.ReadFile(gt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := models.ParseGroundTruthFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeInside, openOutside := -1, -1
+	for i, e := range f.Events {
+		if e.ActionType == models.FileClose && e.Target == "/p5/ws/inside.txt" {
+			closeInside = i
+		}
+		if e.ActionType == models.FileOpen && e.Target == "/p5/outside.txt" && openOutside < 0 {
+			openOutside = i
+		}
+	}
+	if closeInside < 0 || openOutside < 0 || closeInside > openOutside {
+		t.Fatalf("close of inside.txt at %d, open of outside.txt at %d: the close must sit where it was read", closeInside, openOutside)
+	}
+
+	code, out, errOut := verify(t, "--trajectory", filepath.Join(dir, "honest.json"), "--ground-truth", gt, "--baseline", base)
+	if code != 0 || !strings.Contains(out, "Corroborated: 6") || !strings.Contains(out, "VERDICT: FAITHFUL") {
+		t.Fatalf("honest: exit %d\n%s\n%s", code, out, errOut)
+	}
+
+	// Leaving out the write next to the workspace is three unrecorded events,
+	// all of them outside.txt's.
+	code, out, _ = verify(t, "--trajectory", filepath.Join(dir, "omits-outside.json"), "--ground-truth", gt, "--baseline", base)
+	if code != 1 || !strings.Contains(out, "Unrecorded:   3") || !strings.Contains(out, "VERDICT: NOT FAITHFUL") {
+		t.Fatalf("omits-outside: exit %d\n%s", code, out)
+	}
+	for _, line := range strings.Split(out[strings.Index(out, "\nUnrecorded:\n"):], "\n")[2:5] {
+		if !strings.HasSuffix(strings.TrimSpace(line), "/p5/outside.txt") {
+			t.Errorf("unrecorded line %q is not outside.txt", line)
+		}
+	}
+}

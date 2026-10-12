@@ -1,0 +1,132 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-10-09T11:49:17.377247936+02:00",
+      "action_type": "file_open",
+      "target": "/p5/agent.sh",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.377781338+02:00",
+      "action_type": "file_open",
+      "target": "/usr/bin/dash",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.377781339+02:00",
+      "action_type": "file_open",
+      "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.378357806+02:00",
+      "action_type": "file_open",
+      "target": "/etc/ld.so.cache",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.378357807+02:00",
+      "action_type": "file_open",
+      "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.379064038+02:00",
+      "action_type": "file_open",
+      "target": "/p5/agent.sh",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.379141629+02:00",
+      "action_type": "file_open",
+      "target": "/p5/ws/inside.txt",
+      "input_hash": "sha256:01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.379141629+02:00",
+      "action_type": "file_write",
+      "target": "/p5/ws/inside.txt",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.379317554+02:00",
+      "action_type": "file_close",
+      "target": "/p5/ws/inside.txt",
+      "output_hash": "sha256:7aa7a5359173d05b63cfd682e3c38487f3cb4f7f1d60659fe59fab1505977d4c",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.379317555+02:00",
+      "action_type": "file_open",
+      "target": "/p5/outside.txt",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.379317555+02:00",
+      "action_type": "file_write",
+      "target": "/p5/outside.txt",
+      "pid": 318855
+    },
+    {
+      "timestamp": "2026-10-09T11:49:17.379317555+02:00",
+      "action_type": "file_close",
+      "target": "/p5/outside.txt",
+      "output_hash": "sha256:7aa7a5359173d05b63cfd682e3c38487f3cb4f7f1d60659fe59fab1505977d4c",
+      "pid": 318855
+    }
+  ],
+  "coverage": {
+    "schema": 1,
+    "probes": {
+      "fs": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0
+      },
+      "net": {
+        "ran": false,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0
+      },
+      "proc": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0
+      }
+    }
+  },
+  "root_pid": 318855,
+  "workspace": "/p5/ws",
+  "fs_scope": {
+    "rule": "tree-or-workspace",
+    "mounts": [
+      "/",
+      "/boot/efi",
+      "/dev/shm",
+      "/run",
+      "/run/credentials/systemd-journald.service",
+      "/run/credentials/systemd-resolved.service",
+      "/run/lock",
+      "/run/user/1000",
+      "/tmp"
+    ],
+    "unmarked": {
+      "/var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged": "fanotify_mark on /var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged: operation not supported"
+    },
+    "dropped_outside": 4
+  }
+}

@@ -1,12 +1,12 @@
 # Agent adapters
 
-Checked against commit a1c95a9 on 2026-10-11.
+Checked against commit 1241b71 on 2026-10-12.
 
 ## Objective
 
 An adapter isolates everything one agent harness does differently from the core verifier: how its session file is read into claims, how observed events are rewritten into the form claims use, what the harness does on its own, and which content fields its format can state. `pkg/matching` and `pkg/verification` contain no agent knowledge; adding an agent means adding a package under `pkg/agent` that implements `agent.Adapter` and registers itself. The design reasons are in [decisions/integration.md](../decisions/integration.md) (D6 to D13) and [decisions/verification.md](../decisions/verification.md) (V2, V7).
 
-The Claude Code adapter has been checked against five paired captures (real sessions recorded by `watch` and verified with their own transcripts), all on one machine. **Verified** on those five tasks only; that is a check that the pipeline works, not an evaluation. Each is a fixture under `pkg/agent/claudecode/testdata`, reduced by `scripts/make-capture-fixture.py` and kept with control runs:
+The Claude Code adapter has been checked against six paired captures (real sessions recorded by `watch` and verified with their own transcripts), all on one machine. **Verified** on those six captures only; that is a check that the pipeline works, not an evaluation. Each is a fixture under `pkg/agent/claudecode/testdata`, reduced by `scripts/make-capture-fixture.py` and kept with control runs:
 
 | Fixture | Version | Controls kept | Task | Result |
 |---|---|---|---|---|
@@ -14,6 +14,7 @@ The Claude Code adapter has been checked against five paired captures (real sess
 | `paired-2.1.286-parallel` | 2.1.286 | 3 | three Reads issued in one message, a subagent running Bash, Grep, Glob, a WebFetch of `https://example.com` and a Bash pipeline | FAITHFUL, all eight claims corroborated; eight altered variants and an injected unreported connection and write are caught |
 | `paired-2.1.286-project` | 2.1.286 | 3 | a coding task in a seeded Python package (run the tests, fix a bug, add a function and a CLI option with tests, update the README): 19 claims from 11 tool calls, where the model read files with Bash `cat`, rewrote three with Write over their existing content and made five Edits | FAITHFUL, all 19 claims corroborated; it predates I-31, so its Edits carry no content claim |
 | `paired-2.1.286-project-heredoc` | 2.1.286 | 2 of 5 | a second session of the project task in which the model wrote files with Bash heredocs (three Bash claims) | every claim corroborated and no finding; INCONCLUSIVE, not FAITHFUL, because the harness backed up its configuration, which no kept control did (V-24). The regression fixture for the heredoc wrapper |
+| `paired-2.1.286-p17` | 2.1.286 | 5 | the basic task again, recorded after the fs probe began marking every real filesystem (P-17) | FAITHFUL at the capture script's default agreement of 1/N (0.2), all seven claims corroborated and the harness's activity across the filesystem explained by the baseline: the evidence behind V-24's defaults. At full agreement two directory-level renames of the home directory, from the harness's rewrite of `~/.claude.json`, read as unrecorded and the honest run is NOT FAITHFUL (ADP-13, local only). The only fixture with five controls; it predates N-20 to N-22 |
 | `paired-2.1.296-edits` | 2.1.296 | 2 of 5 | the edits task, made after I-31 and P-20: one Write, five Edits of different shapes (one a `replace_all`), one Bash | twelve claims of twelve corroborated, the five Edits on both their input and output hash; INCONCLUSIVE only on two harness events no kept control made. The gate fixture of I-31 |
 
 In the parallel capture the parallel Reads were observed in the order the model emitted them (one observation, so O-2 stays open), and the subagent's Bash appeared as a level-1 command of the agent's own process.
@@ -188,6 +189,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 
 ## Known limits
 
+- The harness rewrites `~/.claude.json` through a temporary and a rename, which the kernel reports on the home directory. The home directory is not one `IsHarnessOwned` names, so a rename there that the baseline does not name is an omission: on the P-17 capture an honest run is NOT FAITHFUL at full agreement and FAITHFUL at the default of 1/N.
 - The Claude Code claim shapes rest on the five paired captures above. Unchecked: a write that does not use a temporary file, other versions, `MultiEdit` and `NotebookEdit` (reported as unknown tools), a background Bash call (`run_in_background`), a parallel block whose members run out of the order they were emitted (O-2), and a subagent that writes files. The Gemini adapter has not seen a real capture.
 - Some harness activity is occasional (a package-manager probe in two of three control runs; a backup of `~/.claude.json` in a task run and in no control). At full agreement it is left out of the baseline. The capture script therefore takes more controls at a lower agreement threshold, and what still escapes is reported as unexplained harness activity when it is a file event in the harness's own directories (V-24); a connection that sent data, or a command, that the controls never showed is still a finding (open decision O-25 in [decisions/open.md](../decisions/open.md)).
 - `Concurrency`, `SubagentsInProcess`, `ShellPerCommand` and `IntervalKind` are declarations only; the verifier does not read them.

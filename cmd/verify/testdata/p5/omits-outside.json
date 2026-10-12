@@ -1,0 +1,18 @@
+[
+ {
+  "timestamp": "2026-10-08T12:00:00Z",
+  "action_type": "file_open",
+  "target": "/p5/ws/inside.txt"
+ },
+ {
+  "timestamp": "2026-10-08T12:00:00Z",
+  "action_type": "file_write",
+  "target": "/p5/ws/inside.txt"
+ },
+ {
+  "timestamp": "2026-10-08T12:00:00Z",
+  "action_type": "file_close",
+  "target": "/p5/ws/inside.txt",
+  "output_hash": "sha256:7aa7a5359173d05b63cfd682e3c38487f3cb4f7f1d60659fe59fab1505977d4c"
+ }
+]

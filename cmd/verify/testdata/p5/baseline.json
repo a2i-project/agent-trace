@@ -1,0 +1,30 @@
+{
+ "schema": 1,
+ "agent": "generic",
+ "agent_version": "demo",
+ "captured": "2026-10-08T00:00:00Z",
+ "runs": 1,
+ "min_agreement": 1,
+ "rules": [
+  {
+   "action_type": "file_open",
+   "target": "/p5/agent.sh"
+  },
+  {
+   "action_type": "file_open",
+   "target": "/usr/bin/dash"
+  },
+  {
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+  },
+  {
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache"
+  },
+  {
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6"
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 # Filesystem probe
 
-Checked against commit a1c95a9 on 2026-10-11.
+Checked against commit 1241b71 on 2026-10-12.
 
 ## Objective
 
@@ -49,7 +49,7 @@ A `file_close` goes through a settle protocol so its `OutputHash` is the content
 
 Paths are resolved by the kernel from file handles, not read from user memory. The probe sees every writer on the marked filesystem, whichever process tree it belongs to, and records the causing PID. A published `OutputHash` is computed only after the path has been quiet for the settle window and survived the generation check; when the probe cannot vouch for it, the hash is absent rather than stale.
 
-The emitted sequence does not depend on whether the kernel merged notifications or on when a close settled: a repeated write or rename on one path by one process is one event, and a record's timestamp is its position in its batch (`TestProcessRawEvent_RepeatedWritesAndRenamesCollapse`, P-18).
+The emitted sequence does not depend on whether the kernel merged notifications or on when a close settled: a repeated write or rename on one path by one process is one event, and a record's timestamp is its position in its batch (`TestProcessRawEvent_RepeatedWritesAndRenamesCollapse`, P-18). A real capture of a two-write shell agent, `cmd/verify/testdata/p5`, checks it end to end: each file's close sits before the next file's open, the honest trajectory verifies FAITHFUL, and one that leaves out the second write has exactly that file's three events unrecorded (`TestP5CloseOrderDemo`).
 
 The probe never drops on its own channel: `processRawEvent` and the settle code send with a blocking send. A slow consumer backs up into the kernel queue, and a full kernel queue produces `FAN_Q_OVERFLOW`. `CaptureCoverage` reports `Ran: true`, `QueueOverflow` (event loss) and `HashlessCloses`, the closes published without a hash (a content gap: the events are there, their content is not vouched for). How `Assess` reads each is in [10_probes_common.md](10_probes_common.md#probecoverage), and how the verifier treats a claim on a hashless close in [20_verifier.md](20_verifier.md#content-comparison-and-the-three-valued-nil). All other `ProbeCoverage` counters are zero for this probe.
 
