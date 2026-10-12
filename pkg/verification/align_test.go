@@ -363,3 +363,152 @@ func TestAlign_AgreesWithBruteForceOnRandomSequences(t *testing.T) {
 		}
 	}
 }
+
+// V-31: among minimum-cost readings, the one with the fewest pairs outside
+// their interval is shown. Two identical observed events, one inside the
+// claim's interval and one outside, in both orders: the fixed preference alone
+// pairs the claim with the later event, which is the wrong one in the first
+// order.
+func TestAlign_TiesPreferThePairingInsideTheInterval(t *testing.T) {
+	end := t0.Add(10 * time.Second)
+	c := models.Trajectory{{Timestamp: t0, End: &end, ActionType: models.FileOpen, Target: "/w/out"}}
+	at := func(d time.Duration) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: t0.Add(d), ActionType: models.FileOpen, Target: "/w/out"}
+	}
+	for name, g := range map[string]models.GroundTruth{
+		"inside first": {at(5 * time.Second), at(time.Minute)},
+		"inside last":  {at(-time.Minute), at(5 * time.Second)},
+	} {
+		inside := 0
+		if name == "inside last" {
+			inside = 1
+		}
+		a := laneOf(t, mustAlign(t, c, g), LaneFS)
+		var paired []Edit
+		for _, e := range a.Edits {
+			if e.Kind == EditMatch {
+				paired = append(paired, e)
+			}
+		}
+		if len(paired) != 1 || paired[0].EventIndex != inside || paired[0].OutsideInterval {
+			t.Errorf("%s: edits = %+v, want the claim paired with event %d and no interval finding", name, a.Edits, inside)
+		}
+		// The choice is still a choice, and is reported as one.
+		if !a.Ambiguous || a.Optimal != 2 {
+			t.Errorf("%s: Ambiguous = %v, Optimal = %d, want true and 2", name, a.Ambiguous, a.Optimal)
+		}
+	}
+}
+
+// V-31: the interval only breaks ties. A reading with a better content cost
+// and an interval violation beats one with a worse content cost and none.
+func TestAlign_ContentCostDominatesTheInterval(t *testing.T) {
+	end := t0.Add(10 * time.Second)
+	c := models.Trajectory{{Timestamp: t0, End: &end, ActionType: models.FileOpen, Target: "/w/a"}}
+	g := models.GroundTruth{
+		{Timestamp: t0.Add(5 * time.Second), ActionType: models.FileOpen, Target: "/w/b"}, // inside, a substitution
+		{Timestamp: t0.Add(time.Minute), ActionType: models.FileOpen, Target: "/w/a"},     // outside, a match
+	}
+	a := laneOf(t, mustAlign(t, c, g), LaneFS)
+	if fmt.Sprint(kinds(a)) != fmt.Sprint([]EditKind{EditDeletion, EditMatch}) {
+		t.Fatalf("kinds = %v, want the deletion of /w/b and a match with /w/a", kinds(a))
+	}
+	if !a.Edits[1].OutsideInterval || a.Edits[1].EventIndex != 1 {
+		t.Errorf("match = %+v, want event 1 flagged outside the interval", a.Edits[1])
+	}
+	if a.Ambiguous || a.Optimal != 1 {
+		t.Errorf("Ambiguous = %v, Optimal = %d, want a unique minimum", a.Ambiguous, a.Optimal)
+	}
+}
+
+// bruteForceTimed returns, by exhaustive recursion, the minimum primary cost,
+// how many alignments reach it, and the fewest interval violations among them.
+func bruteForceTimed(c models.Trajectory, o models.GroundTruth) (best, count, bestViol int) {
+	best, bestViol = 1<<30, 1<<30
+	var rec func(i, j, cost, viol int)
+	rec = func(i, j, cost, viol int) {
+		if cost > best {
+			return
+		}
+		if i == len(c) && j == len(o) {
+			switch {
+			case cost < best:
+				best, count, bestViol = cost, 1, viol
+			case cost == best:
+				count++
+				bestViol = min(bestViol, viol)
+			}
+			return
+		}
+		if i < len(c) && j < len(o) {
+			pc, _ := pairCost(c[i], o[j], nil)
+			v := 0
+			if outsideInterval(c[i], o[j], 0) {
+				v = 1
+			}
+			rec(i+1, j+1, cost+pc, viol+v)
+		}
+		if i < len(c) {
+			rec(i+1, j, cost+costIndel, viol)
+		}
+		if j < len(o) {
+			rec(i, j+1, cost+costIndel, viol)
+		}
+	}
+	rec(0, 0, 0, 0)
+	return best, count, bestViol
+}
+
+// V-31 against an independent brute force: the reading shown has the minimum
+// primary cost and, among those, the fewest interval violations; Optimal and
+// Ambiguous count the primary minimum alone, so they are the same with the
+// intervals removed.
+func TestAlign_IntervalTieBreakAgreesWithBruteForce(t *testing.T) {
+	rng := rand.New(rand.NewSource(31))
+	targets := []string{"a", "b"}
+	types := []models.ActionType{models.FileOpen, models.FileWrite}
+	for trial := 0; trial < 600; trial++ {
+		var c models.Trajectory
+		var o models.GroundTruth
+		for i, n := 0, 1+rng.Intn(5); i < n; i++ {
+			e := models.TrajectoryEntry{Timestamp: t0.Add(time.Duration(rng.Intn(10)) * time.Second), ActionType: types[rng.Intn(2)], Target: targets[rng.Intn(2)]}
+			if rng.Intn(3) > 0 {
+				end := e.Timestamp.Add(time.Duration(rng.Intn(4)) * time.Second)
+				e.End = &end
+			}
+			c = append(c, e)
+		}
+		for i, n := 0, 1+rng.Intn(6); i < n; i++ {
+			o = append(o, models.GroundTruthEvent{Timestamp: t0.Add(time.Duration(rng.Intn(12)) * time.Second), ActionType: types[rng.Intn(2)], Target: targets[rng.Intn(2)]})
+		}
+		wantCost, wantCount, wantViol := bruteForceTimed(c, o)
+		a := laneOf(t, mustAlign(t, c, o), LaneFS)
+		cost, viol := 0, 0
+		for _, e := range a.Edits {
+			switch e.Kind {
+			case EditInsertion, EditDeletion:
+				cost += costIndel
+			default:
+				pc, _ := pairCost(*e.Claim, *e.Event, nil)
+				cost += pc
+				if e.OutsideInterval {
+					viol++
+				}
+			}
+		}
+		if cost != wantCost || viol != wantViol {
+			t.Fatalf("trial %d: reading costs (%d, %d violations), brute force minimum is (%d, %d)\nclaims %v\nevents %v", trial, cost, viol, wantCost, wantViol, c, o)
+		}
+		if int(a.Optimal) != wantCount || a.Ambiguous != (wantCount > 1) {
+			t.Fatalf("trial %d: Optimal = %d, Ambiguous = %v, brute force counts %d", trial, a.Optimal, a.Ambiguous, wantCount)
+		}
+		var untimed models.Trajectory
+		for _, e := range c {
+			e.End = nil
+			untimed = append(untimed, e)
+		}
+		if u := laneOf(t, mustAlign(t, untimed, o), LaneFS); u.Optimal != a.Optimal || u.Ambiguous != a.Ambiguous {
+			t.Fatalf("trial %d: intervals changed the count: %d/%v with, %d/%v without", trial, a.Optimal, a.Ambiguous, u.Optimal, u.Ambiguous)
+		}
+	}
+}

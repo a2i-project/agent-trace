@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-2 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-3 (V-27), O-4 (I-15), O-15 (N-20), O-17 (I-31), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29).
+Closed: O-3 (V-27), O-4 (I-15), O-15 (N-20), O-17 (I-31), O-24 (V-31), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). None is decided.
 
@@ -124,14 +124,6 @@ Question: `WebSearch` runs server-side inside the model API exchange (I-16). How
 Options: (a) capture the API stream with an `SSL_read` uretprobe plus SSE reassembly (O-19); (b) an N2 proxy, which gives framed responses but is detectable and fails on pinning.
 Current behaviour: Not verified; `WebSearch` is non-effectful.
 Blocked by: Design choice between (a) and (b), offsets per Bun release for (a), and the unverified join between the transcript `requestId` and the response `request-id` header.
-
-### O-24: Break ties between equal alignments by interval consistency?
-Status: Open.
-Date: 2026-10-07.
-Question: When an alignment has several minimum-cost readings (V-11), the verifier reports one by a fixed rule. If claims are missing, identical observed actions (the same file opened twice by two Edits) leave a truthful claim paired with the wrong occurrence, and the claim then reads as outside its interval, a finding about a claim that is true. Should the choice among equal-cost readings prefer the one with fewer interval violations?
-Options: (a) leave it, since `Ambiguous` is reported and the unrecorded findings are right (current); (b) a secondary cost of one per interval violation among minimum-cost readings, so the interval only chooses between readings that are equally good on content; (c) report interval findings only when the alignment is unambiguous.
-Current behaviour: (a). Found by the project capture: omitting two claims of a nineteen-claim session left one interval finding in 2 of 100 runs of two omissions and 7 of 100 of three, always with an ambiguous alignment, and detection, classification and localization were unaffected. No honest run has this, since honest alignments are unique.
-Blocked by: Nothing technical. A claim interval comes from the trajectory and is adversary-controlled, so (b) lets an attacker steer which equal reading is reported, never whether a finding exists.
 
 ## Proposals (not decided)
 

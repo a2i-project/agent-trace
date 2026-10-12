@@ -1069,3 +1069,21 @@ func TestAStatedInputTheProbeDidNotMeasureIsUnverified(t *testing.T) {
 		t.Errorf("Mismatched = %v, want the input_hash", v.Mismatched)
 	}
 }
+
+// V-31, the shape of the second tools capture: an honest Read of a background
+// task's output file, and a later harness open of the same canonical path that
+// the baseline holds. Both events pair with the claim at the same cost; the one
+// inside the claim's interval is chosen, and the other stays baselined.
+func TestVerify_AnHonestReadPairsWithTheOpenInsideItsInterval(t *testing.T) {
+	const out = "/tmp/claude-1000/w/SESSION/tasks/N.output"
+	base := func(e models.GroundTruthEvent) bool { return e.Target == out }
+	c := claimAt(5, models.FileOpen, out)
+	end := at(10)
+	c.End = &end
+	v := Verify(Input{Claims: models.Trajectory{c}, Ground: models.GroundTruth{agentEv(6, models.FileOpen, out), agentEv(50, models.FileOpen, out)},
+		RootPID: agentPID, Coverage: completeCov(), Baseline: base})
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.Corroborated) != 1 || !v.Corroborated[0].Event.Timestamp.Equal(at(6)) || len(v.OutsideInterval) != 0 || !v.Ambiguous {
+		t.Errorf("corroborated=%v outside=%v ambiguous=%v", v.Corroborated, v.OutsideInterval, v.Ambiguous)
+	}
+}

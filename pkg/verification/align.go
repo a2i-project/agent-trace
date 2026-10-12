@@ -2,6 +2,7 @@ package verification
 
 import (
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -82,7 +83,8 @@ type Edit struct {
 	Diffs []string
 	// OutsideInterval is set when the claim carries an interval and the
 	// observed action falls outside it. A finding about the claim, not a
-	// reason to refuse the pair (V6).
+	// reason to refuse the pair (V6). It chooses only between alignments of
+	// equal cost (V-31).
 	OutsideInterval bool
 	// Unverified names the content fields the claim states and the observed
 	// event does not carry, so the pair could be neither confirmed nor
@@ -100,8 +102,9 @@ type LaneAlignment struct {
 	Lane  Lane
 	Edits []Edit
 	// Ambiguous is true when more than one alignment has the minimum cost. The
-	// edits shown are one of them, chosen by a fixed rule, and a report that
-	// points at one position must not claim the others are excluded.
+	// edits shown are one of them: the one with the fewest pairs outside their
+	// claim's interval, then a fixed rule (V-31). A report that points at one
+	// position must not claim the others are excluded.
 	Ambiguous bool
 	// Optimal is how many minimum-cost alignments exist, saturating.
 	Optimal uint32
@@ -228,6 +231,11 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 
 	w := m + 1
 	cost := make([]int32, (n+1)*w)
+	// viol is the secondary cost: the fewest pairs outside their claim's
+	// interval among the minimum-cost alignments of the prefix (V-31). It
+	// only chooses between readings that cost the same, so time never makes
+	// a reading with a worse content cost win.
+	viol := make([]int32, (n+1)*w)
 	ways := make([]uint32, (n+1)*w)
 	const satur = 1 << 30
 	add := func(a, b uint32) uint32 {
@@ -246,6 +254,12 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 		ways[j] = 1
 	}
 	pair := make([]int, n*m) // cost of pairing claim i with event j
+	outside := func(i, j int) int32 {
+		if outsideInterval(claims[ci[i-1]], observed[ei[j-1]], opts.IntervalSlack) {
+			return 1
+		}
+		return 0
+	}
 	for i := 1; i <= n; i++ {
 		for j := 1; j <= m; j++ {
 			pc, _ := pairCost(claims[ci[i-1]], observed[ei[j-1]], opts.Expresses)
@@ -260,29 +274,40 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 			if left < best {
 				best = left
 			}
+			// The count and the secondary cost run over the predecessors
+			// that reach the minimum primary cost only.
 			var count uint32
+			bestViol := int32(math.MaxInt32)
 			if diag == best {
 				count = add(count, ways[(i-1)*w+(j-1)])
+				bestViol = min(bestViol, viol[(i-1)*w+(j-1)]+outside(i, j))
 			}
 			if up == best {
 				count = add(count, ways[(i-1)*w+j])
+				bestViol = min(bestViol, viol[(i-1)*w+j])
 			}
 			if left == best {
 				count = add(count, ways[i*w+(j-1)])
+				bestViol = min(bestViol, viol[i*w+(j-1)])
 			}
 			cost[i*w+j] = best
+			viol[i*w+j] = bestViol
 			ways[i*w+j] = count
 		}
 	}
 	la.Optimal = ways[n*w+m]
 	la.Ambiguous = la.Optimal > 1
 
-	// Trace back with a fixed preference: pair, then insertion, then deletion.
+	// Trace back through a minimum-cost alignment with the fewest interval
+	// violations; among those, a fixed preference: pair, then insertion,
+	// then deletion. A step is taken only when it keeps both costs on the
+	// optimum, so the reading shown is minimal in both, primary first.
 	var rev []Edit
 	i, j := n, m
 	for i > 0 || j > 0 {
+		here, hv := cost[i*w+j], viol[i*w+j]
 		switch {
-		case i > 0 && j > 0 && cost[i*w+j] == cost[(i-1)*w+(j-1)]+int32(pair[(i-1)*m+(j-1)]):
+		case i > 0 && j > 0 && here == cost[(i-1)*w+(j-1)]+int32(pair[(i-1)*m+(j-1)]) && hv == viol[(i-1)*w+(j-1)]+outside(i, j):
 			c, e := claims[ci[i-1]], observed[ei[j-1]]
 			_, diffs := pairCost(c, e, opts.Expresses)
 			ed := Edit{Kind: EditMatch, ClaimIndex: ci[i-1], EventIndex: ei[j-1], Claim: &claims[ci[i-1]], Event: &observed[ei[j-1]]}
@@ -294,7 +319,7 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 			rev = append(rev, ed)
 			i--
 			j--
-		case i > 0 && cost[i*w+j] == cost[(i-1)*w+j]+costIndel:
+		case i > 0 && here == cost[(i-1)*w+j]+costIndel && hv == viol[(i-1)*w+j]:
 			rev = append(rev, Edit{Kind: EditInsertion, ClaimIndex: ci[i-1], EventIndex: -1, Claim: &claims[ci[i-1]]})
 			i--
 		default:
