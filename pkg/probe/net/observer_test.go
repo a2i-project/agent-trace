@@ -979,3 +979,101 @@ func TestHandleNetRecord_IdleConnectionsAreDials(t *testing.T) {
 		t.Errorf("Dials = %d, want 2", o.coverage.Dials)
 	}
 }
+
+// A descriptor closed without close() keeps its entry, and a new connect on
+// the same (tgid, fd) replaces it. The replaced connection is emitted then,
+// stamped with its connect time, and counted; one already emitted at its hello
+// is not emitted again or counted.
+func TestHandleNetRecord_ReplacedConnectionIsEmitted(t *testing.T) {
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	v4 := [16]byte{192, 0, 2, 9}
+	rec := func(typ uint8, port uint16, ts int64, payload []byte) netRecord {
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: 3, Family: afInet, Addr: v4, Port: port, TsNs: uint64(ts)}, payload: payload}
+	}
+	o.handleNetRecord(rec(netConnect, 8080, 1000, nil))
+	o.handleNetRecord(rec(netHello, 8080, 1100, []byte("POST /x HTTP/1.0\r\n"))) // wrote, no TLS name
+	o.handleNetRecord(rec(netConnect, 9090, 2000, nil))                          // dup2 over fd 3, connect elsewhere
+	o.handleNetRecord(rec(netConnect, 22, 3000, nil))                            // replaces one that never wrote
+	o.handleNetRecord(rec(netClose, 22, 3500, nil))
+	close(o.events)
+	var got []string
+	var nanos []int64
+	for e := range o.events {
+		got = append(got, string(e.ActionType)+" "+e.Target)
+		nanos = append(nanos, e.Timestamp.UnixNano()) // bootOffsetNs is zero here
+	}
+	want := []string{"net_connect 192.0.2.9:8080", "net_dial 192.0.2.9:9090", "net_dial 192.0.2.9:22"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("emitted %v, want %v", got, want)
+	}
+	if wantNanos := []int64{1000, 2000, 3500}; !slices.Equal(nanos, wantNanos) {
+		t.Errorf("stamps %v ns, want %v", nanos, wantNanos)
+	}
+	if o.coverage.Replaced != 2 || o.coverage.Connections != 3 || o.coverage.OpenAtStop != 0 {
+		t.Errorf("coverage = %+v, want Replaced 2, Connections 3, OpenAtStop 0", o.coverage)
+	}
+
+	// A connection already emitted at its hello is neither emitted nor
+	// counted again when its descriptor is reused.
+	o = &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	o.handleNetRecord(rec(netConnect, 443, 1000, nil))
+	o.conns[connKeyGo{tgid: 7, fd: 3}].emitted = true
+	o.handleNetRecord(rec(netConnect, 443, 2000, nil))
+	close(o.events)
+	if n := len(o.events); n != 0 || o.coverage.Replaced != 0 {
+		t.Errorf("an emitted connection was replaced with %d events and Replaced %d, want 0 and 0", n, o.coverage.Replaced)
+	}
+}
+
+// TestObserver_ConnectionReplacedByDup2IsEmitted is the kernel half: a
+// process connects by address and writes, makes the descriptor refer to a new
+// socket with dup2 (which closes the first without a close syscall), and
+// connects that elsewhere. Both connections must reach the capture.
+func TestObserver_ConnectionReplacedByDup2IsEmitted(t *testing.T) {
+	skipUnprivileged(t)
+
+	var lns []stdnet.Listener
+	for i := 0; i < 2; i++ {
+		ln, err := stdnet.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		lns = append(lns, ln)
+	}
+	first, second := lns[0].Addr().(*stdnet.TCPAddr).Port, lns[1].Addr().(*stdnet.TCPAddr).Port
+
+	obs, err := New(Config{TrackedPID: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	pyPID := runPython(t, fmt.Sprintf(`
+import os, socket
+a = socket.socket()
+a.connect(("127.0.0.1", %d))
+a.send(b"first")
+b = socket.socket()
+os.dup2(b.fileno(), a.fileno())
+a.connect(("127.0.0.1", %d))
+a.send(b"second")
+a.close()
+b.close()
+`, first, second))
+	time.Sleep(300 * time.Millisecond)
+
+	events := drainEvents(t, obs)
+	assertAllFrom(t, events, pyPID, models.NetConnect)
+	want := []string{fmt.Sprintf("127.0.0.1:%d", first), fmt.Sprintf("127.0.0.1:%d", second)}
+	got := listenerTargets(events, models.NetConnect)
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("no net_connect to %s; net_connect targets %v", w, got)
+		}
+	}
+	if r := obs.Coverage().Replaced; r != 1 {
+		t.Errorf("Replaced = %d, want 1", r)
+	}
+}

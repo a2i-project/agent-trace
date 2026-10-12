@@ -927,6 +927,16 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 
 	switch hdr.Type {
 	case netConnect:
+		// A descriptor closed without close() (dup2 over it, close_range, an
+		// exec under O_CLOEXEC, or a tgid reused after an exit) leaves its
+		// entry open, and a new connect on the same number replaces it. The
+		// old connection happened and its target is known, so it is emitted
+		// now, stamped with its connect time, like one still open at the
+		// stop.
+		if prev, ok := o.conns[key]; ok && !prev.emitted {
+			o.coverage.Replaced++
+			o.emit(key, prev, int32(hdr.Tgid), prev.openedAt)
+		}
 		o.conns[key] = &connection{
 			family:   hdr.Family,
 			addr:     hdr.Addr,

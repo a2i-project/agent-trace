@@ -1,6 +1,6 @@
 # Network probe
 
-Checked against commit a1c95a9 on 2026-10-11.
+Checked against commit ffa5578 on 2026-10-12.
 
 ## Objective
 
@@ -44,7 +44,7 @@ Every program in both objects starts with `is_tracked(tgid)`. There is no host-w
 
 Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps a `connection` per (tgid, fd):
 
-- `NET_CONNECT` opens the entry and counts `Connections`. An entry already open for the same (tgid, fd) is replaced without being emitted.
+- `NET_CONNECT` opens the entry and counts `Connections`. An entry already open for the same (tgid, fd) and not yet emitted belongs to a descriptor closed without `close()` (by `dup2` over it, `close_range`, an exec under `O_CLOEXEC`, or a tgid reused after an exit); it is emitted first, stamped with its connect time and by the same rules as at a close, and counted in `Coverage.Replaced` (`TestHandleNetRecord_ReplacedConnectionIsEmitted`, `TestObserver_ConnectionReplacedByDup2IsEmitted`).
 - `NET_HELLO` marks the entry as written (`wrote`) and runs `tlsparse.ParseClientHello`. With an SNI name it stores host and ALPN, counts `WithHostname` (and `ContentUnsupported` when ALPN offers `h2`), and emits `net_connect` with the hostname as `Target`, stamped at the hello.
 - `NET_CLOSE` emits a connection that has not been emitted yet, stamped at the close: `net_connect` with `ip:port` as `Target` if a `NET_HELLO` was received for it, or `net_dial` with the same target, ground truth only, if nothing was (the losing half of a dual-stack connect, a probe; N-22). `Coverage.Dials` counts the latter.
 - When both feeders have closed, `flushOpenConnections` emits every connection still open, in connect order and stamped with its connect time, and counts them in `Coverage.OpenAtStop` (N-21).
@@ -61,7 +61,7 @@ Every N0 event carries `PID` (the tgid). None carries `PPID`.
 4. `handleSSLFrame` appends each frame to a `tlsparse.Stream` per (tgid, tid) and calls `ParseHTTP1` until it needs more bytes. A malformed request discards that thread's buffer and counts `FramesUnattributed`.
 5. `emitNetRequest` takes the host from the `Host` header, or from the newest SNI hostname of the same tgid when the header is absent, and counts `FramesUnattributed` when neither exists. It emits `net_request` with `Target` = `models.CanonicalNetTarget(method, host, port, path, query)` (form `METHOD https://host[:port]path[?query]`, host lowercased, port omitted when 443) and `RequestHash` = SHA-256 of the body when there is one. The plaintext is not kept (N-D3).
 
-`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `DNS`, `AddressProbes`, `OpenAtStop`, `Dials`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, plus the kernel counters. `cmd/watch` prints them; only the kernel counters reach `ProbeCoverage`.
+`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `DNS`, `AddressProbes`, `OpenAtStop`, `Replaced`, `Dials`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, plus the kernel counters. `cmd/watch` prints them; only the kernel counters reach `ProbeCoverage`.
 
 ## Guarantees and loss accounting
 
@@ -91,9 +91,9 @@ Which of these fields `Assess` reads as event loss and which as a content gap is
 - Encrypted Client Hello would hide the SNI name.
 - `connect` is recorded at syscall entry, so a failed connect still appears as a connection.
 - A connection without SNI is emitted on `close()`, or at the end of the capture if it never closed (implicitly at process exit, or held open past the stop), then with its connect time; `Coverage.OpenAtStop` counts every connection emitted at the end, whatever type it became.
-- A connection whose descriptor is closed without `close()` (by `dup2`, `close_range`, or an exec that closes it under `O_CLOEXEC`) stays open in `conns`; if the same process connects again on the same descriptor number, the old entry is replaced in the kernel and in userspace before it is emitted, and nothing counts it.
+- A connection whose descriptor is closed without `close()` (by `dup2`, `close_range`, or an exec that closes it under `O_CLOEXEC`) stays open in `conns` until the same descriptor number is closed or connected again. It is emitted then (on a new connect with its connect time, counted in `Coverage.Replaced`) or at the end of the capture, so it is late but not lost; its kernel entry occupies a `conns` slot meanwhile.
 - `conns` entries for fds closed implicitly at process exit are never deleted in the kernel.
-- `net_connect` is stamped at the hello or the close, not at the connect, except for a connection emitted at the end of the capture, which carries its connect time.
+- `net_connect` is stamped at the hello or the close, not at the connect, except for a connection emitted at the end of the capture or when a new connect replaced it, which carries its connect time.
 - Only `SSL_write` entry is hooked: there is no `SSL_read`, so responses (including server-side tool results) are not seen.
 - `SSL_write` capture is capped at 16 KiB per call.
 - Content is parsed as HTTP/1.1 only; an h2 connection is counted in `ContentUnsupported` and its frames end in `FramesUnattributed` or stay buffered, producing no `net_request`.

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit d2c4348 on 2026-10-12.
+Checked against commit ffa5578 on 2026-10-12.
 
 ## Objective
 
@@ -119,7 +119,7 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 
 ## Guarantees and loss accounting
 
-Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, ProbeCoverage above; the outcome rules are in [20_verifier.md](20_verifier.md#outcome-rules)). Not every loss has a counter: a failed update of the net probe's `binds` map, a net connection whose entry a later connect on the same descriptor overwrote before it was emitted ([13_probe_net.md](13_probe_net.md)), and fanotify records still queued when `Stop` is signalled are counted nowhere, and the file events `watch` counts in `fs_scope.unresolved` are not read by `Assess`. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
+Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, ProbeCoverage above; the outcome rules are in [20_verifier.md](20_verifier.md#outcome-rules)). Not every loss has a counter: a failed update of the net probe's `binds` map and fanotify records still queued when `Stop` is signalled are counted nowhere, and the file events `watch` counts in `fs_scope.unresolved` are not read by `Assess`. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
 
 ### Adding a loss counter
 
