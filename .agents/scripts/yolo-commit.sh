@@ -4,7 +4,8 @@ INPUT=$(cat)
 
 # Extract tool name and parameters
 TOOL_NAME=$(echo "$INPUT" | jq -r '.toolCall.name // ""')
-WORKSPACE="/home/carmine/projects/reproducible_trajectories/agent-trace"
+# The repository root: this script lives in .agents/scripts.
+WORKSPACE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # 1. Prevent writing to files outside the workspace
 if [ "$TOOL_NAME" = "write_to_file" ] || [ "$TOOL_NAME" = "replace_file_content" ]; then
