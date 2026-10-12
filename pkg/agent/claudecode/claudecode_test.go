@@ -714,11 +714,11 @@ func TestASubagentWriteThatCreatedAFileClaimsNoOpen(t *testing.T) {
 	}
 }
 
-// A NotebookEdit claims one write of the notebook, the replace the harness
-// makes, with the hash of the notebook its result says it wrote (I-37). A
-// failed call claims nothing, and a result without the notebook text, or
-// with the empty text the harness reports when it did not write the file,
-// claims no content.
+// A NotebookEdit claims the harness's read of the notebook and the replace
+// it makes, the write with the hash of the notebook its result says it wrote
+// (I-37, I-39). A failed call claims nothing, and a result without the
+// notebook text, or with the empty text the harness reports when it did not
+// write the file, claims no content.
 func TestNotebookEditClaimsOneWriteWithTheUpdatedNotebook(t *testing.T) {
 	dir := t.TempDir()
 	use := `{"type":"assistant","timestamp":"2026-10-12T10:00:00Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"NotebookEdit","input":{"notebook_path":"/ws/a.ipynb","cell_id":"c","edit_mode":"replace","new_source":"x"}}]}}`
@@ -731,10 +731,10 @@ func TestNotebookEditClaimsOneWriteWithTheUpdatedNotebook(t *testing.T) {
 		claims              int
 		want                *string
 	}{
-		"success":                 {"", nb("/ws/a.ipynb", "{\"a\": 1}", "{\"a\": 2}", ""), 1, models.StringPtr(contentHash("{\"a\": 2}"))},
-		"no structured result":    {"", "", 1, nil},
-		"empty updated text":      {"", nb("/ws/a.ipynb", "", "", ""), 1, nil},
-		"result for another path": {"", nb("/ws/b.ipynb", "{}", "{\"b\": 1}", ""), 1, nil},
+		"success":                 {"", nb("/ws/a.ipynb", "{\"a\": 1}", "{\"a\": 2}", ""), 2, models.StringPtr(contentHash("{\"a\": 2}"))},
+		"no structured result":    {"", "", 2, nil},
+		"empty updated text":      {"", nb("/ws/a.ipynb", "", "", ""), 2, nil},
+		"result for another path": {"", nb("/ws/b.ipynb", "{}", "{\"b\": 1}", ""), 2, nil},
 		"error in the result":     {"", nb("/ws/a.ipynb", "", "", "Notebook is not valid JSON."), 0, nil},
 		"is_error":                {`,"is_error":true`, "", 0, nil},
 	} {
@@ -759,8 +759,11 @@ func TestNotebookEditClaimsOneWriteWithTheUpdatedNotebook(t *testing.T) {
 				}
 				return
 			}
-			if tr[0].ActionType != models.FileWrite || tr[0].Target != "/ws/a.ipynb" || tr[0].Tool != "NotebookEdit" || !sameHash(tr[0].OutputHash, tc.want) {
-				t.Errorf("claim = %+v (hash %s), want a write of /ws/a.ipynb with hash %s", tr[0], deref(tr[0].OutputHash), deref(tc.want))
+			if o := tr[0]; o.ActionType != models.FileOpen || o.Target != "/ws/a.ipynb" || o.Tool != "NotebookEdit" || o.InputHash != nil {
+				t.Errorf("claim = %+v, want an open of /ws/a.ipynb with no input hash", o)
+			}
+			if tr[1].ActionType != models.FileWrite || tr[1].Target != "/ws/a.ipynb" || tr[1].Tool != "NotebookEdit" || !sameHash(tr[1].OutputHash, tc.want) {
+				t.Errorf("claim = %+v (hash %s), want a write of /ws/a.ipynb with hash %s", tr[1], deref(tr[1].OutputHash), deref(tc.want))
 			}
 		})
 	}

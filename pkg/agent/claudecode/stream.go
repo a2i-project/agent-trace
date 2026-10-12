@@ -19,7 +19,8 @@ import (
 //     of the final content, and when it is read after the rename it names the
 //     target instead of the temporary.
 //   - Edit, and Write over an existing file, first open the target one or more
-//     times to check it has not changed.
+//     times to check it has not changed; NotebookEdit reads the notebook
+//     (I-39).
 //
 // The claim is the tool call, so the observed side is rewritten into the same
 // grain: an atomic replace becomes one write of the target with the final
@@ -65,7 +66,10 @@ func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
 // can hold, is folded whole (I-33).
 func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 	used := make([]bool, len(g))
-	replace := map[int]models.GroundTruthEvent{}
+	// replace holds, at the index of a replace's first event, what the replace
+	// becomes: one write, preceded by an open of the target when the batch held
+	// the harness's read of it (I-39).
+	replace := map[int]models.GroundTruth{}
 	foldRenamedFirst(g, used, replace)
 
 	for o, open := range g {
@@ -138,19 +142,19 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 		if i := splitRenameHalf(g, used, renameIdx, dir); i >= 0 {
 			used[i] = true
 		}
-		replace[start] = models.GroundTruthEvent{
+		replace[start] = models.GroundTruth{{
 			Timestamp:  g[start].Timestamp,
 			ActionType: models.FileWrite,
 			Target:     target,
 			PID:        pid,
 			OutputHash: g[closeIdx].OutputHash,
-		}
+		}}
 	}
 
 	out := make(models.GroundTruth, 0, len(g))
 	for i, e := range g {
 		if r, ok := replace[i]; ok {
-			out = append(out, r)
+			out = append(out, r...)
 			continue
 		}
 		if !used[i] {
@@ -196,16 +200,24 @@ func splitRenameHalf(g models.GroundTruth, used []bool, renameIdx int, dir strin
 // events the probe reports as ambiguous) immediately followed by open,
 // write(s) and close of a file in that directory, all named by the final
 // path. The close's hash is the content.
-func foldRenamedFirst(g models.GroundTruth, used []bool, replace map[int]models.GroundTruthEvent) {
+//
+// An ambiguous open of the directory ahead of both the create and the rename
+// is the harness's read of the file it is about to replace, merged into the
+// batch, likely because by the time the batch is read the rename has
+// unlinked the inode that was opened, so only its directory resolves (I-39). It becomes an open of
+// the target, with no input hash since none was measured for it, ahead of the
+// folded write. An open of the directory after the create or the rename is
+// absorbed as before (I-32).
+func foldRenamedFirst(g models.GroundTruth, used []bool, replace map[int]models.GroundTruth) {
 	for o, open := range g {
 		if used[o] || open.ActionType != models.FileOpen || open.PID == 0 || tmpName.MatchString(open.Target) {
 			continue
 		}
 		dir, pid := filepath.Dir(open.Target), open.PID
 		// The directory events just before the open, by this pid: the create
-		// and the rename, and sometimes an open of the directory itself (the
-		// fsync of the directory an atomic write ends with), all reported as
-		// ambiguous directory-level records.
+		// and the rename, and sometimes an open reported on the directory (the
+		// read of the replaced file when it comes first, I-39), all reported
+		// as ambiguous directory-level records.
 		var dirIdx []int
 		seen := map[models.ActionType]bool{}
 		for i := o - 1; i >= 0 && len(dirIdx) < 3; i-- {
@@ -251,13 +263,25 @@ func foldRenamedFirst(g models.GroundTruth, used []bool, replace map[int]models.
 		for _, i := range burst {
 			used[i] = true
 		}
-		replace[start] = models.GroundTruthEvent{
+		var folded models.GroundTruth
+		// dirIdx runs backwards, so the earliest directory event is last: a
+		// read of the target is an open there, with the create and the rename
+		// both after it.
+		if first := g[start]; first.ActionType == models.FileOpen && len(dirIdx) == 3 {
+			folded = append(folded, models.GroundTruthEvent{
+				Timestamp:  first.Timestamp,
+				ActionType: models.FileOpen,
+				Target:     open.Target,
+				PID:        pid,
+			})
+		}
+		replace[start] = append(folded, models.GroundTruthEvent{
 			Timestamp:  g[start].Timestamp,
 			ActionType: models.FileWrite,
 			Target:     open.Target,
 			PID:        pid,
 			OutputHash: g[closeIdx].OutputHash,
-		}
+		})
 	}
 }
 

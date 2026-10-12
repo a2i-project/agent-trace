@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -403,6 +404,70 @@ func TestAnUnclaimedAtomicWriteIsStillAnOmission(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
+// The two shapes the `tools` captures of 2.1.296 showed for the read that
+// precedes a replace (I-39). In the first, the NotebookEdit's read merged into
+// its read-after-rename batch as an ambiguous open of the directory, and the
+// overwriting Write's read was a separate named open; in the second, the
+// NotebookEdit's two reads were named and its replace used the temporary,
+// and the Write's read merged into its batch. A NotebookEdit and an
+// overwriting Write each claim an open and a write, and both shapes verify.
+// A replace with no read, a create, leaves the claimed open unwitnessed.
+func TestTheReadBeforeAReplaceVerifiesInBothCapturedShapes(t *testing.T) {
+	const pid = agentPID
+	nb, rep := "/w/analysis.ipynb", "/w/report.txt"
+	nbHash, repHash := contentHash("nb-after"), contentHash("final")
+	use := func(name string, input string) toolUse {
+		return toolUse{id: name, name: name, input: json.RawMessage(input)}
+	}
+	var claims models.Trajectory
+	for _, c := range []struct {
+		u   toolUse
+		res toolResult
+		ms  int
+	}{
+		{use(toolNotebookEdit, `{"notebook_path":"`+nb+`"}`), toolResult{notebook: &notebookResult{path: nb, updated: "nb-after"}}, 0},
+		{use(toolWrite, `{"file_path":"`+rep+`","content":"final"}`), toolResult{kind: "update"}, 100},
+	} {
+		entries, why := claimsFor(c.u, models.TrajectoryEntry{Timestamp: at(c.ms), Tool: c.u.name}, c.res)
+		if why != "" {
+			t.Fatalf("%s: %s", c.u.name, why)
+		}
+		claims = append(claims, entries...)
+	}
+
+	amb := func(ms int, typ models.ActionType) models.GroundTruthEvent { return dirEv(ms, typ, pid) }
+	readAfterRename := func(ms int, path, hash string, read bool) models.GroundTruth {
+		var g models.GroundTruth
+		if read {
+			g = append(g, amb(ms, models.FileOpen))
+		}
+		return append(g, amb(ms, models.FileWrite), amb(ms, models.FileRename),
+			fev(ms, models.FileOpen, path, pid), fev(ms, models.FileWrite, path, pid), hashed(fev(ms, models.FileClose, path, pid), hash))
+	}
+	first := append(readAfterRename(0, nb, nbHash, true), fev(100, models.FileOpen, rep, pid))
+	first = append(first, readAfterRename(101, rep, repHash, false)...)
+	second := models.GroundTruth{fev(0, models.FileOpen, nb, pid), fev(1, models.FileOpen, nb, pid)}
+	second = append(second, atomicWrite(2, nb, "100.a5e8eefa3361", nbHash, pid)...)
+	second = append(second, readAfterRename(100, rep, repHash, true)...)
+
+	for name, g := range map[string]models.GroundTruth{"first capture": first, "second capture": second} {
+		t.Run(name, func(t *testing.T) {
+			v := verifyCaptured(t, claims, g)
+			if v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 4 {
+				t.Errorf("outcome = %s, corroborated = %d\nunwitnessed=%v\nunrecorded=%v\nmismatched=%v", v.Outcome, len(v.Corroborated), v.Unwitnessed, v.Unrecorded, v.Mismatched)
+			}
+		})
+	}
+	t.Run("no read observed", func(t *testing.T) {
+		g := append(readAfterRename(0, nb, nbHash, false), fev(100, models.FileOpen, rep, pid))
+		g = append(g, readAfterRename(101, rep, repHash, false)...)
+		v := verifyCaptured(t, claims, g)
+		if v.Outcome != verification.OutcomeNotFaithful || len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != nb {
+			t.Errorf("outcome = %s, unwitnessed = %v, want the notebook's open", v.Outcome, v.Unwitnessed)
+		}
+	})
+}
+
 // Grep and Glob run as ripgrep embedded in Claude Code's own binary. The harness
 // also lists the working directory the same way at start-up, and those listings
 // must keep their exact text so a baseline can name them.
@@ -488,9 +553,9 @@ func TestFoldAtomicWritesReadAfterTheRename(t *testing.T) {
 		return models.GroundTruthEvent{Timestamp: at(ms), ActionType: typ, Target: "/ws", PID: pid, PathIsAmbiguous: true}
 	}
 	g := models.GroundTruth{
-		amb(0, models.FileOpen), // the directory's fsync, when the kernel reports it apart
 		amb(0, models.FileWrite),
 		amb(0, models.FileRename),
+		amb(0, models.FileOpen), // the directory's fsync, after the create and the rename
 		{Timestamp: at(0), ActionType: models.FileOpen, Target: "/ws/notes.txt", PID: pid},
 		{Timestamp: at(0), ActionType: models.FileWrite, Target: "/ws/notes.txt", PID: pid},
 		{Timestamp: at(0), ActionType: models.FileClose, Target: "/ws/notes.txt", PID: pid, OutputHash: &h},
@@ -507,6 +572,108 @@ func TestFoldAtomicWritesReadAfterTheRename(t *testing.T) {
 		if e.Target != "/ws/other.txt" {
 			t.Errorf("the in-place write was touched: %+v", out)
 		}
+	}
+}
+
+// The batch of a read-after-rename replace of an existing file, as the
+// `tools` captures of 2.1.296 showed it (2026-10-12): an ambiguous open of
+// the directory first, then its create and rename, then open, write and close
+// of the target. The open is the harness's read of the file it replaces,
+// whose inode the rename unlinked before the batch was read (I-39). It
+// becomes an open of the target with no input hash, ahead of the write; a
+// replace that created its file has no such open, and an open of the
+// directory by another process, or after the create, is not taken as one.
+func TestFoldTurnsTheMergedReadOfAReplacedFileIntoAnOpen(t *testing.T) {
+	const pid = 1185855
+	h := "sha256:2443630"
+	amb := func(typ models.ActionType, p uint32) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at(0), ActionType: typ, Target: "/ws", PID: p, PathIsAmbiguous: true}
+	}
+	file := func(typ models.ActionType) models.GroundTruthEvent {
+		e := models.GroundTruthEvent{Timestamp: at(0), ActionType: typ, Target: "/ws/report.txt", PID: pid}
+		if typ == models.FileClose {
+			e.OutputHash = &h
+		}
+		if typ == models.FileOpen {
+			e.InputHash = strPtr("sha256:7743ce3") // the probe's hash of the new inode, not the read one
+		}
+		return e
+	}
+	tail := models.GroundTruth{amb(models.FileWrite, pid), amb(models.FileRename, pid), file(models.FileOpen), file(models.FileWrite), file(models.FileClose)}
+	for name, tc := range map[string]struct {
+		head models.GroundTruth
+		mid  models.GroundTruth // between the create and the rename
+		want []string
+	}{
+		"the read merged into the batch": {
+			head: models.GroundTruth{amb(models.FileOpen, pid)},
+			want: []string{"file_open /ws/report.txt", "file_write /ws/report.txt"},
+		},
+		"a replace that created its file": {
+			want: []string{"file_write /ws/report.txt"},
+		},
+		"an open of the directory by another process": {
+			head: models.GroundTruth{amb(models.FileOpen, 7)},
+			want: []string{"file_open /ws", "file_write /ws/report.txt"},
+		},
+		"an open of the directory after the create": {
+			mid:  models.GroundTruth{amb(models.FileOpen, pid)},
+			want: []string{"file_write /ws/report.txt"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := append(models.GroundTruth{}, tc.head...)
+			g = append(g, tail[0])
+			g = append(g, tc.mid...)
+			g = append(g, tail[1:]...)
+			out := foldAtomicWrites(g)
+			if got := targets(out); strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Fatalf("fold = %v, want %v", got, tc.want)
+			}
+			w := out[len(out)-1]
+			if w.OutputHash == nil || *w.OutputHash != h {
+				t.Errorf("write = %+v, want the close's hash", w)
+			}
+			if o := out[0]; o.Target == "/ws/report.txt" && o.ActionType == models.FileOpen && (o.InputHash != nil || o.PID != pid || o.PathIsAmbiguous) {
+				t.Errorf("open = %+v, want the agent's open with no input hash", o)
+			}
+		})
+	}
+}
+
+// An Edit reads its file one or more times by name and then, in the
+// read-after-rename shape, once more inside the batch (the edits fixture and
+// the second tools capture). The open the fold makes from the merged read is
+// adjacent to the named ones and collapses with them, so the Edit still shows
+// one open carrying the first open's input hash.
+func TestTheMergedReadOfAnEditCollapsesWithItsNamedReads(t *testing.T) {
+	const pid = 9
+	in, h := "sha256:eb87ce4", "sha256:a5eeda1"
+	ev := func(ms int, typ models.ActionType, target string, amb bool) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at(ms), ActionType: typ, Target: target, PID: pid, PathIsAmbiguous: amb}
+	}
+	named := ev(0, models.FileOpen, "/ws/notes.txt", false)
+	named.InputHash = &in
+	closed := ev(10, models.FileClose, "/ws/notes.txt", false)
+	closed.OutputHash = &h
+	g := models.GroundTruth{
+		named, named,
+		ev(5, models.FileOpen, "/home/u/.claude/plugins/installed_plugins.json", false),
+		named,
+		ev(10, models.FileOpen, "/ws", true),
+		ev(10, models.FileWrite, "/ws", true),
+		ev(10, models.FileRename, "/ws", true),
+		ev(10, models.FileOpen, "/ws/notes.txt", false),
+		ev(10, models.FileWrite, "/ws/notes.txt", false),
+		closed,
+	}
+	out := Adapter{}.NormalizeStream(g)
+	want := []string{"file_open /ws/notes.txt", "file_open /home/u/.claude/plugins/installed_plugins.json", "file_write /ws/notes.txt"}
+	if got := targets(out); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if out[0].InputHash == nil || *out[0].InputHash != in {
+		t.Errorf("open = %+v, want the first named open's input hash", out[0])
 	}
 }
 

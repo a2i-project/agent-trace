@@ -437,12 +437,13 @@ const (
 	reasonFailed = "failed"
 )
 
-// notebookClaims maps a NotebookEdit (I-37). The harness replaces the
-// notebook atomically, as Write does, so the call claims one write of
-// notebook_path. Its result holds the notebook before and after; the text
-// after is the content written (checked on one capture of 2.1.296, where its
-// hash equals the observed close's) and becomes the write's output hash. A
-// failed call, marked by is_error or a non-empty error, claims nothing.
+// notebookClaims maps a NotebookEdit (I-37, I-39). The harness reads the
+// notebook and replaces it atomically, as an Edit does, so the call claims an
+// open and a write of notebook_path. Its result holds the notebook before and
+// after; the text after is the content written (checked on one capture of
+// 2.1.296, where its hash equals the observed close's) and becomes the
+// write's output hash. A failed call, marked by is_error or a non-empty
+// error, claims nothing.
 func notebookClaims(path string, res toolResult, mk func(models.ActionType, string) models.TrajectoryEntry) ([]models.TrajectoryEntry, string) {
 	if path == "" {
 		return nil, "no notebook_path"
@@ -450,13 +451,13 @@ func notebookClaims(path string, res toolResult, mk func(models.ActionType, stri
 	if res.isError || (res.notebook != nil && res.notebook.failed) {
 		return nil, reasonFailed
 	}
-	write := mk(models.FileWrite, path)
+	open, write := mk(models.FileOpen, path), mk(models.FileWrite, path)
 	// An empty text is what the harness reports when it did not write the
 	// file itself, and is never a notebook: no claim of content.
 	if nb := res.notebook; nb != nil && nb.path == path && nb.updated != "" {
 		write.OutputHash = models.StringPtr(contentHash(nb.updated))
 	}
-	return []models.TrajectoryEntry{write}, ""
+	return []models.TrajectoryEntry{open, write}, ""
 }
 
 // What a Write's tool_result says, in the harness's own words (2.1.296):
