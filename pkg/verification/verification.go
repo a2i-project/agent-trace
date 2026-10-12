@@ -312,16 +312,20 @@ func Verify(in Input) Verdict {
 
 	forest := BuildForest(in.Ground, in.RootPID)
 	part := forest.Partition(in.Ground)
-	part, _ = part.SubtractBaseline(in.Baseline)
 	claims, outOfScope := splitByScope(in.Claims, NewFSScope(in.FSScope, in.Workspace))
 	v.OutOfScope = outOfScope
+	claimed := claimedTargets(claims)
+	// A baseline event on a path some claim names stays in the sequence, so
+	// the claim can pair with it; one left unpaired is counted as baselined
+	// after alignment, as if it had been subtracted (V-30).
+	part, _ = part.SubtractBaseline(in.Baseline, claimed)
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in
 	// the sequence it could pair with a claim and leave a real one unpaired at
 	// the same cost, an ambiguous alignment that reads a fabrication as a
 	// substitution. An event on a path some claim does name stays, so an
 	// honest write there can pair (V-24).
-	part, v.UnexplainedHarness = part.setAsideHarnessOwned(in.Options.HarnessOwned, claimedTargets(claims))
+	part, v.UnexplainedHarness = part.setAsideHarnessOwned(in.Options.HarnessOwned, claimed)
 	if in.Options.IgnoreExits {
 		part = part.DropExits()
 		claims = dropExitClaims(claims)
@@ -359,6 +363,11 @@ func Verify(in Input) Verdict {
 			case EditInsertion:
 				v.Unwitnessed = append(v.Unwitnessed, *e.Claim)
 			case EditDeletion:
+				// A baseline event kept for a claim on its path that found no
+				// pair: explained by the baseline, as if subtracted (V-30).
+				if keptBaseline(part, e.EventIndex, in.Baseline) {
+					continue
+				}
 				// A harness-owned event on a claimed path that still found no pair.
 				if isHarnessOwned(*e.Event, in.Options.HarnessOwned) {
 					v.UnexplainedHarness = append(v.UnexplainedHarness, *e.Event)
@@ -369,7 +378,7 @@ func Verify(in Input) Verdict {
 		}
 	}
 	v.Coverage = CheckCoverage(part, alignments)
-	v.Coverage.UnexplainedActions = withoutHarnessOwned(v.Coverage.UnexplainedActions, in.Options.HarnessOwned)
+	v.Coverage.UnexplainedActions = withoutExplainedLevelZero(v.Coverage.UnexplainedActions, in.Baseline, in.Options.HarnessOwned)
 	v.Commands = part.Commands
 	v.OutsideWrites = outsideWrites(v.Coverage.Outside, in.Workspace)
 
@@ -475,13 +484,23 @@ func isHarnessOwned(e models.GroundTruthEvent, owned func(string) bool) bool {
 	return owned != nil && LaneOf(e.ActionType) == LaneFS && owned(e.Target)
 }
 
-func withoutHarnessOwned(actions []UnexplainedAction, owned func(string) bool) []UnexplainedAction {
-	if owned == nil {
+// keptBaseline reports whether the observed event at index i is a level-0
+// event the baseline recognises. After SubtractBaseline the only such events
+// left are those kept for a claim on their path (V-30).
+func keptBaseline(p Partition, i int, b Baseline) bool {
+	return b != nil && i >= 0 && p.Owner[i] == nil && b(p.Observed[i])
+}
+
+// withoutExplainedLevelZero drops from the unexplained actions the level-0
+// events that are not omissions: a baseline event kept for a claim on its
+// path (V-30) and an event under the harness's own directories (V-24).
+func withoutExplainedLevelZero(actions []UnexplainedAction, b Baseline, owned func(string) bool) []UnexplainedAction {
+	if b == nil && owned == nil {
 		return actions
 	}
 	var out []UnexplainedAction
 	for _, a := range actions {
-		if a.Command == nil && isHarnessOwned(a.Event, owned) {
+		if a.Command == nil && ((b != nil && b(a.Event)) || isHarnessOwned(a.Event, owned)) {
 			continue
 		}
 		out = append(out, a)

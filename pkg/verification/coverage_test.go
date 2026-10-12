@@ -12,7 +12,7 @@ import (
 func coverageOf(t *testing.T, claims models.Trajectory, g models.GroundTruth, b Baseline) (Coverage, Partition) {
 	t.Helper()
 	f := BuildForest(g, agentPID)
-	p, _ := f.Partition(g).SubtractBaseline(b)
+	p, _ := f.Partition(g).SubtractBaseline(b, nil)
 	as, err := Align(claims, p.Observed, Options{})
 	if err != nil {
 		t.Fatalf("Align: %v", err)
@@ -136,9 +136,25 @@ func TestCoverage_SubtractBaselineDoesNotMutateItsInput(t *testing.T) {
 	g := models.GroundTruth{fork(1, 200, agentPID), execEv(2, 200, agentPID, "/usr/bin/telemetry-daemon")}
 	p := BuildForest(g, agentPID).Partition(g)
 	before := len(p.Observed)
-	out, n := p.SubtractBaseline(func(models.GroundTruthEvent) bool { return true })
+	out, n := p.SubtractBaseline(func(models.GroundTruthEvent) bool { return true }, nil)
 	if n != 1 || len(out.Observed) != 0 || len(p.Observed) != before || p.Commands[0].Baseline {
 		t.Errorf("subtract: n=%d out=%d in=%d baseline flag on input=%v", n, len(out.Observed), len(p.Observed), p.Commands[0].Baseline)
+	}
+}
+
+// A level-0 file event the baseline recognises stays in the sequence when a
+// claim names its path, so the claim can pair with it (V-30). A command the
+// baseline recognises is subtracted whatever the claims name.
+func TestCoverage_SubtractBaselineKeepsFileEventsOnClaimedPaths(t *testing.T) {
+	g := models.GroundTruth{
+		fsEv(1, agentPID, "/tmp/h/tasks/N.output"),
+		fsEv(2, agentPID, "/home/u/.config/agent.json"),
+		fork(3, 200, agentPID), execEv(4, 200, agentPID, "/tmp/h/tasks/N.output"),
+	}
+	p := BuildForest(g, agentPID).Partition(g)
+	out, n := p.SubtractBaseline(func(models.GroundTruthEvent) bool { return true }, map[string]bool{"/tmp/h/tasks/N.output": true})
+	if n != 2 || len(out.Observed) != 1 || out.Observed[0].ActionType != models.FileWrite || out.Observed[0].Target != "/tmp/h/tasks/N.output" {
+		t.Errorf("subtracted %d, observed %v: want the claimed file event kept and the rest subtracted", n, out.Observed)
 	}
 }
 

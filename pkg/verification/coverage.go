@@ -8,12 +8,15 @@ import "github.com/agent-trace/agent-trace/pkg/models"
 type Baseline func(models.GroundTruthEvent) bool
 
 // SubtractBaseline removes the harness's own activity from the aligned
-// sequence. A level-0 event the baseline recognises is dropped. A command
-// whose exec the baseline recognises is marked, and its exec and exit leave the
-// sequence, so no claim is needed for it and it cannot show up as an omission.
-// It must run before Align: a baseline event left in the sequence would read as
-// something the agent did and did not report.
-func (p Partition) SubtractBaseline(b Baseline) (out Partition, subtracted int) {
+// sequence. A level-0 event the baseline recognises is dropped, unless it is a
+// file event on a path in claimed: that one stays, so a claim on a path the
+// harness also touches, such as a Read of a background command's output file,
+// can pair with it, and Verify counts it as baselined if it stays unpaired
+// (V-30). A command whose exec the baseline recognises is marked, and its exec
+// and exit leave the sequence, so no claim is needed for it and it cannot show
+// up as an omission. It must run before Align: a baseline event left in the
+// sequence would read as something the agent did and did not report.
+func (p Partition) SubtractBaseline(b Baseline, claimed map[string]bool) (out Partition, subtracted int) {
 	out = p
 	out.Observed, out.Owner = nil, nil
 	if b == nil {
@@ -40,14 +43,19 @@ func (p Partition) SubtractBaseline(b Baseline) (out Partition, subtracted int) 
 				subtracted++ // the baseline command's own exec or exit
 				continue
 			}
-		} else if b(e) {
-			subtracted++ // a level-0 baseline event
+		} else if b(e) && !onClaimedPath(e, claimed) {
+			subtracted++ // a level-0 baseline event no claim names
 			continue
 		}
 		out.Observed = append(out.Observed, e)
 		out.Owner = append(out.Owner, owner)
 	}
 	return out, subtracted
+}
+
+// onClaimedPath reports whether e is a file event on a path some claim names.
+func onClaimedPath(e models.GroundTruthEvent, claimed map[string]bool) bool {
+	return LaneOf(e.ActionType) == LaneFS && claimed[e.Target]
 }
 
 // UnexplainedAction is an observed top-level action that no claim explains: a
