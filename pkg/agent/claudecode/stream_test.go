@@ -709,3 +709,104 @@ func TestCollapseOpensIgnoresTheHarnessOwnFiles(t *testing.T) {
 		t.Errorf("got %v\nwant %v", got, want)
 	}
 }
+
+// The harness's read and delete of its cwd file, merged into one batch, reach
+// the probe as an ambiguous open and an ambiguous delete of /tmp (I-43). Only
+// that shape becomes a read of the cwd file; every other event on /tmp keeps
+// its target. Events of one batch are a nanosecond apart, as the probe stamps
+// them.
+func TestFoldCwdFileReadTakesOnlyTheHarnessShape(t *testing.T) {
+	const pid, other = 9, 10
+	ev := func(ns int, typ models.ActionType, target string, p uint32, amb bool) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: t0.Add(time.Duration(ns)), ActionType: typ, Target: target, PID: p, PathIsAmbiguous: amb}
+	}
+	tasks := "/tmp/claude-1000/-w/s/tasks"
+	cases := []struct {
+		name string
+		g    models.GroundTruth
+		want string // the open's target after the fold
+	}{
+		{"read and delete in one batch", models.GroundTruth{
+			ev(0, models.FileOpen, tasks, pid, true),
+			ev(1, models.FileOpen, "/tmp", pid, true),
+			ev(2, models.FileDelete, tasks, pid, true),
+			ev(3, models.FileDelete, "/tmp", pid, true),
+		}, cwdFileRead},
+		{"events of another process between", models.GroundTruth{
+			ev(0, models.FileOpen, "/tmp", pid, true),
+			ev(1, models.FileWrite, "/tmp", other, true),
+			ev(2, models.FileDelete, "/tmp", pid, true),
+		}, cwdFileRead},
+		{"no delete", models.GroundTruth{
+			ev(0, models.FileOpen, "/tmp", pid, true),
+			ev(1, models.FileOpen, tasks, pid, true),
+		}, "/tmp"},
+		{"a write of the process on /tmp first", models.GroundTruth{
+			ev(0, models.FileOpen, "/tmp", pid, true),
+			ev(1, models.FileWrite, "/tmp", pid, true),
+			ev(2, models.FileDelete, "/tmp", pid, true),
+		}, "/tmp"},
+		{"the delete in a later batch", models.GroundTruth{
+			ev(0, models.FileOpen, "/tmp", pid, true),
+			ev(20000, models.FileDelete, "/tmp", pid, true),
+		}, "/tmp"},
+		{"the delete by another process", models.GroundTruth{
+			ev(0, models.FileOpen, "/tmp", pid, true),
+			ev(1, models.FileDelete, "/tmp", other, true),
+		}, "/tmp"},
+		{"a named delete", models.GroundTruth{
+			ev(0, models.FileOpen, "/tmp", pid, true),
+			ev(1, models.FileDelete, "/tmp", pid, false),
+		}, "/tmp"},
+		{"a named open of /tmp", models.GroundTruth{
+			ev(0, models.FileOpen, "/tmp", pid, false),
+			ev(1, models.FileDelete, "/tmp", pid, true),
+		}, "/tmp"},
+		{"an ambiguous open of another directory", models.GroundTruth{
+			ev(0, models.FileOpen, "/var/tmp", pid, true),
+			ev(1, models.FileDelete, "/var/tmp", pid, true),
+		}, "/var/tmp"},
+	}
+	for _, c := range cases {
+		in := append(models.GroundTruth(nil), c.g...)
+		out := foldCwdFileRead(in)
+		if len(out) != len(c.g) {
+			t.Fatalf("%s: %d events, want %d", c.name, len(out), len(c.g))
+		}
+		var open *models.GroundTruthEvent
+		for i := range out {
+			if out[i].ActionType == models.FileOpen && out[i].PID == pid && out[i].Target != tasks {
+				open = &out[i]
+				break
+			}
+		}
+		if open == nil || open.Target != c.want {
+			t.Errorf("%s: open %+v, want target %s", c.name, open, c.want)
+			continue
+		}
+		if open.Target == cwdFileRead && open.PathIsAmbiguous {
+			t.Errorf("%s: the rewritten open is still ambiguous", c.name)
+		}
+		for i := range in {
+			if in[i] != c.g[i] {
+				t.Errorf("%s: the input was modified at %d", c.name, i)
+			}
+		}
+	}
+}
+
+// The rewritten open names the cwd file family the way a named read of one
+// does where runs are compared, and it is the harness's own path (I-43).
+func TestTheFoldedCwdFileReadIsCanonicalAndHarnessOwned(t *testing.T) {
+	named := Adapter{}.Canonical(models.GroundTruthEvent{ActionType: models.FileOpen, Target: "/tmp/claude-8e2a-cwd"})
+	folded := Adapter{}.Canonical(models.GroundTruthEvent{ActionType: models.FileOpen, Target: cwdFileRead})
+	if named.Target != folded.Target {
+		t.Errorf("canonical %q and %q differ", named.Target, folded.Target)
+	}
+	if !(Adapter{}).IsHarnessOwned(cwdFileRead) {
+		t.Errorf("%s is not harness-owned", cwdFileRead)
+	}
+	if cwdFileID.MatchString(cwdFileRead) {
+		t.Errorf("%s has the shape of a real cwd file", cwdFileRead)
+	}
+}

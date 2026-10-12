@@ -19,7 +19,7 @@ import (
 // a file and one that overwrites it, and a subagent that writes a file. Its
 // five controls also run a background Bash and a subagent, so the baseline
 // covers the harness's activity around both. It is the evidence behind I-34 to
-// I-41, V-30 and V-31. Reduced by scripts/make-capture-fixture.py, which keeps
+// I-43, V-30 and V-31. Reduced by scripts/make-capture-fixture.py, which keeps
 // the Read and Write results the adapter reads.
 const toolsDir = "testdata/paired-2.1.296-tools"
 
@@ -114,19 +114,80 @@ func TestToolsTaskCorroboratesEveryClaimAtTheDefaultAgreement(t *testing.T) {
 	}
 }
 
-// Above two controls in five the run is NOT FAITHFUL on one event only: an
-// ambiguous open of /tmp the probe reports in the batch where the harness
-// removes its task directory at exit, which two of the five controls made.
-// /tmp is not the harness's own directory, so it is a finding; this is a known
-// limit on the adapter page. Every claim stays corroborated.
-func TestToolsTaskAboveTwoControlsFlagsOnlyTheExitOpenOfTmp(t *testing.T) {
-	for _, a := range []float64{0.6, 0.8, 1} {
-		v, tr := toolsVerdict(t, a)
-		if len(v.Corroborated) != len(tr) {
-			t.Errorf("agreement %v: corroborated %d of %d claims", a, len(v.Corroborated), len(tr))
+// The harness reads and deletes its cwd file after each Bash call. In the
+// task run and in two of the five controls the read merged into the batch of
+// the delete and reached the probe as an ambiguous open of /tmp; in the other
+// three it names the file. The fold reads the first as the second (I-43), so
+// the run has no finding at any agreement: it is INCONCLUSIVE only on harness
+// events in the harness's own directories that too few controls made, and
+// every claim stays corroborated. This pins the count at each agreement.
+func TestToolsTaskHasNoFindingAtAnyAgreement(t *testing.T) {
+	run := toolsRun(t, "tools")
+	var cwdReads int
+	for _, e := range agent.NormalizeGround(Adapter{}, run.Events) {
+		// The wrapper's shell writes the cwd file; when that batch merges, its
+		// open of /tmp is followed by a write and keeps its target.
+		if e.ActionType == models.FileOpen && e.Target == "/tmp" && e.PID == run.RootPID {
+			t.Errorf("an open of /tmp by the agent's process is left: %+v", e)
 		}
-		if v.Findings() != 1 || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "/tmp" || v.Unrecorded[0].ActionType != models.FileOpen {
-			t.Errorf("agreement %v: findings %d, unrecorded %v; want only the open of /tmp", a, v.Findings(), v.Unrecorded)
+		if e.Target == cwdFileRead && e.PID == run.RootPID {
+			cwdReads++
+		}
+	}
+	if cwdReads != 1 {
+		t.Errorf("%d folded reads of the cwd file, want 1", cwdReads)
+	}
+	for _, c := range []struct {
+		agreement float64
+		harness   int
+	}{{0.2, 4}, {0.4, 6}, {0.6, 7}, {0.8, 10}, {1, 10}} {
+		v, tr := toolsVerdict(t, c.agreement)
+		if len(v.Corroborated) != len(tr) || v.Findings() != 0 || len(v.Unverified) != 0 {
+			t.Errorf("agreement %v: corroborated %d of %d claims, findings %d, unverified %d\nunrecorded=%v",
+				c.agreement, len(v.Corroborated), len(tr), v.Findings(), len(v.Unverified), v.Unrecorded)
+		}
+		if v.Outcome != verification.OutcomeInconclusive || len(v.UnexplainedHarness) != c.harness {
+			t.Errorf("agreement %v: outcome %s with %d unexplained harness events, want INCONCLUSIVE with %d: %v",
+				c.agreement, v.Outcome, len(v.UnexplainedHarness), c.harness, v.UnexplainedHarness)
+		}
+		for _, e := range v.UnexplainedHarness {
+			if e.Target == cwdFileRead {
+				t.Errorf("agreement %v: the folded read of the cwd file is unexplained", c.agreement)
+			}
+		}
+	}
+}
+
+// The fold leaves the agent's own events in /tmp alone: an ambiguous open of
+// /tmp that no delete of /tmp follows, and an open of a file in /tmp, by the
+// agent's process, stay unrecorded at every agreement (I-43).
+func TestAnAgentOpenInTmpIsStillAFinding(t *testing.T) {
+	tr, _, err := Adapter{}.Parse(filepath.Join(toolsDir, "tools.session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := toolsRun(t, "tools")
+	// Halfway through the run, between two events, by the agent's process.
+	mid := len(g.Events) / 2
+	at := g.Events[mid].Timestamp.Add(time.Microsecond)
+	injected := models.GroundTruth{
+		{Timestamp: at, ActionType: models.FileOpen, Target: "/tmp", PID: g.RootPID, PathIsAmbiguous: true},
+		{Timestamp: at.Add(time.Nanosecond), ActionType: models.FileOpen, Target: "/tmp/x", PID: g.RootPID},
+	}
+	events := append(append(append(models.GroundTruth(nil), g.Events[:mid+1]...), injected...), g.Events[mid+1:]...)
+	g.Events = events
+	for _, a := range []float64{0.2, 0.6, 1} {
+		b, err := agent.Capture(Adapter{}, "2.1.296", toolsControls(t), time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: a})
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := verification.Verify(agent.Prepare(Adapter{}, tr, g, b.Predicate(g.Workspace), verification.Options{IntervalSlack: 500 * time.Millisecond}))
+		var got []string
+		for _, e := range v.Unrecorded {
+			got = append(got, string(e.ActionType)+" "+e.Target)
+		}
+		if v.Outcome != verification.OutcomeNotFaithful || v.Findings() != 2 || strings.Join(got, "|") != "file_open /tmp|file_open /tmp/x" {
+			t.Errorf("agreement %v: outcome %s, findings %d, unrecorded %v; want NOT FAITHFUL on the two opens", a, v.Outcome, v.Findings(), got)
 		}
 	}
 }

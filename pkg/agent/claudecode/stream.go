@@ -3,6 +3,7 @@ package claudecode
 import (
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
@@ -42,10 +43,65 @@ func isFile(a models.ActionType) bool {
 	return false
 }
 
-// NormalizeStream folds atomic replaces and collapses runs of opens. Events are
+// NormalizeStream folds atomic replaces, names the harness's read of its cwd
+// file where the probe lost the name, and collapses runs of opens. Events are
 // in time order, ties in the order the probe emitted them.
 func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
-	return collapseOpens(foldAtomicWrites(g))
+	return collapseOpens(foldCwdFileRead(foldAtomicWrites(g)))
+}
+
+// cwdFileRead is the target an ambiguous read of the cwd file becomes: the
+// canonical form of /tmp/claude-<id>-cwd (canonicalFileIDs leaves it as it
+// is), so a baseline rule measured on a control that recorded the read by
+// name explains it, and harnessOwned matches it. The harness names its cwd
+// files with lower-case base-36 ids, so no file it writes, and no claim on
+// one, carries the upper-case token (I-43).
+const cwdFileRead = "/tmp/claude-N-cwd"
+
+// batchSpan bounds the distance between two records of one fanotify batch.
+// The probe stamps a batch with one clock reading plus one nanosecond per
+// record (P-18); on the paired captures of 2.1.286 and 2.1.296 consecutive
+// file records of one batch are at most 33 ns apart and those of two batches
+// at least 17 microseconds.
+const batchSpan = time.Microsecond
+
+// foldCwdFileRead rewrites the harness's read of its cwd file when the probe
+// reports it on /tmp (I-43). After each Bash call the harness reads and
+// deletes /tmp/claude-<id>-cwd, which the wrapper wrote. When the read and the
+// delete land in one batch, the file is gone before the batch is read, and
+// both are ambiguous records of /tmp. So an ambiguous open of /tmp whose
+// process's next event on /tmp, in the same batch, is an ambiguous delete of
+// /tmp becomes an open of cwdFileRead. Nothing else on /tmp is touched: a
+// named open, an open followed by another event of its process on /tmp (a
+// write, say) or by nothing in the batch, and every write stay as they are.
+func foldCwdFileRead(g models.GroundTruth) models.GroundTruth {
+	var out models.GroundTruth
+	for o, open := range g {
+		if open.ActionType != models.FileOpen || open.Target != "/tmp" || !open.PathIsAmbiguous || open.PID == 0 {
+			continue
+		}
+		for i := o + 1; i < len(g); i++ {
+			e := g[i]
+			if e.Timestamp.Sub(open.Timestamp) >= batchSpan {
+				break
+			}
+			if e.PID != open.PID || e.Target != "/tmp" {
+				continue
+			}
+			if e.ActionType == models.FileDelete && e.PathIsAmbiguous && !e.Timestamp.Before(open.Timestamp) {
+				if out == nil {
+					out = append(models.GroundTruth(nil), g...)
+				}
+				out[o].Target = cwdFileRead
+				out[o].PathIsAmbiguous = false
+			}
+			break
+		}
+	}
+	if out == nil {
+		return g
+	}
+	return out
 }
 
 // foldAtomicWrites replaces each complete temp-and-rename write with one
