@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/content"
@@ -375,6 +376,53 @@ func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
 				t.Errorf("%s %q -> %q, want %q", typ, in, got.Target, want)
 			}
 		}
+	}
+}
+
+// A file claim's path has the per-run ids replaced as the observed event's
+// has (I-36). The agent's Read of its background Bash's output file names the
+// session and task ids the Bash result reported; every control's Bash opens
+// its own output file, so the baseline holds the canonical open, which the
+// verifier keeps for a claim on its path (V-30). Measured on the tools capture
+// of 2.1.296.
+func TestAReadOfTheBackgroundOutputFileIsClaimedOnTheCanonicalPath(t *testing.T) {
+	const (
+		agentPID = 100
+		ws       = "/tmp/cap/ws-tools"
+		real     = "/tmp/claude-1000/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/tasks/b18jddo1a.output"
+		canon    = "/tmp/claude-1000/-tmp-cap-ws-tools/SESSION/tasks/N.output"
+	)
+	use := `{"type":"assistant","timestamp":"2026-10-12T19:56:06Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"%s"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/tmp/cap/ws-tools/notes.txt"}}]}}`
+	p := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(p, []byte(fmt.Sprintf(use, real)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr, rep, err := Adapter{}.Parse(p)
+	if err != nil || len(rep.ParseErrors) != 0 || len(tr) != 2 {
+		t.Fatalf("parse: %v %v %d entries", err, rep.ParseErrors, len(tr))
+	}
+	if tr[0].Target != canon || tr[1].Target != "/tmp/cap/ws-tools/notes.txt" {
+		t.Fatalf("targets = %q, %q; want the output file canonical and the workspace file as it is", tr[0].Target, tr[1].Target)
+	}
+
+	ts := tr[0].Timestamp
+	g := models.GroundTruthFile{
+		RootPID: agentPID, Workspace: ws, FSScope: &models.FSScope{Mounts: []string{"/"}},
+		Coverage: &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}},
+		Events: models.GroundTruth{
+			// The harness writing the output, then the agent's two Reads.
+			{Timestamp: ts.Add(-time.Second), ActionType: models.FileWrite, Target: real, PID: agentPID},
+			{Timestamp: ts, ActionType: models.FileOpen, Target: real, PID: agentPID},
+			{Timestamp: ts.Add(time.Millisecond), ActionType: models.FileOpen, Target: "/tmp/cap/ws-tools/notes.txt", PID: agentPID},
+		},
+	}
+	base := agent.Baseline{Agent: Name, Rules: []agent.Rule{
+		{ActionType: models.FileOpen, Target: "/tmp/claude-1000/{workspace-}/SESSION/tasks/N.output"},
+		{ActionType: models.FileWrite, Target: "/tmp/claude-1000/{workspace-}/SESSION/tasks/N.output"},
+	}}
+	v := verification.Verify(agent.Prepare(Adapter{}, tr, g, base.Predicate(ws), verification.Options{}))
+	if v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 2 {
+		t.Errorf("outcome = %s, corroborated = %d: unwitnessed=%v unrecorded=%v harness=%v", v.Outcome, len(v.Corroborated), v.Unwitnessed, v.Unrecorded, v.UnexplainedHarness)
 	}
 }
 

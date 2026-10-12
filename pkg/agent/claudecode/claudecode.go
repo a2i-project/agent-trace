@@ -542,6 +542,12 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 	}
 	mk := func(a models.ActionType, target string) models.TrajectoryEntry {
 		e := base
+		// A file claim's path gets the per-run ids replaced as the observed
+		// event's does, so a claim on a harness path such as a background
+		// command's output file pairs with it (I-36).
+		if isFile(a) {
+			target = canonicalFileIDs(target)
+		}
 		e.ActionType, e.Target = a, target
 		return e
 	}
