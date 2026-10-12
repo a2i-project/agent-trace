@@ -1,6 +1,6 @@
 # Filesystem probe
 
-Checked against commit 1241b71 on 2026-10-12.
+Checked against commit 7c5879b on 2026-10-12.
 
 ## Objective
 
@@ -56,7 +56,7 @@ The probe never drops on its own channel: `processRawEvent` and the settle code 
 ## Known limits
 
 - The `OutputHash` is computed in userspace after the close, so a write that lands between the close and the read, outside the generation check's window, can still make the hash describe later content. The probe errs towards publishing no hash: any open of the path after the close drops it, including a plain read, so a file read within the settle window of being written is published without a hash.
-- Only the directory walked at `Start` is hashed in advance (P-17). The first open of any other file carries the empty-content hash, whatever the file holds, until the probe has settled a close of it. A claimed `input_hash` on such a file (a Claude Code Edit, I-31) disagrees with the observed one. An Edit's claimed `input_hash` is compared with that stamp (O-28).
+- Only the directory walked at `Start` is hashed in advance (P-17). The first open of any other file carries the empty-content hash, whatever the file holds, until the probe has settled a close of it. A claimed `input_hash` on such a file (a Claude Code Edit, I-31) disagrees with the observed one: the verifier compares the stamp as a measurement (O-28). `TestLookupShadowHashStampsEmptyContentForAFileItNeverHashed` pins the stamp.
 - Writes through a shared `mmap` do not raise `FAN_MODIFY`.
 - Records still in the fanotify queue when `Stop` is signalled are discarded (`readLoop` flushes the pending closes and returns without draining), and nothing counts them.
 - `FAN_ACCESS` and `FAN_CLOSE_NOWRITE` are not in the mask, so reads are invisible beyond the open and the probe never emits `file_read`.

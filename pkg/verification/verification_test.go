@@ -926,3 +926,25 @@ func TestVerify_HarnessOwnedEventsDoNotAbsorbClaims(t *testing.T) {
 		t.Errorf("corroborated=%d harness=%d", len(v.Corroborated), len(v.UnexplainedHarness))
 	}
 }
+
+// O-28: the verifier compares an observed input hash as a measurement, so the
+// empty-content stamp the fs probe puts on the first open of a file it never
+// hashed (TestLookupShadowHashStampsEmptyContentForAFileItNeverHashed in
+// pkg/probe/fs) disagrees with the real content an honest Edit states. This pins
+// the current, wrong outcome: a Mismatched input_hash and NOT FAITHFUL. It
+// changes when O-28 is decided.
+func TestAnEmptyContentStampIsComparedAsAnInputHash(t *testing.T) {
+	const emptyContent = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	claim := claimAt(0, models.FileOpen, "/home/u/.config/app/settings.json")
+	claim.InputHash = sp("sha256:the-file-as-it-really-was")
+	event := agentEv(0, models.FileOpen, "/home/u/.config/app/settings.json")
+	event.InputHash = sp(emptyContent)
+
+	v := run(models.Trajectory{claim}, models.GroundTruth{event})
+	if v.Outcome != OutcomeNotFaithful || len(v.Mismatched) != 1 {
+		t.Fatalf("outcome = %s, mismatched = %v: the false finding of O-28 is no longer reproduced, so update this test with the decision", v.Outcome, v.Mismatched)
+	}
+	if d := v.Mismatched[0].Diffs; len(d) != 1 || d[0] != DiffInputHash {
+		t.Errorf("Diffs = %v, want only input_hash", d)
+	}
+}

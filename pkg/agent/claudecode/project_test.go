@@ -211,3 +211,65 @@ func TestProjectEditsClaimTheirContentAndAreCorroborated(t *testing.T) {
 		})
 	}
 }
+
+// O-28 on a real session: the edits capture with the opens of the first Edit's
+// file stamped as the fs probe stamps a file it never hashed (the hash of empty
+// content), which is what a pre-existing file outside the workspace gets. The
+// Edit states the real content before it, so the honest run reads as a
+// mismatched input hash and NOT FAITHFUL. This pins the false finding; it changes
+// when O-28 is decided.
+func TestAnEditOfAFileTheProbeNeverHashedReadsAsAMismatch(t *testing.T) {
+	const dir = "testdata/paired-2.1.296-edits"
+	const emptyContent = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	tr, rep, err := Adapter{}.Parse(filepath.Join(dir, "edits.session.jsonl"))
+	if err != nil || len(rep.ParseErrors) != 0 {
+		t.Fatalf("parse: %v %+v", err, rep.ParseErrors)
+	}
+	// The first Edit's stated input, and the file it edits.
+	var target, stated string
+	for _, e := range tr {
+		if e.Tool == toolEdit && e.ActionType == models.FileOpen && e.InputHash != nil {
+			target, stated = e.Target, *e.InputHash
+			break
+		}
+	}
+	if target == "" {
+		t.Fatal("no Edit with a stated input hash in the fixture")
+	}
+	load := func(name string) models.GroundTruthFile {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := models.ParseGroundTruthFile(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	g := load("edits.ground_truth.json")
+	stamped := 0
+	for i, e := range g.Events {
+		if e.ActionType == models.FileOpen && e.Target == target && e.InputHash != nil && *e.InputHash == stated {
+			h := emptyContent
+			g.Events[i].InputHash = &h
+			stamped++
+		}
+	}
+	if stamped == 0 {
+		t.Fatalf("no observed open of %s carries the stated input %s", target, stated)
+	}
+	runs := []models.GroundTruthFile{load("control-1.ground_truth.json"), load("control-2.ground_truth.json")}
+	b, err := agent.Capture(Adapter{}, rep.AgentVersion, runs, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: 0.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := verification.Verify(agent.Prepare(Adapter{}, tr, g, b.Predicate(g.Workspace), verification.Options{IntervalSlack: 500 * time.Millisecond}))
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Mismatched) != 1 {
+		t.Fatalf("outcome = %s, mismatched = %d: the false finding of O-28 is no longer reproduced, so update this test with the decision", v.Outcome, len(v.Mismatched))
+	}
+	m := v.Mismatched[0]
+	if m.Entry.Target != target || len(m.Diffs) != 1 || m.Diffs[0] != verification.DiffInputHash {
+		t.Errorf("mismatch = %s %s %v, want only the stamped Edit's input_hash", m.Entry.ActionType, m.Entry.Target, m.Diffs)
+	}
+}

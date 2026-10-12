@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 1241b71 on 2026-10-12.
+Checked against commit 7c5879b on 2026-10-12.
 
 ## Objective
 
@@ -195,7 +195,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - `Concurrency`, `SubagentsInProcess`, `ShellPerCommand` and `IntervalKind` are declarations only; the verifier does not read them.
 - The Claude Code adapter's command recovery and id canonicalisation depend on the current wrapper and snapshot shapes (the shell, the preamble clauses, `&& eval`, the `pwd -P` suffix, `PATH_END_`), which are harness-version-specific. A version that changes the wrapper makes every Bash claim a mismatch until the allowlist is extended; that is the intended failure (D6, I-26).
 - An Edit's content claims rest on the harness applying a plain string replacement of the strings its result reports, measured by the gate of I-31 (`TestProjectEditsClaimTheirContentAndAreCorroborated`) on the `edits` capture of 2.1.296: five Edits of different shapes, every one corroborated on both hashes. Another version that applies a different replacement shows as mismatches on every Edit, which is loud.
-- An Edit's `input_hash` is compared with the hash the fs probe stamps on the observed open. For a file outside the workspace that the capture has not seen written, that is the empty-content hash ([12_probe_fs.md](12_probe_fs.md)), so an honest Edit of such a file reads as an `input_hash` mismatch. How to treat such a hash is open (O-28).
+- An Edit's `input_hash` is compared with the hash the fs probe stamps on the observed open. For a file outside the workspace that the capture has not seen written, that is the empty-content hash ([12_probe_fs.md](12_probe_fs.md)), so an honest Edit of such a file reads as an `input_hash` mismatch and the run as NOT FAITHFUL. Reproduced on the edits capture with the first Edit's file stamped as never hashed (`TestAnEditOfAFileTheProbeNeverHashedReadsAsAMismatch`); not yet seen on a capture of an Edit outside the workspace. How to treat such a hash is open (O-28).
 - Collapsing opens loses the count of repeated reads of one file, on both sides.
 - The Gemini adapter does no wrapper recovery, so a wrapped command shows as a mismatch.
 - The Gemini adapter does not follow subtrajectories and does not set `ThreadID`.

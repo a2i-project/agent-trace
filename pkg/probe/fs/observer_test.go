@@ -1296,3 +1296,26 @@ func TestObserver_OpenAfterAtomicReplaceCarriesTheNewHash(t *testing.T) {
 		t.Errorf("last open of the target carries %s, want the new content %s", got, want)
 	}
 }
+
+// The input hash of an open is only a measurement for a file the probe hashed:
+// the workspace at start (P-17) or a close it settled. For any other file,
+// lookupShadowHash stamps the open with the hash of empty content whatever the
+// file holds. This pins that stamp, the premise of open question O-28: an
+// honest Edit of a pre-existing file outside the workspace is compared against
+// a hash that was never computed from the file.
+func TestLookupShadowHashStampsEmptyContentForAFileItNeverHashed(t *testing.T) {
+	dir := t.TempDir()
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "", nil })
+	outside := filepath.Join(t.TempDir(), "settings.json") // not under the observed directory
+	if err := os.WriteFile(outside, []byte(`{"theme":"dark"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := obs.lookupShadowHash(outside, -1, 0, nil); got != emptyFileHash {
+		t.Fatalf("input hash of a never-hashed file = %s, want the empty-content stamp", got)
+	}
+	// A file the probe did hash keeps its real digest.
+	obs.shadowHashes[outside] = "sha256:real"
+	if got := obs.lookupShadowHash(outside, -1, 0, nil); got != "sha256:real" {
+		t.Errorf("input hash of a hashed file = %s, want its settled digest", got)
+	}
+}
