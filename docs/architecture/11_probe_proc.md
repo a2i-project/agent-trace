@@ -1,6 +1,6 @@
 # Process probe
 
-Checked against commit f97b1a2 on 2026-10-12.
+Checked against commit d2c4348 on 2026-10-12.
 
 ## Objective
 
@@ -45,7 +45,7 @@ eBPF tracepoints loaded with cilium/ebpf, one ring buffer, CO-RE (`BPF_CORE_READ
 1. `handle_fork` (filtered mode only) ignores `CLONE_THREAD` clones. If the parent tgid is tracked, it emits a `KIND_FORK` record with `pid` = child and `ppid` = parent, then inserts the child into `tracked_pids`. The child's `is_toplevel` is 1 only when the parent is both a shell and top-level.
 2. `handle_execve` and `handle_execveat` fire at syscall entry, so they record every attempt, including execs that then fail. An `execveat` with `AT_EMPTY_PATH`, or an empty pathname, execs the descriptor itself (glibc's `fexecve`): there is no path, and the filename is recorded as `(fexecve)` (P-21); a pathname whose first byte cannot be read is recorded the same way. A pathname relative to a directory descriptor is recorded as given, unresolved. Both share `record_exec`, which reads any other filename into a 256-byte buffer with `bpf_probe_read_user_str`, sets `ppid` from `real_parent->tgid` via CO-RE, and stamps `bpf_ktime_get_ns()`. In filtered mode it returns early for an untracked tgid; for a tracked non-root process it re-evaluates `is_shell` by comparing the filename with eight fixed shell paths (`/bin/sh`, `/usr/bin/sh`, and the same for bash, dash and zsh). It copies up to 64 argv strings into the args area, stopping at 128 KiB, and sets `args_truncated` when a string did not fit, the total did, there were more than 64 arguments, or the filename with its terminating NUL filled the 256-byte buffer. It stores the header in `execs` keyed by tgid, then outputs the record to the ring buffer.
 3. `handle_exit_group` stores the `exit_group` argument as the exit code in the tgid's `execs` header and sets `has_exit_code`.
-4. `handle_exit` acts only when the exiting thread is the group leader (`tid == tgid`) and the tgid has an `execs` entry. It outputs that header with the kind `KIND_EXIT` and a fresh timestamp, deletes the `execs` entry and, in filtered mode, removes the tgid from `tracked_pids`. The command line is not in the kernel's copy: keeping it per process would preallocate a gigabyte, so userspace joins the exit to the exec it read.
+4. `handle_exit` acts only when the exiting thread is the group leader (`tid == tgid`). In filtered mode it first removes the tgid from `tracked_pids`, so a process that never exec'd leaves the set too (`TestObserver_ProcessThatNeverExecsLeavesTheTrackedSet`). If the tgid has an `execs` entry, it outputs that header with the kind `KIND_EXIT` and a fresh timestamp and deletes the entry. The command line is not in the kernel's copy: keeping it per process would preallocate a gigabyte, so userspace joins the exit to the exec it read.
 
 ### Userspace side
 
@@ -76,7 +76,6 @@ All four are event loss ([10_probes_common.md](10_probes_common.md#probecoverage
 ## Known limits
 
 - A process that never execs produces no `process_exit`, because exit records are copies of an `execs` entry.
-- `handle_exit` returns before removing the tgid from `tracked_pids` when there is no `execs` entry, so a tracked process that never exec'd leaves a stale entry that can track an unrelated process if the pid is reused.
 - The exit is joined to the most recent exec read for the tgid, and since execs are recorded at syscall entry, that can be a failed attempt's command line.
 - A process killed by a signal never calls `exit_group`, so its exit has no `ExitCode`.
 - Filename and argv are read from user memory at syscall entry, so another thread can change them before the kernel copies them.

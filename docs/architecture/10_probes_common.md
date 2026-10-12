@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit f97b1a2 on 2026-10-12.
+Checked against commit d2c4348 on 2026-10-12.
 
 ## Objective
 
@@ -25,7 +25,7 @@ All three observers satisfy both interfaces. `proc.Observer` adds `SetRootPID`, 
 
 ### Per-object tracked set
 
-The proc eBPF object (`proc.bpf.c`), the net object (`net.bpf.c`) and the TLS object (`tls.bpf.c`) each declare their own `tracked_pids` hash map. None is pinned or shared. Each object follows descendants itself: its `task_newtask` program (`handle_fork`) inserts the child's pid when the parent's tgid is in its map, and skips the event when `clone_flags` has `CLONE_THREAD`, since a thread shares an already tracked tgid. Each object's `sched_process_exit` program removes a tgid when the thread group leader exits (proc does this only for a process that has an `execs` entry, see [11_probe_proc.md](11_probe_proc.md)). The fs probe has no tracked set; it reports every event on the marked filesystems with the causing PID and leaves attribution to the verifier's forest. `cmd/watch` applies the scope rule afterwards ([step 10 below](#how-cmdwatch-builds-and-starts-probes)).
+The proc eBPF object (`proc.bpf.c`), the net object (`net.bpf.c`) and the TLS object (`tls.bpf.c`) each declare their own `tracked_pids` hash map. None is pinned or shared. Each object follows descendants itself: its `task_newtask` program (`handle_fork`) inserts the child's pid when the parent's tgid is in its map, and skips the event when `clone_flags` has `CLONE_THREAD`, since a thread shares an already tracked tgid. Each object's `sched_process_exit` program removes a tgid when the thread group leader exits, whether or not the process ever exec'd. The fs probe has no tracked set; it reports every event on the marked filesystems with the causing PID and leaves attribution to the verifier's forest. `cmd/watch` applies the scope rule afterwards ([step 10 below](#how-cmdwatch-builds-and-starts-probes)).
 
 Each eBPF object also keeps its loss counters in one-slot `BPF_MAP_TYPE_PERCPU_ARRAY` maps: `drop_count` (ring buffer output failed), `untracked_count` (`tracked_pids` update failed) and, in proc and net, `state_lost_count` (a per-process or per-connection state map update failed). `tls.bpf.c` adds `faulted_reads`. Userspace sums the per-CPU slots (`sumPerCPU`) and snapshots them in `Stop()` before it closes the maps.
 

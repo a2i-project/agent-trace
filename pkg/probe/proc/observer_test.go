@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/cilium/ebpf"
 )
 
 func skipUnprivileged(t *testing.T) {
@@ -847,6 +849,55 @@ func TestObserver_ForkRecordsPlaceProcessesThatNeverExec(t *testing.T) {
 			}
 			pid = parent
 		}
+	}
+}
+
+// A tracked process that exits without ever exec'ing leaves tracked_pids.
+// It has no execs entry, and the exit handler used to return on that before
+// deleting it, so the stale entry would track any later process that reused
+// the pid although it is not a descendant.
+func TestObserver_ProcessThatNeverExecsLeavesTheTrackedSet(t *testing.T) {
+	skipUnprivileged(t)
+
+	obs, err := New(Config{EventBufSize: 512, DeferRootPID: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	// The subshell prints its own pid with builtins only (dash has no
+	// BASHPID), so it never execs. The shell waits for it, so it has exited
+	// when Output returns. The trailing builtin keeps the shell from exec'ing.
+	out, err := exec.Command("/bin/sh", "-c", "( read -r pid _ < /proc/self/stat; echo $pid ); :").Output()
+	if err != nil {
+		t.Fatalf("run shell: %v", err)
+	}
+	sub, err := strconv.ParseUint(strings.TrimSpace(string(out)), 10, 32)
+	if err != nil {
+		t.Fatalf("subshell pid %q: %v", out, err)
+	}
+	var info bpfProcInfo
+	lookupErr := obs.objs.TrackedPids.Lookup(uint32(sub), &info)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if lookupErr == nil {
+		t.Errorf("subshell %d is still in tracked_pids after it exited", sub)
+	} else if !errors.Is(lookupErr, ebpf.ErrKeyNotExist) {
+		t.Errorf("look up subshell %d in tracked_pids: %v", sub, lookupErr)
+	}
+	var forked bool
+	for _, e := range collect(obs) {
+		if e.ActionType == models.ProcessFork && e.PID == uint32(sub) {
+			forked = true
+		}
+	}
+	if !forked {
+		t.Errorf("no fork record for subshell %d: it was never tracked, so the test proves nothing", sub)
 	}
 }
 

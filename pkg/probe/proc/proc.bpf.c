@@ -428,6 +428,12 @@ int handle_exit(struct sched_process_exit_ctx *ctx)
 	if (tgid != tid)
 		return 0;
 
+	// A tracked process that never exec'd has no execs entry, but its
+	// tracked_pids entry must go too, or a later process that reuses the pid
+	// is tracked although it is not a descendant.
+	if (get_use_pid_filter())
+		bpf_map_delete_elem(&tracked_pids, &tgid);
+
 	struct event_hdr *cached = bpf_map_lookup_elem(&execs, &tgid);
 	if (!cached)
 		return 0;
@@ -441,8 +447,5 @@ int handle_exit(struct sched_process_exit_ctx *ctx)
 		count_drop();
 
 	bpf_map_delete_elem(&execs, &tgid);
-	if (get_use_pid_filter()) {
-		bpf_map_delete_elem(&tracked_pids, &tgid);
-	}
 	return 0;
 }
