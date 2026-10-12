@@ -1774,7 +1774,7 @@
   {
    "timestamp": "2026-10-11T13:13:36.327537392+02:00",
    "action_type": "file_open",
-   "target": "/home/user/.claude/cache/model-catalog/41e94b26-839a-4a93-ac5b-8074857701c3-0b3c83477e0f-cc.json",
+   "target": "/home/user/.claude/cache/model-catalog/00000000-0000-0000-0000-000000000000-0b3c83477e0f-cc.json",
    "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
    "pid": 523238
   },
@@ -3026,20 +3026,20 @@
   {
    "timestamp": "2026-10-11T13:13:37.640463913+02:00",
    "action_type": "file_open",
-   "target": "/home/user/.claude/cache/model-catalog/41e94b26-839a-4a93-ac5b-8074857701c3-0b3c83477e0f-cc.json.tmp.caa02225",
+   "target": "/home/user/.claude/cache/model-catalog/00000000-0000-0000-0000-000000000000-0b3c83477e0f-cc.json.tmp.caa02225",
    "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
    "pid": 523238
   },
   {
    "timestamp": "2026-10-11T13:13:37.64060035+02:00",
    "action_type": "file_write",
-   "target": "/home/user/.claude/cache/model-catalog/41e94b26-839a-4a93-ac5b-8074857701c3-0b3c83477e0f-cc.json.tmp.caa02225",
+   "target": "/home/user/.claude/cache/model-catalog/00000000-0000-0000-0000-000000000000-0b3c83477e0f-cc.json.tmp.caa02225",
    "pid": 523238
   },
   {
    "timestamp": "2026-10-11T13:13:37.64060035+02:00",
    "action_type": "file_close",
-   "target": "/home/user/.claude/cache/model-catalog/41e94b26-839a-4a93-ac5b-8074857701c3-0b3c83477e0f-cc.json.tmp.caa02225",
+   "target": "/home/user/.claude/cache/model-catalog/00000000-0000-0000-0000-000000000000-0b3c83477e0f-cc.json.tmp.caa02225",
    "output_hash": "sha256:337a3d4fb7b83899ac00f3844ef0e0328e02267abc116b0086dc059b7c04da93",
    "pid": 523238
   },

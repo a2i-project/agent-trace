@@ -11,7 +11,14 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
     /ws/<label>, so the baseline's workspace placeholder is exercised;
   * the snapshot-creation command keeps its first line, with its per-run id
     intact, and loses the script body. The body differs with the enabled tool
-    set, so a reduced fixture cannot show that a baseline is tied to one.
+    set, so a reduced fixture cannot show that a baseline is tied to one;
+  * the account's organisation id, which the harness uses in cache paths such as
+    ~/.claude/cache/model-catalog/<id>-0, becomes the zero UUID wherever it
+    appears. The ids are read from the capture's own transcripts.
+
+Before it finishes, the script checks every file it wrote for the home
+directory, the user name, the organisation ids and every e-mail address found in
+the raw transcripts, and deletes its output and fails if one is left.
 
 Ground truth events, pids, timestamps and coverage are kept as captured.
 
@@ -37,12 +44,27 @@ labels = [task] + sorted(
     if f.startswith("control-") and f.endswith(".ground_truth.json")
 )
 
+# The account's organisation ids and e-mail addresses, as the raw transcripts
+# state them. They are private and must not reach a checked-in file.
+org_ids, emails = set(), set()
+for name in os.listdir(capture):
+    if name.endswith(".jsonl"):
+        with open(os.path.join(capture, name), errors="replace") as f:
+            text = f.read()
+        org_ids.update(re.findall(r'"organizationUuid":\s*"([0-9a-fA-F-]{36})"', text))
+        emails.update(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text))
+# Addresses that are part of the harness's own text, not the account.
+emails = {e for e in emails if not e.endswith("@anthropic.com") and not e.endswith("@example.com")}
+ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+
 
 def rewrite(s, label):
     ws = os.path.join(capture, "ws-" + label)
     s = s.replace(ws, "/ws/" + label)
     s = s.replace(capture, "/capture")
     s = s.replace(home, "/home/user")
+    for org in org_ids:
+        s = s.replace(org, ZERO_UUID)
     return s.replace(os.environ.get("USER", "\0"), "user")
 
 
@@ -57,10 +79,12 @@ for label in labels:
         g = json.load(f)
     g["workspace"] = "/ws/" + label
     for e in g["events"]:
-        e["target"] = elide_snapshot(rewrite(e["target"], label))
+        e["target"] = elide_snapshot(e["target"])
+    # Rewrite the whole file, so paths outside the events (the scope record's
+    # mounts) are covered too.
+    text = rewrite(json.dumps(g, indent=1), label)
     with open(os.path.join(out, label + ".ground_truth.json"), "w") as f:
-        json.dump(g, f, indent=1)
-        f.write("\n")
+        f.write(text + "\n")
 
 def reduce_transcript(src, dst):
     kept = []
@@ -106,4 +130,22 @@ if os.path.isdir(sub):
     for name in sorted(os.listdir(sub)):
         if name.endswith(".jsonl"):
             n += reduce_transcript(os.path.join(sub, name), os.path.join(out, task + ".session", "subagents", name))
-print("wrote", out, "with", n, "transcript records")
+# Nothing private may be left in what was written.
+user = os.environ.get("USER", "")
+forbidden = {home} | org_ids | emails | ({user} if len(user) > 2 else set())
+leaks = []
+for root, _, files in os.walk(out):
+    for name in files:
+        path = os.path.join(root, name)
+        with open(path, errors="replace") as f:
+            text = f.read()
+        for word in forbidden:
+            if word and word in text:
+                leaks.append((path, word))
+if leaks:
+    for path, word in leaks:
+        print("private string left in", path, file=sys.stderr)
+    import shutil
+    shutil.rmtree(out)
+    sys.exit("refusing to keep the fixture: remove the leaks above and run again")
+print("wrote", out, "with", n, "transcript records; no private string found")

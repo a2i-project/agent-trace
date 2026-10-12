@@ -1793,7 +1793,7 @@
   {
    "timestamp": "2026-10-11T13:13:43.145792567+02:00",
    "action_type": "file_open",
-   "target": "/home/user/.claude/cache/model-catalog/41e94b26-839a-4a93-ac5b-8074857701c3-0b3c83477e0f-cc.json",
+   "target": "/home/user/.claude/cache/model-catalog/00000000-0000-0000-0000-000000000000-0b3c83477e0f-cc.json",
    "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
    "pid": 523542
   },
