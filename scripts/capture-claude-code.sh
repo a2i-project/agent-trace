@@ -32,19 +32,25 @@
 #             NotebookEdit of one cell, a Write that creates a file and one that
 #             overwrites it, a subagent that writes a file with Write, a Read of
 #             the background command's output file, and a final Bash. No network.
+#             Its controls also run the no-op command a second time in the
+#             background and start one subagent that only replies, so the
+#             baseline covers what the harness does around a background command
+#             and a subagent.
 #
 # By default the script also runs CONTROLS control runs and builds the baseline
 # from them, with the same tools enabled as the task. With --baseline-from DIR it
 # reuses the control runs already in DIR and runs only the task, which saves CONTROLS
-# model calls; that is only valid for the SAME Claude Code version and the SAME
-# tool set, and the script refuses otherwise. The baseline is rebuilt with the
-# current code.
+# model calls; that is only valid for the SAME Claude Code version, the SAME
+# tool set and the SAME control prompt, and the script refuses otherwise. The
+# baseline is rebuilt with the current code.
 #
 # Everything lands in OUTPUT_DIR (default /tmp/agent-trace-capture-<time>):
 #   <task>.session.jsonl      the transcript of the task run (T), and
 #   <task>.session/subagents  its subagent transcripts, when there are any
 #   <task>.ground_truth.json  what the probes saw during it (G)
-#   control-N.*               the same for CONTROLS runs that claim nothing (one no-op Bash call)
+#   control-N.*               the same for CONTROLS runs that claim nothing (one no-op Bash
+#                             call; for tools, also that call in the background and a subagent)
+#   control-tools.txt, control-prompt.txt  the tool set and prompt the controls ran with
 #   baseline.json             built from the control runs
 #   report.txt                verify output, without and with the baseline
 #
@@ -124,6 +130,15 @@ case $task in project|tools) [ -d "$seed" ] || { echo "missing seed directory $s
 # with that target, and its whole subtree, without a claim.
 control_command=': agent-trace-control-marker'
 control_prompt="Use the Bash tool to run exactly this no-op command: $control_command . Then reply with the single word ok. Do not use any other tool."
+# The tools task makes the harness work around a background command (its output
+# file under /tmp/claude-<uid>) and a subagent (its transcript and metadata under
+# ~/.claude/projects), which a control that makes one Bash call never shows. Its
+# controls therefore also run the same no-op command in the background, whose
+# output they do not need, and start one subagent that only replies. The
+# background call runs the marker command, so the one exclusion below covers it.
+if [ "$task" = tools ]; then
+  control_prompt="Do exactly these three things in order, and nothing else. 1) Use the Bash tool to run exactly this no-op command: $control_command . 2) Use the Bash tool with run_in_background set to true to run exactly the same command again: $control_command . Do not wait for it, check on it or read its output. 3) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then reply with the single word ok. Do not use any other tool."
+fi
 # The control runs must enable the same tools as the task. The shell snapshot
 # command the harness runs at the first Bash call differs with the tool set (it
 # shadows find and grep only when Grep and Glob are disabled), so a baseline
@@ -139,6 +154,15 @@ if [ -n "$baseline_from" ]; then
     echo "the control runs in $baseline_from enabled: $earlier" >&2
     echo "this task enables:                          $control_tools" >&2
     echo "a baseline holds for one tool set; run without --baseline-from to measure new controls" >&2
+    exit 1
+  fi
+  # A capture made before the control prompt was recorded used the one-call
+  # prompt, which every task but tools still uses.
+  earlier=$(cat "$baseline_from/control-prompt.txt" 2>/dev/null || echo "Use the Bash tool to run exactly this no-op command: $control_command . Then reply with the single word ok. Do not use any other tool.")
+  if [ "$earlier" != "$control_prompt" ]; then
+    echo "the control runs in $baseline_from were told: $earlier" >&2
+    echo "this task's controls are told:            $control_prompt" >&2
+    echo "a baseline holds for one control task; run without --baseline-from to measure new controls" >&2
     exit 1
   fi
 fi
@@ -193,6 +217,7 @@ if [ -n "$baseline_from" ]; then
 else
   for n in $(seq 1 "${CONTROLS:-5}"); do capture "control-$n" "$control_prompt" "$control_tools"; done
   printf '%s' "$control_tools" >"$out/control-tools.txt"
+  printf '%s' "$control_prompt" >"$out/control-prompt.txt"
   controls=("$out"/control-*.ground_truth.json)
 fi
 min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4f", 1 / n }')}
