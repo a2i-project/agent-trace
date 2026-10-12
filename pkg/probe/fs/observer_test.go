@@ -1297,25 +1297,47 @@ func TestObserver_OpenAfterAtomicReplaceCarriesTheNewHash(t *testing.T) {
 	}
 }
 
-// The input hash of an open is only a measurement for a file the probe hashed:
-// the workspace at start (P-17) or a close it settled. For any other file,
-// lookupShadowHash stamps the open with the hash of empty content whatever the
-// file holds. This pins that stamp, the premise of open question O-28: an
-// honest Edit of a pre-existing file outside the workspace is compared against
-// a hash that was never computed from the file.
-func TestLookupShadowHashStampsEmptyContentForAFileItNeverHashed(t *testing.T) {
+// P-22: an open carries an input hash only when the probe measured the file's
+// content. A pre-existing file the probe never hashed gets none (it used to get
+// the empty-content stamp, which the verifier compared as a measurement, O-28).
+// A file born after Start is empty at the open that created it, so its first
+// open, and only that one, carries the empty-content hash. A hashed file
+// carries its settled digest.
+func TestInputHashIsStatedOnlyWhenMeasured(t *testing.T) {
 	dir := t.TempDir()
 	obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "", nil })
-	outside := filepath.Join(t.TempDir(), "settings.json") // not under the observed directory
-	if err := os.WriteFile(outside, []byte(`{"theme":"dark"}`), 0o644); err != nil {
+
+	before := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(before, []byte(`{"theme":"dark"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := obs.lookupShadowHash(outside, -1, 0, nil); got != emptyFileHash {
-		t.Fatalf("input hash of a never-hashed file = %s, want the empty-content stamp", got)
+	time.Sleep(10 * time.Millisecond)
+	obs.startedAt = time.Now()
+	time.Sleep(10 * time.Millisecond)
+
+	if h, ok := obs.inputHash(before, -1, 0, nil); ok {
+		t.Errorf("a pre-existing file the probe never hashed carries %s, want no input hash", h)
 	}
-	// A file the probe did hash keeps its real digest.
-	obs.shadowHashes[outside] = "sha256:real"
-	if got := obs.lookupShadowHash(outside, -1, 0, nil); got != "sha256:real" {
-		t.Errorf("input hash of a hashed file = %s, want its settled digest", got)
+
+	born := filepath.Join(t.TempDir(), "new.txt")
+	if err := os.WriteFile(born, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, b, ok := identify(born, -1, 0, nil); !ok || b.IsZero() {
+		t.Skip("this filesystem reports no birth time; a born-here file then gets no input hash, which is the conservative reading")
+	}
+	if h, ok := obs.inputHash(born, -1, 0, nil); !ok || h != emptyFileHash {
+		t.Errorf("the first open of a file born after Start = %q, %v, want the empty-content hash", h, ok)
+	}
+	if h, ok := obs.inputHash(born, -1, 0, nil); ok {
+		t.Errorf("a second open of a born-here file the probe never hashed carries %s, want none: its content may have changed", h)
+	}
+
+	obs.shadowHashes[before] = "sha256:real"
+	if h, ok := obs.inputHash(before, -1, 0, nil); !ok || h != "sha256:real" {
+		t.Errorf("a hashed file = %q, %v, want its settled digest", h, ok)
+	}
+	if _, ok := obs.inputHash(filepath.Join(dir, "missing"), -1, 0, nil); ok {
+		t.Error("a file that cannot be identified carries an input hash")
 	}
 }

@@ -176,7 +176,7 @@ Consequences: Correct for `simagent`, which can state every field. A caller that
 Alternatives rejected: Not recorded at the time.
 
 ### V-22: A stated value the probe did not capture is unverified, and FAITHFUL is not asserted over it
-Status: Accepted, implemented (`unverifiedFields`, `Edit.Unverified`, `Verdict.Unverified`, the outcome rule in `Verify`). Amends V-20 and the last consequence of P-16.
+Status: Accepted, implemented (`unverifiedFields`, `Edit.Unverified`, `Verdict.Unverified`, the outcome rule in `Verify`). Amends V-20 and the last consequence of P-16. Amended by V-29 (`input_hash` joins the unverified fields).
 Date: 2026-10-08 (a security review of the verifier, local only).
 Context: V-20 reads a nil on the observed side as agreement, because a missing capture cannot disprove a claim. The fs probe publishes a close without a hash whenever a write-class event, an open included, follows it within the settle window (P-16). An agent that reads its file back right after writing it therefore made the probe drop the hash, and any claimed content was then corroborated (**Verified**: `TestPairedWriteWithoutAnObservedHashIsInconclusive` verified FAITHFUL with a false hash before the change).
 Decision: A pair whose claim states `output_hash` (on `file_close` or `file_write`), `exit_code` (on `process_exit`) or `request_hash` (on `net_request`) and whose observed event does not carry it is corroborated and listed as unverified, with the fields named. It is not a finding, since a probe gap is not the agent's doing. With no finding, the outcome is INCONCLUSIVE with the fields and counts as the reason. `Expresses` is not consulted: the claim did state the value.
@@ -245,3 +245,12 @@ Status: Superseded by V3 (P1), V4 and V5 (P2, P3). The restated properties are i
 Date: original wording 2026-09 (archived protocol architecture); superseded in design before 2026-09-19 and in code on 2026-10-06.
 Context: The original properties named the mechanism: omission as G events with no matching T entry, fabrication as T entries with no matching G event, substitution as entries that "match an event in G by timestamp but differ in content".
 Why superseded: The claims are unchanged; the mechanism is not. P3's wording described a matcher that was never built, since `Match` never paired on timestamp alone.
+
+### V-29: A stated input hash the probe did not measure is unverified
+Status: Accepted, implemented (`unverifiedFields` in `pkg/verification/verification.go`). Amends V-22. The user's ruling on O-28, option (a), with P-22.
+Date: 2026-10-12.
+Context: V-22 lists a stated value the probe did not capture as unverified, and left `input_hash` out because the fs probe stamped every open with one. P-22 removes the stamp: an open the probe did not measure carries no input hash.
+Decision: A claim that states `input_hash` paired with an event that carries none is corroborated and unverified, with `input_hash` named, like the three fields of V-22. A nil stated input still agrees, and two stated inputs that differ are a mismatch.
+Consequences: An honest Edit of a file the probe never measured is INCONCLUSIVE, not NOT FAITHFUL, and the report names the field. Without this half, P-22 alone would have turned the false finding into a silent pass, since a nil observed input agrees with any claim.
+Alternatives rejected: Leaving `input_hash` permissive (a lie about a file's content before an Edit would pass unreported).
+

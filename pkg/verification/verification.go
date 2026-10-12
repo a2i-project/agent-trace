@@ -199,8 +199,9 @@ const (
 // unverifiedFields names the content fields the claim states and the event
 // does not carry. hashesAgree reads such a pair as agreement, because a missing
 // capture cannot disprove the claim; this records that it did not confirm it
-// either. The fields are the three with round-trip support, as in contentDiffs.
-// input_hash is left out: the fs probe always stamps an open with one.
+// either. The fields are the three with round-trip support, as in contentDiffs,
+// and input_hash, which the fs probe states only for a file whose content it
+// measured (P-22, V-29).
 func unverifiedFields(entry models.TrajectoryEntry, event models.GroundTruthEvent) []string {
 	if entry.ActionType != event.ActionType {
 		return nil
@@ -208,6 +209,12 @@ func unverifiedFields(entry models.TrajectoryEntry, event models.GroundTruthEven
 	var out []string
 	if truncatedPrefix(entry, event) {
 		out = append(out, DiffTarget)
+	}
+	// The fs probe states an input hash only when it measured the file's
+	// content (P-22), so a stated input on an open without one is unverified,
+	// never agreement (V-29).
+	if entry.InputHash != nil && event.InputHash == nil {
+		out = append(out, DiffInputHash)
 	}
 	switch entry.ActionType {
 	case models.FileClose, models.FileWrite:

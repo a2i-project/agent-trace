@@ -276,10 +276,13 @@ func TestVerify_UnverifiedIsOnlyAStatedValueTheProbeMissed(t *testing.T) {
 	if len(both.Unverified)+len(neither.Unverified) != 0 {
 		t.Error("a captured or an unstated hash was listed as unverified")
 	}
-	// An omitted input hash on the observed side stays permissive (the probe
-	// always stamps opens), so it is not unverified either.
+	// A stated input hash on an open the probe could not measure is unverified
+	// too (V-29): the probe states an input only when it measured it (P-22).
 	in := run(models.Trajectory{withClaimHash(claimAt(0, models.FileOpen, "/w/f"), h, nil)}, models.GroundTruth{agentEv(0, models.FileOpen, "/w/f")})
-	wantOutcome(t, in, OutcomeFaithful)
+	wantOutcome(t, in, OutcomeInconclusive)
+	if len(in.Unverified) != 1 || in.Unverified[0].Diffs[0] != DiffInputHash {
+		t.Errorf("Unverified = %+v, want the input_hash", in.Unverified)
+	}
 	withFinding := run(
 		models.Trajectory{withClaimHash(claimAt(0, models.FileClose, "/w/f"), nil, h), claimAt(10, models.FileWrite, "/w/ghost")},
 		models.GroundTruth{agentEv(0, models.FileClose, "/w/f")})
@@ -927,24 +930,26 @@ func TestVerify_HarnessOwnedEventsDoNotAbsorbClaims(t *testing.T) {
 	}
 }
 
-// O-28: the verifier compares an observed input hash as a measurement, so the
-// empty-content stamp the fs probe puts on the first open of a file it never
-// hashed (TestLookupShadowHashStampsEmptyContentForAFileItNeverHashed in
-// pkg/probe/fs) disagrees with the real content an honest Edit states. This pins
-// the current, wrong outcome: a Mismatched input_hash and NOT FAITHFUL. It
-// changes when O-28 is decided.
-func TestAnEmptyContentStampIsComparedAsAnInputHash(t *testing.T) {
-	const emptyContent = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+// O-28, decided as V-29: the fs probe states no input hash for a file it never
+// measured (P-22), so an Edit's stated input on such a file is unverified and the
+// run INCONCLUSIVE, never a mismatch against a stamp. A stated input that
+// differs from a hash the probe really computed is still a finding.
+func TestAStatedInputTheProbeDidNotMeasureIsUnverified(t *testing.T) {
 	claim := claimAt(0, models.FileOpen, "/home/u/.config/app/settings.json")
 	claim.InputHash = sp("sha256:the-file-as-it-really-was")
-	event := agentEv(0, models.FileOpen, "/home/u/.config/app/settings.json")
-	event.InputHash = sp(emptyContent)
+	unmeasured := agentEv(0, models.FileOpen, "/home/u/.config/app/settings.json")
 
-	v := run(models.Trajectory{claim}, models.GroundTruth{event})
-	if v.Outcome != OutcomeNotFaithful || len(v.Mismatched) != 1 {
-		t.Fatalf("outcome = %s, mismatched = %v: the false finding of O-28 is no longer reproduced, so update this test with the decision", v.Outcome, v.Mismatched)
+	v := run(models.Trajectory{claim}, models.GroundTruth{unmeasured})
+	wantOutcome(t, v, OutcomeInconclusive)
+	if len(v.Mismatched) != 0 || len(v.Unverified) != 1 || v.Unverified[0].Diffs[0] != DiffInputHash {
+		t.Errorf("mismatched=%v unverified=%+v, want the input_hash unverified and no finding", v.Mismatched, v.Unverified)
 	}
-	if d := v.Mismatched[0].Diffs; len(d) != 1 || d[0] != DiffInputHash {
-		t.Errorf("Diffs = %v, want only input_hash", d)
+
+	measured := unmeasured
+	measured.InputHash = sp("sha256:what-the-probe-read")
+	v = run(models.Trajectory{claim}, models.GroundTruth{measured})
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if len(v.Mismatched) != 1 || v.Mismatched[0].Diffs[0] != DiffInputHash {
+		t.Errorf("Mismatched = %v, want the input_hash", v.Mismatched)
 	}
 }

@@ -100,6 +100,13 @@ type Observer struct {
 	// fd it just hashed; consulted in processRawEvent as a fallback when a
 	// FAN_OPEN's path isn't (yet, or ever again) a key in shadowHashes.
 	shadowHashesByInode map[inodeKey]string
+	// startedAt is when Start ran. A file born at or after it was created
+	// during the capture, so its first open is the one that created it, and
+	// the file was empty at that open (P-22).
+	startedAt time.Time
+	// openedInodes are the files the probe has seen opened, so that only a
+	// born-here file's first open is read as its creation.
+	openedInodes map[inodeKey]bool
 
 	// pathGeneration counts write-class events (FAN_CREATE / FAN_MODIFY /
 	// FAN_CLOSE_WRITE) seen per path. hashSettled snapshots the generation
@@ -307,6 +314,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 
 // Start begins reading fanotify events in a background goroutine.
 func (o *Observer) Start() {
+	o.startedAt = time.Now()
 	walk := o.cfg.PathFilter
 	if walk == "" {
 		walk = o.cfg.Path
@@ -554,8 +562,11 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 				PID:             pidOf(e),
 			}
 			if actionType == models.FileOpen {
-				hash := o.lookupShadowHash(e.Path, o.mountFor(e.FSID), e.HandleType, e.HandleData)
-				event.InputHash = &hash
+				// No hash at all when the probe never measured the file's
+				// content: a stamp would be compared as a measurement (P-22).
+				if hash, ok := o.inputHash(e.Path, o.mountFor(e.FSID), e.HandleType, e.HandleData); ok {
+					event.InputHash = &hash
+				}
 			}
 			o.events <- event
 		}
@@ -583,21 +594,75 @@ func (o *Observer) repeats(path string, actionType models.ActionType, pid uint32
 	return actionType == models.FileWrite || actionType == models.FileRename
 }
 
-// emptyFileHash is the InputHash attached to a FAN_OPEN when the observer
-// has no record of the file's content -- a newly created file, or one this
-// observer never saw settle before the open.
+// emptyFileHash is the InputHash of the open that created a file: a file born
+// during the capture was empty when it was created (P-22).
 const emptyFileHash = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-// lookupShadowHash resolves the InputHash to attach to a FAN_OPEN on path.
-// It tries shadowHashes by path first, then falls back to
-// shadowHashesByInode via the event's file handle. The fallback matters
+// inputHash returns the content a FAN_OPEN on path found, when the probe
+// measured it: the settled hash of the file (lookupShadowHash), or empty
+// content for the open that created a file born during the capture. ok is
+// false otherwise, for a file outside the walked directory that the probe never
+// hashed, and the open then carries no InputHash: a claimed input on it is
+// unverified, not compared against a stamp (P-22, V-29).
+func (o *Observer) inputHash(path string, mountFD int, handleType int32, handleData []byte) (string, bool) {
+	key, born, identified := identify(path, mountFD, handleType, handleData)
+	first := false
+	if identified {
+		o.mu.Lock()
+		if o.openedInodes == nil {
+			o.openedInodes = make(map[inodeKey]bool)
+		}
+		first = !o.openedInodes[key]
+		o.openedInodes[key] = true
+		o.mu.Unlock()
+	}
+	if h, ok := o.lookupShadowHash(path, mountFD, handleType, handleData); ok {
+		return h, true
+	}
+	// Only the first open of a file born after Start is its creating open. A
+	// file without a birth time, or born before Start, is never assumed empty.
+	if identified && first && !o.startedAt.IsZero() && !born.IsZero() && !born.Before(o.startedAt) {
+		return emptyFileHash, true
+	}
+	return "", false
+}
+
+// identify resolves the file an event names to its device and inode and its
+// birth time, through the event's file handle when there is one and its path
+// otherwise. born is zero when the filesystem does not report a birth time.
+func identify(path string, mountFD int, handleType int32, handleData []byte) (key inodeKey, born time.Time, ok bool) {
+	var fd int
+	var err error
+	if handleData != nil && mountFD >= 0 {
+		fd, err = unix.OpenByHandleAt(mountFD, unix.NewFileHandle(handleType, handleData), unix.O_RDONLY|unix.O_PATH)
+	} else {
+		fd, err = unix.Open(path, unix.O_RDONLY|unix.O_PATH|unix.O_NOFOLLOW, 0)
+	}
+	if err != nil {
+		return inodeKey{}, time.Time{}, false
+	}
+	defer func() { _ = unix.Close(fd) }()
+	var st unix.Statx_t
+	if err := unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_INO|unix.STATX_BTIME, &st); err != nil {
+		return inodeKey{}, time.Time{}, false
+	}
+	key = inodeKey{dev: unix.Mkdev(st.Dev_major, st.Dev_minor), ino: st.Ino}
+	if st.Mask&unix.STATX_BTIME != 0 {
+		born = time.Unix(st.Btime.Sec, int64(st.Btime.Nsec))
+	}
+	return key, born, true
+}
+
+// lookupShadowHash returns the settled hash of the file a FAN_OPEN on path
+// names, and false when the probe has none. It tries shadowHashesByInode via
+// the event's file handle first, then shadowHashes by path. The inode matters
 // across a rename: shadowHashes is keyed by the path a file had when it was
-// last hashed (at its FAN_CLOSE_WRITE settle), and a FAN_MOVED_FROM/TO pair
-// is not reliably resolvable back to that same path (a fanotify DFID_NAME
-// record can degrade to just the parent directory under load -- see
+// last hashed (at its FAN_CLOSE_WRITE settle), and a FAN_MOVED_FROM/TO pair is
+// not reliably resolvable back to that same path (a fanotify DFID_NAME record
+// can degrade to just the parent directory under load -- see
 // rawEvent.Ambiguous), so a rename can silently orphan the path-keyed entry.
 // Device+inode identifies the file regardless of what it's currently named.
-func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, handleData []byte) string {
+func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, handleData []byte) (string, bool) {
 	// The inode first: after an atomic replace the path names a new inode
 	// whose hash was settled under the temporary's name, while the path's
 	// own entry still holds the replaced file's hash. The path is the
@@ -611,17 +676,14 @@ func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, 
 			}
 			o.mu.Unlock()
 			if ok {
-				return h
+				return h, true
 			}
 		}
 	}
 	o.mu.Lock()
 	h, ok := o.shadowHashes[path]
 	o.mu.Unlock()
-	if ok {
-		return h
-	}
-	return emptyFileHash
+	return h, ok
 }
 
 // inodeKey identifies a file by device and inode number, stable across

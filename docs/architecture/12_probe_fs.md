@@ -1,6 +1,6 @@
 # Filesystem probe
 
-Checked against commit 7c5879b on 2026-10-12.
+Checked against commit bd01e13 on 2026-10-12.
 
 ## Objective
 
@@ -24,7 +24,7 @@ fanotify through `golang.org/x/sys/unix`, in notification class (`FAN_CLASS_NOTI
 
 ### Reading and resolving
 
-1. `Start` walks `PathFilter`, or `Path` when there is no filter, and hashes every regular file into `shadowHashes` (by path) and `shadowHashesByInode` (by device and inode), then starts `readLoop`. Files elsewhere are not hashed, so their first open carries the empty-content hash.
+1. `Start` walks `PathFilter`, or `Path` when there is no filter, and hashes every regular file into `shadowHashes` (by path) and `shadowHashesByInode` (by device and inode), then starts `readLoop`. Files elsewhere are not hashed, so their opens carry no input hash unless the probe settles a close of them or saw them created (P-22). `Start` also records the time it ran, for the creation rule.
 2. `readLoop` polls the fanotify fd and a stop pipe with a 5 ms timeout (`settlePollMs`), so it wakes to judge pending closes even when nothing arrives. Each wakeup drains every available record (`drainNonBlocking`) and stamps the batch with one `time.Now()` plus one nanosecond per record, so the records keep their kernel order under the verifier's stable sort by timestamp, and a close emitted later, after its settle window, keeps the place of the record that produced it (P-18).
 3. `parseEvents` walks the metadata records. `resolveEventPath` prefers a DFID_NAME record (parent directory handle plus name), then a FID record (the object's own handle), then a DFID record (directory only). Only the last case sets `PathIsAmbiguous`, which happens when the kernel merged events and dropped the name. The FID handle is kept for later inode lookups.
 4. `processRawEvent` sets `overflow` on `FAN_Q_OVERFLOW`, applies `PIDFilter` and `PathFilter`, strips the probe's own hash-read `FAN_OPEN` (tracked in `pendingHashOpens`), and bumps the path's `pathGeneration` and `lastWriteAt` for any create, modify, close-write or open.
@@ -34,7 +34,7 @@ fanotify through `golang.org/x/sys/unix`, in notification class (`FAN_CLASS_NOTI
 
 ### Hashes
 
-A `file_open` gets an `InputHash` from `lookupShadowHash`: the settled hash for the file's device and inode first (it survives a rename, and after an atomic replace it is the new file's while the path still remembers the replaced one, P-20), else the last settled hash for the path, else the SHA-256 of empty content.
+A `file_open` gets an `InputHash` only when the probe measured the file's content (`inputHash`, P-22): the settled hash for the file's device and inode first (it survives a rename, and after an atomic replace it is the new file's while the path still remembers the replaced one, P-20), else the last settled hash for the path, else, for the first open of a file whose birth time (`statx`) is at or after `Start`, the SHA-256 of empty content, since that open created it. Any other open carries no input hash: a pre-existing file outside the walked directory, a later open of a born-here file the probe never settled, and any file on a filesystem that reports no birth time.
 
 A `file_close` goes through a settle protocol so its `OutputHash` is the content the close described and not a state a later write left behind:
 
@@ -56,7 +56,7 @@ The probe never drops on its own channel: `processRawEvent` and the settle code 
 ## Known limits
 
 - The `OutputHash` is computed in userspace after the close, so a write that lands between the close and the read, outside the generation check's window, can still make the hash describe later content. The probe errs towards publishing no hash: any open of the path after the close drops it, including a plain read, so a file read within the settle window of being written is published without a hash.
-- Only the directory walked at `Start` is hashed in advance (P-17). The first open of any other file carries the empty-content hash, whatever the file holds, until the probe has settled a close of it. A claimed `input_hash` on such a file (a Claude Code Edit, I-31) disagrees with the observed one: the verifier compares the stamp as a measurement (O-28). `TestLookupShadowHashStampsEmptyContentForAFileItNeverHashed` pins the stamp.
+- Only the directory walked at `Start` is hashed in advance (P-17). An open of any other file the probe has not settled carries no input hash, so a claimed `input_hash` on it is unverified and the run INCONCLUSIVE (P-22, V-29), never confirmed. The creating open of a born-here file is recognised by its birth time; on a filesystem without one it carries no input hash either, and a file deleted before its open event is read cannot be identified and carries none.
 - Writes through a shared `mmap` do not raise `FAN_MODIFY`.
 - Records still in the fanotify queue when `Stop` is signalled are discarded (`readLoop` flushes the pending closes and returns without draining), and nothing counts them.
 - `FAN_ACCESS` and `FAN_CLOSE_NOWRITE` are not in the mask, so reads are invisible beyond the open and the probe never emits `file_read`.

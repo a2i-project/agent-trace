@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-2 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-3 (V-27), O-4 (I-15), O-15 (N-20), O-17 (I-31), O-26 (V-28), O-27 (N-23).
+Closed: O-3 (V-27), O-4 (I-15), O-15 (N-20), O-17 (I-31), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). None is decided.
 
@@ -77,16 +77,6 @@ Question: V-24 turns unexplained harness activity into INCONCLUSIVE only for lev
 Options: (a) leave it to the agreement threshold (current); (b) extend V-24 to declared harness endpoints or commands, reported apart and INCONCLUSIVE; (c) more control runs only.
 Current behaviour: (a). At full agreement (the `cmd/baseline` default, I-24) such an action is left out of the baseline and reads as a finding in a run where it occurs; at the capture script's 1/N threshold (V-24) one occurrence in any control makes it a rule that explains it in every later run. A connection that sent nothing (`net_dial`, N-22) or one to port 53 (`net_dns`, N-20) is capability evidence and needs no rule.
 Blocked by: Measurements of how often the harness's network and process activity varies across control runs.
-
-### O-28: How is an input hash the probe did not compute from the file treated?
-Status: Open.
-Date: 2026-10-11.
-Question: I-31 makes an Edit claim `input_hash`. The fs probe hashes only the workspace when it starts (P-17); for a file it never hashed, `lookupShadowHash` stamps the open with the empty-content digest (`emptyFileHash`), which is not a measurement. `hashesAgree` compares two non-nil hashes, so an honest Edit of a pre-existing file outside the workspace is a Mismatched finding, a false NOT FAITHFUL. Reproduced on 2026-10-12 at three levels: the probe stamps a never-hashed file with the empty-content hash whatever it holds (`TestLookupShadowHashStampsEmptyContentForAFileItNeverHashed`), the verifier compares that stamp as an input hash (`TestAnEmptyContentStampIsComparedAsAnInputHash`), and the real edits capture with the first Edit's file stamped that way reads NOT FAITHFUL with exactly that `input_hash` mismatched (`TestAnEditOfAFileTheProbeNeverHashedReadsAsAMismatch`). Not yet seen on a capture of an Edit outside the workspace. How should such a hash be represented and judged?
-Options: (a) the probe leaves `InputHash` nil when it did not hash the file, and `input_hash` joins the fields of V-22, so a stated input the probe did not capture is Unverified and the run INCONCLUSIVE; (b) the probe marks the stamp as not measured (a separate flag on the event), and the verifier treats a flagged hash as not captured under V-22; (c) the probe hashes every file on first open outside the workspace, at the cost of reading files the agent only opened. Option (a) alone, without the V-22 change, is a silent pass: a nil observed `input_hash` agrees with any claim, so a lie about a file's content before an Edit would go unreported.
-Current behaviour: The empty-content digest is compared as a real hash. `unverifiedFields` leaves `input_hash` out ("the fs probe always stamps an open with one").
-Blocked by: The user's ruling. The reproducing tests pin the current outcome and change with the decision.
-
-## Integration
 
 ### O-9: Many-target search tools
 Status: Partly decided. Claude Code `Grep` and `Glob` are settled by I-25. Gemini's search tools are open.
