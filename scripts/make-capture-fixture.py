@@ -6,9 +6,19 @@ user's home directory and a multi-kilobyte shell snapshot script in every run.
 The fixture keeps what the adapter and verifier read and rewrites the rest:
 
   * the task transcript is cut to the records that carry tool calls and results,
-    and each is cut to the fields the adapter reads;
-  * the home directory becomes /home/user and each run's workspace becomes
-    /ws/<label>, so the baseline's workspace placeholder is exercised;
+    and each is cut to the fields the adapter reads: a result's text only for
+    a Write whose text starts with the create or update sentence (I-35),
+    is_error when set, an Edit's and a NotebookEdit's structured result (I-31,
+    I-37), and a structured result's type;
+  * each run's workspace becomes /ws/<label> and the capture directory
+    /capture, both as paths and in the form Claude Code names its per-project
+    directories with (every character but a letter or digit a dash), so the
+    baseline's workspace placeholders are exercised; the home directory
+    becomes /home/user;
+  * a capture may have been moved after it was recorded. The directory it was
+    recorded in is read from each run's ground truth (its workspace is
+    <recorded directory>/ws-<label>), must be the same for every run, and is
+    rewritten together with the directory the capture is in now;
   * the snapshot-creation command keeps its first line, with its per-run id
     intact, and loses the script body. The body differs with the enabled tool
     set, so a reduced fixture cannot show that a baseline is tied to one;
@@ -21,8 +31,9 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
 
 Before it finishes, the script checks every file it wrote for the home
 directory, the user name, the organisation ids, every e-mail address found in
-the raw transcripts and any session key name left unrewritten, and deletes its
-output and fails if one is left.
+the raw transcripts, the recorded and the current capture directory in either
+form, and any session key name left unrewritten, and deletes its output and
+fails if one is left.
 
 Ground truth events, pids, timestamps and coverage are kept as captured.
 
@@ -37,9 +48,8 @@ import os
 import re
 import sys
 
-capture, out = sys.argv[1], sys.argv[2]
+capture, out = os.path.abspath(sys.argv[1]).rstrip("/"), sys.argv[2]
 task = sys.argv[3] if len(sys.argv) > 3 else "task"
-os.makedirs(out, exist_ok=True)
 home = os.path.expanduser("~")
 # Every control run the capture holds (the capture script takes five by default).
 labels = [task] + sorted(
@@ -50,24 +60,54 @@ labels = [task] + sorted(
 
 # The account's organisation ids and e-mail addresses, as the raw transcripts
 # state them. They are private and must not reach a checked-in file.
+# Subagent transcripts included: their result texts are kept too.
 org_ids, emails = set(), set()
-for name in os.listdir(capture):
-    if name.endswith(".jsonl"):
-        with open(os.path.join(capture, name), errors="replace") as f:
+for root, _, files in os.walk(capture):
+    for name in (n for n in files if n.endswith(".jsonl")):
+        with open(os.path.join(root, name), errors="replace") as f:
             text = f.read()
         org_ids.update(re.findall(r'"organizationUuid":\s*"([0-9a-fA-F-]{36})"', text))
         emails.update(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text))
 # Addresses that are part of the harness's own text, not the account.
 emails = {e for e in emails if not e.endswith("@anthropic.com") and not e.endswith("@example.com")}
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def mangle(path):
+    """A path as Claude Code spells it in a directory name, such as
+    ~/.claude/projects/<mangled workspace>."""
+    return re.sub(r"[^A-Za-z0-9]", "-", path)
+
+
+# The directory the capture was recorded in. watch writes each run's workspace,
+# <recorded directory>/ws-<label>, into its ground truth; every run must agree,
+# or the paths inside cannot be rewritten reliably.
+recorded = set()
+for label in labels:
+    with open(os.path.join(capture, label + ".ground_truth.json")) as f:
+        ws = json.load(f).get("workspace") or ""
+    suffix = "/ws-" + label
+    if not ws.startswith("/") or not ws.endswith(suffix) or len(ws) <= len(suffix) + 1:
+        sys.exit("%s.ground_truth.json: workspace %r is not <directory>/ws-%s" % (label, ws, label))
+    recorded.add(ws[: -len(suffix)])
+if len(recorded) != 1:
+    sys.exit("the runs were recorded in different directories: " + ", ".join(sorted(recorded)))
+recorded = recorded.pop()
+# Longest first, so a directory inside another is rewritten before it.
+roots = sorted({recorded, capture}, key=len, reverse=True)
+if recorded != capture:
+    print("capture recorded in", recorded, "and now in", capture)
+os.makedirs(out, exist_ok=True)
 SESSION_KEY = re.compile(r"(/\.claude/sessions/\d+\.)[0-9a-f]{64}")
 ZERO_KEY = "0" * 64
 
 
 def rewrite(s, label):
-    ws = os.path.join(capture, "ws-" + label)
-    s = s.replace(ws, "/ws/" + label)
-    s = s.replace(capture, "/capture")
+    for root in roots:
+        ws = root + "/ws-" + label
+        s = s.replace(ws, "/ws/" + label).replace(mangle(ws), mangle("/ws/" + label))
+    for root in roots:
+        s = s.replace(root, "/capture").replace(mangle(root), mangle("/capture"))
     s = s.replace(home, "/home/user")
     for org in org_ids:
         s = s.replace(org, ZERO_UUID)
@@ -93,8 +133,25 @@ for label in labels:
     with open(os.path.join(out, label + ".ground_truth.json"), "w") as f:
         f.write(text + "\n")
 
+# What a Write's result says, as the adapter reads it (I-35).
+WRITE_TEXTS = ("File created successfully at: ", "The file ")
+# A NotebookEdit's structured result, as the adapter reads it (I-37), with the
+# call's own fields beside it. The seeded notebook is not private.
+NOTEBOOK_FIELDS = ("notebook_path", "original_file", "updated_file", "error", "edit_mode", "cell_id", "new_source", "old_source")
+
+
+def result_text(content):
+    """A tool_result's text: the string, or its text blocks joined."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
 def reduce_transcript(src, dst):
     kept = []
+    names = {}  # tool_use id -> tool name, from the calls read so far
     with open(src) as f:
         for line in f:
             o = json.loads(line)
@@ -107,15 +164,24 @@ def reduce_transcript(src, dst):
             slim = []
             for b in blocks:
                 if b["type"] == "tool_use":
+                    names[b["id"]] = b["name"]
                     slim.append({"type": "tool_use", "id": b["id"], "name": b["name"], "input": b["input"]})
                 else:
-                    slim.append({"type": "tool_result", "tool_use_id": b["tool_use_id"], "content": "(elided)"})
+                    text = result_text(b.get("content"))
+                    if names.get(b["tool_use_id"]) != "Write" or not text.startswith(WRITE_TEXTS):
+                        text = "(elided)"
+                    r = {"type": "tool_result", "tool_use_id": b["tool_use_id"], "content": text}
+                    if b.get("is_error") is True:
+                        r["is_error"] = True
+                    slim.append(r)
             rec = {"type": o["type"], "timestamp": o["timestamp"], "sessionId": "00000000-0000-0000-0000-000000000000",
                    "version": o.get("version", ""), "message": {"id": m.get("id", ""), "role": m.get("role", ""), "content": slim}}
             if o.get("isSidechain"):
                 rec["isSidechain"] = True
             tr = o.get("toolUseResult")
-            if isinstance(tr, dict) and "type" in tr:
+            if isinstance(tr, dict) and "notebook_path" in tr:
+                rec["toolUseResult"] = {k: tr[k] for k in NOTEBOOK_FIELDS if k in tr}
+            elif isinstance(tr, dict) and "type" in tr:
                 rec["toolUseResult"] = {"type": tr["type"]}
             elif isinstance(tr, dict) and "originalFile" in tr:
                 # An Edit's result: the adapter computes the final content from
@@ -140,6 +206,8 @@ if os.path.isdir(sub):
 # Nothing private may be left in what was written.
 user = os.environ.get("USER", "")
 forbidden = {home} | org_ids | emails | ({user} if len(user) > 2 else set())
+# Every form of the recorded and the current capture directory must be gone.
+forbidden |= set(roots) | {mangle(r) for r in roots}
 leaks = []
 for root, _, files in os.walk(out):
     for name in files:
