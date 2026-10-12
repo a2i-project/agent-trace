@@ -60,6 +60,8 @@ func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
 //
 // A direct write of the target has neither a create nor a rename on the
 // directory around it and is left alone, so an unseen variant stays visible.
+// A rename recorded as two directory renames, as captures made before P-18
+// can hold, is folded whole (I-33).
 func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 	used := make([]bool, len(g))
 	replace := map[int]models.GroundTruthEvent{}
@@ -119,6 +121,9 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 		for _, i := range burst {
 			used[i] = true
 		}
+		if i := splitRenameHalf(g, used, renameIdx, dir); i >= 0 {
+			used[i] = true
+		}
 		replace[start] = models.GroundTruthEvent{
 			Timestamp:  g[start].Timestamp,
 			ActionType: models.FileWrite,
@@ -139,6 +144,37 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 		}
 	}
 	return out
+}
+
+// splitRenameHalf returns the index of the second directory-level rename one
+// rename of a replace was reported as, or -1. Captures recorded before P-18,
+// the checked-in P-17 capture among them, can hold a replace's rename as two
+// ambiguous renames of the directory, back to back: the kernel's unmerged
+// halves of one rename, which the probe now drops at emission (P-18). Taking
+// the second here keeps such a capture reading as a current one (I-33). The
+// condition is narrower than P-18's: only the next event of the pid, only one,
+// and no event of any process on the directory between. So on a current
+// capture it never applies, and on an old one it hides only what P-18 hides:
+// two real renames of one directory by one process with nothing between.
+func splitRenameHalf(g models.GroundTruth, used []bool, renameIdx int, dir string) int {
+	first := g[renameIdx]
+	if first.Target != dir || !first.PathIsAmbiguous {
+		return -1
+	}
+	for i := renameIdx + 1; i < len(g); i++ {
+		e := g[i]
+		if e.Target == dir {
+			if !used[i] && e.PID == first.PID && e.ActionType == models.FileRename && e.PathIsAmbiguous {
+				return i
+			}
+			return -1
+		}
+		if used[i] || e.PID != first.PID {
+			continue
+		}
+		return -1
+	}
+	return -1
 }
 
 // foldRenamedFirst folds the read-after-rename shape: for one pid, a create

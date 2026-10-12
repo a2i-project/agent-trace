@@ -98,6 +98,47 @@ func TestFoldNeedsTheRenameEvenWhenTheCloseNamesTheTarget(t *testing.T) {
 	}
 }
 
+// The P-17 capture, recorded before P-18, holds a replace's one rename as two
+// directory renames of the same pid, back to back: the kernel's unmerged
+// halves, which the probe now drops at emission. Both belong to the replace
+// (I-33).
+func TestFoldTakesBothHalvesOfASplitRename(t *testing.T) {
+	g := atomicWrite(10, "/w/a.txt", "100.5b5474087431", "sha256:h", 100)
+	g = append(g, dirEv(13, models.FileRename, 100), fev(20, models.FileOpen, "/w/after", 100))
+	got := Adapter{}.NormalizeStream(g)
+	want := []string{"file_write /w/a.txt", "file_open /w/after"}
+	if strings.Join(targets(got), "|") != strings.Join(want, "|") {
+		t.Errorf("got %v, want %v", targets(got), want)
+	}
+}
+
+// Only the one rename a split can add is taken, under a condition narrower
+// than P-18's: a third rename, a second one after another event of the pid,
+// or one after another process's event on the directory stays.
+func TestFoldTakesNoMoreThanTheSplitRename(t *testing.T) {
+	otherDir := dirEv(13, models.FileRename, 100)
+	otherDir.Target = "/v"
+	for _, c := range []struct {
+		name string
+		tail models.GroundTruth
+		want []string
+	}{
+		{"third rename", models.GroundTruth{dirEv(13, models.FileRename, 100), dirEv(14, models.FileRename, 100)},
+			[]string{"file_write /w/a.txt", "file_rename /w"}},
+		{"after another event", models.GroundTruth{fev(13, models.FileOpen, "/w/x", 100), dirEv(14, models.FileRename, 100)},
+			[]string{"file_write /w/a.txt", "file_open /w/x", "file_rename /w"}},
+		{"rename of another directory", models.GroundTruth{otherDir},
+			[]string{"file_write /w/a.txt", "file_rename /v"}},
+		{"another process on the directory between", models.GroundTruth{dirEv(13, models.FileWrite, 200), dirEv(14, models.FileRename, 100)},
+			[]string{"file_write /w/a.txt", "file_write /w", "file_rename /w"}},
+	} {
+		g := append(atomicWrite(10, "/w/a.txt", "100.5b5474087431", "sha256:h", 100), c.tail...)
+		if got := (Adapter{}).NormalizeStream(g); strings.Join(targets(got), "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s: got %v, want %v", c.name, targets(got), c.want)
+		}
+	}
+}
+
 func TestFoldKeepsEverythingAroundTheBurst(t *testing.T) {
 	g := models.GroundTruth{fev(0, models.FileOpen, "/w/before", 100)}
 	g = append(g, atomicWrite(10, "/w/a.txt", "100.5b5474087431", "sha256:h", 100)...)
