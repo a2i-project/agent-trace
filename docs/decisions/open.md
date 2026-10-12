@@ -59,7 +59,7 @@ Status: Open.
 Date: raised 2026-09 (in the archived integration design, before 2026-09-19).
 Question: Level 0 has no lineage discriminator and is also where harness activity lives. For level-0 events other than file events in the harness's own directories (connections, commands), can exact-match baseline rules separate harness activity from agent actions? Occasional activity of that kind is O-25.
 Options: (a) exact rules only (current, V-19); (b) add structure, such as per-phase baselines; (c) accept level-0 findings as advisory.
-Current behaviour: (a), with two additions. Five paired captures of Claude Code (four of 2.1.286, one of 2.1.296) on one machine carry baselines measured from control runs. The capture script keeps an action seen in any one control (a 1/N threshold, V-24) while `cmd/baseline` keeps what every run did by default (I-24). An unexplained level-0 file event under the harness's own directories makes the run INCONCLUSIVE instead of being a finding (V-24); a level-0 connection that sent data, or a command, is still a finding. Since N-22 a connection that sent nothing is capability evidence and never a finding.
+Current behaviour: (a), with two additions. Six paired captures of Claude Code (five of 2.1.286, one of 2.1.296) on one machine carry baselines measured from control runs. The capture script keeps an action seen in any one control (a 1/N threshold, V-24) while `cmd/baseline` keeps what every run did by default (I-24). An unexplained level-0 file event under the harness's own directories makes the run INCONCLUSIVE instead of being a finding (V-24); a level-0 connection that sent data, or a command, is still a finding. Since N-22 a connection that sent nothing is capability evidence and never a finding.
 Blocked by: Baselines exist for Claude Code 2.1.286 and 2.1.296 (V7); what blocks a ruling is a measurement of how much harness activity at level 0 those exact rules leave unexplained across more sessions (more captures, needs root).
 
 ### O-12: Can any finding survive event loss?
@@ -106,7 +106,7 @@ Blocked by: An agent that uses a persistent shell in practice.
 Status: Partly decided. Claude Code is settled by I-22 and I-23. Gemini is open.
 Date: 2026-10-06, updated 2026-10-07.
 Question: Which kernel events does a real file tool produce, and how many?
-Current behaviour: For Claude Code 2.1.286 the shapes were measured on the first paired capture (**Verified**, see I-22) and hold on the four later ones (five fixtures in all, versions 2.1.286 and 2.1.296, one machine), including five Edits whose content hashes are corroborated (I-31). Gemini's file tools still use the guessed open, write, close sequence, and its adapter reports that. Whether other Claude Code versions, or a write that does not use a temporary file, behave the same is **Unverified**.
+Current behaviour: For Claude Code 2.1.286 the shapes were measured on the first paired capture (**Verified**, see I-22) and hold on the five later ones (six fixtures in all, versions 2.1.286 and 2.1.296, one machine), including five Edits whose content hashes are corroborated (I-31). Gemini's file tools still use the guessed open, write, close sequence, and its adapter reports that. Whether other Claude Code versions, or a write that does not use a temporary file, behave the same is **Unverified**.
 Blocked by: A paired capture of Gemini (needs root and a working Gemini CLI, which has no headless authentication here), and captures of other Claude Code versions.
 
 ### O-13: Out-of-tree tagging (part 3 of P-14, delegation)

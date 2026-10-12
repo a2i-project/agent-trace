@@ -211,7 +211,8 @@ def code_paths_of(page):
     own = [prefix for prefix, p in PAGE_OF if p == page]
     other = [prefix for prefix, p in PAGE_OF if p != page]
     excl = [f":(exclude){o}" for o in other if any(o != x and o.startswith(x) for x in own)]
-    return own + excl
+    # Tests and fixtures describe no behaviour a page documents (as in page_for).
+    return own + excl + [":(exclude,glob)**/*_test.go", ":(exclude,glob)**/testdata/**"]
 
 
 def check_message(where, msg, files=None, parent=None, sha=None):

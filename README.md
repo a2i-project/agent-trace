@@ -36,7 +36,7 @@ A faithful verdict says that the agent's top-level claims are true and that noth
 | Process probe (eBPF): exec, exit code, fork edges, parent pid | done |
 | Network probe (eBPF): connections with TLS SNI, request body hash via an `SSL_write` uprobe, listeners and Unix sockets | done |
 | Verification: process tree, alignment, coverage, baseline hook, outcome rules | done |
-| Claude Code adapter (JSONL, subagents, command-wrapper and atomic-write recovery) | done, checked against five paired captures of versions 2.1.286 and 2.1.296 |
+| Claude Code adapter (JSONL, subagents, command-wrapper and atomic-write recovery) | done, checked against six paired captures of versions 2.1.286 and 2.1.296 |
 | Gemini adapter (SQLite and protobuf, fails loudly when a field moves) | implemented, not yet checked against a real capture |
 | Harness baseline from control runs (`baseline`) | done, measured for Claude Code 2.1.286 and 2.1.296 |
 | Attack generators (`attack`): omission, fabrication, substitution, interval widening, scored against a record of the mutation | done, run over four of the real captures |
