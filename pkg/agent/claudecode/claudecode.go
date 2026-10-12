@@ -191,6 +191,9 @@ type block struct {
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`
 	ToolUseID string          `json:"tool_use_id"`
+	// Content is a tool_result's text, a string or a list of text blocks.
+	Content json.RawMessage `json:"content"`
+	IsError bool            `json:"is_error"`
 }
 
 // toolResult is what a call's result record held: when it came back and, for
@@ -201,6 +204,9 @@ type toolResult struct {
 	ts   time.Time
 	kind string
 	edit *editResult
+	// text is the result's text, kept only when the record has no
+	// structured result and the text is the one a Write reports (I-35).
+	text string
 }
 
 // editResult is the structured result of an Edit call.
@@ -295,6 +301,11 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 							}
 						}
 					}
+					if len(r.ToolUseResult) == 0 || string(r.ToolUseResult) == "null" {
+						if t := resultText(b.Content); !b.IsError && (strings.HasPrefix(t, writeCreated) || strings.HasPrefix(t, writeUpdatedHead)) {
+							res.text = t
+						}
+					}
 					results[b.ToolUseID] = res
 				}
 			}
@@ -337,6 +348,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	for _, u := range uses {
 		base := models.TrajectoryEntry{Timestamp: u.ts, ThreadID: u.thread, Tool: u.name}
 		res, hasResult := results[u.id]
+		if u.name == toolWrite && res.kind == "" && res.text != "" {
+			res.kind = writeKindFromText(res.text, inputPath(u.input))
+		}
 		if hasResult && !res.ts.Before(u.ts) {
 			e := res.ts
 			base.End = &e
@@ -386,6 +400,64 @@ const (
 	reasonNonEffectful = "non-effectful"
 	reasonUnknown      = "unknown"
 )
+
+// What a Write's tool_result says, in the harness's own words (2.1.296):
+// "File created successfully at: <path>" or "The file <path> has been
+// updated successfully.", either followed by notes that start with a space.
+// A subagent's transcript keeps only this text: it has no structured result.
+const (
+	writeCreated     = "File created successfully at: "
+	writeUpdatedHead = "The file "
+	writeUpdatedTail = " has been updated successfully."
+)
+
+// writeKindFromText reads a Write's create or update from its result text
+// (I-35). The text must name exactly the claimed path; anything else is no
+// kind, and the Write is assumed to overwrite as before.
+func writeKindFromText(text, path string) string {
+	if path == "" {
+		return ""
+	}
+	if c := writeCreated + path; text == c || strings.HasPrefix(text, c+" ") {
+		return "create"
+	}
+	if strings.HasPrefix(text, writeUpdatedHead+path+writeUpdatedTail) {
+		return "update"
+	}
+	return ""
+}
+
+// resultText returns a tool_result's text: the content string, or the text
+// of its blocks joined. Anything else is no text.
+func resultText(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, x := range blocks {
+		if x.Type == "text" {
+			b.WriteString(x.Text)
+		}
+	}
+	return b.String()
+}
+
+// inputPath returns a call's file_path input, or "".
+func inputPath(raw json.RawMessage) string {
+	var in struct {
+		FilePath string `json:"file_path"`
+	}
+	_ = json.Unmarshal(raw, &in)
+	return in.FilePath
+}
 
 // claimsFor maps one tool call to its claims. A non-empty reason means no entry
 // was produced and says why.

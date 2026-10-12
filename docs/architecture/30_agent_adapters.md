@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 448afb5 on 2026-10-12.
+Checked against commit eb24cbe on 2026-10-12.
 
 ## Objective
 
@@ -97,7 +97,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 |---|---|---|---|
 | `Bash` | `process_exec` | `input.command` | none |
 | `Read` | `file_open` | `input.file_path` | none |
-| `Write`, result `create` | `file_write` | `input.file_path` | `output_hash` of `input.content` |
+| `Write`, result `create` (see below for where the kind comes from) | `file_write` | `input.file_path` | `output_hash` of `input.content` |
 | `Write`, result `update` (or no result kind, assumed) | `file_open`, `file_write` | `input.file_path` | `output_hash` of `input.content` on the write |
 | `Edit` | `file_open`, `file_write` | `input.file_path` | when the result record carries `originalFile`, `oldString`, `newString` and `replaceAll`: `input_hash` of the file before on the open, `output_hash` of the file after (the applied replacement, first occurrence or all) on the write (I-31); otherwise none |
 | `WebFetch` | `net_connect` | hostname of `input.url` | none |
@@ -121,7 +121,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `IsHarnessOwned` | `~/.claude/`, `~/.claude.json` and its temporary, `~/.local/state/claude/`, `~/.cache/claude-cli-nodejs/`, `/tmp/claude-<uid>/` and the cwd files `/tmp/claude-<id>-cwd`, for a home under `/home` or `/root` (I-30). Not the install directory, the workspace's own `.claude`, the shell startup files or `~/.ssh`. |
 | Degradations | Decision-time start (D13); no exit codes, so exits are not aligned; file-tool claims are one atomic replace as measured on 2.1.286, and a variant not seen shows as unexplained; Write calls with no create or update result assumed to overwrite; unknown tools when present. |
 
-Claims are rewritten the same way: `collapseOpenClaims` merges adjacent opens of one file among the file claims, since commands and connections are in the `proc` and `net` lanes and do not break a run. The structured result of the call (`toolUseResult`, on the user record that carries the `tool_result`: `type` for Write, the file before and the applied replacement for Edit) is read only when the record holds a single result.
+Claims are rewritten the same way: `collapseOpenClaims` merges adjacent opens of one file among the file claims, since commands and connections are in the `proc` and `net` lanes and do not break a run. The structured result of the call (`toolUseResult`, on the user record that carries the `tool_result`: `type` for Write, the file before and the applied replacement for Edit) is read only when the record holds a single result. A subagent's transcript holds no structured result, so for a Write whose record has none the kind is read from the `tool_result` text the harness sent the model (I-35): `File created successfully at: <path>`, alone or followed by a space, is `create`, and a text starting `The file <path> has been updated successfully.` is `update`, with `<path>` exactly the claimed `file_path`. A result marked `is_error`, another path or any other text gives no kind, and the Write is assumed to overwrite.
 
 The exit code is not expressible because the format records only an `is_error` flag, which conflates a failed command with one that never ran.
 
@@ -192,6 +192,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 ## Known limits
 
 - The fold takes a second rename of a replace's directory only in captures recorded before P-18; on a current capture its condition, narrower than P-18's, never holds (I-33). On an old capture it hides what P-18 hides: two real renames of one directory by one process with nothing between read as one. A split rename in the read-after-rename shape has not been seen in an old capture and is not folded, so it would show as an unrecorded rename of the directory.
+- A Write's kind read from its result text (I-35) rests on the wording of 2.1.296, found in its binary and seen in the `tools` capture. Another wording gives no kind, so such a Write is assumed to overwrite, as before. `scripts/make-capture-fixture.py` replaces every `tool_result` text with `(elided)`, so in a reduced fixture a subagent's Write has no kind.
 - The Claude Code claim shapes rest on the six paired captures above. Unchecked: a write that does not use a temporary file, other versions, `MultiEdit` and `NotebookEdit` (reported as unknown tools), a background Bash call (`run_in_background`), a parallel block whose members run out of the order they were emitted (O-2), and a subagent that writes files. The Gemini adapter has not seen a real capture.
 - Some harness activity is occasional (a package-manager probe in two of three control runs; a backup of `~/.claude.json` in a task run and in no control). At full agreement it is left out of the baseline. The capture script therefore takes more controls at a lower agreement threshold, and what still escapes is reported as unexplained harness activity when it is a file event in the harness's own directories (V-24); a connection that sent data, or a command, that the controls never showed is still a finding (open decision O-25 in [decisions/open.md](../decisions/open.md)).
 - `Concurrency`, `SubagentsInProcess`, `ShellPerCommand` and `IntervalKind` are declarations only; the verifier does not read them.

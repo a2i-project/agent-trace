@@ -576,3 +576,76 @@ func TestParseRealSessionsDoNotFail(t *testing.T) {
 		}
 	}
 }
+
+// A subagent's transcript keeps no structured result, only the text the
+// harness sends the model. A Write's create or update is read from that text
+// when it names exactly the claimed path (I-35); otherwise the Write is
+// assumed to overwrite, as before.
+func TestWriteKindIsReadFromTheResultTextWhenThereIsNoStructuredResult(t *testing.T) {
+	dir := t.TempDir()
+	use := `{"type":"assistant","timestamp":"2026-10-12T10:00:00Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"/ws/s.txt","content":"x"}}]}}`
+	result := `{"type":"user","timestamp":"2026-10-12T10:00:01Z","sessionId":"s","version":"2.1.296","message":{"id":"m2","content":[{"type":"tool_result","tool_use_id":"t1","content":%s%s}]}%s}`
+	for name, tc := range map[string]struct {
+		content, isError, structured string
+		want                         []string // claimed action types
+		unknown                      bool     // the "no create or update result" degradation
+	}{
+		"create":                     {`"File created successfully at: /ws/s.txt (file state is current in your context)"`, "", "", []string{"file_write"}, false},
+		"create, bare":               {`"File created successfully at: /ws/s.txt"`, "", "", []string{"file_write"}, false},
+		"create, text blocks":        {`[{"type":"text","text":"File created successfully at: /ws/s.txt"}]`, "", "", []string{"file_write"}, false},
+		"update":                     {`"The file /ws/s.txt has been updated successfully. (file state is current in your context)"`, "", "", []string{"file_open", "file_write"}, false},
+		"create of another path":     {`"File created successfully at: /ws/s.txt.bak"`, "", "", []string{"file_open", "file_write"}, true},
+		"create of a longer path":    {`"File created successfully at: /ws/s.txt2"`, "", "", []string{"file_open", "file_write"}, true},
+		"an error":                   {`"File created successfully at: /ws/s.txt"`, `,"is_error":true`, "", []string{"file_open", "file_write"}, true},
+		"other text":                 {`"Done."`, "", "", []string{"file_open", "file_write"}, true},
+		"structured result wins":     {`"File created successfully at: /ws/s.txt"`, "", `,"toolUseResult":{"type":"update"}`, []string{"file_open", "file_write"}, false},
+		"structured result, no type": {`"File created successfully at: /ws/s.txt"`, "", `,"toolUseResult":{"filePath":"/ws/s.txt"}`, []string{"file_open", "file_write"}, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(dir, strings.NewReplacer(" ", "-", ",", "").Replace(name)+".jsonl")
+			if err := os.WriteFile(p, []byte(use+"\n"+fmt.Sprintf(result, tc.content, tc.isError, tc.structured)+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			tr, rep, err := Adapter{}.Parse(p)
+			if err != nil || len(rep.ParseErrors) != 0 {
+				t.Fatalf("parse: %v %v", err, rep.ParseErrors)
+			}
+			var got []string
+			for _, e := range tr {
+				got = append(got, string(e.ActionType))
+			}
+			if strings.Join(got, " ") != strings.Join(tc.want, " ") {
+				t.Errorf("claims = %v, want %v", got, tc.want)
+			}
+			if u := strings.Contains(strings.Join(rep.Degradations, "\n"), "no create or update result"); u != tc.unknown {
+				t.Errorf("degradation for an unknown Write kind = %v, want %v", u, tc.unknown)
+			}
+		})
+	}
+}
+
+// The same holds in a subagent's own transcript, where the capture showed it.
+func TestASubagentWriteThatCreatedAFileClaimsNoOpen(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "s.jsonl")
+	sub := filepath.Join(dir, "s", "subagents", "agent-a1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(main, []byte(`{"type":"user","timestamp":"2026-10-12T10:00:00Z","sessionId":"s","version":"2.1.296","message":{"content":"go"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lines := `{"type":"assistant","timestamp":"2026-10-12T10:00:01Z","sessionId":"s","version":"2.1.296","isSidechain":true,"message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"/ws/sub.txt","content":"from-subagent"}}]}}
+{"type":"user","timestamp":"2026-10-12T10:00:02Z","sessionId":"s","version":"2.1.296","isSidechain":true,"message":{"content":[{"tool_use_id":"t1","type":"tool_result","content":"File created successfully at: /ws/sub.txt (file state is current in your context)"}]}}
+`
+	if err := os.WriteFile(sub, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr, _, err := Adapter{}.Parse(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tr) != 1 || tr[0].ActionType != models.FileWrite || tr[0].ThreadID != "a1" || tr[0].OutputHash == nil || *tr[0].OutputHash != contentHash("from-subagent") {
+		t.Errorf("claims = %+v, want one hashed write in thread a1", tr)
+	}
+}
