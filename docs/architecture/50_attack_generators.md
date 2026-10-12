@@ -69,7 +69,7 @@ Detected without classified is the failure the scorer exists to expose: the righ
 | `paired-2.1.296-edits` | 12 | 12 |
 
 - On the honest control there are no findings; the outcome is FAITHFUL, or INCONCLUSIVE only for harness activity the baseline does not hold (V-24), which the edits capture has.
-- Every mutation is detected, classified and located. The only unaccounted finding is an interval finding on a truthful claim when an omission leaves an ambiguous alignment (O-24; 2 of 100 runs of two omissions and 7 of 100 of three on the project capture).
+- Every mutation is detected, classified and located, and no finding is unaccounted. Before V-31 an omission that left an ambiguous alignment could pair a truthful claim with an identical event outside its interval (2 of 100 runs of two omissions and 7 of 100 of three on the project capture); since V-31 ties are broken by the fewest interval violations and those runs have none.
 - Widening leaves the honest outcome unchanged, and an omission whose neighbours are widened over the omitted moment is found at every position that has a neighbour on both sides.
 - Distinct mutations per capture beyond omissions: 13 to 29 fabrications, 44 to 151 substitutions. The edits capture is the first on which the substitution of an Edit's content is exercised, 60 of them per run.
 - With `Retime`, omissions are still found; on the parallel capture 12 of 100 runs also report later claims outside their interval, and on the other three none do.

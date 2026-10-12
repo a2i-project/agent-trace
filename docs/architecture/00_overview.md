@@ -144,8 +144,9 @@ Three rules cut across all components:
   causal link should suppress it.
 * **Pair by position, compare by content.** Pairing must not depend on the
   field being verified.
-* **Time orders events within a lane and never pairs them.** A claim interval is
-  a constraint whose violation is a finding.
+* **Time orders events within a lane and never decides a pairing on content.** A
+  claim interval is a constraint whose violation is a finding; among pairings of
+  equal content cost it only chooses the one with the fewest violations (V-31).
 
 ## Status
 
