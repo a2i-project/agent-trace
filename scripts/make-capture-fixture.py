@@ -14,11 +14,15 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
     set, so a reduced fixture cannot show that a baseline is tied to one;
   * the account's organisation id, which the harness uses in cache paths such as
     ~/.claude/cache/model-catalog/<id>-0, becomes the zero UUID wherever it
-    appears. The ids are read from the capture's own transcripts.
+    appears. The ids are read from the capture's own transcripts;
+  * the 64-digit hex in a session key file's name,
+    ~/.claude/sessions/<pid>.<hex>.key, becomes zeros. The key itself is the
+    file's content, which no capture holds, but the name is per session.
 
 Before it finishes, the script checks every file it wrote for the home
-directory, the user name, the organisation ids and every e-mail address found in
-the raw transcripts, and deletes its output and fails if one is left.
+directory, the user name, the organisation ids, every e-mail address found in
+the raw transcripts and any session key name left unrewritten, and deletes its
+output and fails if one is left.
 
 Ground truth events, pids, timestamps and coverage are kept as captured.
 
@@ -56,6 +60,8 @@ for name in os.listdir(capture):
 # Addresses that are part of the harness's own text, not the account.
 emails = {e for e in emails if not e.endswith("@anthropic.com") and not e.endswith("@example.com")}
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+SESSION_KEY = re.compile(r"(/\.claude/sessions/\d+\.)[0-9a-f]{64}")
+ZERO_KEY = "0" * 64
 
 
 def rewrite(s, label):
@@ -65,6 +71,7 @@ def rewrite(s, label):
     s = s.replace(home, "/home/user")
     for org in org_ids:
         s = s.replace(org, ZERO_UUID)
+    s = SESSION_KEY.sub(lambda m: m.group(1) + ZERO_KEY, s)
     return s.replace(os.environ.get("USER", "\0"), "user")
 
 
@@ -142,6 +149,8 @@ for root, _, files in os.walk(out):
         for word in forbidden:
             if word and word in text:
                 leaks.append((path, word))
+        if any(m.group(0)[-64:] != ZERO_KEY for m in SESSION_KEY.finditer(text)):
+            leaks.append((path, "session key name"))
 if leaks:
     for path, word in leaks:
         print("private string left in", path, file=sys.stderr)

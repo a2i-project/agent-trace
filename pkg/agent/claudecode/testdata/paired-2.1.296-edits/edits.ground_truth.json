@@ -2375,20 +2375,20 @@
   {
    "timestamp": "2026-10-11T13:38:48.943845977+02:00",
    "action_type": "file_open",
-   "target": "/home/user/.claude/sessions/574132.cb2b3e980f7e18538266057877770f452282262ec763da5121002a86f91e7971.key.tmp.f3e829e2",
+   "target": "/home/user/.claude/sessions/574132.0000000000000000000000000000000000000000000000000000000000000000.key.tmp.f3e829e2",
    "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
    "pid": 574132
   },
   {
    "timestamp": "2026-10-11T13:38:48.943924619+02:00",
    "action_type": "file_write",
-   "target": "/home/user/.claude/sessions/574132.cb2b3e980f7e18538266057877770f452282262ec763da5121002a86f91e7971.key.tmp.f3e829e2",
+   "target": "/home/user/.claude/sessions/574132.0000000000000000000000000000000000000000000000000000000000000000.key.tmp.f3e829e2",
    "pid": 574132
   },
   {
    "timestamp": "2026-10-11T13:38:48.944048786+02:00",
    "action_type": "file_close",
-   "target": "/home/user/.claude/sessions/574132.cb2b3e980f7e18538266057877770f452282262ec763da5121002a86f91e7971.key.tmp.f3e829e2",
+   "target": "/home/user/.claude/sessions/574132.0000000000000000000000000000000000000000000000000000000000000000.key.tmp.f3e829e2",
    "output_hash": "sha256:cb4dbcfec240964c1c595dbcb1ed106d7d561cc4dc0800dc6de3b8acba57d7b9",
    "pid": 574132
   },
