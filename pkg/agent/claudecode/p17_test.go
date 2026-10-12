@@ -101,8 +101,9 @@ func TestP17TaskVerifiesFaithfulAtTheDefaultAgreement(t *testing.T) {
 // rename, which the kernel reports on the directory, outside the directories the
 // adapter declares as the harness's own (V-24), so they are not set aside. An
 // honest run reads NOT FAITHFUL. This pins the behaviour exactly, so a change is
-// seen: every claim agrees, and the only findings are those renames. Open as
-// ADP-13 (local todo); the capture script's default of 1/N avoids it.
+// seen: every claim agrees, and the only findings are those renames. It is a
+// known limit of the adapter (docs/architecture/30_agent_adapters.md); the
+// capture script's default of 1/N avoids it.
 func TestP17TaskAtFullAgreementFlagsOnlyTheHomeDirectoryRenames(t *testing.T) {
 	v, tr, _ := p17Verdict(t, 1)
 	if len(v.Corroborated) != len(tr) || len(v.Mismatched) != 0 || len(v.Unwitnessed) != 0 || len(v.Coverage.UnexplainedSubtrees) != 0 {
