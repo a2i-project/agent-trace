@@ -53,12 +53,20 @@ func (Adapter) Process() agent.ProcessModel {
 // It states no request body for WebFetch.
 // The hash is the final content of the replaced file, which the observed side
 // takes from the close of the temporary (see stream.go).
+// A Read states the content it read only when it read the whole file as text
+// (I-40), which is exactly when its claim carries an input hash; a partial
+// read, a notebook, an image or a PDF states none, and its nil is the
+// format's.
 func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 	switch field {
 	case verification.DiffExitCode, verification.DiffRequestHash:
 		return false
 	case verification.DiffOutputHash:
 		return e.Tool == toolWrite
+	case verification.DiffInputHash:
+		if e.Tool == toolRead {
+			return e.InputHash != nil
+		}
 	}
 	return true
 }
@@ -214,6 +222,26 @@ type toolResult struct {
 	// isError is the tool_result's is_error flag.
 	isError  bool
 	notebook *notebookResult
+	// read is the content a Read returned, kept only when the result says it
+	// is the whole file as text (I-40).
+	read *string
+}
+
+// readFile is the file part of a Read's structured result (2.1.296): the
+// text returned, where it started, how many lines it held and how many the
+// file has, and whether the harness cut it to fit its token budget.
+type readFile struct {
+	Content             *string `json:"content"`
+	StartLine           int     `json:"startLine"`
+	NumLines            int     `json:"numLines"`
+	TotalLines          int     `json:"totalLines"`
+	TruncatedByTokenCap bool    `json:"truncatedByTokenCap"`
+}
+
+// whole reports whether the result is the whole file: from its first line,
+// every line, and not cut by the harness.
+func (f readFile) whole() bool {
+	return f.Content != nil && f.StartLine == 1 && f.NumLines == f.TotalLines && !f.TruncatedByTokenCap
 }
 
 // notebookResult is the structured result of a NotebookEdit call (I-37):
@@ -315,6 +343,8 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 							Original     *string `json:"original_file"`
 							Updated      *string `json:"updated_file"`
 							Error        string  `json:"error"`
+							// Read's result (I-40).
+							File *readFile `json:"file"`
 						}
 						if json.Unmarshal(r.ToolUseResult, &tr) == nil {
 							res.kind = tr.Type
@@ -330,6 +360,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 									nb.updated = *tr.Updated
 								}
 								res.notebook = nb
+							}
+							if tr.Type == "text" && tr.File != nil && tr.File.whole() {
+								res.read = tr.File.Content
 							}
 						}
 					}
@@ -509,6 +542,11 @@ func resultText(raw json.RawMessage) string {
 	return b.String()
 }
 
+// isAbsent reports whether an optional input field was left out or null.
+func isAbsent(raw json.RawMessage) bool {
+	return len(raw) == 0 || string(raw) == "null"
+}
+
 // inputPath returns a call's file_path input, or "".
 func inputPath(raw json.RawMessage) string {
 	var in struct {
@@ -531,7 +569,10 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 		Notebook string `json:"notebook_path"`
 		Content  string `json:"content"`
 		URL      string `json:"url"`
-		Unparsed string `json:"__unparsedToolInput"`
+		// A Read's range; either one makes the read partial (I-40).
+		Offset   json.RawMessage `json:"offset"`
+		Limit    json.RawMessage `json:"limit"`
+		Unparsed string          `json:"__unparsedToolInput"`
 	}
 	if len(u.input) > 0 {
 		if err := json.Unmarshal(u.input, &in); err != nil {
@@ -562,7 +603,14 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 		if in.FilePath == "" {
 			return nil, "no file_path"
 		}
-		return []models.TrajectoryEntry{mk(models.FileOpen, in.FilePath)}, ""
+		open := mk(models.FileOpen, in.FilePath)
+		// A Read of the whole file as text returns the file's content, so the
+		// open claims its hash (I-40). A range, a notebook, an image, a PDF or
+		// a result the harness cut claims none.
+		if res.read != nil && isAbsent(in.Offset) && isAbsent(in.Limit) {
+			open.InputHash = models.StringPtr(contentHash(*res.read))
+		}
+		return []models.TrajectoryEntry{open}, ""
 	case toolWrite, toolEdit:
 		if in.FilePath == "" {
 			return nil, "no file_path"

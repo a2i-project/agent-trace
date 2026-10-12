@@ -162,6 +162,127 @@ func TestExpressesIsPerTool(t *testing.T) {
 	if !a.Expresses(write, verification.DiffInputHash) {
 		t.Error("input hash is not declared away")
 	}
+	read := models.TrajectoryEntry{Tool: "Read", ActionType: models.FileOpen}
+	if a.Expresses(read, verification.DiffInputHash) {
+		t.Error("a Read without a hash read part of a file, or not as text: the format kept no content")
+	}
+	read.InputHash = models.StringPtr("sha256:x")
+	if !a.Expresses(read, verification.DiffInputHash) {
+		t.Error("a Read of the whole file states its content")
+	}
+}
+
+// A Read whose structured result is the whole file as text claims the hash
+// of that text on its open (I-40): a result from line 1 holding every line,
+// not cut by the harness, for a call without offset or limit. Any other
+// result, a notebook, an image, a range or a cut result, claims none.
+func TestAReadClaimsTheContentOfAWholeTextRead(t *testing.T) {
+	const content = "colour: red\nsize: small\n"
+	file := func(start, num, total int, extra string) string {
+		return fmt.Sprintf(`,"toolUseResult":{"type":"text","file":{"filePath":"/ws/notes.txt","content":%q,"numLines":%d,"startLine":%d,"totalLines":%d%s}}`, content, num, start, total, extra)
+	}
+	for name, tc := range map[string]struct {
+		input, result string
+		hashed        bool
+	}{
+		"whole file":           {``, file(1, 3, 3, ""), true},
+		"from a later line":    {``, file(2, 2, 3, ""), false},
+		"fewer lines":          {``, file(1, 2, 3, ""), false},
+		"cut by the token cap": {``, file(1, 3, 3, `,"truncatedByTokenCap":true`), false},
+		"with an offset":       {`,"offset":1`, file(1, 3, 3, ""), false},
+		"with a limit":         {`,"limit":2000`, file(1, 3, 3, ""), false},
+		"null range":           {`,"offset":null,"limit":null`, file(1, 3, 3, ""), true},
+		"a notebook":           {``, `,"toolUseResult":{"type":"notebook","file":{"filePath":"/ws/notes.txt","cells":[]}}`, false},
+		"an image":             {``, `,"toolUseResult":{"type":"image","file":{"base64":"AAAA","type":"image/png"}}`, false},
+		"no structured result": {``, ``, false},
+		"no content":           {``, `,"toolUseResult":{"type":"text","file":{"filePath":"/ws/notes.txt","numLines":3,"startLine":1,"totalLines":3}}`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			lines := fmt.Sprintf(`{"type":"assistant","timestamp":"2026-10-12T10:00:00Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/ws/notes.txt"%s}}]}}
+{"type":"user","timestamp":"2026-10-12T10:00:01Z","sessionId":"s","version":"2.1.296","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"1\tcolour: red"}]}%s}
+`, tc.input, tc.result)
+			p := filepath.Join(t.TempDir(), "s.jsonl")
+			if err := os.WriteFile(p, []byte(lines), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			tr, rep, err := Adapter{}.Parse(p)
+			if err != nil || len(rep.ParseErrors) != 0 || len(tr) != 1 || tr[0].ActionType != models.FileOpen {
+				t.Fatalf("parse: %v %v %+v", err, rep.ParseErrors, tr)
+			}
+			var want *string
+			if tc.hashed {
+				want = models.StringPtr(contentHash(content))
+			}
+			if !sameHash(tr[0].InputHash, want) {
+				t.Errorf("input hash = %s, want %s", deref(tr[0].InputHash), deref(want))
+			}
+			if (Adapter{}).Expresses(tr[0], verification.DiffInputHash) != tc.hashed {
+				t.Errorf("Expresses(input_hash) = %v, want %v", !tc.hashed, tc.hashed)
+			}
+		})
+	}
+}
+
+// What a Read's content claim does to the verdict (I-40, V-29), and the
+// shape of the second tools capture of 2.1.296: the agent's Read of its
+// background Bash's output file, and a later open by the harness of the
+// closing Bash's output file, which canonicalises to the same path (I-36)
+// and falls outside the Read's interval. The open whose measured content
+// equals what the Read returned pairs, and the harness's open stays
+// explained by the baseline; other content is a mismatch, and content the
+// probe did not measure is unverified.
+func TestAReadsContentPicksItsOpenAndIsChecked(t *testing.T) {
+	const (
+		ws    = "/tmp/cap/ws-tools"
+		taskA = "/tmp/claude-1000/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/tasks/b18jddo1a.output"
+		taskB = "/tmp/claude-1000/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/tasks/bjox50d79.output"
+		notes = ws + "/notes.txt"
+		out   = "background-done\n"
+	)
+	read := `{"type":"assistant","timestamp":"2026-10-12T19:56:06Z","sessionId":"s","version":"2.1.296","message":{"id":"m%[1]d","content":[{"type":"tool_use","id":"t%[1]d","name":"Read","input":{"file_path":%[2]q}}]}}
+{"type":"user","timestamp":"2026-10-12T19:56:%[3]sZ","sessionId":"s","version":"2.1.296","message":{"content":[{"type":"tool_result","tool_use_id":"t%[1]d","content":"x"}]},"toolUseResult":{"type":"text","file":{"filePath":%[2]q,"content":%[4]q,"numLines":2,"startLine":1,"totalLines":2}}}
+`
+	p := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(p, []byte(fmt.Sprintf(read, 1, taskA, "07", out)+fmt.Sprintf(read, 2, notes, "09", "colour: red\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr, _, err := Adapter{}.Parse(p)
+	if err != nil || len(tr) != 2 || tr[0].InputHash == nil {
+		t.Fatalf("parse: %v %+v", err, tr)
+	}
+	ts := tr[0].Timestamp
+	h := func(s string) *string { return models.StringPtr(contentHash(s)) }
+	ev := func(ms int, target string, in *string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: ts.Add(time.Duration(ms) * time.Millisecond), ActionType: models.FileOpen, Target: target, PID: 100, InputHash: in}
+	}
+	base := agent.Baseline{Agent: Name, Rules: []agent.Rule{{ActionType: models.FileOpen, Target: "/tmp/claude-1000/{workspace-}/SESSION/tasks/N.output"}}}
+	verify := func(events ...models.GroundTruthEvent) verification.Verdict {
+		g := models.GroundTruthFile{
+			RootPID: 100, Workspace: ws, FSScope: &models.FSScope{Mounts: []string{"/"}},
+			Coverage: &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}},
+			Events:   events,
+		}
+		return verification.Verify(agent.Prepare(Adapter{}, tr, g, base.Predicate(ws), verification.Options{}))
+	}
+
+	t.Run("the open with the content read pairs", func(t *testing.T) {
+		v := verify(ev(500, taskA, h(out)), ev(2500, notes, h("colour: red\n")), ev(4000, taskB, h("")))
+		if v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 2 || len(v.OutsideInterval) != 0 {
+			t.Errorf("outcome = %s, corroborated = %d, outside = %v, mismatched = %v", v.Outcome, len(v.Corroborated), v.OutsideInterval, v.Mismatched)
+		}
+	})
+	t.Run("other content is a mismatch", func(t *testing.T) {
+		v := verify(ev(500, taskA, h(out)), ev(2500, notes, h("colour: blue\n")))
+		if v.Outcome != verification.OutcomeNotFaithful || len(v.Mismatched) != 1 {
+			t.Errorf("outcome = %s, mismatched = %v", v.Outcome, v.Mismatched)
+		}
+	})
+	t.Run("content the probe did not measure is unverified", func(t *testing.T) {
+		v := verify(ev(500, taskA, h(out)), ev(2500, notes, nil))
+		if v.Outcome != verification.OutcomeInconclusive || len(v.Unverified) != 1 {
+			t.Errorf("outcome = %s, unverified = %v", v.Outcome, v.Unverified)
+		}
+	})
 }
 
 func TestProcessModel(t *testing.T) {
