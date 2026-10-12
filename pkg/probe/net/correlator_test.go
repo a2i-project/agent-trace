@@ -13,7 +13,7 @@ import (
 
 func newTestObserver() *Observer {
 	return &Observer{
-		conns:   make(map[connKeyGo]*connection),
+		conns:   make(map[uint64]*connection),
 		pending: make(map[sslKey]*tlsparse.Stream),
 		events:  make(chan models.GroundTruthEvent, 16),
 	}
@@ -94,7 +94,7 @@ func TestHandleSSLFrame_SplitAcrossFrames(t *testing.T) {
 
 func TestHandleSSLFrame_NoHostFallsBackToConnectionSNI(t *testing.T) {
 	o := newTestObserver()
-	o.conns[connKeyGo{tgid: 9, fd: 3}] = &connection{host: "sni.example.com", openedAt: time.Now()}
+	o.conns[3] = &connection{tgid: 9, host: "sni.example.com", openedAt: time.Now()}
 
 	// HTTP/1.0 request with no Host header at all.
 	req := "GET /root HTTP/1.0\r\n\r\n"

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit ffa5578 on 2026-10-12.
+Checked against commit fb70524 on 2026-10-12.
 
 ## Objective
 
@@ -87,7 +87,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `Ran` | `ran` | all | probe was started | a probe with `Ran=false` is skipped |
 | `RingbufDrops` | `ringbuf_drops` | proc, net (net and TLS rings summed) | kernel ring buffer full, record discarded | Reason (event loss) |
 | `UntrackedChildren` | `untracked_children` | proc, net (net and TLS maps summed) | `tracked_pids` full; a lower bound, one increment can be a whole subtree | Reason |
-| `StateMapFull` | `state_map_full` | proc (`execs`), net (`conns`) | per-process or per-connection state map full | Reason |
+| `StateMapFull` | `state_map_full` | proc (`execs`), net (`conns`) | per-process or per-connection state map full; net also counts a connect whose descriptor could not be resolved to its socket | Reason |
 | `ChannelDrops` | `channel_drops` | proc, net | Go events channel full; fs never drops (it blocks) | Reason |
 | `QueueOverflow` | `queue_overflow` | fs | fanotify `FAN_Q_OVERFLOW` seen | Reason |
 | `HashlessCloses` | `hashless_closes` | fs | a close was published without a content hash (P-16, or a failed read) | Note (content gap) |

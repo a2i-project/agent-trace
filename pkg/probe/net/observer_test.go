@@ -853,10 +853,10 @@ func TestEmitSkipsAddressSelectionAndReportsDNS(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			o := &Observer{events: make(chan models.GroundTruthEvent, 4)}
-			conn := &connection{family: afInet, port: tc.port, wrote: true} // a connection that carried data (N-22)
+			conn := &connection{tgid: 4242, family: afInet, port: tc.port, wrote: true} // a connection that carried data (N-22)
 			copy(conn.addr[:], stdnet.ParseIP("192.0.2.7").To4())
-			o.emit(connKeyGo{}, conn, 4242, time.Now())
-			o.emit(connKeyGo{}, conn, 4242, time.Now()) // a close must not emit again
+			o.emit(conn, time.Now())
+			o.emit(conn, time.Now()) // a close must not emit again
 			if got := len(o.events); got != tc.want {
 				t.Fatalf("port %d emitted %d event(s), want %d", tc.port, got, tc.want)
 			}
@@ -883,10 +883,10 @@ func itoa(n uint16) string { return strconv.Itoa(int(n)) }
 // records it, and a connection to that port is also a way to move data, so
 // it must not vanish (N-20). Port 0 stays out of the events and is counted.
 func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.T) {
-	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[uint64]*connection{}}
 	v4 := [16]byte{10, 0, 0, 53}
 	rec := func(typ uint8, fd uint32, port uint16) netRecord {
-		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Family: afInet, Addr: v4, Port: port, TsNs: 1}}
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Sock: uint64(fd), Family: afInet, Addr: v4, Port: port, TsNs: 1}}
 	}
 	o.handleNetRecord(rec(netConnect, 3, 53))
 	o.handleNetRecord(rec(netClose, 3, 53))
@@ -915,10 +915,10 @@ func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.
 // when the capture stops is emitted then, stamped with its connect time, and
 // counted; one already emitted is not emitted again (N-21).
 func TestFlushOpenConnections_EmitsWhatNeverClosed(t *testing.T) {
-	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[uint64]*connection{}}
 	v4 := [16]byte{192, 0, 2, 9}
 	rec := func(typ uint8, fd uint32, port uint16, ts int64) netRecord {
-		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Family: afInet, Addr: v4, Port: port, TsNs: uint64(ts)}}
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Sock: uint64(fd), Family: afInet, Addr: v4, Port: port, TsNs: uint64(ts)}}
 	}
 	o.handleNetRecord(rec(netConnect, 3, 443, 2000))  // never closes
 	o.handleNetRecord(rec(netConnect, 4, 8080, 1000)) // never closes, connected earlier
@@ -954,10 +954,10 @@ func TestFlushOpenConnections_EmitsWhatNeverClosed(t *testing.T) {
 // which carried nothing and must not become a baseline rule naming the day's
 // address. One that wrote and had no name is a net_connect by address (N-22).
 func TestHandleNetRecord_IdleConnectionsAreDials(t *testing.T) {
-	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[uint64]*connection{}}
 	v4 := [16]byte{192, 0, 2, 9}
 	rec := func(typ uint8, fd uint32, payload []byte) netRecord {
-		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Family: afInet, Addr: v4, Port: 443, TsNs: 1}, payload: payload}
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Sock: uint64(fd), Family: afInet, Addr: v4, Port: 443, TsNs: 1}, payload: payload}
 	}
 	o.handleNetRecord(rec(netConnect, 3, nil))
 	o.handleNetRecord(rec(netClose, 3, nil)) // nothing written
@@ -980,19 +980,19 @@ func TestHandleNetRecord_IdleConnectionsAreDials(t *testing.T) {
 	}
 }
 
-// A descriptor closed without close() keeps its entry, and a new connect on
-// the same (tgid, fd) replaces it. The replaced connection is emitted then,
-// stamped with its connect time, and counted; one already emitted at its hello
-// is not emitted again or counted.
+// A socket connected again (a datagram socket pointed at a new peer) starts a
+// new connection on the same key, which replaces the old entry. The replaced
+// connection is emitted then, stamped with its connect time, and counted; one
+// already emitted at its hello is not emitted again or counted.
 func TestHandleNetRecord_ReplacedConnectionIsEmitted(t *testing.T) {
-	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[uint64]*connection{}}
 	v4 := [16]byte{192, 0, 2, 9}
 	rec := func(typ uint8, port uint16, ts int64, payload []byte) netRecord {
-		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: 3, Family: afInet, Addr: v4, Port: port, TsNs: uint64(ts)}, payload: payload}
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: 3, Sock: 3, Family: afInet, Addr: v4, Port: port, TsNs: uint64(ts)}, payload: payload}
 	}
 	o.handleNetRecord(rec(netConnect, 8080, 1000, nil))
 	o.handleNetRecord(rec(netHello, 8080, 1100, []byte("POST /x HTTP/1.0\r\n"))) // wrote, no TLS name
-	o.handleNetRecord(rec(netConnect, 9090, 2000, nil))                          // dup2 over fd 3, connect elsewhere
+	o.handleNetRecord(rec(netConnect, 9090, 2000, nil))                          // the same socket connected elsewhere
 	o.handleNetRecord(rec(netConnect, 22, 3000, nil))                            // replaces one that never wrote
 	o.handleNetRecord(rec(netClose, 22, 3500, nil))
 	close(o.events)
@@ -1014,10 +1014,10 @@ func TestHandleNetRecord_ReplacedConnectionIsEmitted(t *testing.T) {
 	}
 
 	// A connection already emitted at its hello is neither emitted nor
-	// counted again when its descriptor is reused.
-	o = &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[connKeyGo]*connection{}}
+	// counted again when its socket connects again.
+	o = &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[uint64]*connection{}}
 	o.handleNetRecord(rec(netConnect, 443, 1000, nil))
-	o.conns[connKeyGo{tgid: 7, fd: 3}].emitted = true
+	o.conns[3].emitted = true
 	o.handleNetRecord(rec(netConnect, 443, 2000, nil))
 	close(o.events)
 	if n := len(o.events); n != 0 || o.coverage.Replaced != 0 {
@@ -1025,11 +1025,14 @@ func TestHandleNetRecord_ReplacedConnectionIsEmitted(t *testing.T) {
 	}
 }
 
-// TestObserver_ConnectionReplacedByDup2IsEmitted is the kernel half: a
-// process connects by address and writes, makes the descriptor refer to a new
-// socket with dup2 (which closes the first without a close syscall), and
-// connects that elsewhere. Both connections must reach the capture.
-func TestObserver_ConnectionReplacedByDup2IsEmitted(t *testing.T) {
+// TestObserver_ConnectionClosedByDup2IsEmitted: a process connects by address
+// and writes, then makes the descriptor refer to a second socket with dup2,
+// which releases the first without a close syscall. The dup2 hook sees that it
+// drops the first socket's last reference and closes it then (N-24). The
+// second socket is connected through the duplicated descriptor and written,
+// and ends only when its last descriptor closes. Both connections reach the
+// capture at their close, none at the stop, and neither is a replacement.
+func TestObserver_ConnectionClosedByDup2IsEmitted(t *testing.T) {
 	skipUnprivileged(t)
 
 	var lns []stdnet.Listener
@@ -1073,7 +1076,7 @@ b.close()
 			t.Errorf("no net_connect to %s; net_connect targets %v", w, got)
 		}
 	}
-	if r := obs.Coverage().Replaced; r != 1 {
-		t.Errorf("Replaced = %d, want 1", r)
+	if c := obs.Coverage(); c.Replaced != 0 || c.OpenAtStop != 0 {
+		t.Errorf("Replaced = %d, OpenAtStop = %d, want 0 and 0: both connections end at a dup2 or a close", c.Replaced, c.OpenAtStop)
 	}
 }

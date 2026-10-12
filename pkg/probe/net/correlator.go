@@ -21,7 +21,7 @@ type Coverage struct {
 	DNS                int    // connections to port 53, emitted as net_dns capability evidence (N-20)
 	AddressProbes      int    // connections to port 0: the resolver's source-address selection, not emitted
 	OpenAtStop         int    // connections still open when the capture stopped, emitted then with their connect time (N-21)
-	Replaced           int    // connections replaced by a new connect on the same (tgid, fd) before they were emitted, emitted then with their connect time
+	Replaced           int    // connections replaced by a new connect on the same socket before they were emitted, emitted then with their connect time (N-24)
 	Dials              int    // connections closed with no name and nothing written, emitted as net_dial capability evidence (N-22)
 	WithHostname       int    // SNI parsed from a ClientHello
 	WithContent        int    // at least one HTTP request attributed to a connection
@@ -135,8 +135,8 @@ func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts tim
 func (o *Observer) newestHostForTGID(tgid uint32) string {
 	var best string
 	var bestAt time.Time
-	for k, c := range o.conns {
-		if k.tgid != tgid || c.host == "" {
+	for _, c := range o.conns {
+		if c.tgid != tgid || c.host == "" {
 			continue
 		}
 		if best == "" || c.openedAt.After(bestAt) {

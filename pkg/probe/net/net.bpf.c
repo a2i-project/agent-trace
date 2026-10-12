@@ -8,6 +8,12 @@
 // write-bracket join (looking up an active_write map to emit NET_BIND) was
 // abandoned, see N-D1 in docs/decisions/network.md: this file implements the
 // tracked_pids gate and the hello capture only.
+//
+// A connection is identified by its socket, not by the descriptor that made
+// it (N-24): every send and close hook resolves its fd through the calling
+// task's fd table to the socket inode, so a write by a forked child or by a
+// process that received the descriptor over SCM_RIGHTS reaches the same
+// conns entry (N-23).
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
@@ -36,6 +42,10 @@ enum net_event_type {
 	// AF_UNIX bind and listen reuse NET_SOCK_BIND and NET_SOCK_LISTEN with
 	// family == AF_UNIX and the path in the payload the same way.
 	NET_UNIX_CONNECT = 7,
+	// The first send on a connection through a path whose bytes are not
+	// read (sendfile, splice), or whose hello read faulted: header only. It
+	// marks the connection as having carried data (N-22, N-23).
+	NET_SEND = 8,
 };
 
 struct net_event_hdr {
@@ -47,13 +57,20 @@ struct net_event_hdr {
 	__u32 fd;
 	__u64 ts_ns;
 	__u8  addr[16];
-	__u64 seq;         // unused: it belonged to NET_BIND, which is never emitted
-	__u32 payload_len; // NET_HELLO only
+	// Socket inode number naming the connection on NET_CONNECT, NET_HELLO,
+	// NET_SEND and NET_CLOSE (N-24); 0 on the other records. tgid and fd
+	// are those of the caller, which need not be the process that connected.
+	__u64 sock;
+	__u32 payload_len; // NET_HELLO, and the AF_UNIX records' path
 };
 
 struct net_event {
 	struct net_event_hdr hdr;
-	__u8 payload[HELLO_CAP_LEN];
+	// Only the first HELLO_CAP_LEN bytes are ever emitted. The second half is
+	// verifier slack for the multi-iovec copy: it writes at an offset below
+	// HELLO_CAP_LEN with a size of at most HELLO_CAP_LEN, and the verifier
+	// bounds the two separately.
+	__u8 payload[HELLO_CAP_LEN * 2];
 };
 
 struct conn_key {
@@ -66,13 +83,20 @@ struct conn_state {
 	__u8  addr[16];
 	__u16 port;
 	__u8  hello_captured;
+	__u8  sent; // a NET_HELLO or NET_SEND was emitted
+	__u32 tgid; // the process that connected
 	__u64 open_ts_ns;
 };
 
+// conns holds one entry per tracked TCP or UDP connection, keyed by the
+// socket inode number (N-24). The inode number is unique for the life of
+// the socket and is not reused by the next socket the way a struct sock
+// address is, so an entry left by a socket released without a close() seen
+// here cannot be mistaken for a later socket's.
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 8192);
-	__type(key, struct conn_key);
+	__type(key, __u64);
 	__type(value, struct conn_state);
 } conns SEC(".maps");
 
@@ -201,8 +225,131 @@ static __always_inline void fill_common(struct net_event_hdr *hdr, __u8 type,
 	hdr->tid = (__u32)id;
 	hdr->fd = fd;
 	hdr->ts_ns = bpf_ktime_get_ns();
-	hdr->seq = 0;
+	hdr->sock = 0;
 	hdr->payload_len = 0;
+}
+
+// --- socket resolution (N-24) ---------------------------------------------
+//
+// A sys_enter_* tracepoint sees only the descriptor number. fd_socket looks
+// it up in the calling task's fd table (task->files->fdt->fd[fd]) with CO-RE
+// reads and returns the struct file and the socket inode number when the
+// descriptor is a socket. Every read is a bpf_probe_read_kernel, which the
+// existing bpf_probe_read_user use already requires (kernel 5.5).
+
+#define S_IFMT   00170000
+#define S_IFSOCK 0140000
+
+enum fd_result {
+	FD_SOCKET = 0, // *filep and *ino are set
+	FD_NONE   = 1, // no such descriptor, or not a socket
+	FD_FAULT  = 2, // a kernel read failed
+};
+
+static __always_inline struct file *fd_file(__u32 fd, int *res)
+{
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	struct fdtable *fdt = BPF_CORE_READ(task, files, fdt);
+	if (!fdt) {
+		*res = FD_FAULT;
+		return NULL;
+	}
+	unsigned int max_fds = BPF_CORE_READ(fdt, max_fds);
+	if (fd >= max_fds) {
+		*res = FD_NONE;
+		return NULL;
+	}
+	struct file **fds = BPF_CORE_READ(fdt, fd);
+	struct file *f = NULL;
+	if (!fds || bpf_probe_read_kernel(&f, sizeof(f), &fds[fd])) {
+		*res = FD_FAULT;
+		return NULL;
+	}
+	*res = f ? FD_SOCKET : FD_NONE;
+	return f;
+}
+
+static __always_inline int fd_socket(__u32 fd, struct file **filep, __u64 *ino)
+{
+	int res;
+	struct file *f = fd_file(fd, &res);
+	if (!f)
+		return res;
+	struct inode *inode = BPF_CORE_READ(f, f_inode);
+	if (!inode)
+		return FD_FAULT;
+	umode_t mode = BPF_CORE_READ(inode, i_mode);
+	if ((mode & S_IFMT) != S_IFSOCK)
+		return FD_NONE;
+	*ino = BPF_CORE_READ(inode, i_ino);
+	if (!*ino)
+		return FD_FAULT;
+	*filep = f;
+	return FD_SOCKET;
+}
+
+// struct file before kernel 6.13 counted references in f_count; 6.13
+// replaced it with f_ref, a file_ref_t that stores the count minus one.
+struct file___pre613 {
+	atomic_long_t f_count;
+} __attribute__((preserve_access_index));
+
+#define FILE_REF_RELEASED 0xC000000000000000ULL
+
+// file_last_ref reports whether the descriptor being closed holds the only
+// reference to f: no other descriptor, in this process or another (a child
+// after fork, a receiver of SCM_RIGHTS, a dup), and no message in flight
+// still refers to it. A syscall running concurrently in another thread of a
+// process whose fd table is shared also holds a reference for its duration.
+static __always_inline int file_last_ref(struct file *f)
+{
+	if (bpf_core_field_exists(f->f_ref)) {
+		__u64 c = 0;
+		if (bpf_core_read(&c, sizeof(c), &f->f_ref.refcnt.counter))
+			return 0;
+		return c == 0 || c >= FILE_REF_RELEASED; // 0 is FILE_REF_ONEREF
+	}
+	struct file___pre613 *old = (void *)f;
+	long n = 0;
+	if (bpf_core_read(&n, sizeof(n), &old->f_count.counter))
+		return 0;
+	return n <= 1;
+}
+
+// lookup_conn returns the conns entry of the socket behind fd, or NULL.
+static __always_inline struct conn_state *lookup_conn(__u32 fd, __u64 *ino)
+{
+	struct file *f = NULL;
+	if (fd_socket(fd, &f, ino) != FD_SOCKET)
+		return NULL;
+	return bpf_map_lookup_elem(&conns, ino);
+}
+
+// emit_conn sends one record about connection cs whose payload, if any, is
+// already in e->payload.
+static __always_inline void emit_conn(struct net_event *e, __u8 type, __u32 tgid, __u32 fd,
+				      __u64 ino, struct conn_state *cs, __u32 len)
+{
+	fill_common(&e->hdr, type, tgid, fd);
+	e->hdr.family = cs->family;
+	e->hdr.port = cs->port;
+	__builtin_memcpy(e->hdr.addr, cs->addr, sizeof(cs->addr));
+	e->hdr.sock = ino;
+	if (len > HELLO_CAP_LEN)
+		len = HELLO_CAP_LEN;
+	e->hdr.payload_len = len;
+	if (bpf_ringbuf_output(&net_events, e, sizeof(e->hdr) + len, 0))
+		count_drop();
+}
+
+// mark_sent emits NET_SEND for the first send on cs that yields no hello.
+static __always_inline void mark_sent(struct net_event *e, __u32 tgid, __u32 fd,
+				      __u64 ino, struct conn_state *cs)
+{
+	if (cs->sent)
+		return;
+	emit_conn(e, NET_SEND, tgid, fd, ino, cs, 0);
+	cs->sent = 1;
 }
 
 // read_unix_path copies the sun_path of a user sockaddr_un into e->payload and
@@ -313,10 +460,22 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	__u16 port_be = *(__u16 *)(sa + 2);
 	__u16 port = ((port_be & 0xff) << 8) | (port_be >> 8);
 
-	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
+	// A descriptor that is not a socket makes connect fail (EBADF, ENOTSOCK)
+	// with nothing sent, so it is not recorded. A failed kernel read loses a
+	// connection the caller did make, and is counted.
+	__u32 fd = (__u32)ctx->fd;
+	struct file *f = NULL;
+	__u64 ino = 0;
+	int res = fd_socket(fd, &f, &ino);
+	if (res == FD_FAULT)
+		count_state_lost();
+	if (res != FD_SOCKET)
+		return 0;
+
 	struct conn_state state = {0};
 	state.family = (__u8)family;
 	state.port = port;
+	state.tgid = tgid;
 	state.open_ts_ns = bpf_ktime_get_ns();
 	if (family == AF_INET) {
 		__builtin_memcpy(state.addr, sa + 4, 4);
@@ -325,16 +484,20 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 		// We always read 28 bytes above, so offset 8+16=24 is in bounds.
 		__builtin_memcpy(state.addr, sa + 8, 16);
 	}
-	if (bpf_map_update_elem(&conns, &key, &state, BPF_ANY))
+	// A connect on a socket already in conns (a datagram socket connected
+	// again) starts a new connection on the same key; userspace emits the old
+	// one first (Coverage.Replaced).
+	if (bpf_map_update_elem(&conns, &ino, &state, BPF_ANY))
 		count_state_lost();
 
 	struct net_event *e = reserve_event();
 	if (!e)
 		return 0;
-	fill_common(&e->hdr, NET_CONNECT, tgid, key.fd);
+	fill_common(&e->hdr, NET_CONNECT, tgid, fd);
 	e->hdr.family = state.family;
 	e->hdr.port = state.port;
 	__builtin_memcpy(e->hdr.addr, state.addr, sizeof(state.addr));
+	e->hdr.sock = ino;
 	if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
 		count_drop();
 	return 0;
@@ -477,12 +640,28 @@ int trace_listen(struct sys_enter_listen_ctx *ctx)
 	return 0;
 }
 
-// --- first-write hello capture (write / sendto / sendmsg) ----------------
+// --- send side: hello capture and the written mark (N-23) -----------------
+//
+// Every send hook resolves its descriptor to the socket (lookup_conn), so a
+// send by any tracked process holding the connection counts, not only one by
+// the process that connected. The first send that carries readable bytes
+// emits NET_HELLO with up to HELLO_CAP_LEN of them; a send whose bytes are
+// not read, or whose read faults, emits NET_SEND once. Either marks the
+// connection as having carried data. All hooks fire at syscall entry, so a
+// send that then fails still counts, like a failed connect. A zero-length
+// send carries nothing and is ignored.
 
-static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, __u32 len)
+// HELLO_MAX_IOV bounds how many iovecs of a writev or sendmsg are copied
+// into the hello buffer. The loop is unrolled, so the verifier sees straight
+// code. A hello split over more iovecs is captured from the first eight.
+#define HELLO_MAX_IOV 8
+
+static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, __u64 len)
 {
-	struct conn_key key = { .tgid = tgid, .fd = fd };
-	struct conn_state *cs = bpf_map_lookup_elem(&conns, &key);
+	if (len == 0)
+		return 0;
+	__u64 ino = 0;
+	struct conn_state *cs = lookup_conn(fd, &ino);
 	if (!cs || cs->hello_captured)
 		return 0;
 
@@ -492,26 +671,104 @@ static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, 
 	struct net_event *e = reserve_event();
 	if (!e)
 		return 0;
-	if (len > 0 && bpf_probe_read_user(e->payload, len, buf)) {
-		// A faulting read (buffer page not resident, or a bad
-		// pointer) must not be silently treated as an empty capture
-		// that later reads as "no content, but not disagreement" --
-		// see N-D5 in docs/decisions/network.md.
-		// Drop the frame instead of emitting a zero-length NET_HELLO
-		// that the correlator cannot tell apart from a genuinely
-		// empty write.
+	if (bpf_probe_read_user(e->payload, len, buf)) {
+		// A faulting read (buffer page not resident, or a bad pointer)
+		// must not be treated as an empty capture that later reads as "no
+		// content, but not disagreement" (N-D5). The connection still
+		// carried data, so it is marked sent, and a later write gets
+		// another capture attempt.
+		mark_sent(e, tgid, fd, ino, cs);
 		return 0;
 	}
 
-	fill_common(&e->hdr, NET_HELLO, tgid, fd);
-	e->hdr.family = cs->family;
-	e->hdr.port = cs->port;
-	__builtin_memcpy(e->hdr.addr, cs->addr, sizeof(cs->addr));
-	e->hdr.payload_len = len;
-	if (bpf_ringbuf_output(&net_events, e, sizeof(e->hdr) + len, 0))
-		count_drop();
-
+	emit_conn(e, NET_HELLO, tgid, fd, ino, cs, (__u32)len);
 	cs->hello_captured = 1;
+	cs->sent = 1;
+	return 0;
+}
+
+struct iovec_bpf {
+	__u64 iov_base;
+	__u64 iov_len;
+};
+
+// capture_hello_iov is capture_hello for an iovec array in user memory: it
+// concatenates the first HELLO_MAX_IOV entries, up to HELLO_CAP_LEN bytes.
+// When nothing could be copied (every copied entry empty, or a read
+// faulted), the connection is marked sent instead.
+static __always_inline int capture_hello_iov(__u32 tgid, __u32 fd, __u64 iov_ptr, __u64 iovcnt)
+{
+	if (iovcnt == 0)
+		return 0;
+	__u64 ino = 0;
+	struct conn_state *cs = lookup_conn(fd, &ino);
+	if (!cs || cs->hello_captured)
+		return 0;
+
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 0;
+
+	__u32 off = 0;
+	int fault = 0;
+#pragma unroll
+	for (int i = 0; i < HELLO_MAX_IOV; i++) {
+		if (i >= iovcnt || off >= HELLO_CAP_LEN)
+			break;
+		struct iovec_bpf iov = {0};
+		if (bpf_probe_read_user(&iov, sizeof(iov), (void *)(iov_ptr + i * sizeof(iov)))) {
+			fault = 1;
+			break;
+		}
+		__u64 n = iov.iov_len;
+		if (n > HELLO_CAP_LEN - off)
+			n = HELLO_CAP_LEN - off;
+		// The verifier bounds off and n separately, not their sum: clamp
+		// both against constants it can see (the barriers keep clang from
+		// folding the clamps away), and the payload's slack half covers
+		// off + n up to twice HELLO_CAP_LEN.
+		barrier_var(n);
+		if (n > HELLO_CAP_LEN)
+			n = HELLO_CAP_LEN;
+		__u32 at = off;
+		barrier_var(at);
+		at &= HELLO_CAP_LEN - 1;
+		if (n == 0)
+			continue;
+		if (bpf_probe_read_user(&e->payload[at], n, (void *)iov.iov_base)) {
+			fault = 1;
+			break;
+		}
+		off += n;
+	}
+
+	if (fault || off == 0) {
+		mark_sent(e, tgid, fd, ino, cs);
+		return 0;
+	}
+	barrier_var(off);
+	if (off > HELLO_CAP_LEN)
+		off = HELLO_CAP_LEN;
+	emit_conn(e, NET_HELLO, tgid, fd, ino, cs, off);
+	cs->hello_captured = 1;
+	cs->sent = 1;
+	return 0;
+}
+
+// send_without_bytes marks a connection sent for a path whose bytes the
+// probe does not read (sendfile, splice).
+static __always_inline int send_without_bytes(__u32 tgid, __u32 fd, __u64 len)
+{
+	if (len == 0)
+		return 0;
+	__u64 ino = 0;
+	struct conn_state *cs = lookup_conn(fd, &ino);
+	if (!cs || cs->sent)
+		return 0;
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 0;
+	mark_sent(e, tgid, fd, ino, cs);
 	return 0;
 }
 
@@ -530,7 +787,7 @@ int trace_write(struct sys_enter_write_ctx *ctx)
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return capture_hello(tgid, (__u32)ctx->fd, (const void *)ctx->buf, (__u32)ctx->count);
+	return capture_hello(tgid, (__u32)ctx->fd, (const void *)ctx->buf, ctx->count);
 }
 
 struct sys_enter_sendto_ctx {
@@ -551,7 +808,7 @@ int trace_sendto(struct sys_enter_sendto_ctx *ctx)
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return capture_hello(tgid, (__u32)ctx->fd, (const void *)ctx->buff, (__u32)ctx->len);
+	return capture_hello(tgid, (__u32)ctx->fd, (const void *)ctx->buff, ctx->len);
 }
 
 struct sys_enter_sendmsg_ctx {
@@ -563,7 +820,9 @@ struct sys_enter_sendmsg_ctx {
 	__u64 flags;
 };
 
-// Mirrors struct msghdr / struct iovec's user-space layout on x86_64.
+// Mirrors struct msghdr / struct iovec's user-space layout on x86_64. struct
+// mmsghdr starts with a struct msghdr, so sendmmsg reads its first element
+// with the same type.
 struct msghdr_bpf {
 	__u64 msg_name;
 	__u32 msg_namelen;
@@ -576,10 +835,20 @@ struct msghdr_bpf {
 	__u32 __pad2;
 };
 
-struct iovec_bpf {
-	__u64 iov_base;
-	__u64 iov_len;
-};
+static __always_inline int capture_hello_msg(__u32 tgid, __u32 fd, __u64 msg)
+{
+	struct msghdr_bpf mh = {0};
+	if (bpf_probe_read_user(&mh, sizeof(mh), (void *)msg)) {
+		// The message cannot be read here, but the call may still send it.
+		__u64 ino = 0;
+		struct conn_state *cs = lookup_conn(fd, &ino);
+		struct net_event *e = reserve_event();
+		if (cs && e)
+			mark_sent(e, tgid, fd, ino, cs);
+		return 0;
+	}
+	return capture_hello_iov(tgid, fd, mh.msg_iov, mh.msg_iovlen);
+}
 
 SEC("tracepoint/syscalls/sys_enter_sendmsg")
 int trace_sendmsg(struct sys_enter_sendmsg_ctx *ctx)
@@ -587,27 +856,141 @@ int trace_sendmsg(struct sys_enter_sendmsg_ctx *ctx)
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-
-	struct msghdr_bpf mh = {0};
-	if (bpf_probe_read_user(&mh, sizeof(mh), (void *)ctx->msg))
-		return 0;
-	if (mh.msg_iovlen == 0)
-		return 0;
-
-	struct iovec_bpf iov = {0};
-	if (bpf_probe_read_user(&iov, sizeof(iov), (void *)mh.msg_iov))
-		return 0;
-
-	// Only the first iovec is inspected. A ClientHello or an HTTP
-	// request line written via sendmsg with multiple iovecs whose first
-	// entry is empty or tiny would be missed; that is a known limitation
-	// of this first cut, not a silent correctness bug, since a later
-	// write on the same fd (if any) still gets a capture attempt as long
-	// as hello_captured hasn't been set.
-	return capture_hello(tgid, (__u32)ctx->fd, (const void *)iov.iov_base, (__u32)iov.iov_len);
+	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->msg);
 }
 
-// --- sys_enter_close: connection teardown ---------------------------------
+struct sys_enter_sendmmsg_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 fd;
+	__u64 mmsg;
+	__u64 vlen;
+	__u64 flags;
+};
+
+// Only the first message is read for the hello; the rest are sent after it.
+SEC("tracepoint/syscalls/sys_enter_sendmmsg")
+int trace_sendmmsg(struct sys_enter_sendmmsg_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	if (ctx->vlen == 0)
+		return 0;
+	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->mmsg);
+}
+
+struct sys_enter_writev_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 fd;
+	__u64 vec;
+	__u64 vlen;
+};
+
+SEC("tracepoint/syscalls/sys_enter_writev")
+int trace_writev(struct sys_enter_writev_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	return capture_hello_iov(tgid, (__u32)ctx->fd, ctx->vec, ctx->vlen);
+}
+
+struct sys_enter_pwritev2_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 fd;
+	__u64 vec;
+	__u64 vlen;
+	__u64 pos_l;
+	__u64 pos_h;
+	__u64 flags;
+};
+
+// pwritev2 with offset -1 writes at the current position, which for a
+// socket is a writev; any other offset fails on a socket with ESPIPE.
+SEC("tracepoint/syscalls/sys_enter_pwritev2")
+int trace_pwritev2(struct sys_enter_pwritev2_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	if ((__s64)ctx->pos_l != -1)
+		return 0;
+	return capture_hello_iov(tgid, (__u32)ctx->fd, ctx->vec, ctx->vlen);
+}
+
+struct sys_enter_sendfile64_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 out_fd;
+	__u64 in_fd;
+	__u64 offset;
+	__u64 count;
+};
+
+SEC("tracepoint/syscalls/sys_enter_sendfile64")
+int trace_sendfile(struct sys_enter_sendfile64_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	return send_without_bytes(tgid, (__u32)ctx->out_fd, ctx->count);
+}
+
+struct sys_enter_splice_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 fd_in;
+	__u64 off_in;
+	__u64 fd_out;
+	__u64 off_out;
+	__u64 len;
+	__u64 flags;
+};
+
+SEC("tracepoint/syscalls/sys_enter_splice")
+int trace_splice(struct sys_enter_splice_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	return send_without_bytes(tgid, (__u32)ctx->fd_out, ctx->len);
+}
+
+// --- connection teardown: close, dup2, dup3 (N-24) ------------------------
+//
+// release_fd runs when a tracked process drops descriptor fd. The connection
+// ends only when that descriptor holds the last reference to the socket's
+// file: while a child, a receiver of SCM_RIGHTS or a dup still holds it, the
+// socket can still send, so the entry stays and a later send still marks it.
+
+static __always_inline void release_fd(__u32 tgid, __u32 fd)
+{
+	struct conn_key key = { .tgid = tgid, .fd = fd };
+	bpf_map_delete_elem(&binds, &key);
+
+	struct file *f = NULL;
+	__u64 ino = 0;
+	if (fd_socket(fd, &f, &ino) != FD_SOCKET)
+		return; // a file, a pipe, ...
+	struct conn_state *cs = bpf_map_lookup_elem(&conns, &ino);
+	if (!cs)
+		return; // a socket no tracked process connected
+	if (!file_last_ref(f))
+		return;
+
+	struct net_event *e = reserve_event();
+	if (e)
+		emit_conn(e, NET_CLOSE, tgid, fd, ino, cs, 0);
+	bpf_map_delete_elem(&conns, &ino);
+}
 
 struct sys_enter_close_ctx {
 	__u64 pad;
@@ -622,25 +1005,46 @@ int trace_close(struct sys_enter_close_ctx *ctx)
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-
-	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
-	bpf_map_delete_elem(&binds, &key);
-	struct conn_state *cs = bpf_map_lookup_elem(&conns, &key);
-	if (!cs)
-		return 0; // close() on an fd we never saw connect() on (a file, a pipe, ...)
-
-	struct net_event *e = reserve_event();
-	if (e) {
-		fill_common(&e->hdr, NET_CLOSE, tgid, key.fd);
-		e->hdr.family = cs->family;
-		e->hdr.port = cs->port;
-		__builtin_memcpy(e->hdr.addr, cs->addr, sizeof(cs->addr));
-		if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
-			count_drop();
-	}
-
-	bpf_map_delete_elem(&conns, &key);
+	release_fd(tgid, (__u32)ctx->fd);
 	return 0;
+}
+
+struct sys_enter_dup3_ctx {
+	__u64 pad;
+	__s32 syscall_nr;
+	__u32 pad2;
+	__u64 oldfd;
+	__u64 newfd;
+	__u64 flags;
+};
+
+// dup2 and dup3 close newfd when it is open and differs from oldfd. A call
+// whose oldfd is not open fails with EBADF and leaves newfd alone, so it is
+// skipped.
+static __always_inline int dup_over(__u32 oldfd, __u32 newfd)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	if (oldfd == newfd)
+		return 0;
+	int res;
+	if (!fd_file(oldfd, &res))
+		return 0;
+	release_fd(tgid, newfd);
+	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_dup2")
+int trace_dup2(struct sys_enter_dup3_ctx *ctx)
+{
+	return dup_over((__u32)ctx->oldfd, (__u32)ctx->newfd);
+}
+
+SEC("tracepoint/syscalls/sys_enter_dup3")
+int trace_dup3(struct sys_enter_dup3_ctx *ctx)
+{
+	return dup_over((__u32)ctx->oldfd, (__u32)ctx->newfd);
 }
 
 struct task_newtask_ctx {

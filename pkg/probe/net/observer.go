@@ -49,6 +49,10 @@ const (
 	netSockBind    uint8 = 5
 	netSockListen  uint8 = 6
 	netUnixConnect uint8 = 7
+
+	// netSend marks a connection as having carried data through a send whose
+	// bytes were not read (N-23).
+	netSend uint8 = 8
 )
 
 const (
@@ -100,8 +104,10 @@ type Config struct {
 	ValidationTimeout time.Duration
 }
 
-// connection is per-connection correlator state, keyed by (tgid, fd).
+// connection is per-connection correlator state, keyed by the socket inode
+// number the kernel records carry (N-24).
 type connection struct {
+	tgid     uint32 // the process that connected; every event of the connection carries it
 	family   uint8
 	addr     [16]byte
 	port     uint16
@@ -109,8 +115,9 @@ type connection struct {
 	host     string
 	alpn     []string
 	emitted  bool
-	// wrote is set at the first write on the connection, whatever it carried.
-	// A connection closed without one sent nothing (N-22).
+	// wrote is set at the first send on the connection by any tracked
+	// process holding it, whatever it carried. A connection closed without
+	// one sent nothing (N-22, N-23).
 	wrote bool
 }
 
@@ -118,22 +125,14 @@ type connection struct {
 // models.GroundTruthEvent values. See the package doc comment for what this
 // slice does and does not cover.
 type Observer struct {
-	objs        bpfObjects
-	connectLink link.Link
-	writeLink   link.Link
-	sendtoLink  link.Link
-	sendmsgLink link.Link
-	closeLink   link.Link
-	forkLink    link.Link
-	exitLink    link.Link
-	bindLink    link.Link
-	listenLink  link.Link
-	reader      *ringbuf.Reader
-	events      chan models.GroundTruthEvent
-	stopped     chan struct{}
-	cfg         Config
-	dropped     atomic.Uint64
-	stopOnce    sync.Once
+	objs     bpfObjects
+	links    []link.Link // net.bpf.c tracepoints, in attach order
+	reader   *ringbuf.Reader
+	events   chan models.GroundTruthEvent
+	stopped  chan struct{}
+	cfg      Config
+	dropped  atomic.Uint64
+	stopOnce sync.Once
 
 	// Kernel-side counters snapshotted by Stop, before it closes the maps
 	// they live in. kernelCountersFinal is raised after the values are set.
@@ -145,7 +144,7 @@ type Observer struct {
 
 	bootOffsetNs int64
 
-	conns map[connKeyGo]*connection
+	conns map[uint64]*connection // by socket inode number
 
 	// Content-capture (S5) state. tlsObjs and sslWriteLink are zero/nil
 	// when cfg.ExePath is unset -- Observer then runs identity-only, as it
@@ -178,12 +177,34 @@ type Observer struct {
 	coverage Coverage
 }
 
-// connKeyGo mirrors net.bpf.c's conn_key; it is the correlator's own map
-// key, decoded from bpfNetEventHdr fields rather than sharing bpfConnKey's
-// generated type, since the header carries tgid/fd directly.
-type connKeyGo struct {
-	tgid uint32
-	fd   uint32
+// netTracepoint is one net.bpf.c program and the tracepoint it attaches to.
+type netTracepoint struct {
+	group, name string
+	prog        *ebpf.Program
+}
+
+// netTracepoints lists the programs New attaches, in attach order. The send
+// hooks beyond write, sendto and sendmsg, and dup2 and dup3, complete the
+// send side of a connection (N-23, N-24).
+func netTracepoints(objs *bpfObjects) []netTracepoint {
+	return []netTracepoint{
+		{"syscalls", "sys_enter_connect", objs.TraceConnect},
+		{"syscalls", "sys_enter_write", objs.TraceWrite},
+		{"syscalls", "sys_enter_sendto", objs.TraceSendto},
+		{"syscalls", "sys_enter_sendmsg", objs.TraceSendmsg},
+		{"syscalls", "sys_enter_sendmmsg", objs.TraceSendmmsg},
+		{"syscalls", "sys_enter_writev", objs.TraceWritev},
+		{"syscalls", "sys_enter_pwritev2", objs.TracePwritev2},
+		{"syscalls", "sys_enter_sendfile64", objs.TraceSendfile},
+		{"syscalls", "sys_enter_splice", objs.TraceSplice},
+		{"syscalls", "sys_enter_close", objs.TraceClose},
+		{"syscalls", "sys_enter_dup2", objs.TraceDup2},
+		{"syscalls", "sys_enter_dup3", objs.TraceDup3},
+		{"task", "task_newtask", objs.HandleFork},
+		{"sched", "sched_process_exit", objs.HandleExit},
+		{"syscalls", "sys_enter_bind", objs.TraceBind},
+		{"syscalls", "sys_enter_listen", objs.TraceListen},
+	}
 }
 
 // New loads the eBPF programs, attaches the tracepoints, and opens the ring
@@ -227,138 +248,45 @@ func New(cfg Config) (*Observer, error) {
 		}
 	}
 
-	connectLink, err := link.Tracepoint("syscalls", "sys_enter_connect", objs.TraceConnect, nil)
-	if err != nil {
+	var links []link.Link
+	closeAll := func() {
+		for i := len(links) - 1; i >= 0; i-- {
+			_ = links[i].Close()
+		}
 		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_connect: %w", err)
 	}
-	writeLink, err := link.Tracepoint("syscalls", "sys_enter_write", objs.TraceWrite, nil)
-	if err != nil {
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_write: %w", err)
-	}
-	sendtoLink, err := link.Tracepoint("syscalls", "sys_enter_sendto", objs.TraceSendto, nil)
-	if err != nil {
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_sendto: %w", err)
-	}
-	sendmsgLink, err := link.Tracepoint("syscalls", "sys_enter_sendmsg", objs.TraceSendmsg, nil)
-	if err != nil {
-		_ = sendtoLink.Close()
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_sendmsg: %w", err)
-	}
-	closeLink, err := link.Tracepoint("syscalls", "sys_enter_close", objs.TraceClose, nil)
-	if err != nil {
-		_ = sendmsgLink.Close()
-		_ = sendtoLink.Close()
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_close: %w", err)
-	}
-
-	forkLink, err := link.Tracepoint("task", "task_newtask", objs.HandleFork, nil)
-	if err != nil {
-		_ = closeLink.Close()
-		_ = sendmsgLink.Close()
-		_ = sendtoLink.Close()
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach task_newtask: %w", err)
-	}
-
-	exitLink, err := link.Tracepoint("sched", "sched_process_exit", objs.HandleExit, nil)
-	if err != nil {
-		_ = forkLink.Close()
-		_ = closeLink.Close()
-		_ = sendmsgLink.Close()
-		_ = sendtoLink.Close()
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sched_process_exit: %w", err)
-	}
-
-	bindLink, err := link.Tracepoint("syscalls", "sys_enter_bind", objs.TraceBind, nil)
-	if err != nil {
-		_ = exitLink.Close()
-		_ = forkLink.Close()
-		_ = closeLink.Close()
-		_ = sendmsgLink.Close()
-		_ = sendtoLink.Close()
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_bind: %w", err)
-	}
-	listenLink, err := link.Tracepoint("syscalls", "sys_enter_listen", objs.TraceListen, nil)
-	if err != nil {
-		_ = bindLink.Close()
-		_ = exitLink.Close()
-		_ = forkLink.Close()
-		_ = closeLink.Close()
-		_ = sendmsgLink.Close()
-		_ = sendtoLink.Close()
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_listen: %w", err)
+	for _, tp := range netTracepoints(&objs) {
+		l, err := link.Tracepoint(tp.group, tp.name, tp.prog, nil)
+		if err != nil {
+			closeAll()
+			return nil, fmt.Errorf("attach %s: %w", tp.name, err)
+		}
+		links = append(links, l)
 	}
 
 	reader, err := ringbuf.NewReader(objs.NetEvents)
 	if err != nil {
-		_ = listenLink.Close()
-		_ = bindLink.Close()
-		_ = exitLink.Close()
-		_ = forkLink.Close()
-		_ = closeLink.Close()
-		_ = sendmsgLink.Close()
-		_ = sendtoLink.Close()
-		_ = writeLink.Close()
-		_ = connectLink.Close()
-		_ = objs.Close()
+		closeAll()
 		return nil, fmt.Errorf("open ring buffer: %w", err)
 	}
 
 	o := &Observer{
 		objs:         objs,
-		connectLink:  connectLink,
-		writeLink:    writeLink,
-		sendtoLink:   sendtoLink,
-		sendmsgLink:  sendmsgLink,
-		closeLink:    closeLink,
-		forkLink:     forkLink,
-		exitLink:     exitLink,
-		bindLink:     bindLink,
-		listenLink:   listenLink,
+		links:        links,
 		reader:       reader,
 		events:       make(chan models.GroundTruthEvent, cfg.EventBufSize),
 		stopped:      make(chan struct{}),
 		tlsReady:     make(chan struct{}),
 		cfg:          cfg,
 		bootOffsetNs: bootOffsetNs,
-		conns:        make(map[connKeyGo]*connection),
+		conns:        make(map[uint64]*connection),
 		pending:      make(map[sslKey]*tlsparse.Stream),
 	}
 
 	if cfg.ExePath != "" {
 		if err := o.prepareTLS(cfg); err != nil {
 			_ = reader.Close()
-			_ = listenLink.Close()
-			_ = bindLink.Close()
-			_ = closeLink.Close()
-			_ = sendmsgLink.Close()
-			_ = sendtoLink.Close()
-			_ = writeLink.Close()
-			_ = connectLink.Close()
-			_ = objs.Close()
+			closeAll()
 			return nil, fmt.Errorf("prepare SSL_write content capture: %w", err)
 		}
 	}
@@ -753,15 +681,9 @@ func (o *Observer) Stop() error {
 			_ = o.tlsExitLink.Close()
 		}
 		_ = o.tlsObjs.Close()
-		_ = o.closeLink.Close()
-		_ = o.sendmsgLink.Close()
-		_ = o.sendtoLink.Close()
-		_ = o.writeLink.Close()
-		_ = o.connectLink.Close()
-		_ = o.forkLink.Close()
-		_ = o.exitLink.Close()
-		_ = o.bindLink.Close()
-		_ = o.listenLink.Close()
+		for i := len(o.links) - 1; i >= 0; i-- {
+			_ = o.links[i].Close()
+		}
 		_ = o.objs.Close()
 	})
 	return nil
@@ -906,7 +828,7 @@ func (o *Observer) sslFeed(out chan<- sslRecord) {
 // probe's events is by that stamp. Runs once, from correlate, after both
 // feeders have closed.
 func (o *Observer) flushOpenConnections() {
-	keys := make([]connKeyGo, 0, len(o.conns))
+	keys := make([]uint64, 0, len(o.conns))
 	for k, c := range o.conns {
 		if !c.emitted {
 			keys = append(keys, k)
@@ -916,28 +838,30 @@ func (o *Observer) flushOpenConnections() {
 	for _, k := range keys {
 		c := o.conns[k]
 		o.coverage.OpenAtStop++
-		o.emit(k, c, int32(k.tgid), c.openedAt)
+		o.emit(c, c.openedAt)
 	}
 }
 
 func (o *Observer) handleNetRecord(rec netRecord) {
 	hdr := rec.hdr
-	key := connKeyGo{tgid: hdr.Tgid, fd: hdr.Fd}
+	// Connection records are keyed by socket, not by the caller's tgid and
+	// fd: a send or close may come from another process holding the socket,
+	// a child after fork or a receiver of SCM_RIGHTS (N-24).
+	key := hdr.Sock
 	ts := time.Unix(0, int64(hdr.TsNs)+o.bootOffsetNs)
 
 	switch hdr.Type {
 	case netConnect:
-		// A descriptor closed without close() (dup2 over it, close_range, an
-		// exec under O_CLOEXEC, or a tgid reused after an exit) leaves its
-		// entry open, and a new connect on the same number replaces it. The
-		// old connection happened and its target is known, so it is emitted
-		// now, stamped with its connect time, like one still open at the
-		// stop.
+		// A socket connected again (a datagram socket pointed at a new
+		// peer) starts a new connection on the same key. The old one
+		// happened and its target is known, so it is emitted now, stamped
+		// with its connect time, like one still open at the stop.
 		if prev, ok := o.conns[key]; ok && !prev.emitted {
 			o.coverage.Replaced++
-			o.emit(key, prev, int32(hdr.Tgid), prev.openedAt)
+			o.emit(prev, prev.openedAt)
 		}
 		o.conns[key] = &connection{
+			tgid:     hdr.Tgid,
 			family:   hdr.Family,
 			addr:     hdr.Addr,
 			port:     hdr.Port,
@@ -964,7 +888,14 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 				break
 			}
 		}
-		o.emit(key, conn, int32(hdr.Tgid), ts)
+		o.emit(conn, ts)
+
+	case netSend:
+		// A send whose bytes were not read (sendfile, splice, a faulted
+		// read): the connection carried data, with no hello to parse.
+		if conn, ok := o.conns[key]; ok {
+			conn.wrote = true
+		}
 
 	case netSockBind:
 		o.emitListener(models.NetBind, hdr, rec.payload, ts)
@@ -981,9 +912,11 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		return
 
 	case netClose:
+		// The kernel sends it when the last tracked descriptor of the socket
+		// closes, whichever process held it.
 		conn, ok := o.conns[key]
 		if ok {
-			o.emit(key, conn, int32(hdr.Tgid), ts)
+			o.emit(conn, ts)
 		}
 		delete(o.conns, key)
 	}
@@ -1034,11 +967,13 @@ func unixTarget(payload []byte) string {
 // emit sends one models.GroundTruthEvent for conn if it hasn't already been
 // emitted (a connection whose SNI was parsed emits once, at NET_HELLO time;
 // one that never yielded a hostname emits once, at NET_CLOSE, with a
-// peer-address fallback target).
-func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Time) {
+// peer-address fallback target). The event's PID is the process that
+// connected, whichever process sent or closed.
+func (o *Observer) emit(conn *connection, ts time.Time) {
 	if conn.emitted {
 		return
 	}
+	tgid := conn.tgid
 	// Port 53 is DNS. The resolver connects to it for every name an agent
 	// looks up, so no trajectory records it and it cannot be aligned; but a
 	// connection to that port is also a way to move data, and dropping it
@@ -1047,7 +982,7 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 	if conn.port == 53 {
 		conn.emitted = true
 		o.coverage.DNS++
-		o.emitGroundTruthOnly(models.NetDNS, uint32(tgid), peerAddrPort(conn.family, conn.addr, conn.port), ts)
+		o.emitGroundTruthOnly(models.NetDNS, tgid, peerAddrPort(conn.family, conn.addr, conn.port), ts)
 		return
 	}
 	// Port 0 is not a connection. The resolver connects a datagram socket to
@@ -1075,7 +1010,7 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 		// connection by address.
 		if !conn.wrote {
 			o.coverage.Dials++
-			o.emitGroundTruthOnly(models.NetDial, uint32(tgid), target, ts)
+			o.emitGroundTruthOnly(models.NetDial, tgid, target, ts)
 			return
 		}
 	}
@@ -1086,7 +1021,7 @@ func (o *Observer) emit(key connKeyGo, conn *connection, tgid int32, ts time.Tim
 		ActionType: models.NetConnect,
 		Target:     target,
 		IsTopLevel: &isTopLevel,
-		PID:        uint32(tgid),
+		PID:        tgid,
 	}
 
 	select {

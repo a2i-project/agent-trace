@@ -36,14 +36,17 @@ type bpfConnState struct {
 	_             [1]byte
 	Port          uint16
 	HelloCaptured uint8
-	_             [3]byte
+	Sent          uint8
+	_             [2]byte
+	Tgid          uint32
+	_             [4]byte
 	OpenTsNs      uint64
 }
 
 type bpfNetEvent struct {
 	_       structs.HostLayout
 	Hdr     bpfNetEventHdr
-	Payload [1024]uint8
+	Payload [2048]uint8
 }
 
 type bpfNetEventHdr struct {
@@ -56,7 +59,7 @@ type bpfNetEventHdr struct {
 	Fd         uint32
 	TsNs       uint64
 	Addr       [16]uint8
-	Seq        uint64
+	Sock       uint64
 	PayloadLen uint32
 	_          [4]byte
 }
@@ -78,10 +81,17 @@ const (
 	bpfProgTraceBind     = "trace_bind"
 	bpfProgTraceClose    = "trace_close"
 	bpfProgTraceConnect  = "trace_connect"
+	bpfProgTraceDup2     = "trace_dup2"
+	bpfProgTraceDup3     = "trace_dup3"
 	bpfProgTraceListen   = "trace_listen"
+	bpfProgTracePwritev2 = "trace_pwritev2"
+	bpfProgTraceSendfile = "trace_sendfile"
+	bpfProgTraceSendmmsg = "trace_sendmmsg"
 	bpfProgTraceSendmsg  = "trace_sendmsg"
 	bpfProgTraceSendto   = "trace_sendto"
+	bpfProgTraceSplice   = "trace_splice"
 	bpfProgTraceWrite    = "trace_write"
+	bpfProgTraceWritev   = "trace_writev"
 )
 
 // loadBpf returns the embedded CollectionSpec for bpf.
@@ -126,15 +136,22 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	HandleExit   *ebpf.ProgramSpec `ebpf:"handle_exit"`
-	HandleFork   *ebpf.ProgramSpec `ebpf:"handle_fork"`
-	TraceBind    *ebpf.ProgramSpec `ebpf:"trace_bind"`
-	TraceClose   *ebpf.ProgramSpec `ebpf:"trace_close"`
-	TraceConnect *ebpf.ProgramSpec `ebpf:"trace_connect"`
-	TraceListen  *ebpf.ProgramSpec `ebpf:"trace_listen"`
-	TraceSendmsg *ebpf.ProgramSpec `ebpf:"trace_sendmsg"`
-	TraceSendto  *ebpf.ProgramSpec `ebpf:"trace_sendto"`
-	TraceWrite   *ebpf.ProgramSpec `ebpf:"trace_write"`
+	HandleExit    *ebpf.ProgramSpec `ebpf:"handle_exit"`
+	HandleFork    *ebpf.ProgramSpec `ebpf:"handle_fork"`
+	TraceBind     *ebpf.ProgramSpec `ebpf:"trace_bind"`
+	TraceClose    *ebpf.ProgramSpec `ebpf:"trace_close"`
+	TraceConnect  *ebpf.ProgramSpec `ebpf:"trace_connect"`
+	TraceDup2     *ebpf.ProgramSpec `ebpf:"trace_dup2"`
+	TraceDup3     *ebpf.ProgramSpec `ebpf:"trace_dup3"`
+	TraceListen   *ebpf.ProgramSpec `ebpf:"trace_listen"`
+	TracePwritev2 *ebpf.ProgramSpec `ebpf:"trace_pwritev2"`
+	TraceSendfile *ebpf.ProgramSpec `ebpf:"trace_sendfile"`
+	TraceSendmmsg *ebpf.ProgramSpec `ebpf:"trace_sendmmsg"`
+	TraceSendmsg  *ebpf.ProgramSpec `ebpf:"trace_sendmsg"`
+	TraceSendto   *ebpf.ProgramSpec `ebpf:"trace_sendto"`
+	TraceSplice   *ebpf.ProgramSpec `ebpf:"trace_splice"`
+	TraceWrite    *ebpf.ProgramSpec `ebpf:"trace_write"`
+	TraceWritev   *ebpf.ProgramSpec `ebpf:"trace_writev"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
@@ -210,15 +227,22 @@ type bpfVariables struct {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	HandleExit   *ebpf.Program `ebpf:"handle_exit"`
-	HandleFork   *ebpf.Program `ebpf:"handle_fork"`
-	TraceBind    *ebpf.Program `ebpf:"trace_bind"`
-	TraceClose   *ebpf.Program `ebpf:"trace_close"`
-	TraceConnect *ebpf.Program `ebpf:"trace_connect"`
-	TraceListen  *ebpf.Program `ebpf:"trace_listen"`
-	TraceSendmsg *ebpf.Program `ebpf:"trace_sendmsg"`
-	TraceSendto  *ebpf.Program `ebpf:"trace_sendto"`
-	TraceWrite   *ebpf.Program `ebpf:"trace_write"`
+	HandleExit    *ebpf.Program `ebpf:"handle_exit"`
+	HandleFork    *ebpf.Program `ebpf:"handle_fork"`
+	TraceBind     *ebpf.Program `ebpf:"trace_bind"`
+	TraceClose    *ebpf.Program `ebpf:"trace_close"`
+	TraceConnect  *ebpf.Program `ebpf:"trace_connect"`
+	TraceDup2     *ebpf.Program `ebpf:"trace_dup2"`
+	TraceDup3     *ebpf.Program `ebpf:"trace_dup3"`
+	TraceListen   *ebpf.Program `ebpf:"trace_listen"`
+	TracePwritev2 *ebpf.Program `ebpf:"trace_pwritev2"`
+	TraceSendfile *ebpf.Program `ebpf:"trace_sendfile"`
+	TraceSendmmsg *ebpf.Program `ebpf:"trace_sendmmsg"`
+	TraceSendmsg  *ebpf.Program `ebpf:"trace_sendmsg"`
+	TraceSendto   *ebpf.Program `ebpf:"trace_sendto"`
+	TraceSplice   *ebpf.Program `ebpf:"trace_splice"`
+	TraceWrite    *ebpf.Program `ebpf:"trace_write"`
+	TraceWritev   *ebpf.Program `ebpf:"trace_writev"`
 }
 
 func (p *bpfPrograms) Close() error {
@@ -228,10 +252,17 @@ func (p *bpfPrograms) Close() error {
 		p.TraceBind,
 		p.TraceClose,
 		p.TraceConnect,
+		p.TraceDup2,
+		p.TraceDup3,
 		p.TraceListen,
+		p.TracePwritev2,
+		p.TraceSendfile,
+		p.TraceSendmmsg,
 		p.TraceSendmsg,
 		p.TraceSendto,
+		p.TraceSplice,
 		p.TraceWrite,
+		p.TraceWritev,
 	)
 }
 
