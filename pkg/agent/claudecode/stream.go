@@ -52,7 +52,8 @@ func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
 //
 //   - read before the rename: a create on the directory, then open, write and
 //     close on <path>.tmp.<pid>.<hex>, then the rename on the directory; the
-//     close may already name the target;
+//     close may already name the target, and so may the writes just before
+//     it, when only the open was read before the rename (I-34);
 //   - read after the rename, all in one batch: the directory's create and
 //     rename merged into one notification ahead of the file's open, write
 //     and close, every one of which names the target, since the temporary's
@@ -82,7 +83,9 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 		// read, so a close read after the rename already names the target. The
 		// paired captures showed both.
 		closeIdx, renameIdx := -1, -1
-		var burst []int
+		// pending holds writes that name the target, which belong to the
+		// replace only when the close that follows them names it too (I-34).
+		var burst, pending []int
 		for i := o + 1; i < len(g) && (closeIdx < 0 || renameIdx < 0); i++ {
 			e := g[i]
 			if used[i] || e.PID != pid {
@@ -91,11 +94,22 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 			switch {
 			case e.Target == open.Target && e.ActionType == models.FileWrite:
 				burst = append(burst, i)
+			case e.Target == target && e.ActionType == models.FileWrite && closeIdx < 0:
+				pending = append(pending, i)
+				continue
 			case e.ActionType == models.FileClose && closeIdx < 0 && (e.Target == open.Target || e.Target == target):
 				closeIdx = i
+				// Writes and a close read after the rename name the target,
+				// since the temporary's handle resolves to its final name by
+				// then. Taken only as the events of this pid just before a
+				// close of the target.
+				if e.Target == target {
+					burst = append(burst, pending...)
+				}
 			case e.ActionType == models.FileRename && renameIdx < 0 && (e.Target == dir || e.Target == target || e.Target == open.Target):
 				renameIdx = i
 			}
+			pending = nil
 		}
 		// Without a close and a rename this is not a finished replace: the
 		// temporary was abandoned or the capture ended inside it.

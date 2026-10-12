@@ -88,6 +88,67 @@ func TestFoldHandlesACloseThatNamesTheTargetAfterTheRename(t *testing.T) {
 	}
 }
 
+// The tools capture of 2.1.296 showed a third mix: the open read before the
+// rename names the temporary, and the write and close read after it name the
+// target, ahead of the rename (I-34). The write belongs to the replace.
+func TestFoldTakesAWriteThatNamesTheTargetJustBeforeTheClose(t *testing.T) {
+	tmp := "/w/notes.txt.tmp.100.3a597989445f"
+	g := models.GroundTruth{
+		dirEv(0, models.FileWrite, 100),
+		fev(0, models.FileOpen, tmp, 100),
+		fev(1, models.FileWrite, "/w/notes.txt", 100),
+		hashed(fev(1, models.FileClose, "/w/notes.txt", 100), "sha256:final"),
+		dirEv(1, models.FileRename, 100),
+	}
+	got := Adapter{}.NormalizeStream(g)
+	if len(got) != 1 || got[0].Target != "/w/notes.txt" || got[0].OutputHash == nil || *got[0].OutputHash != "sha256:final" {
+		t.Fatalf("folded = %v, want one write of /w/notes.txt with the close's hash", targets(got))
+	}
+}
+
+// A write that names the target is taken only as the last events of the pid
+// before a close of the target: one followed by another event of the pid, or
+// one before a close that still names the temporary, is a write of its own.
+func TestFoldLeavesAWriteOfTheTargetThatIsNotJustBeforeTheClose(t *testing.T) {
+	tmp := "/w/notes.txt.tmp.100.3a597989445f"
+	for _, c := range []struct {
+		name string
+		g    models.GroundTruth
+		want []string
+	}{
+		{"another event between", models.GroundTruth{
+			dirEv(0, models.FileWrite, 100),
+			fev(0, models.FileOpen, tmp, 100),
+			fev(1, models.FileWrite, "/w/notes.txt", 100),
+			fev(1, models.FileOpen, "/w/x", 100),
+			hashed(fev(2, models.FileClose, "/w/notes.txt", 100), "sha256:h"),
+			dirEv(2, models.FileRename, 100),
+		}, []string{"file_write /w/notes.txt", "file_write /w/notes.txt", "file_open /w/x"}},
+		{"close names the temporary", models.GroundTruth{
+			dirEv(0, models.FileWrite, 100),
+			fev(0, models.FileOpen, tmp, 100),
+			fev(1, models.FileWrite, "/w/notes.txt", 100),
+			hashed(fev(2, models.FileClose, tmp, 100), "sha256:h"),
+			dirEv(2, models.FileRename, 100),
+		}, []string{"file_write /w/notes.txt", "file_write /w/notes.txt"}},
+	} {
+		got := Adapter{}.NormalizeStream(c.g)
+		if strings.Join(targets(got), "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s: got %v, want %v", c.name, targets(got), c.want)
+		}
+		// The folded write carries the close's hash; the write left alone has none.
+		n := 0
+		for _, e := range got {
+			if e.ActionType == models.FileWrite && e.Target == "/w/notes.txt" && e.OutputHash == nil {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s: %d unhashed writes of the target left, want 1: %v", c.name, n, targets(got))
+		}
+	}
+}
+
 // A close of the target with no rename is a plain write by the agent, not a
 // replace, and must stay visible.
 func TestFoldNeedsTheRenameEvenWhenTheCloseNamesTheTarget(t *testing.T) {
