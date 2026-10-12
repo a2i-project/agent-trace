@@ -62,22 +62,23 @@ func TestParseMapsEffectfulToolsInClaimOrder(t *testing.T) {
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("claims =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if rep.Entries != len(tr) || rep.ToolCalls != 17 {
-		t.Errorf("report: entries=%d (want %d) toolCalls=%d (want 17)", rep.Entries, len(tr), rep.ToolCalls)
+	if rep.Entries != len(tr) || rep.ToolCalls != 18 {
+		t.Errorf("report: entries=%d (want %d) toolCalls=%d (want 18)", rep.Entries, len(tr), rep.ToolCalls)
 	}
 }
 
 func TestParseCountsWhatItDoesNotMap(t *testing.T) {
 	_, rep := parseFixture(t)
-	for _, tool := range []string{"AskUserQuestion", "Agent", "NotebookEdit", "Read"} {
+	// NotebookEdit's call failed (is_error), so it claims nothing (I-37).
+	for _, tool := range []string{"AskUserQuestion", "Agent", "MultiEdit", "NotebookEdit", "Read"} {
 		if rep.UnmappedByTool[tool] == 0 {
 			t.Errorf("%s not counted as unmapped: %v", tool, rep.UnmappedByTool)
 		}
 	}
-	// NotebookEdit is neither mapped nor declared non-effectful: it must be
+	// MultiEdit is neither mapped nor declared non-effectful: it must be
 	// named, because it may have done something the verifier cannot explain.
-	if len(rep.UnknownTools) != 1 || rep.UnknownTools[0] != "NotebookEdit" {
-		t.Errorf("UnknownTools = %v, want [NotebookEdit]", rep.UnknownTools)
+	if len(rep.UnknownTools) != 1 || rep.UnknownTools[0] != "MultiEdit" {
+		t.Errorf("UnknownTools = %v, want [MultiEdit]", rep.UnknownTools)
 	}
 	for _, n := range []string{"AskUserQuestion", "Agent"} {
 		for _, u := range rep.UnknownTools {
@@ -149,6 +150,9 @@ func TestExpressesIsPerTool(t *testing.T) {
 	if a.Expresses(edit, verification.DiffOutputHash) {
 		t.Error("Edit cannot state a hash")
 	}
+	if a.Expresses(models.TrajectoryEntry{Tool: "NotebookEdit", ActionType: models.FileWrite}, verification.DiffOutputHash) {
+		t.Error("NotebookEdit states a hash only when its result kept the notebook")
+	}
 	for _, f := range []string{verification.DiffExitCode, verification.DiffRequestHash} {
 		if a.Expresses(models.TrajectoryEntry{Tool: "Bash"}, f) {
 			t.Errorf("the format cannot state %s", f)
@@ -169,7 +173,7 @@ func TestProcessModel(t *testing.T) {
 func TestParseReportsItsDegradations(t *testing.T) {
 	_, rep := parseFixture(t)
 	joined := strings.Join(rep.Degradations, "|")
-	for _, want := range []string{"approval latency", "exit code", "atomic replace", "no create or update result", "NotebookEdit"} {
+	for _, want := range []string{"approval latency", "exit code", "atomic replace", "no create or update result", "MultiEdit"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("Degradations %q lack %q", joined, want)
 		}
@@ -647,5 +651,57 @@ func TestASubagentWriteThatCreatedAFileClaimsNoOpen(t *testing.T) {
 	}
 	if len(tr) != 1 || tr[0].ActionType != models.FileWrite || tr[0].ThreadID != "a1" || tr[0].OutputHash == nil || *tr[0].OutputHash != contentHash("from-subagent") {
 		t.Errorf("claims = %+v, want one hashed write in thread a1", tr)
+	}
+}
+
+// A NotebookEdit claims one write of the notebook, the replace the harness
+// makes, with the hash of the notebook its result says it wrote (I-37). A
+// failed call claims nothing, and a result without the notebook text, or
+// with the empty text the harness reports when it did not write the file,
+// claims no content.
+func TestNotebookEditClaimsOneWriteWithTheUpdatedNotebook(t *testing.T) {
+	dir := t.TempDir()
+	use := `{"type":"assistant","timestamp":"2026-10-12T10:00:00Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"NotebookEdit","input":{"notebook_path":"/ws/a.ipynb","cell_id":"c","edit_mode":"replace","new_source":"x"}}]}}`
+	result := `{"type":"user","timestamp":"2026-10-12T10:00:01Z","sessionId":"s","version":"2.1.296","message":{"id":"m2","content":[{"type":"tool_result","tool_use_id":"t1","content":"Updated cell c with x"%s}]}%s}`
+	nb := func(path, original, updated, errText string) string {
+		return fmt.Sprintf(`,"toolUseResult":{"notebook_path":%q,"original_file":%q,"updated_file":%q,"error":%q,"edit_mode":"replace","cell_id":"c","new_source":"x","old_source":"y"}`, path, original, updated, errText)
+	}
+	for name, tc := range map[string]struct {
+		isError, structured string
+		claims              int
+		want                *string
+	}{
+		"success":                 {"", nb("/ws/a.ipynb", "{\"a\": 1}", "{\"a\": 2}", ""), 1, models.StringPtr(contentHash("{\"a\": 2}"))},
+		"no structured result":    {"", "", 1, nil},
+		"empty updated text":      {"", nb("/ws/a.ipynb", "", "", ""), 1, nil},
+		"result for another path": {"", nb("/ws/b.ipynb", "{}", "{\"b\": 1}", ""), 1, nil},
+		"error in the result":     {"", nb("/ws/a.ipynb", "", "", "Notebook is not valid JSON."), 0, nil},
+		"is_error":                {`,"is_error":true`, "", 0, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".jsonl")
+			if err := os.WriteFile(p, []byte(use+"\n"+fmt.Sprintf(result, tc.isError, tc.structured)+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			tr, rep, err := Adapter{}.Parse(p)
+			if err != nil || len(rep.ParseErrors) != 0 {
+				t.Fatalf("parse: %v %v", err, rep.ParseErrors)
+			}
+			if len(rep.UnknownTools) != 0 {
+				t.Errorf("UnknownTools = %v, want none", rep.UnknownTools)
+			}
+			if len(tr) != tc.claims {
+				t.Fatalf("claims = %+v, want %d", tr, tc.claims)
+			}
+			if tc.claims == 0 {
+				if rep.UnmappedByTool["NotebookEdit"] != 1 {
+					t.Errorf("a failed NotebookEdit is not counted: %v", rep.UnmappedByTool)
+				}
+				return
+			}
+			if tr[0].ActionType != models.FileWrite || tr[0].Target != "/ws/a.ipynb" || tr[0].Tool != "NotebookEdit" || !sameHash(tr[0].OutputHash, tc.want) {
+				t.Errorf("claim = %+v (hash %s), want a write of /ws/a.ipynb with hash %s", tr[0], deref(tr[0].OutputHash), deref(tc.want))
+			}
+		})
 	}
 }

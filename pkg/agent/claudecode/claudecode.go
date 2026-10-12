@@ -47,9 +47,10 @@ func (Adapter) Process() agent.ProcessModel {
 // Expresses declares what the format can state. It states no exit code ever.
 // It states an output hash only for Write, the one file tool whose input holds
 // the final content: an Edit's final content is known only when its result
-// record carries the file before and the applied replacement (I-31), so a nil
-// there is a result the format did not keep, not an opt-out (V-20). It states
-// no request body for WebFetch.
+// record carries the file before and the applied replacement (I-31), and a
+// NotebookEdit's only when its result carries the notebook it wrote (I-37),
+// so a nil there is a result the format did not keep, not an opt-out (V-20).
+// It states no request body for WebFetch.
 // The hash is the final content of the replaced file, which the observed side
 // takes from the close of the temporary (see stream.go).
 func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
@@ -129,6 +130,9 @@ const (
 	toolWebFetch = "WebFetch"
 	toolGrep     = "Grep"
 	toolGlob     = "Glob"
+	// toolNotebookEdit is deferred in 2.1.296: the model first loads it
+	// through ToolSearch, which acts on nothing.
+	toolNotebookEdit = "NotebookEdit"
 )
 
 // nonEffectful tools perform no syscall of their own, so they must not become
@@ -207,6 +211,19 @@ type toolResult struct {
 	// text is the result's text, kept only when the record has no
 	// structured result and the text is the one a Write reports (I-35).
 	text string
+	// isError is the tool_result's is_error flag.
+	isError  bool
+	notebook *notebookResult
+}
+
+// notebookResult is the structured result of a NotebookEdit call (I-37):
+// the notebook's text before and after, as the harness read and wrote it,
+// and whether it reported an error. The harness leaves both texts empty
+// when it did not edit the file itself.
+type notebookResult struct {
+	path              string
+	original, updated string
+	failed            bool
 }
 
 // editResult is the structured result of an Edit call.
@@ -293,14 +310,30 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 							OldString    *string `json:"oldString"`
 							NewString    *string `json:"newString"`
 							ReplaceAll   bool    `json:"replaceAll"`
+							// NotebookEdit's result (I-37).
+							NotebookPath *string `json:"notebook_path"`
+							Original     *string `json:"original_file"`
+							Updated      *string `json:"updated_file"`
+							Error        string  `json:"error"`
 						}
 						if json.Unmarshal(r.ToolUseResult, &tr) == nil {
 							res.kind = tr.Type
 							if tr.OriginalFile != nil && tr.OldString != nil && tr.NewString != nil {
 								res.edit = &editResult{original: *tr.OriginalFile, oldString: *tr.OldString, newString: *tr.NewString, replaceAll: tr.ReplaceAll}
 							}
+							if tr.NotebookPath != nil {
+								nb := &notebookResult{path: *tr.NotebookPath, failed: tr.Error != ""}
+								if tr.Original != nil {
+									nb.original = *tr.Original
+								}
+								if tr.Updated != nil {
+									nb.updated = *tr.Updated
+								}
+								res.notebook = nb
+							}
 						}
 					}
+					res.isError = b.IsError
 					if len(r.ToolUseResult) == 0 || string(r.ToolUseResult) == "null" {
 						if t := resultText(b.Content); !b.IsError && (strings.HasPrefix(t, writeCreated) || strings.HasPrefix(t, writeUpdatedHead)) {
 							res.text = t
@@ -365,7 +398,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		switch why {
 		case "":
 			tr = append(tr, entries...)
-		case reasonNonEffectful:
+		case reasonNonEffectful, reasonFailed:
 			rep.Count(u.name)
 		case reasonUnknown:
 			rep.Count(u.name)
@@ -399,7 +432,32 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 const (
 	reasonNonEffectful = "non-effectful"
 	reasonUnknown      = "unknown"
+	// reasonFailed is a call whose result says it failed, so it claims no
+	// effect (I-37).
+	reasonFailed = "failed"
 )
+
+// notebookClaims maps a NotebookEdit (I-37). The harness replaces the
+// notebook atomically, as Write does, so the call claims one write of
+// notebook_path. Its result holds the notebook before and after; the text
+// after is the content written (checked on one capture of 2.1.296, where its
+// hash equals the observed close's) and becomes the write's output hash. A
+// failed call, marked by is_error or a non-empty error, claims nothing.
+func notebookClaims(path string, res toolResult, mk func(models.ActionType, string) models.TrajectoryEntry) ([]models.TrajectoryEntry, string) {
+	if path == "" {
+		return nil, "no notebook_path"
+	}
+	if res.isError || (res.notebook != nil && res.notebook.failed) {
+		return nil, reasonFailed
+	}
+	write := mk(models.FileWrite, path)
+	// An empty text is what the harness reports when it did not write the
+	// file itself, and is never a notebook: no claim of content.
+	if nb := res.notebook; nb != nil && nb.path == path && nb.updated != "" {
+		write.OutputHash = models.StringPtr(contentHash(nb.updated))
+	}
+	return []models.TrajectoryEntry{write}, ""
+}
 
 // What a Write's tool_result says, in the harness's own words (2.1.296):
 // "File created successfully at: <path>" or "The file <path> has been
@@ -469,6 +527,7 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 	var in struct {
 		Command  string `json:"command"`
 		FilePath string `json:"file_path"`
+		Notebook string `json:"notebook_path"`
 		Content  string `json:"content"`
 		URL      string `json:"url"`
 		Unparsed string `json:"__unparsedToolInput"`
@@ -521,6 +580,8 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 			return []models.TrajectoryEntry{write}, ""
 		}
 		return []models.TrajectoryEntry{open, write}, ""
+	case toolNotebookEdit:
+		return notebookClaims(in.Notebook, res, mk)
 	case toolGrep:
 		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGrep)}, ""
 	case toolGlob:
