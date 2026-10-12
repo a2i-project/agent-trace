@@ -67,6 +67,26 @@ type HarnessOwner interface {
 	IsHarnessOwned(path string) bool
 }
 
+// Canonicalizer is implemented by an adapter whose observed targets carry ids
+// that differ every run: a session id, a pid, a task id in the harness's own
+// file paths. Canonical returns the event with those ids replaced by fixed
+// tokens. It is applied only where events of different runs are compared:
+// when Capture builds rules from control runs and when Prepare matches a
+// run's events against them. Pairing a claim with an event, and every other
+// comparison within one run, uses the exact target, so a claim names one
+// file, not a family of them (I-41).
+type Canonicalizer interface {
+	Canonical(models.GroundTruthEvent) models.GroundTruthEvent
+}
+
+// canonical is the event as it is compared with other runs.
+func canonical(a Adapter, e models.GroundTruthEvent) models.GroundTruthEvent {
+	if c, ok := a.(Canonicalizer); ok {
+		return c.Canonical(e)
+	}
+	return e
+}
+
 // IntervalKind says what an entry's start timestamp means.
 type IntervalKind int
 
@@ -180,11 +200,13 @@ func NormalizeGround(a Adapter, events models.GroundTruth) models.GroundTruth {
 // Prepare turns a capture and an adapter into verification input: observed
 // events are normalized, the adapter's noise filter and the measured baseline
 // are combined into one baseline, and the adapter's field declarations and
-// exit handling become options. measured may be nil.
+// exit handling become options. measured may be nil. The measured baseline
+// was built from other runs, so it sees each event in its canonical form; the
+// events the verifier pairs keep their exact targets (I-41).
 func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, measured verification.Baseline, opts verification.Options) verification.Input {
 	ground := NormalizeGround(a, g.Events)
 	baseline := func(e models.GroundTruthEvent) bool {
-		return a.IsHarnessNoise(e) || (measured != nil && measured(e))
+		return a.IsHarnessNoise(e) || (measured != nil && measured(canonical(a, e)))
 	}
 	opts.Expresses = a.Expresses
 	opts.IgnoreExits = !a.Process().ExitsClaimed

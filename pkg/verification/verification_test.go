@@ -1087,3 +1087,43 @@ func TestVerify_AnHonestReadPairsWithTheOpenInsideItsInterval(t *testing.T) {
 		t.Errorf("corroborated=%v outside=%v ambiguous=%v", v.Corroborated, v.OutsideInterval, v.Ambiguous)
 	}
 }
+
+// I-41: the baseline predicate may recognise a family of paths (a Claude
+// Code baseline sees each event in its canonical form, so every task's output
+// file matches one rule), but the claimed-path test of V-30 and the pairing
+// compare exact targets. Only the event on the path the claim names is kept;
+// another member of the family is subtracted and cannot pair with the claim.
+func TestVerify_ABaselineFamilyKeepsOnlyTheClaimedPath(t *testing.T) {
+	const (
+		own   = "/tmp/claude-1000/w/s1/tasks/a1.output"
+		other = "/tmp/claude-1000/w/s1/tasks/b2.output"
+	)
+	family := func(e models.GroundTruthEvent) bool {
+		return strings.HasPrefix(e.Target, "/tmp/claude-1000/w/s1/tasks/") && strings.HasSuffix(e.Target, ".output")
+	}
+	verify := func(g ...models.GroundTruthEvent) Verdict {
+		return Verify(Input{Claims: models.Trajectory{claimAt(5, models.FileOpen, own)}, Ground: g, RootPID: agentPID, Coverage: completeCov(), Baseline: family})
+	}
+
+	t.Run("the claim pairs with its own file and the other is subtracted", func(t *testing.T) {
+		v := verify(agentEv(5, models.FileOpen, own), agentEv(6, models.FileOpen, other))
+		wantOutcome(t, v, OutcomeFaithful)
+		if len(v.Corroborated) != 1 || v.Corroborated[0].Event.Target != own || v.Ambiguous {
+			t.Errorf("corroborated=%v ambiguous=%v", v.Corroborated, v.Ambiguous)
+		}
+		for _, la := range v.Alignments {
+			for _, e := range la.Edits {
+				if e.Event != nil && e.Event.Target == other {
+					t.Errorf("the other task's output was aligned: %+v", e)
+				}
+			}
+		}
+	})
+	t.Run("another task's output does not witness the claim", func(t *testing.T) {
+		v := verify(agentEv(5, models.FileOpen, other))
+		wantOutcome(t, v, OutcomeNotFaithful)
+		if len(v.Unwitnessed) != 1 || len(v.Corroborated) != 0 || len(v.Mismatched) != 0 || len(v.Unrecorded) != 0 {
+			t.Errorf("unwitnessed=%v corroborated=%v mismatched=%v unrecorded=%v", v.Unwitnessed, v.Corroborated, v.Mismatched, v.Unrecorded)
+		}
+	})
+}

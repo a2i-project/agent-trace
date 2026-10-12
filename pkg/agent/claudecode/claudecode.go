@@ -80,8 +80,11 @@ func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 
 // Normalize recovers the claimed command from the wrapper argv of a process
-// event (D6) and replaces the per-run ids in the harness's own file paths
-// (I-23, I-29). Every other event passes through.
+// event (D6), replaces the per-run ids in the harness's own commands (I-23)
+// and drops the kernel's " (deleted)" suffix from a file path. A file path
+// keeps its per-run ids, so a claim pairs with the one file it names; they
+// are replaced only where runs are compared (Canonical, I-41). Every other
+// event passes through.
 func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 	switch {
 	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
@@ -98,9 +101,21 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 			e.Target = canonicalIDs(e.Target)
 		}
 	case isFile(e.ActionType):
-		e.Target = canonicalFileIDs(e.Target)
+		e.Target = withoutDeletedSuffix(e.Target)
 	}
 	return e, true
+}
+
+// Canonical replaces the per-run ids in the harness's own file paths with
+// fixed tokens (I-29, I-38), so a baseline rule built from control runs names
+// the same file in every run. It is applied only where runs are compared
+// (agent.Canonicalizer, I-41); a claim and the event it pairs with keep their
+// exact paths.
+func (Adapter) Canonical(e models.GroundTruthEvent) models.GroundTruthEvent {
+	if isFile(e.ActionType) {
+		e.Target = canonicalFileIDs(e.Target)
+	}
+	return e
 }
 
 // ControlCommand is the no-op command the control runs of
@@ -584,12 +599,8 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 	}
 	mk := func(a models.ActionType, target string) models.TrajectoryEntry {
 		e := base
-		// A file claim's path gets the per-run ids replaced as the observed
-		// event's does, so a claim on a harness path such as a background
-		// command's output file pairs with it (I-36).
-		if isFile(a) {
-			target = canonicalFileIDs(target)
-		}
+		// A claim keeps the exact path it names, ids included, as the
+		// observed event does, so it pairs with that file and no other (I-41).
 		e.ActionType, e.Target = a, target
 		return e
 	}

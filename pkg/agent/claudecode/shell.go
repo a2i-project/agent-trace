@@ -203,11 +203,16 @@ var (
 	deletedSuffix = regexp.MustCompile(` \(deleted\)$`)
 )
 
+// withoutDeletedSuffix drops the " (deleted)" the kernel appends to the path
+// of a file unlinked before the event was read. It is not an id: the path
+// names the same file, so Normalize drops it within a run.
+func withoutDeletedSuffix(s string) string { return deletedSuffix.ReplaceAllString(s, "") }
+
 // canonicalFileIDs replaces the per-run ids in a file event's target. It runs
-// before the atomic-write fold (agent.NormalizeGround), so a temporary it
-// rewrites must still be one the fold recognises (stream.go, tmpName).
+// only where runs are compared (Adapter.Canonical, I-41), after the
+// atomic-write fold, which therefore sees the raw names.
 func canonicalFileIDs(s string) string {
-	s = deletedSuffix.ReplaceAllString(s, "")
+	s = withoutDeletedSuffix(s)
 	s = sessionFileID.ReplaceAllString(s, "${1}N${2}")
 	s = sessionKeyID.ReplaceAllString(s, "${1}N.KEY${2}")
 	s = transcriptID.ReplaceAllString(s, "${1}SESSION${2}")

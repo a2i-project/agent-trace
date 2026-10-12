@@ -30,9 +30,9 @@ import (
 // is left alone and shows as unexplained rather than being guessed at.
 
 // The file tools name the temporary <path>.tmp.<pid>.<12 hex>; the version
-// lock and the session key name it <path>.tmp.<8 hex>, which Normalize has
-// already rewritten to <path>.tmp.N by the time the fold runs.
-var tmpName = regexp.MustCompile(`^(.+)\.tmp\.(?:\d+\.[0-9a-f]{12}|[0-9a-f]{8}|N)$`)
+// lock and the session key name it <path>.tmp.<8 hex>. The fold sees the raw
+// names: the per-run ids are replaced only where runs are compared (I-41).
+var tmpName = regexp.MustCompile(`^(.+)\.tmp\.(?:\d+\.[0-9a-f]{12}|[0-9a-f]{8})$`)
 
 func isFile(a models.ActionType) bool {
 	switch a {

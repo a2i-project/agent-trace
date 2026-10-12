@@ -115,6 +115,9 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		g := NormalizeGround(a, r.Events)
 		seen := map[Rule]bool{}
 		for _, e := range verification.BuildForest(g, r.RootPID).Partition(g).Observed {
+			// A rule is compared with other runs, so it names the event in
+			// its canonical form (I-41).
+			e = canonical(a, e)
 			if excluded[e.Target] {
 				continue
 			}

@@ -226,11 +226,11 @@ func TestAReadClaimsTheContentOfAWholeTextRead(t *testing.T) {
 // What a Read's content claim does to the verdict (I-40, V-29), and the
 // shape of the second tools capture of 2.1.296: the agent's Read of its
 // background Bash's output file, and a later open by the harness of the
-// closing Bash's output file, which canonicalises to the same path (I-36)
-// and falls outside the Read's interval. The open whose measured content
-// equals what the Read returned pairs, and the harness's open stays
-// explained by the baseline; other content is a mismatch, and content the
-// probe did not measure is unverified.
+// closing Bash's output file, outside the Read's interval, which the baseline
+// explains in its canonical form. The Read pairs with the open of its own file
+// (I-41), on its measured content, and the harness's open stays explained by
+// the baseline; other content is a mismatch, and content the probe did not
+// measure is unverified.
 func TestAReadsContentPicksItsOpenAndIsChecked(t *testing.T) {
 	const (
 		ws    = "/tmp/cap/ws-tools"
@@ -481,8 +481,10 @@ func TestNormalizeRecognisesSearchesOnlyFromTheInstallDirectory(t *testing.T) {
 // The harness's own files carry per-run ids: the session record by pid, the
 // transcript by session id, the lock's temporary, the fswatch probe
 // directory. Measured on four startups of 2.1.286 (I-29), and a subagent's
-// files on the tools capture of 2.1.296 (I-38).
-func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
+// files on the tools capture of 2.1.296 (I-38). Canonical replaces them, for
+// comparison with other runs; Normalize keeps them, so pairing within a run
+// sees the exact path, and only drops the kernel's " (deleted)" (I-41).
+func TestCanonicalReplacesThePerRunIdsOfTheHarnessOwnFilePaths(t *testing.T) {
 	for in, want := range map[string]string{
 		"/home/u/.claude/sessions/247316.json":                                                      "/home/u/.claude/sessions/N.json",
 		"/home/u/.claude/projects/-tmp-cap-ws-control-1/2da9f390-3dcf-4e58-94e9-e178d5c9ed2c.jsonl": "/home/u/.claude/projects/-tmp-cap-ws-control-1/SESSION.jsonl",
@@ -504,63 +506,98 @@ func TestNormalizeCanonicalisesTheHarnessOwnFilePaths(t *testing.T) {
 		"/home/u/.claude/projects/-ws/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/notes/agent-a5.jsonl":                                                   "/home/u/.claude/projects/-ws/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/notes/agent-a5.jsonl",
 	} {
 		for _, typ := range []models.ActionType{models.FileOpen, models.FileWrite, models.FileClose, models.FileDelete, models.FileRename} {
+			if got := (Adapter{}).Canonical(models.GroundTruthEvent{ActionType: typ, Target: in}); got.Target != want {
+				t.Errorf("Canonical %s %q -> %q, want %q", typ, in, got.Target, want)
+			}
 			got, keep := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: typ, Target: in})
-			if !keep || got.Target != want {
-				t.Errorf("%s %q -> %q, want %q", typ, in, got.Target, want)
+			if exact := strings.TrimSuffix(in, " (deleted)"); !keep || got.Target != exact {
+				t.Errorf("Normalize %s %q -> %q, want %q", typ, in, got.Target, exact)
 			}
 		}
 	}
+	// A command is not a file: Canonical leaves it to Normalize (I-23).
+	cmd := models.GroundTruthEvent{ActionType: models.ProcessExec, Target: "cat /tmp/claude-1000/w/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/tasks/b18jddo1a.output"}
+	if got := (Adapter{}).Canonical(cmd); got.Target != cmd.Target {
+		t.Errorf("Canonical rewrote a command: %q", got.Target)
+	}
 }
 
-// A file claim's path has the per-run ids replaced as the observed event's
-// has (I-36). The agent's Read of its background Bash's output file names the
-// session and task ids the Bash result reported; every control's Bash opens
-// its own output file, so the baseline holds the canonical open, which the
-// verifier keeps for a claim on its path (V-30). Measured on the tools capture
-// of 2.1.296.
-func TestAReadOfTheBackgroundOutputFileIsClaimedOnTheCanonicalPath(t *testing.T) {
+// A claim names one file, not a family (I-41). The agent's Read of its
+// background Bash's output file names the session and task ids the Bash result
+// reported, and pairs with the open of that file only. Every control's Bash
+// opens its own output file under its own ids, so the baseline, built with
+// Canonical, holds one rule for the family: it explains the harness's opens of
+// other tasks' output files in the run, and an unclaimed open of the run's own
+// output file too. Shapes from the tools capture of 2.1.296.
+func TestAClaimOnATaskOutputPairsWithThatFileOnly(t *testing.T) {
 	const (
 		agentPID = 100
 		ws       = "/tmp/cap/ws-tools"
-		real     = "/tmp/claude-1000/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/tasks/b18jddo1a.output"
-		canon    = "/tmp/claude-1000/-tmp-cap-ws-tools/SESSION/tasks/N.output"
+		session  = "/tmp/claude-1000/-tmp-cap-ws-tools/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/tasks/"
+		own      = session + "b18jddo1a.output"
+		other    = session + "bjox50d79.output"
+		notes    = ws + "/notes.txt"
 	)
-	use := `{"type":"assistant","timestamp":"2026-10-12T19:56:06Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"%s"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/tmp/cap/ws-tools/notes.txt"}}]}}`
+	use := `{"type":"assistant","timestamp":"2026-10-12T19:56:06Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"%s"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"%s"}}]}}`
 	p := filepath.Join(t.TempDir(), "s.jsonl")
-	if err := os.WriteFile(p, []byte(fmt.Sprintf(use, real)+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(fmt.Sprintf(use, own, notes)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tr, rep, err := Adapter{}.Parse(p)
 	if err != nil || len(rep.ParseErrors) != 0 || len(tr) != 2 {
 		t.Fatalf("parse: %v %v %d entries", err, rep.ParseErrors, len(tr))
 	}
-	if tr[0].Target != canon || tr[1].Target != "/tmp/cap/ws-tools/notes.txt" {
-		t.Fatalf("targets = %q, %q; want the output file canonical and the workspace file as it is", tr[0].Target, tr[1].Target)
+	if tr[0].Target != own || tr[1].Target != notes {
+		t.Fatalf("targets = %q, %q; want the paths exactly as the calls name them", tr[0].Target, tr[1].Target)
+	}
+
+	cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}}
+	// One control, in another workspace and session, whose Bash wrote and
+	// opened its own output file.
+	ctrlOut := "/tmp/claude-1000/-tmp-cap-ws-control-1/2da9f390-3dcf-4e58-94e9-e178d5c9ed2c/tasks/bq0a1z2y3.output"
+	ctrl := models.GroundTruthFile{RootPID: 7, Workspace: "/tmp/cap/ws-control-1", Coverage: cov, Events: models.GroundTruth{
+		{Timestamp: time.Unix(1, 0), ActionType: models.FileWrite, Target: ctrlOut, PID: 7},
+		{Timestamp: time.Unix(2, 0), ActionType: models.FileOpen, Target: ctrlOut, PID: 7},
+	}}
+	base, err := agent.Capture(Adapter{}, "2.1.296", []models.GroundTruthFile{ctrl}, time.Unix(3, 0), agent.CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(base.Rules) != 2 || base.Rules[0].Target != "/tmp/claude-1000/{workspace-}/SESSION/tasks/N.output" {
+		t.Fatalf("rules = %+v, want the canonical output file", base.Rules)
 	}
 
 	ts := tr[0].Timestamp
-	g := models.GroundTruthFile{
-		RootPID: agentPID, Workspace: ws, FSScope: &models.FSScope{Mounts: []string{"/"}},
-		Coverage: &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}},
-		Events: models.GroundTruth{
-			// The harness writing the output, then the agent's two Reads.
-			{Timestamp: ts.Add(-time.Second), ActionType: models.FileWrite, Target: real, PID: agentPID},
-			{Timestamp: ts, ActionType: models.FileOpen, Target: real, PID: agentPID},
-			{Timestamp: ts.Add(time.Millisecond), ActionType: models.FileOpen, Target: "/tmp/cap/ws-tools/notes.txt", PID: agentPID},
-		},
+	ev := func(ms int, typ models.ActionType, target string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: ts.Add(time.Duration(ms) * time.Millisecond), ActionType: typ, Target: target, PID: agentPID}
 	}
-	base := agent.Baseline{Agent: Name, Rules: []agent.Rule{
-		{ActionType: models.FileOpen, Target: "/tmp/claude-1000/{workspace-}/SESSION/tasks/N.output"},
-		{ActionType: models.FileWrite, Target: "/tmp/claude-1000/{workspace-}/SESSION/tasks/N.output"},
-	}}
-	v := verification.Verify(agent.Prepare(Adapter{}, tr, g, base.Predicate(ws), verification.Options{}))
-	if v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 2 {
-		t.Errorf("outcome = %s, corroborated = %d: unwitnessed=%v unrecorded=%v harness=%v", v.Outcome, len(v.Corroborated), v.Unwitnessed, v.Unrecorded, v.UnexplainedHarness)
+	verify := func(claims models.Trajectory, events ...models.GroundTruthEvent) verification.Verdict {
+		g := models.GroundTruthFile{RootPID: agentPID, Workspace: ws, FSScope: &models.FSScope{Mounts: []string{"/"}}, Coverage: cov, Events: events}
+		return verification.Verify(agent.Prepare(Adapter{}, claims, g, base.Predicate(ws), verification.Options{}))
 	}
+
+	t.Run("the Read pairs with its own file and the other is baselined", func(t *testing.T) {
+		v := verify(tr, ev(-1000, models.FileWrite, own), ev(0, models.FileOpen, own), ev(1, models.FileOpen, notes), ev(2, models.FileOpen, other))
+		if v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 2 || v.Corroborated[0].Event.Target != own {
+			t.Errorf("outcome = %s, corroborated = %v: unwitnessed=%v unrecorded=%v harness=%v", v.Outcome, v.Corroborated, v.Unwitnessed, v.Unrecorded, v.UnexplainedHarness)
+		}
+	})
+	t.Run("another task's output does not witness the Read", func(t *testing.T) {
+		v := verify(tr, ev(1, models.FileOpen, notes), ev(2, models.FileOpen, other))
+		if v.Outcome != verification.OutcomeNotFaithful || len(v.Unwitnessed) != 1 || v.Unwitnessed[0].Target != own || len(v.Mismatched) != 0 {
+			t.Errorf("outcome = %s, unwitnessed = %v, mismatched = %v", v.Outcome, v.Unwitnessed, v.Mismatched)
+		}
+	})
+	t.Run("the baseline still explains the run's own output file", func(t *testing.T) {
+		v := verify(tr[1:], ev(-1000, models.FileWrite, own), ev(0, models.FileOpen, own), ev(1, models.FileOpen, notes))
+		if v.Outcome != verification.OutcomeFaithful || v.Findings() != 0 || len(v.UnexplainedHarness) != 0 {
+			t.Errorf("outcome = %s, unrecorded=%v harness=%v", v.Outcome, v.Unrecorded, v.UnexplainedHarness)
+		}
+	})
 }
 
 // Wrapper recovery is for process events only: a file event whose path happens
-// to look like a wrapper is not read as one; only its per-run ids change.
+// to look like a wrapper is not read as one, and keeps its path.
 // The harness's own directories, as measured on 2.1.286 (I-30). Nothing
 // else is declared: the workspace, the shell startup files and ~/.ssh stay
 // the agent's responsibility.
@@ -674,7 +711,7 @@ func deref(s *string) string {
 
 func TestNormalizeDoesNotRecoverAWrapperFromAFileEvent(t *testing.T) {
 	e := models.GroundTruthEvent{ActionType: models.FileWrite, Target: strings.Replace(wrapper, "%s", "'x'", 1)}
-	if got, _ := (Adapter{}).Normalize(e); got.Target == "x" || got.Target != canonicalFileIDs(e.Target) {
+	if got, _ := (Adapter{}).Normalize(e); got.Target != e.Target {
 		t.Errorf("a file event was read as a wrapper: %q", got.Target)
 	}
 }
