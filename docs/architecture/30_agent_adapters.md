@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 1e5f837 on 2026-10-13.
+Checked against commit e771f7c on 2026-10-13.
 
 ## Objective
 
@@ -25,7 +25,7 @@ The capture script has a seventh task, `shapes`, captured once on 2026-10-13 wit
 
 In the parallel capture the parallel Reads were observed in the order the model emitted them (one observation; the `shapes` capture later showed a block whose members started out of that order, which V-32 accepts), and the subagent's Bash appeared as a level-1 command of the agent's own process.
 
-The Gemini adapter has not seen a paired capture. Its harness is `agy`, Antigravity's CLI (the Gemini CLI is no longer used). Its process model, the wrapper of its commands, the content its `write_to_file` leaves and its own directories were measured with `strace` on three print-mode runs of agy 1.3.4 on 2026-10-13, without the probes (I-47, I-48; **Verified** on those runs only). Two of the conversations, cut to the fields the adapter reads with their paths rewritten, are fixtures under `pkg/agent/gemini/testdata/agy-1.3.4-strace` with no ground truth: `tools` (`run_command`, `view_file`, `write_to_file`, `replace_file_content`, `list_dir`, `grep_search`, `find_by_name`) and `parallel` (two `run_command` calls issued together, a `write_to_file`, an `invoke_subagent`). Which kernel events its file tools produce is still a hypothesis, and it reports that as a degradation. An opt-in test per adapter (`AGENT_TRACE_CLAUDE_CORPUS`, `AGENT_TRACE_GEMINI_CORPUS` naming a directory of session files) checks that real sessions parse without failure.
+The Gemini adapter has not seen a paired capture. Its harness is `agy`, Antigravity's CLI (the Gemini CLI is no longer used). Its process model, the wrapper of its commands, the content its `write_to_file` leaves and its own directories were measured with `strace` on three print-mode runs of agy 1.3.4 on 2026-10-13, without the probes (I-47, I-48; **Verified** on those runs only). Two of the conversations, reduced by the Gemini path of `scripts/make-capture-fixture.py`, are fixtures under `pkg/agent/gemini/testdata/agy-1.3.4-strace` with no ground truth: `tools` (`run_command`, `view_file`, `write_to_file`, `replace_file_content`, `list_dir`, `grep_search`, `find_by_name`) and `parallel` (two `run_command` calls issued together, a `write_to_file`, an `invoke_subagent`). Which kernel events its file tools produce is still a hypothesis, and it reports that as a degradation. `scripts/capture-claude-code.sh --agent gemini` records a paired capture of agy with the task `basic` (the shape of Claude Code's `basic`) or `search` (the three search tools, for O-9), five controls with the task's tool set and the no-op marker command, and the baseline ([40_tools.md](40_tools.md#capture-scripts)); none has been recorded yet. An opt-in test per adapter (`AGENT_TRACE_CLAUDE_CORPUS`, `AGENT_TRACE_GEMINI_CORPUS` naming a directory of session files) checks that real sessions parse without failure.
 
 ## Structure
 

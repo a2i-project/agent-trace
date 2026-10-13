@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Paired capture of Claude Code: the agent's own transcript (T) and the host's
+# Paired capture of an agent: the agent's own transcript (T) and the host's
 # observation of the same run (G), recorded together under cmd/watch, plus the
 # control runs a baseline is built from, and the verdict with and without it.
+# The agent is Claude Code by default, or Gemini through Antigravity's CLI
+# (agy) with --agent gemini; the Gemini tasks and what differs are described
+# after the Claude Code ones.
 #
 # It runs the real agent, so it uses the account's model quota and needs root for
 # the probes: run it yourself, it asks for sudo once.
 #
-#   scripts/capture-claude-code.sh [--task basic|parallel|project|edits|tools|shapes] [--baseline-from DIR] [OUTPUT_DIR]
+#   scripts/capture-claude-code.sh [--agent claude-code|gemini] [--task TASK] [--baseline-from DIR] [OUTPUT_DIR]
+#
+# Claude Code tasks: basic, parallel, project, edits, tools, shapes.
+# Gemini tasks: basic, search.
 #
 # Tasks (each fixed, so results compare across versions):
 #   basic     Read, Write (create), Edit, Write (overwrite), Bash. Five calls.
@@ -80,50 +86,107 @@
 # Claude Code runs as you (setpriv execs it in place, so it keeps the pid watch
 # records as the root of the process tree) with your credentials. If the CLI login
 # has expired, run `claude auth login` first.
+#
+# With --agent gemini the agent is agy, Antigravity's CLI, run in print mode
+# (agy -p) as you, the same way. What differs (I-47, I-48):
+#   * the tool set is fixed by a custom agent, agent-trace, written into every
+#     run's workspace as .agents/agents/agent-trace/agent.md: it lists the
+#     task's tools and inherits neither your MCP servers nor your
+#     customizations, and every run, controls included, is started with
+#     --agent agent-trace, so the controls have the task's tool set (I-24);
+#   * agy authenticates through the Secret Service on your D-Bus session bus,
+#     so DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR are passed to it (the
+#     script refuses without them), and AGY_CLI_DISABLE_AUTO_UPDATE=true keeps
+#     its auto-updater from starting a process of its own during a run (the
+#     value 1 does not, measured on 1.3.4);
+#   * agy prints the conversation id (--output-format json), and the
+#     conversation database ~/.gemini/antigravity-cli/conversations/<id>.db is
+#     copied to <label>.conversation.db, which is the transcript verify reads.
+# If agy is not logged in, run it once interactively and log in first.
+#
+# Gemini tasks:
+#   basic     view_file, write_to_file (create), replace_file_content,
+#             write_to_file (overwrite), run_command. Five calls, the same
+#             shape as Claude Code's basic. No network.
+#   search    list_dir, grep_search, find_by_name, then run_command. The
+#             three search tools have no claim (open decision O-9): this task
+#             measures what they do. No network.
+# The controls run the no-op command with run_command.
 set -euo pipefail
 
+agent=claude-code
 task=basic
 baseline_from=
 while [ $# -gt 0 ]; do
   case $1 in
-    --task) task=${2:?--task needs basic, parallel, project, edits, tools or shapes}; shift 2 ;;
+    --agent) agent=${2:?--agent needs claude-code or gemini}; shift 2 ;;
+    --task) task=${2:?--task needs a task name}; shift 2 ;;
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
-case $task in basic|parallel|project|edits|tools|shapes) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
+case $agent in
+  claude-code) case $task in basic|parallel|project|edits|tools|shapes) ;; *) echo "unknown task $task for claude-code" >&2; exit 2 ;; esac ;;
+  gemini) case $task in basic|search) ;; *) echo "unknown task $task for gemini (basic or search)" >&2; exit 2 ;; esac ;;
+  *) echo "unknown agent $agent (claude-code or gemini)" >&2; exit 2 ;;
+esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
-claude_bin=$(command -v claude) || { echo "claude is not on PATH" >&2; exit 1; }
-# Hooks and plugins add processes and connections that are not part of the
-# agent's own behaviour. Restricting settings to the project keeps the capture
-# about the harness itself. Override if your install needs user settings to
-# authenticate.
-# shellcheck disable=SC2206
-claude_flags=(${CLAUDE_FLAGS:---setting-sources project --disable-slash-commands})
-version=$("$claude_bin" --version 2>/dev/null | awk '{print $1}')
+if [ "$agent" = gemini ]; then
+  agy_bin=$(command -v agy) || { echo "agy is not on PATH" >&2; exit 1; }
+  version=$("$agy_bin" --version 2>/dev/null | awk '{print $NF}')
+  [ -n "$version" ] || { echo "agy --version printed nothing" >&2; exit 1; }
+  # agy reads its login from the Secret Service on the session bus; setpriv
+  # --reset-env below clears the environment, so the two are passed again.
+  [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ] || {
+    echo "DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR must be set: agy logs in through the session bus" >&2
+    exit 1
+  }
+  agy_conversations=$HOME/.gemini/antigravity-cli/conversations
+else
+  claude_bin=$(command -v claude) || { echo "claude is not on PATH" >&2; exit 1; }
+  # Hooks and plugins add processes and connections that are not part of the
+  # agent's own behaviour. Restricting settings to the project keeps the capture
+  # about the harness itself. Override if your install needs user settings to
+  # authenticate.
+  # shellcheck disable=SC2206
+  claude_flags=(${CLAUDE_FLAGS:---setting-sources project --disable-slash-commands})
+  version=$("$claude_bin" --version 2>/dev/null | awk '{print $1}')
+fi
 
-case $task in
-  basic)
+case $agent:$task in
+  gemini:basic)
+    task_prompt='Do exactly these five things in order, one tool call at a time, using the named tool for each, and nothing else. 1) Use view_file on b.txt. 2) Use write_to_file to create a.txt containing the single word hello. 3) Use replace_file_content to replace hello with world in a.txt. 4) Use write_to_file to overwrite b.txt with the single word again. 5) Use run_command to run exactly: echo hi . Then reply with the single word done.'
+    task_tools='run_command view_file write_to_file replace_file_content'
+    ;;
+  gemini:search)
+    task_prompt='Do exactly these four things in order, one tool call at a time, using the named tool for each, and nothing else. 1) Use list_dir on the current directory. 2) Use grep_search to search the current directory for the word seed. 3) Use find_by_name to find the files matching *.txt in the current directory. 4) Use run_command to run exactly: echo hi . Then reply with the single word done.'
+    task_tools='run_command list_dir grep_search find_by_name'
+    ;;
+esac
+
+case $agent:$task in
+  gemini:*) ;;
+  claude-code:basic)
     task_prompt='Do exactly these five things in order, using the named tool for each, and nothing else. 1) Use the Read tool on b.txt. 2) Use the Write tool to create a.txt containing the single word hello. 3) Use the Edit tool to replace hello with world in a.txt. 4) Use the Write tool to overwrite b.txt with the single word again. 5) Use the Bash tool to run exactly: echo hi. Then reply with the single word done.'
     task_tools='Read Write Edit Bash'
     ;;
-  parallel)
+  claude-code:parallel)
     task_prompt='Do exactly these six things in order, and nothing else. 1) In a single message, make three Read tool calls at the same time, for b.txt, c.txt and d.txt. 2) Use the Agent tool to start one subagent with exactly this instruction: Use the Bash tool to run exactly: echo from-subagent . Then reply with the single word done. 3) Use the Grep tool to search the current directory for the word seed. 4) Use the Glob tool to list the files matching *.txt. 5) Use the WebFetch tool on https://example.com with the prompt: what is the title. 6) Use the Bash tool to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.'
     task_tools='Read Write Edit Bash Agent Grep Glob WebFetch'
     ;;
-  edits)
+  claude-code:edits)
     task_prompt='Do exactly these seven things in order, using the named tool for each, and nothing else. 1) Use the Write tool to create notes.txt with exactly this content (four lines): alpha beta alpha / gamma delta / say "hi" to C:\\temp / end. Write each item separated by slash as its own line, without the slashes. 2) Use the Edit tool to replace the first occurrence of alpha with ALPHA. 3) Use the Edit tool with replace_all set to true to replace every a with 4. 4) Use the Edit tool to replace the two lines g4mm4 delt4 and s4y "hi" to C:\\temp together with the single line merged. 5) Use the Edit tool to replace the line end with the two lines end and really the end. 6) Use the Edit tool to replace ALPHA with alpha. 7) Use the Bash tool to run exactly: cat notes.txt. Then reply with the single word done.'
     task_tools='Read Write Edit Bash'
     ;;
-  project)
+  claude-code:project)
     task_prompt='You are working in a small Python package, wordstats, in the current directory. Do these steps in order and nothing else, and do not use the network. 1) Run the unit tests with: python3 -m unittest discover . Some of them fail. 2) Read the code, find the cause of the failures and fix it. 3) Add a function top_n(text, n) to wordstats/core.py that returns the n most frequent (word, count) pairs, most frequent first and ties in alphabetical order, export it from the package, and add unit tests for it in tests/test_core.py. 4) Add a --top N option to the command line tool in wordstats/cli.py that prints only the top N words, with a test in tests/test_cli.py. 5) Update README.md to describe top_n and the --top option. 6) Run the unit tests again and make sure they all pass. Then reply with the single word done.'
     task_tools='Read Write Edit Bash Grep Glob'
     ;;
-  tools)
+  claude-code:tools)
     # MultiEdit is in the list so that the step that names it is permitted if
     # this version offers the tool. Version 2.1.296 seems not to (its name
     # appears only among the permission-rule names, beside the retired LS and
@@ -131,7 +194,7 @@ case $task in
     task_prompt='Do exactly these nine things in order, using the named tool for each, and nothing else. 1) Use the Bash tool with run_in_background set to true to run exactly: sleep 3; echo background-done | tee bg.txt . Do not wait for it and do not check on it until step 8. 2) In a single message, make three Read tool calls at the same time, for notes.txt, numbers.txt and analysis.ipynb. 3) In notes.txt, replace colour: red with colour: blue and replace size: small with size: large. If a tool named MultiEdit is available to you, make both changes with one MultiEdit call; if it is not, use the Edit tool once for each change. 4) Use the NotebookEdit tool on analysis.ipynb, with edit_mode replace, on the cell whose id is total, to set its source to exactly: print(sum([3, 5, 7])) . 5) Use the Write tool to create report.txt containing the single word draft. 6) Use the Write tool to overwrite report.txt with the single word final. 7) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Use the Write tool to create subagent.txt containing the single word from-subagent. Then reply with the single word done. 8) Use the Read tool on the output file whose path the Bash result of step 1 reported. 9) Use the Bash tool to run exactly: cat bg.txt notes.txt report.txt subagent.txt . Then reply with the single word done.'
     task_tools='Read Write Edit MultiEdit NotebookEdit Bash Agent'
     ;;
-  shapes)
+  claude-code:shapes)
     # What the 2.1.296 binary says (read from its strings, not measured): the
     # tool executor starts a call while an earlier one still runs only when
     # every running call and the new one are concurrency-safe. Read, Grep,
@@ -171,6 +234,9 @@ fi
 # with that target, and its whole subtree, without a claim.
 control_command=': agent-trace-control-marker'
 control_prompt="Use the Bash tool to run exactly this no-op command: $control_command . Then reply with the single word ok. Do not use any other tool."
+# Gemini's command tool is run_command. The harness writes its agentapi shim and
+# opens a pseudo-terminal before every command (I-48), so the controls run one.
+[ "$agent" != gemini ] || control_prompt="Use run_command to run exactly this no-op command: $control_command . Then reply with the single word ok. Do not use any other tool."
 # The tools task makes the harness work around a background command (its output
 # file under /tmp/claude-<uid>) and a subagent (its transcript and metadata under
 # ~/.claude/projects), which a control that makes one Bash call never shows. Its
@@ -189,6 +255,12 @@ control_tools=$task_tools
 # Refuse an unusable --baseline-from before anything that needs root or quota.
 if [ -n "$baseline_from" ]; then
   [ -e "$(ls "$baseline_from"/control-*.ground_truth.json 2>/dev/null | head -1)" ] || { echo "no control-*.ground_truth.json in $baseline_from" >&2; exit 1; }
+  # A capture made before the agent was recorded is of Claude Code.
+  earlier=$(cat "$baseline_from/control-agent.txt" 2>/dev/null || echo claude-code)
+  if [ "$earlier" != "$agent" ]; then
+    echo "the control runs in $baseline_from are of $earlier, this capture is of $agent" >&2
+    exit 1
+  fi
   # A capture made before the tool set was recorded used the basic task's tools.
   earlier=$(cat "$baseline_from/control-tools.txt" 2>/dev/null || echo 'Read Write Edit Bash')
   if [ "$earlier" != "$control_tools" ]; then
@@ -225,7 +297,11 @@ if [ -n "$locked" ]; then
   chmod u+w "$probe"; rmdir "$probe"
 fi
 echo "output: $out"
-echo "claude: $claude_bin ($version), task: $task"
+if [ "$agent" = gemini ]; then
+  echo "agy: $agy_bin ($version), task: $task"
+else
+  echo "claude: $claude_bin ($version), task: $task"
+fi
 (cd "$root" && make build >/dev/null)
 sudo -v
 
@@ -242,6 +318,10 @@ capture() { # label prompt tools
   if [ -n "$locked" ]; then
     chmod a-w "$ws/$locked"
     [ ! -w "$ws/$locked" ] || { echo "   $ws/$locked is still writable" >&2; return 1; }
+  fi
+  if [ "$agent" = gemini ]; then
+    capture_gemini "$label" "$prompt" "$tools" "$ws"
+    return
   fi
   echo "== $label: session $session"
   (
@@ -269,6 +349,43 @@ capture() { # label prompt tools
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
 }
 
+# The custom agent that fixes a Gemini run's tool set (I-24): the task's tools
+# only, none of the user's MCP servers or customizations.
+agent_md() { # tools
+  printf -- '---\nname: agent-trace\ndescription: Runs the exact steps it is given for a trajectory capture.\n'
+  printf -- 'mainAgent: true\nsubagent: false\ninheritMcp: false\ninheritCustomizations: false\ntools:\n'
+  for t in $1; do printf -- '  - %s\n' "$t"; done
+  printf -- '---\n# agent-trace\nDo exactly what the user asks, using the named tools, and nothing else.\n'
+}
+
+capture_gemini() { # label prompt tools workspace
+  local label=$1 prompt=$2 tools=$3 ws=$4 id
+  mkdir -p "$ws/.agents/agents/agent-trace"
+  agent_md "$tools" >"$ws/.agents/agents/agent-trace/agent.md"
+  echo "== $label"
+  (
+    cd "$ws"
+    sudo "$root/watch" --probes fs,proc,net --workspace "$ws" \
+      --out "$out/$label.ground_truth.json" -- \
+      setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
+      env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+      AGY_CLI_DISABLE_AUTO_UPDATE=true \
+      "$agy_bin" --agent agent-trace --dangerously-skip-permissions --output-format json \
+      --print-timeout 600s -p "$prompt" >"$out/$label.watch.log" 2>&1
+  ) || echo "   watch exited non-zero, see $out/$label.watch.log"
+  sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
+  # agy prints one JSON object with the conversation id; the database is named by it.
+  id=$(grep -o '"conversation_id":"[0-9a-f-]*"' "$out/$label.watch.log" | head -1 | cut -d'"' -f4 || true)
+  if [ -z "$id" ] || [ ! -f "$agy_conversations/$id.db" ]; then
+    echo "   no conversation database found for $label (id '${id}'), see $out/$label.watch.log" >&2
+    return 1
+  fi
+  echo "   conversation $id"
+  cp "$agy_conversations/$id.db" "$out/$label.conversation.db"
+  # A write-ahead log that agy left unmerged holds steps too.
+  [ ! -s "$agy_conversations/$id.db-wal" ] || cp "$agy_conversations/$id.db-wal" "$out/$label.conversation.db-wal"
+}
+
 capture "$task" "$task_prompt" "$task_tools"
 
 if [ -n "$baseline_from" ]; then
@@ -280,19 +397,22 @@ else
   for n in $(seq 1 "${CONTROLS:-5}"); do capture "control-$n" "$control_prompt" "$control_tools"; done
   printf '%s' "$control_tools" >"$out/control-tools.txt"
   printf '%s' "$control_prompt" >"$out/control-prompt.txt"
+  printf '%s' "$agent" >"$out/control-agent.txt"
   controls=("$out"/control-*.ground_truth.json)
 fi
 min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4f", 1 / n }')}
-"$root/baseline" --agent claude-code --agent-version "$version" --min-agreement "$min_agreement" \
+"$root/baseline" --agent "$agent" --agent-version "$version" --min-agreement "$min_agreement" \
   --exclude "$control_command" --out "$out/baseline.json" "${controls[@]}"
 
+trajectory=$out/$task.session.jsonl
+[ "$agent" != gemini ] || trajectory=$out/$task.conversation.db
 {
   echo "##### verify WITHOUT a baseline"
-  "$root/verify" --agent claude-code --trajectory "$out/$task.session.jsonl" \
+  "$root/verify" --agent "$agent" --trajectory "$trajectory" \
     --ground-truth "$out/$task.ground_truth.json" || true
   echo
   echo "##### verify WITH the baseline"
-  "$root/verify" --agent claude-code --trajectory "$out/$task.session.jsonl" \
+  "$root/verify" --agent "$agent" --trajectory "$trajectory" \
     --ground-truth "$out/$task.ground_truth.json" --baseline "$out/baseline.json" || true
 } >"$out/report.txt" 2>&1
 echo

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Reduce a capture made by capture-claude-code.sh to a checked-in fixture.
 
+A capture of Gemini (--agent gemini) is recognised by its
+<TASK_LABEL>.conversation.db and reduced as described at the end.
+
 A raw capture holds the account's email and organisation id, system prompts, the
 user's home directory and a multi-kilobyte shell snapshot script in every run.
 The fixture keeps what the adapter and verifier read and rewrites the rest:
@@ -57,10 +60,23 @@ Ground truth events, pids, timestamps and coverage are kept as captured.
 TASK_LABEL is the task run's label (basic captures use `task`, which is the
 default; the parallel task uses `parallel`). Subagent transcripts, when the
 capture has them, are reduced the same way.
+
+A Gemini capture's ground truth is rewritten as above. Its conversation
+database holds the system prompt, the model's thinking, every tool result and
+opaque signatures; the fixture is a new SQLite database with only the steps
+table's columns the adapter reads (idx, step_type, status, has_subtrajectory,
+step_payload), and each payload cut to the fields the adapter reads: the step
+type (1), field 4, and of field 5 the created (5.1), started (5.6) and
+completed (5.8) timestamps and the tool calls (5.4), each cut to its id (1),
+name (2) and JSON arguments (3), rewritten like every other path. A call
+whose CodeContent the rewriting would change is refused rather than altered,
+since the adapter claims the hash of that content. The private-string check
+reads the written database's bytes.
 """
 import json
 import os
 import re
+import sqlite3
 import sys
 
 capture, out = os.path.abspath(sys.argv[1]).rstrip("/"), sys.argv[2]
@@ -83,6 +99,13 @@ for root, _, files in os.walk(capture):
             text = f.read()
         org_ids.update(re.findall(r'"organizationUuid":\s*"([0-9a-fA-F-]{36})"', text))
         emails.update(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text))
+# A Gemini conversation database states the account nowhere the adapter
+# reads, but its bytes are checked for addresses all the same.
+gemini_db = os.path.join(capture, task + ".conversation.db")
+for root, _, files in os.walk(capture):
+    for name in (n for n in files if n.endswith(".conversation.db")):
+        with open(os.path.join(root, name), "rb") as f:
+            emails.update(m.decode() for m in re.findall(rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", f.read()))
 # Addresses that are part of the harness's own text, not the account.
 emails = {e for e in emails if not e.endswith("@anthropic.com") and not e.endswith("@example.com")}
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
@@ -267,7 +290,117 @@ def reduce_transcript(src, dst):
     return len(kept)
 
 
-n = reduce_transcript(os.path.join(capture, task + ".session.jsonl"), os.path.join(out, task + ".session.jsonl"))
+# --- Gemini: the conversation database (see the docstring) ---
+
+
+def pb_varint(b, i):
+    v, shift = 0, 0
+    while True:
+        if i >= len(b) or shift > 63:
+            raise ValueError("truncated varint")
+        c = b[i]
+        i += 1
+        v |= (c & 0x7F) << shift
+        shift += 7
+        if c < 0x80:
+            return v, i
+
+
+def pb_fields(b):
+    """Every top-level field of a protobuf message as (number, wire type, value)."""
+    out, i = [], 0
+    while i < len(b):
+        key, i = pb_varint(b, i)
+        num, wt = key >> 3, key & 7
+        if num == 0:
+            raise ValueError("field number 0")
+        if wt == 0:
+            v, i = pb_varint(b, i)
+        elif wt == 1:
+            v, i = b[i:i + 8], i + 8
+        elif wt == 5:
+            v, i = b[i:i + 4], i + 4
+        elif wt == 2:
+            n, i = pb_varint(b, i)
+            v, i = b[i:i + n], i + n
+            if i > len(b):
+                raise ValueError("length past the end")
+        else:
+            raise ValueError("unsupported wire type %d" % wt)
+        out.append((num, wt, v))
+    return out
+
+
+def pb_enc_varint(v):
+    b = bytearray()
+    while v >= 0x80:
+        b.append((v & 0x7F) | 0x80)
+        v >>= 7
+    b.append(v)
+    return bytes(b)
+
+
+def pb_field(num, wt, v):
+    if wt == 0:
+        return pb_enc_varint(num << 3) + pb_enc_varint(v)
+    if wt == 2:
+        return pb_enc_varint(num << 3 | 2) + pb_enc_varint(len(v)) + v
+    return pb_enc_varint(num << 3 | wt) + v
+
+
+def reduce_call(call):
+    kept = b""
+    for num, wt, v in pb_fields(call):
+        if num == 3 and wt == 2:
+            args = json.loads(v)
+            code = args.get("CodeContent")
+            if isinstance(code, str) and rewrite(code, task) != code:
+                sys.exit("a write_to_file's CodeContent holds a private path; refusing to alter the content its hash is claimed from")
+            v = rewrite(json.dumps(args), task).encode()
+        if num in (1, 2, 3):
+            kept += pb_field(num, wt, v)
+    return kept
+
+
+def reduce_payload(payload):
+    kept = b""
+    for num, wt, v in pb_fields(payload):
+        if num in (1, 4) and wt == 0:
+            kept += pb_field(num, wt, v)
+        elif num == 5 and wt == 2:
+            inner = b""
+            for n5, w5, v5 in pb_fields(v):
+                if n5 in (1, 6, 8) and w5 == 2:
+                    inner += pb_field(n5, w5, v5)
+                elif n5 == 4 and w5 == 2:
+                    inner += pb_field(4, 2, reduce_call(v5))
+            kept += pb_field(5, 2, inner)
+    return kept
+
+
+def reduce_conversation(src, dst):
+    con = sqlite3.connect("file:%s?mode=ro" % src, uri=True)
+    rows = con.execute("select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx").fetchall()
+    con.close()
+    if os.path.exists(dst):
+        os.remove(dst)
+    new = sqlite3.connect(dst)
+    new.execute("create table steps (idx integer, step_type integer not null default 0, status integer not null default 0, "
+                "has_subtrajectory numeric not null default false, step_payload blob, primary key (idx))")
+    for idx, typ, status, sub, payload in rows:
+        new.execute("insert into steps values (?,?,?,?,?)", (idx, typ, status, sub, reduce_payload(payload or b"")))
+    new.commit()
+    new.execute("vacuum")
+    new.close()
+    return len(rows)
+
+
+if os.path.exists(gemini_db):
+    n = reduce_conversation(gemini_db, os.path.join(out, task + ".conversation.db"))
+    record_kind = "conversation steps"
+else:
+    n = reduce_transcript(os.path.join(capture, task + ".session.jsonl"), os.path.join(out, task + ".session.jsonl"))
+    record_kind = "transcript records"
 sub = os.path.join(capture, task + ".session", "subagents")
 if os.path.isdir(sub):
     for name in sorted(os.listdir(sub)):
@@ -282,8 +415,8 @@ leaks = []
 for root, _, files in os.walk(out):
     for name in files:
         path = os.path.join(root, name)
-        with open(path, errors="replace") as f:
-            text = f.read()
+        with open(path, "rb") as f:
+            text = f.read().decode("utf-8", errors="replace")
         for word in forbidden:
             if word and word in text:
                 leaks.append((path, word))
@@ -295,4 +428,4 @@ if leaks:
     import shutil
     shutil.rmtree(out)
     sys.exit("refusing to keep the fixture: remove the leaks above and run again")
-print("wrote", out, "with", n, "transcript records; no private string found")
+print("wrote", out, "with", n, record_kind + "; no private string found")
