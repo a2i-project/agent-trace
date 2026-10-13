@@ -133,7 +133,7 @@ Date: 2026-10-06.
 Question: Should `net.bpf.c` hook `tcp_connect`, `inet_sendmsg`, `udp_sendmsg` and the `security_socket_connect`/`bind`/`listen` LSM hooks instead of syscall tracepoints?
 Options: Rewrite the net probe; or at minimum detect io_uring use by tracked PIDs and mark the run INCONCLUSIVE.
 Current behaviour: `sys_enter_*` tracepoints only. `IORING_OP_CONNECT` and `IORING_OP_SEND` bypass them, so an io_uring network action is not recorded. Since N-25 (option 1, detect and degrade) the probe counts io_uring network operations by tracked processes in `IOURingNetOps`, and `Assess` makes such a run INCONCLUSIVE; on 2026-10-13 Claude Code 2.1.296 (Bun) made no io_uring call and Node.js 20 submitted only `EPOLL_CTL`, which does not count (N-25). Since N-23 and N-24 the tracepoints cover `writev`, `pwritev2`, `sendmmsg`, `sendfile`, `splice` and multi-iovec sends, and follow a connection by socket to any tracked process that writes it. A connection without a name whose data went only through io_uring or Linux AIO, or was written only by a process outside the tracked tree, still reads as `net_dial`, capability evidence rather than a connection a claim must explain ([../architecture/13_probe_net.md](../architecture/13_probe_net.md), Known limits).
-Blocked by: Whether Bun uses io_uring for sockets (Unverified); cost of the rewrite.
+Blocked by: Cost of the rewrite. Whether runtimes use io_uring for sockets is measured in N-25: Claude Code 2.1.296 (Bun) makes no io_uring call, Node.js 20 children submit only `EPOLL_CTL`, and python, curl and git use none; since N-25 a tracked socket operation through io_uring makes the run INCONCLUSIVE.
 
 ### O-19: `SSL_read` uretprobe and SSE reassembly
 Status: Proposed.
