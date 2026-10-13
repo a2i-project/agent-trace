@@ -109,7 +109,7 @@ func fixture(t *testing.T) string {
 		{typ: 132, status: 3, payload: payload(at(12), at(13), at(14), toolCall("c4", "replace_file_content", map[string]any{"TargetFile": "/w/b.go", "ReplacementContent": "x"}))},
 		{typ: 132, status: 3, payload: payload(at(15), at(16), at(17), toolCall("c5", "read_url_content", map[string]any{"Url": "https://example.com/docs"}))},
 		{typ: 132, status: 3, payload: payload(at(18), at(19), at(20), toolCall("c6", "manage_task", map[string]any{"Action": "x"}))},
-		{typ: 132, status: 3, payload: payload(at(21), at(22), at(23), toolCall("c7", "grep_search", map[string]any{"Query": "x"}))},
+		{typ: 132, status: 3, payload: payload(at(21), at(22), at(23), toolCall("c7", "search_web", map[string]any{"query": "x"}))},
 		{typ: 132, status: 7, payload: payload(at(24), at(25), at(26), toolCall("c8", "run_command", map[string]any{"CommandLine": "rm -rf /", "Cwd": "/"}))}, // not completed
 		{typ: 132, status: 3, payload: payload(at(27), at(28), at(29), toolCall("c9", "run_command", map[string]any{"CommandLine": "echo hi", "Cwd": "/", "RunPersistent": true}))},
 		// two calls in one step: a parallel block
@@ -173,16 +173,16 @@ func TestParseUsesStartedAsTheClaimStartAndCompletedAsItsEnd(t *testing.T) {
 
 func TestParseCountsAndNamesWhatItDoesNotClaim(t *testing.T) {
 	_, rep := parse(t, fixture(t))
-	for _, k := range []string{"manage_task", "grep_search", "run_command (status 7)", "run_command (persistent shell)"} {
+	for _, k := range []string{"manage_task", "search_web", "run_command (status 7)", "run_command (persistent shell)"} {
 		if rep.UnmappedByTool[k] == 0 {
 			t.Errorf("%q not counted: %v", k, rep.UnmappedByTool)
 		}
 	}
-	if len(rep.UnknownTools) != 1 || rep.UnknownTools[0] != "grep_search" {
-		t.Errorf("UnknownTools = %v, want [grep_search]", rep.UnknownTools)
+	if len(rep.UnknownTools) != 1 || rep.UnknownTools[0] != "search_web" {
+		t.Errorf("UnknownTools = %v, want [search_web]", rep.UnknownTools)
 	}
 	joined := strings.Join(rep.Degradations, "|")
-	for _, want := range []string{"persistent shell", "status other than completed", "subtrajectory", "created time", "grep_search", "exit code", "block id"} {
+	for _, want := range []string{"persistent shell", "status other than completed", "subtrajectory", "created time", "search_web", "exit code", "block id"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("Degradations lack %q:\n%s", want, joined)
 		}

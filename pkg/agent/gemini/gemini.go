@@ -80,7 +80,8 @@ func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 // process. A truncated wrapper recovers a prefix of the command, which the
 // verifier pairs as such (V-26). It drops the " (deleted)" the kernel
 // appends to the path of a file unlinked before its event was read, which
-// names the same file. Nothing else is rewritten.
+// names the same file. Nothing else is rewritten here; a grep_search's
+// processes are rewritten by NormalizeStream, which sees them together (I-54).
 func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 	switch {
 	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
@@ -119,16 +120,21 @@ const (
 	toolReplace     = "replace_file_content"
 	toolMultiRepl   = "multi_replace_file_content"
 	toolReadURL     = "read_url_content"
+	toolGrepSearch  = "grep_search"
 	toolSubagent    = "invoke_subagent"
 	statusCompleted = 3
 )
 
-// nonEffectful tools perform no syscall of their own (D10). search_web is not
-// here: whether it runs server-side is unverified for Gemini.
+// nonEffectful tools perform no syscall of their own (D10), or, for list_dir
+// and find_by_name, read in the agent's own process and start nothing: on the
+// paired capture of the search task with agy 1.3.4 neither left an event no
+// rule explained, and they are not claimed (I-54). If a version makes them
+// start a process, it shows as an unclaimed command. search_web is not here:
+// whether it runs server-side is unverified for Gemini.
 var nonEffectful = map[string]bool{
 	"manage_task": true, "send_message": true, "ask_question": true, "ask_permission": true,
 	"list_permissions": true, "schedule": true, "invoke_subagent": true, "define_subagent": true,
-	"manage_subagents": true,
+	"manage_subagents": true, "list_dir": true, "find_by_name": true,
 }
 
 var sqliteMagic = []byte("SQLite format 3\x00")
@@ -499,6 +505,9 @@ func claimsFor(c call, base models.TrajectoryEntry) ([]models.TrajectoryEntry, s
 			return nil, "no TargetFile"
 		}
 		return fileClaims(p, nil), ""
+	case toolGrepSearch:
+		// One search, whichever program the harness ran for it (I-54).
+		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGrep)}, ""
 	case toolReadURL:
 		u, err := url.Parse(str(c.args["Url"]))
 		if err != nil || u.Hostname() == "" {

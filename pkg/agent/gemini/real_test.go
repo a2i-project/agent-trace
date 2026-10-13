@@ -41,6 +41,7 @@ func TestARealConversationParses(t *testing.T) {
 		"write_to_file:file_open:/ws/1/a.txt", "write_to_file:file_write:/ws/1/a.txt", "write_to_file:file_close:/ws/1/a.txt",
 		"replace_file_content:file_open:/ws/1/a.txt", "replace_file_content:file_write:/ws/1/a.txt", "replace_file_content:file_close:/ws/1/a.txt",
 		"run_command:process_exec:cat a.txt",
+		"grep_search:process_exec:" + SearchGrep,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("claims =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -53,9 +54,11 @@ func TestARealConversationParses(t *testing.T) {
 			}
 		}
 	}
+	// list_dir and find_by_name are non-effectful, grep_search is claimed
+	// (I-54): no tool of the conversation is unknown.
 	_, rep, _ := Adapter{}.Parse(filepath.Join(realDir, "tools.conversation.db"))
-	if strings.Join(rep.UnknownTools, ",") != "find_by_name,grep_search,list_dir" {
-		t.Errorf("UnknownTools = %v", rep.UnknownTools)
+	if len(rep.UnknownTools) != 0 || rep.UnmappedByTool["list_dir"] != 1 || rep.UnmappedByTool["find_by_name"] != 1 {
+		t.Errorf("UnknownTools = %v, unmapped %v", rep.UnknownTools, rep.UnmappedByTool)
 	}
 }
 
@@ -75,7 +78,7 @@ func TestTheObservedWrapperRecoversEveryRealCommand(t *testing.T) {
 	for _, name := range []string{"tools.conversation.db", "parallel.conversation.db"} {
 		_, tr := realClaims(t, name)
 		for _, e := range tr {
-			if e.ActionType != models.ProcessExec {
+			if e.Tool != toolRunCommand {
 				continue
 			}
 			o, ok := observed[e.Target]

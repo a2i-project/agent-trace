@@ -36,10 +36,13 @@ var emptyHash = content.SHA256Bytes(nil)
 // in every case of the capture, the agent's and the harness's.
 const batchSpan = time.Microsecond
 
-// NormalizeStream drops the create of a file the agent's process creates and
-// collapses its runs of opens of one file (I-50). Events are in time order,
-// ties in the order the probe emitted them.
+// NormalizeStream rewrites the processes of a grep_search call to the
+// claim's target, folding a failed ripgrep and its fallback grep into one
+// search (I-54, foldSearches), drops the create of a file the agent's process
+// creates and collapses its runs of opens of one file (I-50). Events are in
+// time order, ties in the order the probe emitted them.
 func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
+	g = foldSearches(g)
 	started := commands(g)
 	return collapseOpens(foldCreates(g, started), started)
 }
