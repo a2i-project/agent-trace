@@ -1,0 +1,4981 @@
+{
+ "events": [
+  {
+   "timestamp": "2026-10-13T22:02:19.603679505+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/dash",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.604166732+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.604616612+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.604667339+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.605500828+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/setpriv",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.609182077+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610055906+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610055907+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libcap-ng.so.0.0.0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610055908+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610582143+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/locale/locale-archive",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610674151+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610712843+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610817612+02:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610817613+02:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.61096882+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610968821+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_systemd.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.610968822+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611083419+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libcap.so.2.75",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611381208+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611381209+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_sss.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611561444+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611594752+02:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611632442+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611652089+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611674125+02:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611706618+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.611877996+02:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.61194457+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/org.gnome.DisplayManager",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.612052284+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/io.systemd.DynamicUser",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.612717981+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.612828888+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/env",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.613365239+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.614030193+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.614096135+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.614289243+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.614428061+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.614428062+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.614500577+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.61905467+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/bin/agy",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.619494526+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.620734896+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.620734897+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libresolv.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.62090701+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.620907011+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.620972822+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.621052827+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.621135969+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.676201325+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/bin/agy",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.756044713+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.75610369+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.756229053+02:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.756229054+02:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.848846517+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/zoneinfo/Europe/Prague",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.848846518+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/log",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.849010587+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/log/cli-20261013_220219.log",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.849010588+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.849010588+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.849091306+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/settings.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.849459996+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/log/cli-20261013_220219.log",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.849636841+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/crashes",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.849636842+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/crashes/crash_1584424_416a6646-4fad-4bd0-8a74-09c0c8b6cec0.log",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.850851242+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/installation_id",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853100023+02:00",
+   "action_type": "file_open",
+   "target": "/run/systemd/resolve/stub-resolv.conf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853161743+02:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853206467+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853308346+02:00",
+   "action_type": "net_bind",
+   "target": "[::1]:0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853331596+02:00",
+   "action_type": "net_bind",
+   "target": "127.0.0.1:0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853460467+02:00",
+   "action_type": "net_bind",
+   "target": "127.0.0.1:0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853468845+02:00",
+   "action_type": "net_listen",
+   "target": "127.0.0.1:0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853548624+02:00",
+   "action_type": "net_bind",
+   "target": "127.0.0.1:0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853555417+02:00",
+   "action_type": "net_listen",
+   "target": "127.0.0.1:0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.853663556+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.891869883+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.89204991+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.919476938+02:00",
+   "action_type": "net_connect",
+   "target": "antigravity-unleash.goog",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.919514679+02:00",
+   "action_type": "net_connect",
+   "target": "antigravity-unleash.goog",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.945111825+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ca-certificates.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.951892538+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ACCVRAIZ1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.951996488+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.951996489+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM_SERVIDORES_SEGUROS.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952191565+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ANF_Secure_Server_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952191567+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Actalis_Authentication_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952382144+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952382146+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952489591+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952489592+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_4.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952616305+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_2011.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952616306+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_ECC_TLS_2021.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952718062+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_RSA_TLS_2021.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952718064+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Autoridad_de_Certificacion_Firmaprofesional_CIF_A62634068.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952863556+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952958631+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.952958632+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_2_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953073791+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_3_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953145082+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CA_Disig_Root_R2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953209579+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CFCA_EV_ROOT.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953263331+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_ECC_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953335593+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_RSA_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953404331+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_E1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953471963+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_R1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953538617+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certigna_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953604816+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_EC-384_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953668822+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953732519+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA_2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953795298+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953858874+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_1_2020.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953916892+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_2_2023.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.953962162+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_1_2020.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954028466+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_2_2023.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954097289+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_2009.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954140221+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_EV_2009.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954205225+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954267905+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954310139+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954372167+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95443957+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_ECC_P384_Root_G5.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954439571+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_RSA4096_Root_G5.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954515887+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Trusted_Root_G4.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954578235+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Entrust_Root_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954637383+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GDCA_TrustAUTH_R5_ROOT.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954681037+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954740448+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954783333+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R4.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954847821+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R4.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954912422+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R5.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.954972094+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955014948+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R6.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95508852+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_E46.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955155072+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_R46.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955155074+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Go_Daddy_Root_Certificate_Authority_-_G2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955250687+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_ECC_Root_CA_2021.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955313327+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_RSA_Root_CA_2021.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955372089+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_ECC_RootCA_2015.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955416816+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_RootCA_2015.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955476282+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HiPKI_Root_CA_-_G1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955515363+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hongkong_Post_Root_CA_3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955576153+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955638584+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955696624+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Commercial_Root_CA_1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955735923+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Public_Sector_Root_CA_1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955799736+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Izenpe.com.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.955869159+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsec_e-Szigno_Root_CA_2009.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95593934+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_ECC_Root_Certificate_Authority_2017.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956002123+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_RSA_Root_Certificate_Authority_2017.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956045867+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NAVER_Global_Root_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95615547+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NetLock_Arany_=Class_Gold=_F\u0151tan\u00fas\u00edtv\u00e1ny.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956231555+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_ECC_G1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956273184+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_RSA_G1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956335124+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GB_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95639356+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GC_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956431092+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_1_G3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956523725+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_2_G3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956595694+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_3_G3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956595695+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_ECC.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956670187+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_RSA_R2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956737162+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_ECC.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95686513+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_RSA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956865131+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_ECC_Root_CA_2022.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956963734+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_RSA_Root_CA_2022.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.956963735+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SZAFIR_ROOT_CA2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957097102+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_E46.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957097103+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_R46.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957195154+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA12.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957195155+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA14.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957300473+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA15.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957300475+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_ECC_RootCA1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957396336+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_RootCA2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957461201+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Root_Certificate_Authority_-_G2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957461202+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Services_Root_Certificate_Authority_-_G2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.957559714+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SwissSign_RSA_TLS_Root_CA_2022_-_1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171957+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171958+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171959+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TUBITAK_Kamu_SM_SSL_Kok_Sertifikasi_-_Surum_1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95817196+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_CYBER_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171961+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Global_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171962+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Root_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171963+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_ECC_Root_2020.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171964+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_RSA_Root_2023.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171965+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_Root_CA_v2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958171966+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958455642+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G4.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958455644+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_ECC_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958455645+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_RSA_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958455646+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TunTrust_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958455647+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Extended_Validation_Root.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958635358+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Global_G2_Root.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.958635359+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_ECC_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.95863536+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_RSA_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.959105041+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ca-certificates.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.962786696+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/certSIGN_Root_CA_G2.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.962786697+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_Root_CA_2017.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.962880669+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_TLS_Root_CA_2023.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.96288067+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ePKI_Root_Certification_Authority.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.962957068+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_C3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.963027369+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_G3.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.963110829+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_C1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.963267659+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_G1.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.963267661+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ssl-cert-snakeoil.pem",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.963377732+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_ECC_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:19.963377733+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_Root_CA.crt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.131874521+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.140625373+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.141328434+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.141328435+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.141460665+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-shm",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.141460665+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-shm",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.142455339+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.142797947+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.144288323+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.146324318+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.148961575+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.149217044+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.149380305+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.149442183+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.149636997+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.149762705+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.150580545+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/mcp_config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.150662949+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/04586373-3fc3-4dd9-87f2-5405f7ab50df.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.151288712+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/074ca009-05d1-4d6b-8534-cc6c52eb7f33.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.151363083+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/16a53d55-d244-44d4-b5fd-9d1effd0f959.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.153782101+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/.checksum",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.153980326+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.154191601+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.154371265+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.154506448+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.155261421+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.155492173+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.155760568+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.155883744+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.156004727+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.156125033+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.156775047+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.157404858+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/1cad0a2d-d681-47fd-87df-563ef68bd5c1.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.15971859+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/1f3dc762-2efd-4f19-8301-b57d408817f6.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.159845742+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/27a8db27-f530-4463-8aeb-c10547fb6384.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.159845743+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/5e60043f-9b44-46db-b179-9edfe6137075.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.159952811+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/63fc302c-e9b9-4d18-b6d0-8acf524df196.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.160006023+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/77b1ba5a-ece6-4dc1-858b-b8890799a4cd.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.160187232+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/89a09e7d-5f34-4771-90b0-e1d49440aea2.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.160622274+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/8d3fe448-30fe-41ac-8c31-61145e4c4daf.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.16070265+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/bccd5b88-2236-4a1d-b4ab-16e9d4aea4c6.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.160756664+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/ef3031f6-6e36-4761-8f1e-2760b397e06b.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.160806807+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/ef3e6599-2d9c-485f-be14-3e278c6f6d1e.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.179982119+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.18015462+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.180782629+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.180903523+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.180968708+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.181268062+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.181369631+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.181502041+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.182385789+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.182713546+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.183178416+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.183318342+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.184003495+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/default_project_id.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.184003496+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.188265785+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.188265786+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/settings.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.188265787+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.188265788+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.191480368+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/implicit",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.191480369+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/928aa759-8571-4e0e-bced-d34c9cc0e0a3.pb",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.191480369+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/928aa759-8571-4e0e-bced-d34c9cc0e0a3.pb",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.191480369+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/928aa759-8571-4e0e-bced-d34c9cc0e0a3.pb",
+   "output_hash": "sha256:925090828a0f542f8c5b86d5a56fee1866dce3047a3dd16361834e50d6174217",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.191698734+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/implicit",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.193278955+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.193400167+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194021096+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/bin/webm_encoder",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194506353+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/ui-plugin-navigation/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194711736+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/generative_ui/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194711737+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/permissioned-github/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194836232+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194836233+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/run-workflow/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194945214+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194945215+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.194945216+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/automation/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.195195252+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/migrate-workflows/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.2172469+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/.agents/agents/agent-trace/agent.md",
+   "input_hash": "sha256:4bf9d2785c61e0571e36ae192fcc547d8ee85e626c7539322428b7de025b07de",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.218972301+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.220254234+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/user/1000/bus",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.247288218+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.256313685+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.256436069+02:00",
+   "action_type": "net_dns",
+   "target": "172.253.148.95:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.256488053+02:00",
+   "action_type": "net_dns",
+   "target": "[2a00:1450:4025:4401::5f]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.257777667+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.257866565+02:00",
+   "action_type": "file_write",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.268414721+02:00",
+   "action_type": "file_close",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "output_hash": "sha256:cfd1125d0825876a54bab94b55cccde1ccf635454cc8150c49069ed4f338a0ca",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.274885534+02:00",
+   "action_type": "net_connect",
+   "target": "oauth2.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.424895403+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.425169894+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.425169896+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.797c1b23-c2ea-407d-9fba-e90c3d027f74.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.425294609+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.797c1b23-c2ea-407d-9fba-e90c3d027f74.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.425294609+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.797c1b23-c2ea-407d-9fba-e90c3d027f74.tmp",
+   "output_hash": "sha256:1aa3e7b17067c259f56b1c7feb17094172729c977d4a7fcbea030f9247c0bbe4",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.425470918+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.445564366+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.44585773+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.44650144+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446690832+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446704225+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446730363+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446771874+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.44681267+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446826566+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446844626+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446872936+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446876902+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446907176+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446908204+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446936054+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446938956+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446967187+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.446998537+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447015706+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447025491+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447052751+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447134861+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447139334+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447182166+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447188456+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447228135+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.44723047+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.44726775+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447272473+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447306297+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447315222+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447346531+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447355397+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447391965+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447392999+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.447434185+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.467464419+02:00",
+   "action_type": "net_connect",
+   "target": "www.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.467735648+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.570108258+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.570496434+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.570743801+02:00",
+   "action_type": "net_dns",
+   "target": "[2a00:1450:400f:806::2001]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.570902579+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.19.225:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:20.588747457+02:00",
+   "action_type": "net_connect",
+   "target": "lh3.googleusercontent.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518312248+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518592313+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518798815+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518828348+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518846654+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518878549+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518895752+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518912448+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518935813+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.518958253+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.519057447+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.519112569+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.519141211+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.519176032+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.519206876+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.51924092+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.519271673+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.51930607+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.536689899+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.537345217+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:21.537995526+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.078971115+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.079409859+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.0940872+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.094308188+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.094472848+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.094557262+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.09463753+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.094724358+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.094791086+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.095987905+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.096844675+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:22.096943209+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.645780717+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.64609195+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646245758+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646300808+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646335836+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646371223+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646405698+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646442591+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646475628+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646515655+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646605993+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646668364+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646725809+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646790988+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646853571+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646911709+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.646971609+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.647029891+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.650123401+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.650123402+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.650123402+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.650303912+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.651820407+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db-journal",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.651820407+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db-journal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.656924045+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.658552229+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.65855223+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.659043442+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.659043443+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.659206035+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db-shm",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.659206035+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db-shm",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.664966967+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.666585872+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.682195764+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.682773438+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.682945926+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683049244+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683107169+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683144313+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683174027+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683204562+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683233134+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683260909+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683339891+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683388814+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683432191+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683478645+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683528429+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683580007+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683633205+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.683685019+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.686989254+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/.agents/agents/agent-trace/agent.md",
+   "input_hash": "sha256:4bf9d2785c61e0571e36ae192fcc547d8ee85e626c7539322428b7de025b07de",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.687419029+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.694293198+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.697151324+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/presence",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.697151325+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/presence/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.lock",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.701710713+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.713397853+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.713734042+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.714141694+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.715931196+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.7182623+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.718405086+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.718603704+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.718770423+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.724788875+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.725197691+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.725197692+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.6da0f678-cba5-4649-83e4-7e17ffcc1d45.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.725301417+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.6da0f678-cba5-4649-83e4-7e17ffcc1d45.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.725301417+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.6da0f678-cba5-4649-83e4-7e17ffcc1d45.tmp",
+   "output_hash": "sha256:0285eb8558a92c25a007e041e140d8215be49490b052c4b5651e80496f7205e3",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.725503083+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.726804411+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.726932744+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.727119846+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.727213563+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.728835407+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.729903424+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.729903425+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.732319701+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.732645997+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.732747851+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.732848307+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.732898442+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.732965101+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733023534+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733047117+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733092587+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733148772+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733198143+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.7332421+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733255999+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733304814+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733391959+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733423922+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733441257+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.73348325+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733528296+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.73353972+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733565074+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733601733+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733639667+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.733677915+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.751046067+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.755519632+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.755519633+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.755519633+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756673181+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756673181+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756673181+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756874137+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756874138+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756992987+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756992987+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.756992989+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757144985+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757708952+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757708952+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757708952+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757825988+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757825989+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757895155+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.757895155+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.770803337+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.770830748+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771129903+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771217896+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.77126829+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771339812+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771380123+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771431157+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771473464+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771511611+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771587077+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771626235+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771657485+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771686778+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771715445+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771743732+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771770983+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.771799696+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:23.789344856+02:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.079475341+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.079752139+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.087856822+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.088015345+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.088084009+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.08812993+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.088176983+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.088223567+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.08931433+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.08990455+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.089985318+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.146094125+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.38dd7aed-ec75-472c-9ea1-0910af46d422.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.146094125+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.38dd7aed-ec75-472c-9ea1-0910af46d422.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.146094125+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.38dd7aed-ec75-472c-9ea1-0910af46d422.tmp",
+   "output_hash": "sha256:429d1f61a14d2e07d8d9f71cafc25d361aea72205713b01a5e3b14011b291ff2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.146449063+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.147613257+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.390890265+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.391118076+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.396468774+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.396551758+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.396622752+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.39666483+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.396664831+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.396753205+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.396832834+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.396904598+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.397616636+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.397975037+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.398056276+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.685052796+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/annotations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.685052797+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.pbtxt.fb7b505c-4d3f-465e-b721-e6c07b985ae8.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.685347849+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.685347849+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.68534785+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/annotations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:24.685995742+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.14586159+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.145861591+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.3bfbd40e-a7c6-4365-90f7-20e619a30f07.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.146053866+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.3bfbd40e-a7c6-4365-90f7-20e619a30f07.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.146053866+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.3bfbd40e-a7c6-4365-90f7-20e619a30f07.tmp",
+   "output_hash": "sha256:30db3841bb94d250e3c9de47da868bf9eab6e97775ed28fd462e852cdf358ad1",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.14615789+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.155266367+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.15561068+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.155819499+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.155873783+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.155912593+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.155952065+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.155986862+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156035105+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156100195+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156148119+02:00",
+   "action_type": "net_dns",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156237795+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.114.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156304132+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.119.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.15636556+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.118.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156420287+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.117.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156471668+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.112.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156522892+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.116.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.15657765+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.115.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.156631537+02:00",
+   "action_type": "net_dns",
+   "target": "172.217.113.4:53",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.17505137+02:00",
+   "action_type": "net_connect",
+   "target": "play.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:25.175155952+02:00",
+   "action_type": "net_connect",
+   "target": "play.googleapis.com",
+   "pid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.001316572+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.001316573+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.0015646+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.001564601+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.001564601+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.001564601+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.002277542+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.002277542+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.002277542+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.002277543+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.002588818+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.002588818+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.003700133+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.004658752+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.005467624+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.006953946+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.006953946+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.006953946+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:e726a312deccd18207d9080fadd146dfb2be1b805f37c062202b26a60b0ed735",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007078469+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007078469+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007153154+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:e726a312deccd18207d9080fadd146dfb2be1b805f37c062202b26a60b0ed735",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007203373+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007259156+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007259156+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:86a41c8f2febc22317930d650f2b87f809878b2ae01aed036297f67cb29d6a69",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007376234+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:5c1d946380e0b41efc447274a065f4597a9dc414c921aad3987838bd0b0b941a",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007376234+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:29.007376234+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:86a41c8f2febc22317930d650f2b87f809878b2ae01aed036297f67cb29d6a69",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.676372259+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:e726a312deccd18207d9080fadd146dfb2be1b805f37c062202b26a60b0ed735",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.676372259+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.676372259+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.676482648+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:e726a312deccd18207d9080fadd146dfb2be1b805f37c062202b26a60b0ed735",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.676540311+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.676540311+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.677213474+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:86a41c8f2febc22317930d650f2b87f809878b2ae01aed036297f67cb29d6a69",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.677213474+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.677213474+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.677312823+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:86a41c8f2febc22317930d650f2b87f809878b2ae01aed036297f67cb29d6a69",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.677312823+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.677312823+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.681394074+02:00",
+   "action_type": "file_write",
+   "target": "/ws/basic",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.681394075+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/a.txt",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.681394075+02:00",
+   "action_type": "file_write",
+   "target": "/ws/basic/a.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.681520935+02:00",
+   "action_type": "file_close",
+   "target": "/ws/basic/a.txt",
+   "output_hash": "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.68577598+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/4",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.685775981+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/4/output.txt",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.685775981+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/4/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.685922005+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/4/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.685922005+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/4/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.685922005+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/4/output.txt",
+   "output_hash": "sha256:0b6733e0e0565a0b8e7d17e7635701e360cc480d0965a7b2dff25bc09cf811c5",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688429616+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:e726a312deccd18207d9080fadd146dfb2be1b805f37c062202b26a60b0ed735",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.68853626+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.68853626+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:da3d68a7e2b7c0699149991ce10ed873422ffebf99e21389a24eddad5da6910d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688575936+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:e726a312deccd18207d9080fadd146dfb2be1b805f37c062202b26a60b0ed735",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688575936+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688575936+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:da3d68a7e2b7c0699149991ce10ed873422ffebf99e21389a24eddad5da6910d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688669207+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:86a41c8f2febc22317930d650f2b87f809878b2ae01aed036297f67cb29d6a69",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688669208+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688752093+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:efb11743604f9ae0020e0ce113f38283a465719f182294f434961c175a5d9bbf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688752095+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:86a41c8f2febc22317930d650f2b87f809878b2ae01aed036297f67cb29d6a69",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688752096+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:36.688948597+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:efb11743604f9ae0020e0ce113f38283a465719f182294f434961c175a5d9bbf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.365167719+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:da3d68a7e2b7c0699149991ce10ed873422ffebf99e21389a24eddad5da6910d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.365259459+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.365259459+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.365433625+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:da3d68a7e2b7c0699149991ce10ed873422ffebf99e21389a24eddad5da6910d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.365433625+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.36566373+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.366352155+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:efb11743604f9ae0020e0ce113f38283a465719f182294f434961c175a5d9bbf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.366352155+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.366352156+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.366538111+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:efb11743604f9ae0020e0ce113f38283a465719f182294f434961c175a5d9bbf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.366538111+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.366538111+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.373377036+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/a.txt",
+   "input_hash": "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.374205464+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/a.txt",
+   "input_hash": "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.374300395+02:00",
+   "action_type": "file_write",
+   "target": "/ws/basic/a.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.374300395+02:00",
+   "action_type": "file_close",
+   "target": "/ws/basic/a.txt",
+   "output_hash": "sha256:e258d248fda94c63753607f7c4494ee0fcbe92f1a76bfdac795c9d84101eb317",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.375362711+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/6",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.375362712+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/6/output.txt",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.375362712+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/6/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.375362712+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/6/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.375495929+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/6/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.375495929+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/6/output.txt",
+   "output_hash": "sha256:1726bcf41b271bc966a9b6668da4bc9cf1fc4e92bc4b724cf7cda2be1af84ed2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377233807+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:da3d68a7e2b7c0699149991ce10ed873422ffebf99e21389a24eddad5da6910d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377361605+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377361605+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:e0f4c9279c1a259705e4ac4a11d775bff8889f8891372dcdc69f71f493de784c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377461783+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:da3d68a7e2b7c0699149991ce10ed873422ffebf99e21389a24eddad5da6910d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377461783+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377461783+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:e0f4c9279c1a259705e4ac4a11d775bff8889f8891372dcdc69f71f493de784c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377593913+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:efb11743604f9ae0020e0ce113f38283a465719f182294f434961c175a5d9bbf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377593913+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.377593913+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:c3fb99639f1d91a2b6e821f53ff6f4a38eeaa91832bc8a7c621e38a988074d0e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.37770577+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:efb11743604f9ae0020e0ce113f38283a465719f182294f434961c175a5d9bbf",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.37770577+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:40.37770577+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:c3fb99639f1d91a2b6e821f53ff6f4a38eeaa91832bc8a7c621e38a988074d0e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.768114389+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:e0f4c9279c1a259705e4ac4a11d775bff8889f8891372dcdc69f71f493de784c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.768114389+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.768114389+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.768339679+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:e0f4c9279c1a259705e4ac4a11d775bff8889f8891372dcdc69f71f493de784c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.768339679+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.768339679+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.769314306+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:c3fb99639f1d91a2b6e821f53ff6f4a38eeaa91832bc8a7c621e38a988074d0e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.769314306+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.769314306+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.769445471+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:c3fb99639f1d91a2b6e821f53ff6f4a38eeaa91832bc8a7c621e38a988074d0e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.769445471+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.769445471+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.772764008+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.772858083+02:00",
+   "action_type": "file_open",
+   "target": "/ws/basic/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.772858083+02:00",
+   "action_type": "file_write",
+   "target": "/ws/basic/b.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.772858083+02:00",
+   "action_type": "file_close",
+   "target": "/ws/basic/b.txt",
+   "output_hash": "sha256:9252a75c942da16f7b52cab752797dea4fca18474db9d7eff102842a459b25b3",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.773715698+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/8",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.773715699+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/8/output.txt",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.773715699+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/8/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.773715699+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/8/output.txt",
+   "output_hash": "sha256:06e45a0c59cd7b4728158bab06bdcf446b9389ad63321e47ea93ae3e917039b2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775243472+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:e0f4c9279c1a259705e4ac4a11d775bff8889f8891372dcdc69f71f493de784c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775243472+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775243472+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:920816832b9400ca684f0607d42ccc70cf17ea30c21943ea1658cbd94851984c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775351027+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:e0f4c9279c1a259705e4ac4a11d775bff8889f8891372dcdc69f71f493de784c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775351027+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775351027+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:920816832b9400ca684f0607d42ccc70cf17ea30c21943ea1658cbd94851984c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775351028+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:c3fb99639f1d91a2b6e821f53ff6f4a38eeaa91832bc8a7c621e38a988074d0e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775351028+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775351028+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:c23e4bc70c6da894b98151745063af945a7db9d76d6575f611b2b4148723832e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775492195+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:c3fb99639f1d91a2b6e821f53ff6f4a38eeaa91832bc8a7c621e38a988074d0e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775492195+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:43.775492195+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:c23e4bc70c6da894b98151745063af945a7db9d76d6575f611b2b4148723832e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.128362905+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:920816832b9400ca684f0607d42ccc70cf17ea30c21943ea1658cbd94851984c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.128553923+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.128553923+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:fb49cccc3bc964c09eda55828bea739afbf10db14af070e250527f4efec6e387",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.128620893+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:920816832b9400ca684f0607d42ccc70cf17ea30c21943ea1658cbd94851984c",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.128620893+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.128620893+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:fb49cccc3bc964c09eda55828bea739afbf10db14af070e250527f4efec6e387",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.130290075+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:c23e4bc70c6da894b98151745063af945a7db9d76d6575f611b2b4148723832e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.130290075+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.130290075+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:03f61405206e87e7b4f6abf32b9187525ceff26fe9d34b8f5f15ab4b3ea67477",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.130290076+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:c23e4bc70c6da894b98151745063af945a7db9d76d6575f611b2b4148723832e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.130290076+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.13054093+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:03f61405206e87e7b4f6abf32b9187525ceff26fe9d34b8f5f15ab4b3ea67477",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.132219123+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.135417808+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.135739871+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.136252222+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/bin/agentapi",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.136252222+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/bin/agentapi",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.136356159+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/bin/agentapi",
+   "output_hash": "sha256:98ac22179cb6efd5aaf930e491ed8d8d620ec76de56bac8bac80979c0cd2573d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.136811627+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.139963844+02:00",
+   "action_type": "process_fork",
+   "target": "1584497",
+   "pid": 1584497,
+   "ppid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.140470484+02:00",
+   "action_type": "process_fork",
+   "target": "1584498",
+   "pid": 1584498,
+   "ppid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.140770006+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/bash -c echo hi",
+   "pid": 1584498,
+   "ppid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.140833267+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/bash",
+   "pid": 1584498
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.141768929+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1584498
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.142278473+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1584498
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.142435983+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.5",
+   "pid": 1584498
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.142435984+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1584498
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.143866916+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/bash -c echo hi",
+   "exit_code": 0,
+   "pid": 1584498,
+   "ppid": 1584424,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.14637825+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.149387728+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/10",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.149387729+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/10/output.txt",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.149387729+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/10/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.149387729+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/10/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.14938773+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/10/output.txt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.149631066+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/steps/10/output.txt",
+   "output_hash": "sha256:aa0db3f47f499fe4ed5a480542a388817f7a6d3de57761c41cf64fbaa58df1f8",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.152551956+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:fb49cccc3bc964c09eda55828bea739afbf10db14af070e250527f4efec6e387",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.152757361+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.152757361+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:e372bc8ba3c95044072f395d0493a7e75372336baff4d4c99c4cce025595a52e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.152826056+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:fb49cccc3bc964c09eda55828bea739afbf10db14af070e250527f4efec6e387",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.152928948+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.152928948+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:e372bc8ba3c95044072f395d0493a7e75372336baff4d4c99c4cce025595a52e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.153023872+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:03f61405206e87e7b4f6abf32b9187525ceff26fe9d34b8f5f15ab4b3ea67477",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.153023872+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.15313061+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:a7ea504d64184330526dac1a5441d59a7e005fae10ff7d1204af6fd21df09015",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.153209848+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:03f61405206e87e7b4f6abf32b9187525ceff26fe9d34b8f5f15ab4b3ea67477",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.153209848+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:47.153209848+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:a7ea504d64184330526dac1a5441d59a7e005fae10ff7d1204af6fd21df09015",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.902161758+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:e372bc8ba3c95044072f395d0493a7e75372336baff4d4c99c4cce025595a52e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.902397855+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.902397855+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:4e33cbecd523477cd6a30bdecdaa2fb57ee5a97ee0481b4e9960bd83e61b0ad5",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.902397856+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:e372bc8ba3c95044072f395d0493a7e75372336baff4d4c99c4cce025595a52e",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.902397856+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.902397856+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:4e33cbecd523477cd6a30bdecdaa2fb57ee5a97ee0481b4e9960bd83e61b0ad5",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.903245027+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:a7ea504d64184330526dac1a5441d59a7e005fae10ff7d1204af6fd21df09015",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.903245027+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.903245027+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:aa662de83d38fdefca605df202594254dc82fa470f44e62d1a600d3832da2403",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.90339121+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:a7ea504d64184330526dac1a5441d59a7e005fae10ff7d1204af6fd21df09015",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.90339121+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.90339121+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/0b18d7d3-41b4-4dfe-b649-e8ba776c383a/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:aa662de83d38fdefca605df202594254dc82fa470f44e62d1a600d3832da2403",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.914632204+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.916517397+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.pbtxt",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.934863457+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/presence/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.lock",
+   "output_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.934925516+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "input_hash": "sha256:0285eb8558a92c25a007e041e140d8215be49490b052c4b5651e80496f7205e3",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.935237525+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.935237526+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.733ff19f-a5bc-4644-8e35-e6fb369fd88a.tmp",
+   "input_hash": "sha256:429d1f61a14d2e07d8d9f71cafc25d361aea72205713b01a5e3b14011b291ff2",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.93541245+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.93541245+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "output_hash": "sha256:0285eb8558a92c25a007e041e140d8215be49490b052c4b5651e80496f7205e3",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.935412451+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.947802484+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.94797215+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.947972151+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.947972152+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversations",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.948163981+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/0b18d7d3-41b4-4dfe-b649-e8ba776c383a.db",
+   "output_hash": "sha256:2de197011dc6bc98b19f331c848a71e0904552dc35a923e00a6b8d4fa1795a5d",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.949467157+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.949467158+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.f94d2a11-225d-48d0-b614-4c02c3a6e703.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.949647951+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.f94d2a11-225d-48d0-b614-4c02c3a6e703.tmp",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.949647951+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.f94d2a11-225d-48d0-b614-4c02c3a6e703.tmp",
+   "output_hash": "sha256:56be44938de3034a5842a965391fde0f02a32d10937a6e4dfaa386b8ce70afe3",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.949756697+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.951363575+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:48.951439701+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "output_hash": "sha256:7a198256b6fecc652b74df02218a78b2c45e46299edec2af03e3f297bcaf53e0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.051410823+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/crashes",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.051410824+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/crashes",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.051707307+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "output_hash": "sha256:7a198256b6fecc652b74df02218a78b2c45e46299edec2af03e3f297bcaf53e0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.05528565+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.056043394+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.056141467+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.05639083+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal (deleted)",
+   "output_hash": "sha256:7a198256b6fecc652b74df02218a78b2c45e46299edec2af03e3f297bcaf53e0",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.056390832+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli",
+   "pid": 1584424,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.056390833+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "output_hash": "sha256:4fe55c48302686bfbcb5740e060314c2a5d980662f50a35da6dc9d5a62aa35f8",
+   "pid": 1584424
+  },
+  {
+   "timestamp": "2026-10-13T22:02:49.087184091+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/log/cli-20261013_220219.log",
+   "output_hash": "sha256:1bb251ec314d3d143b803c4dc11affa22de2e14b17e36416984b7a652035a596",
+   "pid": 1584424
+  }
+ ],
+ "coverage": {
+  "schema": 1,
+  "probes": {
+   "fs": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "hashless_closes": 90
+   },
+   "net": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "content": "identity_only"
+   },
+   "proc": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0
+   }
+  }
+ },
+ "root_pid": 1584424,
+ "workspace": "/ws/basic",
+ "fs_scope": {
+  "rule": "tree-or-workspace",
+  "mounts": [
+   "/",
+   "/boot/efi",
+   "/dev/shm",
+   "/media/user/OS",
+   "/run",
+   "/run/credentials/systemd-journald.service",
+   "/run/credentials/systemd-resolved.service",
+   "/run/lock",
+   "/run/user/1000",
+   "/tmp"
+  ],
+  "unmarked": {
+   "/var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged": "fanotify_mark on /var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged: operation not supported"
+  },
+  "dropped_outside": 577
+ }
+}

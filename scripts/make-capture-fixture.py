@@ -63,7 +63,9 @@ capture has them, are reduced the same way.
 
 A Gemini capture's ground truth is rewritten as above. Its conversation
 database holds the system prompt, the model's thinking, every tool result and
-opaque signatures; the fixture is a new SQLite database with only the steps
+opaque signatures; it is read from a copy of the database and of its
+write-ahead log, when there is one, so that nothing is written beside the
+capture and steps only the log holds are kept (I-51). The fixture is a new SQLite database with only the steps
 table's columns the adapter reads (idx, step_type, status, has_subtrajectory,
 step_payload), and each payload cut to the fields the adapter reads: the step
 type (1), field 4, and of field 5 the created (5.1), started (5.6) and
@@ -76,8 +78,10 @@ reads the written database's bytes.
 import json
 import os
 import re
+import shutil
 import sqlite3
 import sys
+import tempfile
 
 capture, out = os.path.abspath(sys.argv[1]).rstrip("/"), sys.argv[2]
 task = sys.argv[3] if len(sys.argv) > 3 else "task"
@@ -103,7 +107,7 @@ for root, _, files in os.walk(capture):
 # reads, but its bytes are checked for addresses all the same.
 gemini_db = os.path.join(capture, task + ".conversation.db")
 for root, _, files in os.walk(capture):
-    for name in (n for n in files if n.endswith(".conversation.db")):
+    for name in (n for n in files if n.endswith((".conversation.db", ".conversation.db-wal"))):
         with open(os.path.join(root, name), "rb") as f:
             emails.update(m.decode() for m in re.findall(rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", f.read()))
 # Addresses that are part of the harness's own text, not the account.
@@ -379,9 +383,16 @@ def reduce_payload(payload):
 
 
 def reduce_conversation(src, dst):
-    con = sqlite3.connect("file:%s?mode=ro" % src, uri=True)
-    rows = con.execute("select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx").fetchall()
-    con.close()
+    # Read a copy of the database and its write-ahead log, as the adapter does
+    # (I-51): SQLite would otherwise create <db>-shm beside the capture.
+    with tempfile.TemporaryDirectory() as tmp:
+        snap = os.path.join(tmp, "conversation.db")
+        shutil.copyfile(src, snap)
+        if os.path.exists(src + "-wal"):
+            shutil.copyfile(src + "-wal", snap + "-wal")
+        con = sqlite3.connect("file:%s?mode=ro" % snap, uri=True)
+        rows = con.execute("select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx").fetchall()
+        con.close()
     if os.path.exists(dst):
         os.remove(dst)
     new = sqlite3.connect(dst)
@@ -425,7 +436,6 @@ for root, _, files in os.walk(out):
 if leaks:
     for path, word in leaks:
         print("private string left in", path, file=sys.stderr)
-    import shutil
     shutil.rmtree(out)
     sys.exit("refusing to keep the fixture: remove the leaks above and run again")
 print("wrote", out, "with", n, record_kind + "; no private string found")
