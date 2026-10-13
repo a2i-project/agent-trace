@@ -466,7 +466,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	rep.Degradations = []string{
 		"claim start is the moment the model emitted the call and includes approval latency, so the interval cannot bound execution (D13)",
 		"the format records no process exit code, so exits are not aligned (I-15)",
-		"file-tool claim shapes follow one paired capture of version " + capturedVersion + ": a Write or Edit is claimed as one atomic replace (temp file and rename), and a variant not seen there, such as a direct write, will show as unexplained",
+		"file-tool claim shapes follow one paired capture of version " + capturedVersion + ": a Write or Edit is claimed as one atomic replace (temp file and rename) or, as one capture of 2.1.296 showed, one in-place rewrite of an existing file (I-45), and a variant not seen, such as a direct write in another shape, will show as unexplained",
 	}
 	if writeUnknown > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d Write call(s) have no create or update result, so they are assumed to overwrite an existing file", writeUnknown))

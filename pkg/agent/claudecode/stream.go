@@ -27,8 +27,11 @@ import (
 // grain: an atomic replace becomes one write of the target with the final
 // content hash, and a run of opens of one file by one process becomes one open.
 // The claims are rewritten the same way (see claudecode.go), so the two sides
-// stay comparable. An unseen variant, such as a direct write with no temporary,
-// is left alone and shows as unexplained rather than being guessed at.
+// stay comparable. The one direct write the harness makes, the in-place
+// rewrite of a file whose temporary it cannot create (open, write, close, no
+// rename), folds as narrowly as it was seen (foldInPlaceWrites, I-45); any
+// other unseen variant is left alone and shows as unexplained rather than
+// being guessed at.
 
 // The file tools name the temporary <path>.tmp.<pid>.<12 hex>; the version
 // lock and the session key name it <path>.tmp.<8 hex>. The fold sees the raw
@@ -43,11 +46,128 @@ func isFile(a models.ActionType) bool {
 	return false
 }
 
-// NormalizeStream folds atomic replaces, names the harness's read of its cwd
-// file where the probe lost the name, and collapses runs of opens. Events are
-// in time order, ties in the order the probe emitted them.
+// NormalizeStream folds atomic replaces and the harness's in-place rewrites,
+// names the harness's read of its cwd file where the probe lost the name, and
+// collapses runs of opens. Events are in time order, ties in the order the
+// probe emitted them.
 func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
-	return collapseOpens(foldCwdFileRead(foldAtomicWrites(g)))
+	return collapseOpens(foldCwdFileRead(foldInPlaceWrites(foldAtomicWrites(g))))
+}
+
+// foldInPlaceWrites folds the harness's in-place rewrite of a file into one
+// FileWrite carrying the close's hash, the form the atomic-replace folds give
+// (I-45). The file tools rewrite the target in place (open, truncate, write,
+// close, no rename) when the sibling temporary cannot be created or renamed;
+// the probe then reports, by the agent's process, an open of the target, its
+// write with no hash and its close with the hash of the final content.
+//
+// Narrow on purpose. A run of writes of one file folds with the close that
+// follows it only when, for that process, the previous event is an open of the
+// same file and the next event after the writes is the close, with no other
+// event of the process between; every one names the file exactly; and no
+// ambiguous event of the file's directory by the process comes just before
+// its opens and writes of the file or just after the close (nextToDirEvent),
+// since a create or a rename there is a replace in a shape no fold knows. It runs
+// after foldAtomicWrites, so a write it produced (which carries a hash) and
+// the temporary of an unfinished replace are not taken. The harness's own
+// files (I-30) are left alone, so no baseline rule changes. A process the
+// stream shows being forked or exec'd is a command the agent ran, never the
+// agent's own process, whose start precedes the capture: its events are the
+// command's content, explained by the command's claim, and are left as the
+// probe reported them. The open stays: it is the claim's open.
+func foldInPlaceWrites(g models.GroundTruth) models.GroundTruth {
+	started := map[uint32]bool{}
+	for _, e := range g {
+		switch e.ActionType {
+		case models.ProcessFork, models.ProcessExec, models.ProcessExit:
+			started[e.PID] = true
+		}
+	}
+	// prev holds, per process, the index of its last event seen so far.
+	prev := map[uint32]int{}
+	drop := make([]bool, len(g))
+	var out models.GroundTruth
+	for w, e := range g {
+		p, seen := prev[e.PID]
+		prev[e.PID] = w
+		if drop[w] || e.ActionType != models.FileWrite || e.PID == 0 || e.PathIsAmbiguous || e.OutputHash != nil ||
+			started[e.PID] || harnessOwned.MatchString(e.Target) || tmpName.MatchString(e.Target) || !seen {
+			continue
+		}
+		if o := g[p]; o.ActionType != models.FileOpen || o.Target != e.Target || o.PathIsAmbiguous {
+			continue
+		}
+		// The writes of the run, then the close, by this process.
+		var burst []int
+		closeIdx := -1
+		for i := w + 1; i < len(g) && closeIdx < 0; i++ {
+			n := g[i]
+			if n.PID != e.PID {
+				continue
+			}
+			if n.Target != e.Target || n.PathIsAmbiguous {
+				break
+			}
+			if n.ActionType == models.FileWrite && n.OutputHash == nil {
+				burst = append(burst, i)
+				continue
+			}
+			if n.ActionType == models.FileClose {
+				closeIdx = i
+			}
+			break
+		}
+		if closeIdx < 0 || nextToDirEvent(g, p, closeIdx, e) {
+			continue
+		}
+		if out == nil {
+			out = append(models.GroundTruth(nil), g...)
+		}
+		out[w].OutputHash = g[closeIdx].OutputHash
+		for _, i := range append(burst, closeIdx) {
+			drop[i] = true
+		}
+	}
+	if out == nil {
+		return g
+	}
+	kept := make(models.GroundTruth, 0, len(out))
+	for i, e := range out {
+		if !drop[i] {
+			kept = append(kept, e)
+		}
+	}
+	return kept
+}
+
+// nextToDirEvent reports whether the process of w, around its events on w's
+// file from the open at o to the close at c, has an ambiguous event on the
+// file's directory: the process's last event before its run of opens and
+// writes of the file, or its first event after the close. A create or a rename
+// of the directory there means a replace in a shape no fold knows, which stays
+// visible; the in-place rewrite has neither.
+func nextToDirEvent(g models.GroundTruth, o, c int, w models.GroundTruthEvent) bool {
+	dir := filepath.Dir(w.Target)
+	onDir := func(e models.GroundTruthEvent) bool { return e.Target == dir && e.PathIsAmbiguous }
+	for i := o - 1; i >= 0; i-- {
+		e := g[i]
+		if e.PID != w.PID {
+			continue
+		}
+		if e.Target == w.Target && (e.ActionType == models.FileOpen || e.ActionType == models.FileWrite) {
+			continue
+		}
+		if onDir(e) {
+			return true
+		}
+		break
+	}
+	for i := c + 1; i < len(g); i++ {
+		if g[i].PID == w.PID {
+			return onDir(g[i])
+		}
+	}
+	return false
 }
 
 // cwdFileRead is the target an ambiguous read of the cwd file becomes: the
