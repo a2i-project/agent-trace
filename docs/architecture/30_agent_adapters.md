@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit eb45396 on 2026-10-13.
+Checked against commit 3a84462 on 2026-10-13.
 
 ## Objective
 
@@ -73,7 +73,7 @@ Only `ExitsClaimed` changes verifier behaviour today. The other fields are decla
 
 ## Technologies
 
-Go. The Claude Code adapter reads JSONL with `bufio.Scanner` (lines up to 64 MiB) and `encoding/json`. The Gemini adapter opens the conversation database read-only through `modernc.org/sqlite` (pure Go, no cgo) and decodes the undocumented protobuf step payload with a hand-written wire-format walker (`wire.go`), since no `.proto` is available. Content hashes use `pkg/content.SHA256Bytes` (`sha256:<hex>`).
+Go. The Claude Code adapter reads JSONL with `bufio.Scanner` (lines up to 64 MiB) and `encoding/json`. The Gemini adapter copies the conversation database and its write-ahead log, when there is one, into a private temporary directory and opens the copy read-only through `modernc.org/sqlite` (pure Go, no cgo), so reading a session writes nothing next to it (I-51), and decodes the undocumented protobuf step payload with a hand-written wire-format walker (`wire.go`), since no `.proto` is available. Content hashes use `pkg/content.SHA256Bytes` (`sha256:<hex>`).
 
 ## Workflow
 
@@ -141,7 +141,7 @@ The harness is `agy` (Antigravity's CLI), a single Go binary. A print-mode run (
 
 Detect: a file starting with the SQLite header whose `steps` table has a `step_payload` column.
 
-Parse reads `steps` ordered by `idx` and decodes each payload. Tool calls are the submessages at protobuf path 5.4: field 1 the call id, 2 the tool name, 3 the arguments as a JSON string. The claim start is the started timestamp (5.6), falling back to created (5.1) with a degradation; `End` is completed (5.8) when present. Entries are sorted stably by start. A step with more than one call gives its entries `BlockID` = `step-<idx>`; calls the model issued together were seen as separate steps, one call each, which therefore carry no block id. Parse fails loudly, naming the field path, when a payload does not decode, a call lacks its name or arguments, the arguments are not JSON, a step has no timestamp, or the database has no steps: a version that moves a field number must produce an error, never an empty trajectory. The four conversation databases of those runs (three main conversations and a subagent's) and the 46 older ones on the development machine parse without an error. A payload holds more than the adapter reads: field 140 repeats the step with its result, a `run_command` result's text states the exit code (`The command exited with code N.`), and field 5.32 preceded the exec of each of seven measured commands by 12 to 23 ms (I-47); none of these is read.
+Detect and Parse read a private copy of the database and of its write-ahead log `<path>-wal`, when one exists, so steps the harness has not yet checkpointed into the database file are read, and nothing is created next to the session, whose directory may be read-only (I-51). Parse reads `steps` ordered by `idx` and decodes each payload. Tool calls are the submessages at protobuf path 5.4: field 1 the call id, 2 the tool name, 3 the arguments as a JSON string. The claim start is the started timestamp (5.6), falling back to created (5.1) with a degradation; `End` is completed (5.8) when present. Entries are sorted stably by start. A step with more than one call gives its entries `BlockID` = `step-<idx>`; calls the model issued together were seen as separate steps, one call each, which therefore carry no block id. Parse fails loudly, naming the field path, when a payload does not decode, a call lacks its name or arguments, the arguments are not JSON, a step has no timestamp, or the database has no steps: a version that moves a field number must produce an error, never an empty trajectory. The four conversation databases of those runs (three main conversations and a subagent's) and the 46 older ones on the development machine parse without an error. A payload holds more than the adapter reads: field 140 repeats the step with its result, a `run_command` result's text states the exit code (`The command exited with code N.`), and field 5.32 preceded the exec of each of seven measured commands by 12 to 23 ms (I-47); none of these is read.
 
 | Tool | Claims (in order) | Target | Content |
 |---|---|---|---|
@@ -205,7 +205,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - No tool call is dropped silently: in both real adapters every call either produces entries or is counted in `UnmappedByTool`, and an unknown tool is also listed in `UnknownTools` (`TestParseCountsWhatItDoesNotMap`, `TestParseCountsAndNamesWhatItDoesNotClaim`).
 - A format limit is never read as an opt-out: `Expresses` turns a nil that the format cannot state into no finding, and `ExitsClaimed: false` removes exits from both sides rather than reporting every exit as an omission.
 - Detection never guesses between adapters (`TestDetectRefusesToGuessBetweenAdapters`).
-- The Gemini adapter fails with the field path rather than returning a partial trajectory when the payload layout changes.
+- The Gemini adapter fails with the field path rather than returning a partial trajectory when the payload layout changes. It reads steps that only the write-ahead log holds, writes nothing next to the database, and reads a database in a read-only directory (`TestParseReadsTheLogAndLeavesTheDirectoryAlone`, `TestParseReadsADatabaseInAReadOnlyDirectory`, I-51).
 - A harness-implied open is derived only from the call itself, never from a marker in the transcript, never for a command the reader does not follow, and never merged with the agent's own open of the file (`TestReadCommandFilesFollowsTheHarnessParser`, `TestABashReadCommandImpliesTheHarnessRead`, `TestTheAdapterIgnoresAMarkerInItsInputAndNeverMergesTheAgentsOpen`); the harness's read after `cat` in a parallel block is explained and the run FAITHFUL, and without the claim the read is Unrecorded (`TestTheHarnessReadAfterCatIsExplainedEndToEnd`, I-46).
 - A claim pairs only with an event on the exact path it names, while the baseline compares runs on the canonical path: a Read of one background task's output file is not witnessed by another task's, and a control's task output still explains the run's own (`TestAClaimOnATaskOutputPairsWithThatFileOnly`, I-41).
 - A baseline only subtracts exact `(action_type, target)` pairs that enough control runs produced, from loss-free runs, for the adapter it was captured with, and never the control task's own command (`TestCaptureExcludesTheControlTasksOwnCommand`, `TestPairedControlCommandIsNotABaselineRule`).

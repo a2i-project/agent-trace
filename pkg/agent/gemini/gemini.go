@@ -7,9 +7,13 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -142,11 +146,11 @@ func (Adapter) Detect(path string) bool {
 	if rerr != nil || !bytes.Equal(head, sqliteMagic) {
 		return false
 	}
-	db, err := openReadOnly(path)
+	db, done, err := openSnapshot(path)
 	if err != nil {
 		return false
 	}
-	defer func() { _ = db.Close() }()
+	defer done()
 	rows, err := db.Query(`select name from pragma_table_info('steps')`)
 	if err != nil {
 		return false
@@ -161,8 +165,55 @@ func (Adapter) Detect(path string) bool {
 	return false
 }
 
-func openReadOnly(path string) (*sql.DB, error) {
-	return sql.Open("sqlite", "file:"+url.PathEscape(path)+"?mode=ro")
+// openSnapshot opens a private copy of the conversation database (I-51). agy
+// keeps the database in write-ahead-log mode: steps not yet checkpointed are
+// in <path>-wal, and SQLite reads them only through a shared-memory index,
+// <path>-shm, which it creates next to the database when there is none, even
+// for a read-only connection, and without which it cannot open the database
+// in a directory it may not write. Reading the session in place would
+// therefore write into the directory that holds the evidence, and fail where
+// that directory is read-only. The copy is the database and its log, when one
+// exists, in a new temporary directory; SQLite rebuilds the index there from
+// the log, so a step that only the log holds is read. done closes the
+// database and removes the copy.
+func openSnapshot(path string) (db *sql.DB, done func(), err error) {
+	dir, err := os.MkdirTemp("", "agent-trace-gemini-")
+	if err != nil {
+		return nil, nil, err
+	}
+	remove := func() { _ = os.RemoveAll(dir) }
+	snap := filepath.Join(dir, "conversation.db")
+	if err := copyFile(path, snap); err != nil {
+		remove()
+		return nil, nil, err
+	}
+	if err := copyFile(path+"-wal", snap+"-wal"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		remove()
+		return nil, nil, err
+	}
+	db, err = sql.Open("sqlite", "file:"+url.PathEscape(snap)+"?mode=ro")
+	if err != nil {
+		remove()
+		return nil, nil, err
+	}
+	return db, func() { _ = db.Close(); remove() }, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // Parse decodes every step and returns the tool calls of the completed ones in
@@ -171,11 +222,11 @@ func openReadOnly(path string) (*sql.DB, error) {
 // field number must produce an error, never an empty trajectory.
 func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	var rep agent.Report
-	db, err := openReadOnly(path)
+	db, done, err := openSnapshot(path)
 	if err != nil {
 		return nil, rep, err
 	}
-	defer func() { _ = db.Close() }()
+	defer done()
 	rows, err := db.Query(`select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx`)
 	if err != nil {
 		return nil, rep, fmt.Errorf("read steps: %w", err)
