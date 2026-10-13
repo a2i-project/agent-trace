@@ -20,6 +20,9 @@ import (
 // It needs at least two claims to insert between. opt.Select and opt.Indices
 // are ignored.
 func Fabricate(t models.Trajectory, opt Options) (models.Trajectory, Record, error) {
+	if err := refuseImplied(t); err != nil {
+		return nil, Record{}, err
+	}
 	if opt.N <= 0 {
 		return nil, Record{}, fmt.Errorf("attack: N must be positive, got %d", opt.N)
 	}

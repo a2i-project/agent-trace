@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
@@ -93,6 +94,18 @@ type Verdict struct {
 	// not aligned, since their absence from the ground truth says nothing,
 	// and they are not findings; FAITHFUL is not asserted over them (V-23).
 	OutOfScope []models.TrajectoryEntry
+	// HarnessImplied: harness-implied claims (V-33) paired with an observed
+	// open. The adapter derived them from a call the agent made, so they are
+	// what the harness did on its own, here its read of the file a Bash
+	// command read, and never corroborate the agent: they explain an event
+	// that would otherwise be Unrecorded. Not a finding, no effect on the
+	// outcome.
+	HarnessImplied []MatchedPair
+	// HarnessImpliedUnpaired: harness-implied claims that paired with nothing,
+	// including those on a path the capture could not observe. The harness
+	// may not act (V-33), so they cost nothing and are never Unwitnessed;
+	// listed so the reader sees every claim that was considered.
+	HarnessImpliedUnpaired []models.TrajectoryEntry
 	// Capability holds observed events of an unclaimable action type
 	// (listeners). They are counted and reported, never aligned against a
 	// claim, and never make a run unfaithful: no trajectory can mention them,
@@ -317,7 +330,15 @@ func Verify(in Input) Verdict {
 	forest := BuildForest(in.Ground, in.RootPID)
 	part := forest.Partition(in.Ground)
 	claims, outOfScope := splitByScope(in.Claims, NewFSScope(in.FSScope, in.Workspace))
-	v.OutOfScope = outOfScope
+	// A harness-implied claim the capture could not observe is not set aside
+	// as out of scope: unwitnessed it costs nothing anyway (V-33).
+	for _, c := range outOfScope {
+		if implied(c) {
+			v.HarnessImpliedUnpaired = append(v.HarnessImpliedUnpaired, c)
+		} else {
+			v.OutOfScope = append(v.OutOfScope, c)
+		}
+	}
 	claimed := claimedTargets(claims)
 	// A baseline event on a path some claim names stays in the sequence, so
 	// the claim can pair with it; one left unpaired is counted as baselined
@@ -339,7 +360,9 @@ func Verify(in Input) Verdict {
 		v.Capability = append(v.Capability, a.Event)
 	}
 
-	alignments, err := Align(claims, part.Observed, in.Options)
+	opts := in.Options
+	opts.impliedWitness = impliedWitness(part.Commands)
+	alignments, err := Align(claims, part.Observed, opts)
 	if err != nil {
 		if errors.Is(err, ErrTooLarge) {
 			return inconclusive(fmt.Sprintf("the trajectory or the observed sequence is too large to align: %v", err))
@@ -354,6 +377,11 @@ func Verify(in Input) Verdict {
 			switch e.Kind {
 			case EditMatch, EditSubstitution:
 				pair := MatchedPair{Entry: *e.Claim, Event: *e.Event, Diffs: e.Diffs}
+				// A harness-implied claim pairs only by exact match (V-33).
+				if e.Kind == EditMatch && implied(*e.Claim) {
+					v.HarnessImplied = append(v.HarnessImplied, pair)
+					continue
+				}
 				if e.Kind == EditMatch {
 					v.Corroborated = append(v.Corroborated, pair)
 				} else {
@@ -366,6 +394,10 @@ func Verify(in Input) Verdict {
 					v.Unverified = append(v.Unverified, MatchedPair{Entry: *e.Claim, Event: *e.Event, Diffs: e.Unverified})
 				}
 			case EditInsertion:
+				if implied(*e.Claim) {
+					v.HarnessImpliedUnpaired = append(v.HarnessImpliedUnpaired, *e.Claim)
+					continue
+				}
 				v.Unwitnessed = append(v.Unwitnessed, *e.Claim)
 			case EditDeletion:
 				// A baseline event kept for a claim on its path that found no
@@ -426,6 +458,41 @@ func Verify(in Input) Verdict {
 	return finish()
 }
 
+// impliedWitness is V-33's condition that the command a harness-implied claim
+// names read the file first: some command whose own exec has exactly the
+// claim's ImpliedBy as its target, and which the baseline does not explain,
+// has an open of exactly the claim's path among the events beneath it, no
+// later than the event the claim would pair with. The harness reads a file
+// after the command that read it finished, so its open never precedes the
+// command's.
+func impliedWitness(cmds []*Command) func(models.TrajectoryEntry, models.GroundTruthEvent) bool {
+	// first[command text][path] is the earliest open of the path beneath a
+	// command with that text.
+	first := map[string]map[string]time.Time{}
+	for _, cmd := range cmds {
+		if cmd.Exec == nil || cmd.Baseline || cmd.Exec.TargetTruncated {
+			continue
+		}
+		for _, e := range cmd.Content {
+			if e.ActionType != models.FileOpen || e.PathIsAmbiguous {
+				continue
+			}
+			byPath := first[cmd.Exec.Target]
+			if byPath == nil {
+				byPath = map[string]time.Time{}
+				first[cmd.Exec.Target] = byPath
+			}
+			if t, ok := byPath[e.Target]; !ok || e.Timestamp.Before(t) {
+				byPath[e.Target] = e.Timestamp
+			}
+		}
+	}
+	return func(c models.TrajectoryEntry, e models.GroundTruthEvent) bool {
+		t, ok := first[c.ImpliedBy][c.Target]
+		return ok && !t.After(e.Timestamp)
+	}
+}
+
 func anyPID(g models.GroundTruth) bool {
 	for _, e := range g {
 		if e.PID != 0 {
@@ -450,11 +517,13 @@ func unverifiedReason(pairs []MatchedPair) string {
 	return fmt.Sprintf("%d claim(s) state content the probe did not capture (%s), so they are neither confirmed nor refuted", len(pairs), strings.Join(names, ", "))
 }
 
-// claimedTargets is the set of file paths the claims name.
+// claimedTargets is the set of file paths the claims name. A harness-implied
+// claim names none: it keeps no baseline or harness-owned event in the
+// sequence (V-33), it only absorbs an open that would otherwise be Unrecorded.
 func claimedTargets(claims models.Trajectory) map[string]bool {
 	set := map[string]bool{}
 	for _, c := range claims {
-		if LaneOf(c.ActionType) == LaneFS {
+		if LaneOf(c.ActionType) == LaneFS && !implied(c) {
 			set[c.Target] = true
 		}
 	}

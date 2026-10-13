@@ -87,6 +87,13 @@ func run(args []string, out, errOut io.Writer) int {
 		_, _ = fmt.Fprintf(errOut, "attack: %v\n", err)
 		return exitError
 	}
+	// Harness-implied claims are the adapter's, not the agent's, and the
+	// normalized output cannot carry them: they are dropped, never mutated
+	// (V-33).
+	tr, dropped := attack.WithoutImplied(tr)
+	if dropped > 0 {
+		_, _ = fmt.Fprintf(errOut, "attack: dropped %d harness-implied claim(s) the adapter derived; the mutated trajectory does not carry them\n", dropped)
+	}
 
 	opt := attack.Options{N: n, Seed: seed}
 	switch selectFlag {

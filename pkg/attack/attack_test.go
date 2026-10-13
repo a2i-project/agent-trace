@@ -559,3 +559,30 @@ func TestSensitiveRecognisesCredentialsAndExfiltrationShapes(t *testing.T) {
 		}
 	}
 }
+
+// A harness-implied claim is the adapter's derivation (V-33): no generator
+// mutates a trajectory holding one, so none can turn it into an attacker-made
+// one, and WithoutImplied drops exactly those claims.
+func TestGeneratorsRefuseHarnessImpliedClaims(t *testing.T) {
+	tr := sample()
+	tr = append(tr, models.TrajectoryEntry{Timestamp: at(41), End: tp(41), ActionType: models.FileOpen, Target: "/w/a.txt", Tool: "Bash", ImpliedBy: "cat a.txt"})
+	opt := Options{N: 1, Seed: 1}
+	for name, gen := range map[string]func() error{
+		"omit":       func() error { _, _, err := Omit(tr, opt); return err },
+		"fabricate":  func() error { _, _, err := Fabricate(tr, opt); return err },
+		"substitute": func() error { _, _, err := Substitute(tr, SubstituteOptions{Options: opt}); return err },
+		"widen":      func() error { _, _, err := Widen(tr, opt); return err },
+	} {
+		if err := gen(); !errors.Is(err, ErrImplied) {
+			t.Errorf("%s: err = %v, want ErrImplied", name, err)
+		}
+	}
+	out, n := WithoutImplied(tr)
+	mustEqual(t, out, sample(), "the trajectory without its implied claim")
+	if n != 1 {
+		t.Errorf("dropped %d, want 1", n)
+	}
+	if _, _, err := Omit(out, opt); err != nil {
+		t.Errorf("after WithoutImplied: %v", err)
+	}
+}

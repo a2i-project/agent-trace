@@ -11,6 +11,7 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 var t0 = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
@@ -308,9 +309,14 @@ func TestNormalizedErrors(t *testing.T) {
 	g := writeJSON(t, dir, "g.json", models.GroundTruthFile{RootPID: 100, Coverage: completeCov()})
 	notJSON := filepath.Join(dir, "x.jsonl")
 	_ = os.WriteFile(notJSON, []byte("not a trajectory"), 0o644)
+	implied := filepath.Join(dir, "implied.json")
+	_ = os.WriteFile(implied, []byte(`[{"timestamp":"2026-10-06T12:00:00Z","action_type":"file_open","target":"/w/f","implied_by":"cat f"}]`), 0o644)
 	for name, args := range map[string][]string{
 		"unknown agent":    {"--normalized", "--agent", "nope", "--trajectory", notJSON, "--ground-truth", g},
 		"not a trajectory": {"--normalized", "--trajectory", notJSON, "--ground-truth", g},
+		// A harness-implied claim comes only from an adapter (V-33).
+		"a harness-implied marker":                      {"--normalized", "--trajectory", implied, "--ground-truth", g},
+		"a harness-implied marker, generic by fallback": {"--trajectory", implied, "--ground-truth", g},
 	} {
 		if code, _, errOut := verify(t, args...); code != exitError || errOut == "" {
 			t.Errorf("%s: exit %d, stderr %q", name, code, errOut)
@@ -471,6 +477,68 @@ func TestP5CloseOrderDemo(t *testing.T) {
 	for _, line := range strings.Split(out[strings.Index(out, "\nUnrecorded:\n"):], "\n")[2:5] {
 		if !strings.HasSuffix(strings.TrimSpace(line), "/p5/outside.txt") {
 			t.Errorf("unrecorded line %q is not outside.txt", line)
+		}
+	}
+}
+
+// A paired harness-implied claim (V-33) is counted and listed apart, in the
+// text and in the JSON report, with the call that implied it; a run without
+// one prints nothing about them, so every report without one is unchanged.
+func TestHarnessImpliedClaimsAreReportedApart(t *testing.T) {
+	at := func(ms int) time.Time { return t0.Add(time.Duration(ms) * time.Millisecond) }
+	ev := func(ms int, typ models.ActionType, target string, pid, ppid uint32) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at(ms), ActionType: typ, Target: target, PID: pid, PPID: ppid}
+	}
+	gt := models.GroundTruthFile{RootPID: 100, Coverage: completeCov(), Events: models.GroundTruth{
+		ev(1, models.ProcessFork, "x", 200, 100), ev(2, models.ProcessExec, "cat f", 200, 100),
+		ev(3, models.ProcessFork, "x", 201, 200), ev(4, models.ProcessExec, "/usr/bin/cat f", 201, 200),
+		ev(5, models.FileOpen, "/w/f", 201, 0),
+		ev(6, models.ProcessExit, "/usr/bin/cat f", 201, 200), ev(7, models.ProcessExit, "cat f", 200, 100),
+		ev(8, models.FileOpen, "/w/f", 100, 0),
+	}}
+	end := at(9)
+	tr := models.Trajectory{
+		{Timestamp: t0, End: &end, ActionType: models.ProcessExec, Target: "cat f"},
+		{Timestamp: t0, End: &end, ActionType: models.FileOpen, Target: "/w/f", ImpliedBy: "cat f"},
+	}
+	g, _ := agent.Lookup(agent.GenericName)
+	for _, withImplied := range []bool{true, false} {
+		claims := tr
+		if !withImplied {
+			claims = tr[:1]
+		}
+		in := agent.Prepare(g, claims, gt, nil, verification.Options{})
+		in.Options.IgnoreExits = true
+		v := verification.Verify(in)
+		ri := reportInput{trajectoryPath: "t", groundTruthPath: "g", adapter: g.Name(), reader: "r", entries: len(claims), gt: gt, verdict: v}
+		var out bytes.Buffer
+		report(&out, ri)
+		jsonPath := filepath.Join(t.TempDir(), "v.json")
+		if err := writeJSONReport(jsonPath, ri); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := os.ReadFile(jsonPath)
+		if !withImplied {
+			if strings.Contains(out.String(), "Harness implied") || strings.Contains(string(data), "harness_implied") || v.Outcome != verification.OutcomeNotFaithful {
+				t.Errorf("without an implied claim: outcome %s\n%s", v.Outcome, out.String())
+			}
+			continue
+		}
+		if v.Outcome != verification.OutcomeFaithful || !strings.Contains(out.String(), "Harness implied: 1 of 1") ||
+			!strings.Contains(out.String(), `file_open      /w/f  (after "cat f")`) || !strings.Contains(out.String(), "Corroborated: 1\n") {
+			t.Errorf("outcome %s, report:\n%s", v.Outcome, out.String())
+		}
+		var rep struct {
+			Alignment struct {
+				HarnessImplied []struct {
+					ImpliedBy string                  `json:"implied_by"`
+					Event     models.GroundTruthEvent `json:"event"`
+				} `json:"harness_implied"`
+			} `json:"alignment"`
+		}
+		if err := json.Unmarshal(data, &rep); err != nil || len(rep.Alignment.HarnessImplied) != 1 ||
+			rep.Alignment.HarnessImplied[0].ImpliedBy != "cat f" || rep.Alignment.HarnessImplied[0].Event.PID != 100 {
+			t.Errorf("JSON harness_implied = %+v, %v", rep.Alignment.HarnessImplied, err)
 		}
 	}
 }

@@ -324,15 +324,26 @@ func classes(c models.Trajectory, runOf []int) []int {
 		return fmt.Sprint(*p)
 	}
 	same := func(a, b models.TrajectoryEntry) bool {
-		return a.ActionType == b.ActionType && a.Target == b.Target && a.Tool == b.Tool &&
+		return a.ActionType == b.ActionType && a.Target == b.Target && a.Tool == b.Tool && a.ImpliedBy == b.ImpliedBy &&
 			str(a.InputHash) == str(b.InputHash) && str(a.OutputHash) == str(b.OutputHash) &&
 			code(a.ExitCode) == code(b.ExitCode) && str(a.RequestHash) == str(b.RequestHash)
+	}
+	// A harness-implied claim's interval decides whether it may pair (V-33),
+	// so for it time is compared too.
+	sameTime := func(a, b models.TrajectoryEntry) bool {
+		if a.ImpliedBy == "" {
+			return true
+		}
+		if !a.Timestamp.Equal(b.Timestamp) || (a.End == nil) != (b.End == nil) {
+			return false
+		}
+		return a.End == nil || a.End.Equal(*b.End)
 	}
 	out := make([]int, len(c))
 	for i := range c {
 		out[i] = i
 		for k := 0; k < i; k++ {
-			if runOf[k] == runOf[i] && same(c[k], c[i]) {
+			if runOf[k] == runOf[i] && same(c[k], c[i]) && sameTime(c[k], c[i]) {
 				out[i] = k
 				break
 			}
@@ -357,7 +368,9 @@ func runsOf(c models.Trajectory) []int {
 // run of claims sharing a block id permuted, runs in order) and every
 // alignment of each order, and returns the minimum cost, the distinct pairings
 // that reach it, and the fewest interval violations among them. It shares no
-// code with alignBlocks.
+// code with alignBlocks but the cost of one pair and of one unpaired claim
+// (pairCostOf, insertCost: a harness-implied claim costs nothing unpaired and
+// is refused most pairs, V-33).
 func bruteForceBlocks(c models.Trajectory, o models.GroundTruth) (best int, pairings map[string]bool, bestViol int) {
 	class := classes(c, runsOf(c))
 	var runs [][]int
@@ -416,17 +429,18 @@ func bruteForceBlocks(c models.Trajectory, o models.GroundTruth) (best int, pair
 				return
 			}
 			if i < len(order) && j < len(o) {
-				pc, _ := pairCost(c[order[i]], o[j], nil)
-				v := 0
-				if outsideInterval(c[order[i]], o[j], 0) {
-					v = 1
+				if pc, ok := pairCostOf(c[order[i]], o[j], Options{}); ok {
+					v := 0
+					if outsideInterval(c[order[i]], o[j], 0) {
+						v = 1
+					}
+					pairs = append(pairs, [2]int{order[i], j})
+					rec(i+1, j+1, cost+pc, viol+v)
+					pairs = pairs[:len(pairs)-1]
 				}
-				pairs = append(pairs, [2]int{order[i], j})
-				rec(i+1, j+1, cost+pc, viol+v)
-				pairs = pairs[:len(pairs)-1]
 			}
 			if i < len(order) {
-				rec(i+1, j, cost+costIndel, viol)
+				rec(i+1, j, cost+insertCost(c[order[i]]), viol)
 			}
 			if j < len(o) {
 				rec(i, j+1, cost+costIndel, viol)

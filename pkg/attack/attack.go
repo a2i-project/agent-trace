@@ -90,6 +90,34 @@ type Record struct {
 	Mutations []Mutation `json:"mutations"`
 }
 
+// ErrImplied is returned when the trajectory holds a harness-implied claim
+// (V-33). Such a claim is an adapter's derivation, not the agent's, and a
+// mutation of one would be an attacker-made harness-implied claim, which the
+// threat model rules out: drop them first with WithoutImplied.
+var ErrImplied = errors.New("attack: the trajectory holds harness-implied claims, which only an adapter derives; drop them with WithoutImplied before mutating")
+
+// WithoutImplied returns the trajectory without its harness-implied claims
+// and how many it dropped. A mutated trajectory is written as normalized
+// JSON, which cannot carry them anyway (V-33).
+func WithoutImplied(t models.Trajectory) (models.Trajectory, int) {
+	out := make(models.Trajectory, 0, len(t))
+	for _, e := range t {
+		if e.ImpliedBy == "" {
+			out = append(out, e)
+		}
+	}
+	return out, len(t) - len(out)
+}
+
+func refuseImplied(t models.Trajectory) error {
+	for i, e := range t {
+		if e.ImpliedBy != "" {
+			return fmt.Errorf("%w: entry %d (%s %s)", ErrImplied, i, e.ActionType, e.Target)
+		}
+	}
+	return nil
+}
+
 func newRand(seed uint64) *rand.Rand {
 	return rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15))
 }

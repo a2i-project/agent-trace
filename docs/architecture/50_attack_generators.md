@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit a1c95a9 on 2026-10-11.
+Checked against commit af7a8e7 on 2026-10-13.
 
 ## Objective
 
@@ -12,7 +12,7 @@ Generators work on the normalized `models.Trajectory`, so they apply to any agen
 
 | File | Main symbols |
 |---|---|
-| `pkg/attack/attack.go` | `Kind`, `Options`, `Mutation`, `Record`, `ErrTooMany`, `choose`, `clone` |
+| `pkg/attack/attack.go` | `Kind`, `Options`, `Mutation`, `Record`, `ErrTooMany`, `ErrImplied`, `WithoutImplied`, `choose`, `clone` |
 | `pkg/attack/omit.go` | `Omit` |
 | `pkg/attack/fabricate.go` | `Fabricate` |
 | `pkg/attack/substitute.go` | `Substitute`, `SubstituteOptions`, the `Field*` names |
@@ -30,7 +30,7 @@ Go with the standard library only. Randomness is `math/rand/v2` with a PCG sourc
 
 ### Generators
 
-Every generator takes a trajectory and `Options` and returns the mutated trajectory and a `Record`. `Options` has `N` (how many), `Seed`, `Select` (which entries may be chosen), `Indices` (explicit positions, overriding `N` and `Select`, for composing attacks), `Avoid` (targets a generator must not produce) and `Retime` (omission only). The same trajectory, options and seed give the same mutation. The input is never modified and the output shares no pointers with it. Asking for more mutations than the trajectory admits, a trajectory too short to insert into, an index beyond the trajectory's length or one a generator cannot use is an error (`ErrTooMany` for the first two), never a silent partial result.
+Every generator takes a trajectory and `Options` and returns the mutated trajectory and a `Record`. `Options` has `N` (how many), `Seed`, `Select` (which entries may be chosen), `Indices` (explicit positions, overriding `N` and `Select`, for composing attacks), `Avoid` (targets a generator must not produce) and `Retime` (omission only). The same trajectory, options and seed give the same mutation. The input is never modified and the output shares no pointers with it. Asking for more mutations than the trajectory admits, a trajectory too short to insert into, an index beyond the trajectory's length or one a generator cannot use is an error (`ErrTooMany` for the first two), never a silent partial result. A trajectory holding a harness-implied claim (V-33) is refused with `ErrImplied`: such a claim is the adapter's derivation, and mutating it would make an attacker-made one. `WithoutImplied` drops them and says how many.
 
 | Generator | What it does |
 |---|---|
@@ -55,7 +55,7 @@ Detected without classified is the failure the scorer exists to expose: the righ
 
 ### The command
 
-`attack` reads a session through an adapter (or normalized JSON with `--normalized`), applies one generator, writes the mutated trajectory as normalized JSON and the record as JSON. `--select sensitive` restricts the choice, `--field` and `--retime` apply to substitution and omission, and `--avoid-ground-truth FILE` forbids any fabricated or substituted target that the capture observed, so a mutation cannot be true by accident. `verify --normalized --agent NAME` then verifies the mutated claims, using the adapter for the observed side. See [40_tools.md](40_tools.md).
+`attack` reads a session through an adapter (or normalized JSON with `--normalized`, which refuses a trajectory naming `implied_by`), drops the harness-implied claims the adapter derived (`WithoutImplied`, with a note on standard error), applies one generator, writes the mutated trajectory as normalized JSON and the record as JSON. `--select sensitive` restricts the choice, `--field` and `--retime` apply to substitution and omission, and `--avoid-ground-truth FILE` forbids any fabricated or substituted target that the capture observed, so a mutation cannot be true by accident. `verify --normalized --agent NAME` then verifies the mutated claims, using the adapter for the observed side. See [40_tools.md](40_tools.md).
 
 ### The evaluation tests
 

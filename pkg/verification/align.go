@@ -141,6 +141,60 @@ type Options struct {
 	// baseline measured on a few control runs misses them (V-24). Nil
 	// declares nothing.
 	HarnessOwned func(path string) bool
+
+	// impliedWitness says whether the command a harness-implied claim names
+	// opened the claim's file no later than the event (V-33). Verify sets it
+	// from the process tree. Nil, as when Align is called on its own, leaves
+	// only the other conditions of impliedPairs.
+	impliedWitness func(c models.TrajectoryEntry, e models.GroundTruthEvent) bool
+}
+
+// implied reports whether a claim is harness-implied (V-33): marked by an
+// adapter and a file open. A marker on any other type is ignored, so the
+// claim is aligned as an ordinary one.
+func implied(c models.TrajectoryEntry) bool {
+	return c.ImpliedBy != "" && c.ActionType == models.FileOpen
+}
+
+// insertCost is the cost of leaving a claim unpaired: an ordinary claim is a
+// fabrication (V-10), a harness-implied one costs nothing, since the harness
+// may not have acted (V-33).
+func insertCost(c models.TrajectoryEntry) int {
+	if implied(c) {
+		return 0
+	}
+	return costIndel
+}
+
+// impliedPairs reports whether a harness-implied claim may pair with an
+// event (V-33): only an open of exactly the path it names, not a directory
+// record or a truncated one, that agrees on content and states nothing the
+// claim cannot check, inside the claim's interval, and, under Verify, opened
+// first by the command the claim names. Any other pairing is refused, so a
+// harness-implied claim is never Mismatched, never outside its interval and
+// never unverified.
+func impliedPairs(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Options) bool {
+	if e.ActionType != models.FileOpen || e.Target != c.Target || e.PathIsAmbiguous || e.TargetTruncated {
+		return false
+	}
+	if len(contentDiffs(c, e, opts.Expresses)) > 0 || len(unverifiedFields(c, e)) > 0 {
+		return false
+	}
+	if outsideInterval(c, e, opts.IntervalSlack) {
+		return false
+	}
+	return opts.impliedWitness == nil || opts.impliedWitness(c, e)
+}
+
+// pairCostOf is pairCost with V-33's refusal: ok is false when the claim is
+// harness-implied and may not pair with the event. An ordinary claim pairs
+// with any event of its lane.
+func pairCostOf(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Options) (cost int, ok bool) {
+	if implied(c) {
+		return 0, impliedPairs(c, e, opts)
+	}
+	pc, _ := pairCost(c, e, opts.Expresses)
+	return pc, true
 }
 
 // ErrTooLarge is returned when a lane is too large to align in bounded memory.
@@ -250,6 +304,13 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 	la.Degradations = degr
 	for _, s := range segs {
 		if len(s) > 1 {
+			return alignBlocks(la, claims, observed, ci, ei, segs, opts)
+		}
+	}
+	// A harness-implied claim (V-33) needs the block program's handling of an
+	// unpaired claim that costs nothing; a lane without one keeps this program.
+	for _, i := range ci {
+		if implied(claims[i]) {
 			return alignBlocks(la, claims, observed, ci, ei, segs, opts)
 		}
 	}

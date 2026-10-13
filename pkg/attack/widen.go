@@ -18,6 +18,9 @@ import (
 // explained: its relevance is to the interval check (V-12), and, composed with
 // an omission, to whether widening can hide one.
 func Widen(t models.Trajectory, opt Options) (models.Trajectory, Record, error) {
+	if err := refuseImplied(t); err != nil {
+		return nil, Record{}, err
+	}
 	idx, err := choose(t, opt, func(i int, e models.TrajectoryEntry) bool {
 		s, en := widened(t, i)
 		return !s.Equal(e.Timestamp) || !en.Equal(endOf(e))

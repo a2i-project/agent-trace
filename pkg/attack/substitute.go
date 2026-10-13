@@ -34,6 +34,9 @@ type SubstituteOptions struct {
 // comparison reports the disagreement. A replacement never equals the original
 // or a target in opt.Avoid.
 func Substitute(t models.Trajectory, opt SubstituteOptions) (models.Trajectory, Record, error) {
+	if err := refuseImplied(t); err != nil {
+		return nil, Record{}, err
+	}
 	switch opt.Field {
 	case "", FieldTarget, FieldOutputHash, FieldExitCode, FieldRequestHash:
 	default:

@@ -16,6 +16,9 @@ import (
 // clock, so the verifier reports them as outside their intervals (V-12): the
 // attack is easier to catch, not harder.
 func Omit(t models.Trajectory, opt Options) (models.Trajectory, Record, error) {
+	if err := refuseImplied(t); err != nil {
+		return nil, Record{}, err
+	}
 	idx, err := choose(t, opt, nil)
 	if err != nil {
 		return nil, Record{}, err

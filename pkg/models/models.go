@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -42,7 +43,21 @@ type TrajectoryEntry struct {
 	// which content fields the format can state, and is supplied by the agent
 	// being verified, so it is a hint and never a basis for trust.
 	Tool string `json:"tool,omitempty"`
+	// ImpliedBy marks a harness-implied claim (V-33): an action the harness
+	// may or may not perform on its own because of a call, here a read of the
+	// file a Bash command read, with the claimed command it follows. Only an
+	// adapter's derivation sets it, never the agent: it has no JSON form, so
+	// no trajectory read from JSON can carry it, and ParseTrajectory rejects
+	// input that names it. The verifier lets such a claim pair only with an
+	// open of exactly its target that the named command's subtree opened
+	// first, and costs nothing when it stays unpaired. Empty for every
+	// claim of the agent.
+	ImpliedBy string `json:"-"`
 }
+
+// impliedByKey is the name a harness-implied marker would have in a
+// trajectory read from JSON. ParseTrajectory refuses it (V-33).
+const impliedByKey = "implied_by"
 
 // GroundTruthEvent is an independently observed action from the host-level probes.
 type GroundTruthEvent struct {
@@ -137,6 +152,18 @@ func ParseTrajectory(data []byte) (Trajectory, error) {
 	var t Trajectory
 	if err := json.Unmarshal(data, &t); err != nil {
 		return nil, err
+	}
+	// A harness-implied claim comes only from an adapter's own derivation; a
+	// trajectory that names the marker is refused rather than read without
+	// it, so nobody takes a dropped marker for an honoured one (V-33).
+	var keys []map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return nil, err
+	}
+	for i, k := range keys {
+		if _, ok := k[impliedByKey]; ok {
+			return nil, fmt.Errorf("entry %d: %s is set only by an adapter, never read from a trajectory", i, impliedByKey)
+		}
 	}
 	for i := range t {
 		if err := t[i].Validate(); err != nil {

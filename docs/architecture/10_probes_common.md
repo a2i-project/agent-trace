@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 2c648e7 on 2026-10-13.
+Checked against commit af7a8e7 on 2026-10-13.
 
 ## Objective
 
@@ -13,7 +13,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | `pkg/probe/probe.go` | `probe.Observer` and `probe.CoverageReporter` interfaces |
 | `cmd/watch/main.go` | `probeBuilders` registry, `runWatch`, `buildCoverage`; writes `ground_truth.json` |
 | `pkg/models/action.go` | `ActionType` values, `IsClaimable`, `IsStructural` |
-| `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth` |
+| `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry`, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
 | `pkg/models/coverage.go` | `ProbeCoverage`, `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema` |
 | `pkg/verification/completeness.go` | `Assess`: turns coverage counters into Reasons (event loss) and Notes (content gaps) |
 

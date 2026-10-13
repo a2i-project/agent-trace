@@ -213,6 +213,9 @@ func report(w io.Writer, r reportInput) {
 	p("  Out of scope: %d  (file claims on paths the capture could not observe: not aligned)\n", len(v.OutOfScope))
 	p("  Unexplained harness activity: %d  (level-0 file events in the harness's own directories that nothing explains)\n", len(v.UnexplainedHarness))
 	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
+	if n := len(v.HarnessImplied) + len(v.HarnessImpliedUnpaired); n > 0 {
+		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", len(v.HarnessImplied), n)
+	}
 	if v.Ambiguous {
 		p("  note: more than one alignment is equally good, so the position a finding points at is one of several\n")
 	}
@@ -239,6 +242,7 @@ func report(w io.Writer, r reportInput) {
 	printEntries(w, "Out of scope", v.OutOfScope)
 	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
 	printEvents(w, "Outside writes", v.OutsideWrites)
+	printImplied(w, v.HarnessImplied)
 	printEvents(w, "Capability", v.Capability)
 	printCommands(w, v.Commands)
 	printCompleteness(w, v.Completeness)
@@ -355,6 +359,18 @@ func printPairs(w io.Writer, label string, pairs []verification.MatchedPair) {
 			derefInt(p.Entry.ExitCode), derefStr(p.Entry.InputHash), derefStr(p.Entry.OutputHash), derefStr(p.Entry.RequestHash))
 		_, _ = fmt.Fprintf(w, "    observed: exit_code=%s input_hash=%s output_hash=%s request_hash=%s\n",
 			derefInt(p.Event.ExitCode), derefStr(p.Event.InputHash), derefStr(p.Event.OutputHash), derefStr(p.Event.RequestHash))
+	}
+}
+
+// printImplied lists the harness-implied claims that paired, each with the
+// call that implied it and the open it explains (V-33).
+func printImplied(w io.Writer, pairs []verification.MatchedPair) {
+	if len(pairs) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "\nHarness implied:")
+	for _, p := range pairs {
+		_, _ = fmt.Fprintf(w, "  %s %-14s %s  (after %q)\n", p.Event.Timestamp.Format(time.RFC3339Nano), p.Event.ActionType, p.Event.Target, p.Entry.ImpliedBy)
 	}
 }
 
@@ -538,6 +554,18 @@ type jsonAlignment struct {
 	OutOfScope         models.Trajectory          `json:"out_of_scope"`
 	UnexplainedHarness models.GroundTruth         `json:"unexplained_harness"`
 	OutsideWrites      models.GroundTruth         `json:"outside_writes"`
+	// HarnessImplied and HarnessImpliedUnpaired are present only when the
+	// adapter derived harness-implied claims (V-33).
+	HarnessImplied         []jsonImplied `json:"harness_implied,omitempty"`
+	HarnessImpliedUnpaired []jsonImplied `json:"harness_implied_unpaired,omitempty"`
+}
+
+// jsonImplied is a harness-implied claim with the call that implied it, which
+// the claim's own JSON form does not carry, and the open it paired with.
+type jsonImplied struct {
+	ImpliedBy string                   `json:"implied_by"`
+	Claim     models.TrajectoryEntry   `json:"claim"`
+	Event     *models.GroundTruthEvent `json:"event,omitempty"`
 }
 
 type jsonCoverage struct {
@@ -569,6 +597,12 @@ func writeJSONReport(path string, r reportInput) error {
 			UnexplainedSubtrees: []uint32{}, Quiet: []uint32{},
 		},
 		Capability: nonNilEvents(v.Capability), Commands: []jsonCommand{}, Complete: v.Completeness,
+	}
+	for _, p := range v.HarnessImplied {
+		rep.Alignment.HarnessImplied = append(rep.Alignment.HarnessImplied, jsonImplied{ImpliedBy: p.Entry.ImpliedBy, Claim: p.Entry, Event: &p.Event})
+	}
+	for _, c := range v.HarnessImpliedUnpaired {
+		rep.Alignment.HarnessImpliedUnpaired = append(rep.Alignment.HarnessImpliedUnpaired, jsonImplied{ImpliedBy: c.ImpliedBy, Claim: c})
 	}
 	for _, c := range v.Coverage.UnexplainedSubtrees {
 		rep.Coverage.UnexplainedSubtrees = append(rep.Coverage.UnexplainedSubtrees, c.Process.PID)
