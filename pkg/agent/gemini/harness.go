@@ -61,7 +61,7 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 var (
 	uuidRE        = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 	crashRE       = regexp.MustCompile(`/crashes/crash_\d+_`)
-	stepRE        = regexp.MustCompile(`/\.system_generated/steps/\d+/`)
+	stepRE        = regexp.MustCompile(`/\.system_generated/steps/\d+(/|$)`)
 	logRE         = regexp.MustCompile(`/log/cli-\d{8}_\d{6}\.log$`)
 	chunkRE       = regexp.MustCompile(`/\.system_generated/logs/chunks/(transcript(?:_full)?)/\d+\.jsonl$`)
 	rgTempRE      = regexp.MustCompile(`/\.cache/antigravity/bin/\.rg_embedded-\d+$`)
@@ -75,8 +75,8 @@ var (
 // with fixed tokens (I-48): the conversation id and the other UUIDs the
 // application directory names files by (temporaries are <name>.<uuid>.tmp),
 // the pid in a crash log's name, the start time in the name of the run's log,
-// the step index of a step's output file and
-// the chunk index of a transcript chunk, the random suffix of the embedded
+// the step index of a step's directory and of the files in it (I-49), the
+// chunk index of a transcript chunk, the random suffix of the embedded
 // ripgrep's temporary and of the auto-updater's write test, and the number of
 // the pseudo-terminal a command runs on. Any other path is returned as it is.
 func canonicalPath(p string) string {
@@ -84,7 +84,7 @@ func canonicalPath(p string) string {
 	case harnessAppDir.MatchString(p):
 		p = uuidRE.ReplaceAllString(p, "{id}")
 		p = crashRE.ReplaceAllString(p, "/crashes/crash_{pid}_")
-		p = stepRE.ReplaceAllString(p, "/.system_generated/steps/{n}/")
+		p = stepRE.ReplaceAllString(p, "/.system_generated/steps/{n}$1")
 		p = chunkRE.ReplaceAllString(p, "/.system_generated/logs/chunks/$1/{n}.jsonl")
 		p = logRE.ReplaceAllString(p, "/log/cli-{time}.log")
 	case rgTempRE.MatchString(p):

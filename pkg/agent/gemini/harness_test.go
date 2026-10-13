@@ -109,6 +109,11 @@ func TestCanonicalReplacesThePerRunIDs(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{app + "conversations/fe5c14b8-1dfe-480f-ac10-d772c8892143.db-wal", app + "conversations/{id}.db-wal"},
 		{app + "brain/fe5c14b8-1dfe-480f-ac10-d772c8892143/.system_generated/steps/16/output.txt", app + "brain/{id}/.system_generated/steps/{n}/output.txt"},
+		// The step's directory itself, whose create the probe reports as an
+		// ambiguous write of the directory (I-49).
+		{app + "brain/fe5c14b8-1dfe-480f-ac10-d772c8892143/.system_generated/steps/4", app + "brain/{id}/.system_generated/steps/{n}"},
+		{app + "brain/fe5c14b8-1dfe-480f-ac10-d772c8892143/.system_generated/steps/10/", app + "brain/{id}/.system_generated/steps/{n}/"},
+		{app + "brain/fe5c14b8-1dfe-480f-ac10-d772c8892143/.system_generated/steps/4x", app + "brain/{id}/.system_generated/steps/4x"},
 		{app + "brain/fe5c14b8-1dfe-480f-ac10-d772c8892143/.system_generated/logs/chunks/transcript_full/00000000.jsonl", app + "brain/{id}/.system_generated/logs/chunks/transcript_full/{n}.jsonl"},
 		{app + "crashes/crash_1564584_1645188e-697d-4e88-9d59-5fa12fc728f4.log", app + "crashes/crash_{pid}_{id}.log"},
 		{app + "cache/last_conversations.json.1645188e-697d-4e88-9d59-5fa12fc728f4.tmp", app + "cache/last_conversations.json.{id}.tmp"},

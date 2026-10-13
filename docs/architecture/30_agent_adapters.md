@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit e771f7c on 2026-10-13.
+Checked against commit 4e95265 on 2026-10-13.
 
 ## Objective
 
@@ -163,7 +163,7 @@ What the harness does, measured with `strace -f` on agy 1.3.4 (I-47, I-48). The 
 | `Process` | `ShellPerCommand: true`, `SubagentsInProcess: true`, `IntervalExecution`, `Parallel`, `ExitsClaimed: false` (measured, I-47) |
 | `Expresses` | `exit_code`: never. `request_hash`: never. `output_hash`: only for `Tool == "write_to_file"`, and not on a `file_close` that claims none. Other fields: yes. |
 | `Normalize` | A process exec or exit whose target is `/usr/bin/bash -c <rest>` or `/bin/bash -c <rest>`, with `<rest>` not empty, becomes `<rest>`, the `CommandLine` (I-47); a cut target gives a prefix (V-26). File targets lose a trailing ` (deleted)`. Nothing else is rewritten. |
-| `Canonical` | In file targets: every UUID under `~/.gemini/antigravity-cli/` becomes `{id}`, a crash log's pid `{pid}`, a step's and a transcript chunk's index `{n}`, the log's time `{time}`, and the digits of `~/.cache/antigravity/bin/.rg_embedded-<n>`, `~/.local/bin/.update_test<n>` and `/dev/pts/<n>` `{n}` (I-48). |
+| `Canonical` | In file targets: every UUID under `~/.gemini/antigravity-cli/` becomes `{id}`, a crash log's pid `{pid}`, a step's index (in the step's directory and in the paths below it, I-49) and a transcript chunk's index `{n}`, the log's time `{time}`, and the digits of `~/.cache/antigravity/bin/.rg_embedded-<n>`, `~/.local/bin/.update_test<n>` and `/dev/pts/<n>` `{n}` (I-48). |
 | `IsHarnessOwned` | `~/.gemini/antigravity-cli/`, `~/.cache/antigravity/`, `~/.local/bin/.update_test<digits>` and `/tmp/unleash-repo-schema-v1-codeium-language-server.json`, for a home under `/home` or `/root` (I-48). |
 | `IsHarnessNoise` | Declares nothing. |
 | Degradations | No exit codes; file-tool claim shapes a hypothesis; calls issued together carry no block id and are ordered by started time; plus, when present, `invoke_subagent` calls whose subagent databases are not read, subtrajectory steps not followed, persistent-shell commands not claimed, non-completed steps not claimed, created time used as start, unknown tools. |
