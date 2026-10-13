@@ -195,6 +195,9 @@ def result_text(content):
     return ""
 
 
+BASH_FIELDS = ("interrupted", "isImage", "backgroundTaskId", "returnCodeInterpretation")
+
+
 def reduce_transcript(src, dst):
     kept = []
     names = {}  # tool_use id -> tool name, from the calls read so far
@@ -226,6 +229,11 @@ def reduce_transcript(src, dst):
                    "version": o.get("version", ""), "message": {"id": m.get("id", ""), "role": m.get("role", ""), "content": slim}}
             if o.get("isSidechain"):
                 rec["isSidechain"] = True
+            # The session's working directory, against which the adapter
+            # resolves the file a Bash read command names (I-46); rewritten
+            # like every other path below.
+            if isinstance(o.get("cwd"), str):
+                rec["cwd"] = o["cwd"]
             tr = o.get("toolUseResult")
             results = [b for b in blocks if b["type"] == "tool_result"]
             read_id = results[0]["tool_use_id"] if len(results) == 1 and names.get(results[0]["tool_use_id"]) == "Read" else None
@@ -241,6 +249,10 @@ def reduce_transcript(src, dst):
                 # An Edit's result: the adapter computes the final content from
                 # these (I-31). The seeded project's files are not private.
                 rec["toolUseResult"] = {k: tr[k] for k in ("originalFile", "oldString", "newString", "replaceAll") if k in tr}
+            elif isinstance(tr, dict) and len(results) == 1 and names.get(results[0]["tool_use_id"]) == "Bash":
+                # The states in which the harness does not read the file a Bash
+                # read command names (I-46); the output itself stays out.
+                rec["toolUseResult"] = {k: tr[k] for k in BASH_FIELDS if k in tr}
             elif tr is not None:
                 rec["toolUseResult"] = {}
             rec = json.loads(rewrite(json.dumps(rec), task))
