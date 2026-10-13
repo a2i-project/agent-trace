@@ -114,6 +114,10 @@ type Verdict struct {
 	// alignment, so a finding that points at one position does not exclude
 	// the others.
 	Ambiguous bool
+	// Degradations lists where a lane was aligned more strictly than the
+	// parallel-block rule allows (V-32): the strict reading can add an order
+	// finding, never remove one. Not a finding and no effect on the outcome.
+	Degradations []string
 	// Completeness is the judgement of whether G can support FAITHFUL.
 	Completeness Completeness
 	// Reasons says why the outcome is inconclusive, or, under NOT FAITHFUL,
@@ -345,6 +349,7 @@ func Verify(in Input) Verdict {
 	v.Alignments = alignments
 	for _, la := range alignments {
 		v.Ambiguous = v.Ambiguous || la.Ambiguous
+		v.Degradations = append(v.Degradations, la.Degradations...)
 		for _, e := range la.Edits {
 			switch e.Kind {
 			case EditMatch, EditSubstitution:

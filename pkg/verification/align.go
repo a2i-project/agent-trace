@@ -106,8 +106,17 @@ type LaneAlignment struct {
 	// claim's interval, then a fixed rule (V-31). A report that points at one
 	// position must not claim the others are excluded.
 	Ambiguous bool
-	// Optimal is how many minimum-cost alignments exist, saturating.
+	// Optimal is how many minimum-cost alignments exist, saturating. With
+	// parallel blocks (V-32) an alignment is a pairing: which claim pairs
+	// with which event. Orderings of a block that give the same pairing count
+	// once; two pairings that differ count twice, even when the claims they
+	// exchange are identical, since the report names entries.
 	Optimal uint32
+	// Degradations names each place where the lane was aligned more strictly
+	// than V-32 allows: a block over the cap, a block whose claims are not
+	// contiguous, exit claims that carry a block id. The strict reading can
+	// add an order finding, never remove one.
+	Degradations []string
 }
 
 // Options tunes an alignment. The zero value is the strict reading.
@@ -150,13 +159,22 @@ const (
 	costSubType = 3
 )
 
+// maxBlock is the largest parallel block, counted in claims of one lane, whose
+// claims the alignment lets match in any order (V-32). It is the harness's
+// concurrency limit of 10 calls per message. A larger block is aligned in the
+// order the trajectory gives it, with a degradation.
+const maxBlock = 10
+
 // Align aligns the claim sequence against the observed top-level sequence,
-// one lane at a time. Claims keep their order. Observed events are taken in
-// the order given, so the caller supplies them in time order (Partition does).
-// Pairing is by position: two entries are paired because they sit at
-// corresponding places in two causally ordered sequences, and only then is
-// their content compared, so a substitution of target is reportable instead of
-// reading as a fabrication plus an omission.
+// one lane at a time. Claims keep their order, except that the claims of one
+// parallel block (a run of claims sharing a BlockID) may match in any order
+// among themselves; every claim of an earlier block still precedes every
+// claim of a later one (V-32). Observed events are taken in the order given,
+// so the caller supplies them in time order (Partition does). Pairing is by
+// position: two entries are paired because they sit at corresponding places
+// in two causally ordered sequences, and only then is their content
+// compared, so a substitution of target is reportable instead of reading as a
+// fabrication plus an omission.
 func Align(claims models.Trajectory, observed models.GroundTruth, opts Options) ([]LaneAlignment, error) {
 	type slot struct {
 		claimIdx []int
@@ -227,6 +245,13 @@ func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth,
 	la := LaneAlignment{Lane: lane}
 	if n*m > maxCells || n+1 > maxCells || m+1 > maxCells {
 		return la, ErrTooLarge
+	}
+	segs, degr := blockSegments(lane, claims, ci)
+	la.Degradations = degr
+	for _, s := range segs {
+		if len(s) > 1 {
+			return alignBlocks(la, claims, observed, ci, ei, segs, opts)
+		}
 	}
 
 	w := m + 1
