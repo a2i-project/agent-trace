@@ -137,3 +137,13 @@ func TestCanonicalReplacesThePerRunIDs(t *testing.T) {
 		t.Errorf("a process target was canonicalised to %q", got.Target)
 	}
 }
+
+// agy declares the one host its process connected to in only some runs of the
+// paired capture, its access-token refresh (I-52). A host the baseline
+// explains in every run is not declared, and no declaration is an address.
+func TestHarnessHostsAreTheMeasuredOccasionalHosts(t *testing.T) {
+	got := Adapter{}.HarnessHosts()
+	if len(got) != 1 || got[0] != "oauth2.googleapis.com" {
+		t.Errorf("HarnessHosts() = %v, want only oauth2.googleapis.com", got)
+	}
+}

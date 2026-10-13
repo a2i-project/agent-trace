@@ -626,6 +626,17 @@ func TestIsHarnessOwnedNamesTheHarnessDirectoriesOnly(t *testing.T) {
 	}
 }
 
+// Claude Code declares the one host its process connected to in only some of
+// the checked runs, its release downloads (I-53). The datadog intake and the
+// API hosts were in every run and are not declared, and no declaration is an
+// address.
+func TestHarnessHostsAreTheMeasuredOccasionalHosts(t *testing.T) {
+	got := Adapter{}.HarnessHosts()
+	if len(got) != 1 || got[0] != "downloads.claude.ai" {
+		t.Errorf("HarnessHosts() = %v, want only downloads.claude.ai", got)
+	}
+}
+
 // The session states the harness version on its records; Parse reports it so
 // cmd/verify can refuse a baseline measured on another version.
 func TestParseReportsTheHarnessVersion(t *testing.T) {

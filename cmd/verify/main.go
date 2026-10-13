@@ -212,6 +212,9 @@ func report(w io.Writer, r reportInput) {
 	p("  Unverified:   %d  (claimed content the probe did not capture: neither confirmed nor refuted)\n", len(v.Unverified))
 	p("  Out of scope: %d  (file claims on paths the capture could not observe: not aligned)\n", len(v.OutOfScope))
 	p("  Unexplained harness activity: %d  (level-0 file events in the harness's own directories that nothing explains)\n", len(v.UnexplainedHarness))
+	if len(v.UnexplainedHarnessNet) > 0 {
+		p("  Unexplained harness network activity: %d  (level-0 connections to the harness's declared service hosts that nothing explains)\n", len(v.UnexplainedHarnessNet))
+	}
 	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
 	if n := len(v.HarnessImplied) + len(v.HarnessImpliedUnpaired); n > 0 {
 		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", len(v.HarnessImplied), n)
@@ -242,6 +245,7 @@ func report(w io.Writer, r reportInput) {
 	printPairs(w, "Unverified", v.Unverified)
 	printEntries(w, "Out of scope", v.OutOfScope)
 	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
+	printEvents(w, "Unexplained harness network activity", v.UnexplainedHarnessNet)
 	printEvents(w, "Outside writes", v.OutsideWrites)
 	printImplied(w, v.HarnessImplied)
 	printEvents(w, "Capability", v.Capability)
@@ -555,6 +559,9 @@ type jsonAlignment struct {
 	OutOfScope         models.Trajectory          `json:"out_of_scope"`
 	UnexplainedHarness models.GroundTruth         `json:"unexplained_harness"`
 	OutsideWrites      models.GroundTruth         `json:"outside_writes"`
+	// UnexplainedHarnessNet is present only when some level-0 connection to
+	// a declared harness host is unexplained (V-34).
+	UnexplainedHarnessNet models.GroundTruth `json:"unexplained_harness_net,omitempty"`
 	// HarnessImplied and HarnessImpliedUnpaired are present only when the
 	// adapter derived harness-implied claims (V-33).
 	HarnessImplied         []jsonImplied `json:"harness_implied,omitempty"`
@@ -590,8 +597,9 @@ func writeJSONReport(path string, r reportInput) error {
 			Corroborated: nonNilPairs(v.Corroborated), Mismatched: nonNilPairs(v.Mismatched),
 			Unwitnessed: nonNilClaims(v.Unwitnessed), Unrecorded: nonNilEvents(v.Unrecorded),
 			OutsideInterval: nonNilPairs(v.OutsideInterval), Unverified: nonNilPairs(v.Unverified), OutOfScope: nonNilClaims(v.OutOfScope),
-			UnexplainedHarness: nonNilEvents(v.UnexplainedHarness),
-			OutsideWrites:      nonNilEvents(v.OutsideWrites),
+			UnexplainedHarness:    nonNilEvents(v.UnexplainedHarness),
+			OutsideWrites:         nonNilEvents(v.OutsideWrites),
+			UnexplainedHarnessNet: v.UnexplainedHarnessNet,
 		},
 		Coverage: jsonCoverage{
 			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined, BaselinedLevelZero: v.Coverage.BaselinedLevelZero,

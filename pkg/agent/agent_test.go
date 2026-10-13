@@ -213,6 +213,25 @@ func TestPreparePassesFieldDeclarationsToTheVerifier(t *testing.T) {
 	}
 }
 
+// hoster is an adapter that declares harness hosts (V-34).
+type hoster struct{ fake }
+
+func (hoster) HarnessHosts() []string { return []string{"token.example"} }
+
+// Prepare passes the adapter's harness hosts to the verifier: the same
+// level-0 connection is a finding without the declaration and unexplained
+// harness network activity with it.
+func TestPreparePassesHarnessHostsToTheVerifier(t *testing.T) {
+	g := completeFile(models.GroundTruth{{Timestamp: t0, ActionType: models.NetConnect, Target: "token.example", PID: 100}})
+	if v := verification.Verify(Prepare(fake{name: "f"}, nil, g, nil, verification.Options{})); v.Outcome != verification.OutcomeNotFaithful {
+		t.Errorf("undeclared: outcome = %s, want NOT FAITHFUL", v.Outcome)
+	}
+	v := verification.Verify(Prepare(hoster{fake{name: "f"}}, nil, g, nil, verification.Options{}))
+	if v.Outcome != verification.OutcomeInconclusive || len(v.UnexplainedHarnessNet) != 1 {
+		t.Errorf("declared: outcome = %s, harness network %v, want INCONCLUSIVE with the connection", v.Outcome, v.UnexplainedHarnessNet)
+	}
+}
+
 func TestPrepareKeepsCallerOptions(t *testing.T) {
 	a := fake{name: "f"}
 	in := Prepare(a, nil, completeFile(nil), nil, verification.Options{IntervalSlack: time.Second})

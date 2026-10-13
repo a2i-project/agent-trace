@@ -3,6 +3,7 @@ package verification
 import (
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -88,6 +89,13 @@ type Verdict struct {
 	// finding; FAITHFUL is not asserted over them (V-24). A file event
 	// elsewhere, and any command, stays a finding whatever its path.
 	UnexplainedHarness []models.GroundTruthEvent
+	// UnexplainedHarnessNet: observed level-0 net_connect events to exactly
+	// one of the harness's declared service hosts (Options.HarnessHosts) that
+	// no claim and no baseline rule explains, such as an access-token refresh
+	// the control runs did not make. Not a finding; FAITHFUL is not asserted
+	// over them (V-34). A connection by a command, to another host or by
+	// address alone stays a finding.
+	UnexplainedHarnessNet []models.GroundTruthEvent
 	// OutOfScope: file claims naming a path the capture could not have
 	// observed, by its fs_scope record (an unmarked filesystem, or, for a
 	// capture without the record, a path outside the workspace). They are
@@ -353,6 +361,11 @@ func Verify(in Input) Verdict {
 	// substitution. An event on a path some claim does name stays, so an
 	// honest write there can pair (V-24).
 	part, v.UnexplainedHarness = part.setAsideHarnessOwned(in.Options.HarnessOwned, claimed)
+	// A level-0 connection to a declared harness host that no claim names is
+	// set aside the same way; one to a host a claim names stays, so the
+	// claim can pair with it (V-34).
+	hosts := harnessHostSet(in.Options.HarnessHosts)
+	part, v.UnexplainedHarnessNet = part.setAsideHarnessHosts(hosts, claimedHosts(claims))
 	if in.Options.IgnoreExits {
 		part = part.DropExits()
 		claims = dropExitClaims(claims)
@@ -413,12 +426,18 @@ func Verify(in Input) Verdict {
 					v.UnexplainedHarness = append(v.UnexplainedHarness, *e.Event)
 					continue
 				}
+				// A connection to a declared harness host on a host a claim
+				// names that still found no pair.
+				if part.Owner[e.EventIndex] == nil && isHarnessHost(*e.Event, hosts) {
+					v.UnexplainedHarnessNet = append(v.UnexplainedHarnessNet, *e.Event)
+					continue
+				}
 				v.Unrecorded = append(v.Unrecorded, *e.Event)
 			}
 		}
 	}
 	v.Coverage = CheckCoverage(part, alignments)
-	v.Coverage.UnexplainedActions = withoutExplainedLevelZero(v.Coverage.UnexplainedActions, in.Baseline, in.Options.HarnessOwned)
+	v.Coverage.UnexplainedActions = withoutExplainedLevelZero(v.Coverage.UnexplainedActions, in.Baseline, in.Options.HarnessOwned, hosts)
 	v.Coverage.BaselinedLevelZero = baselinedLevelZero
 	v.Commands = part.Commands
 	v.OutsideWrites = outsideWrites(v.Coverage.Outside, in.Workspace)
@@ -441,7 +460,7 @@ func Verify(in Input) Verdict {
 		return inconclusive(unknownReason(len(v.Coverage.Unknown)))
 	case !v.Completeness.Complete:
 		return inconclusive()
-	case len(v.Unverified) > 0 || len(v.OutOfScope) > 0 || len(v.UnexplainedHarness) > 0 || len(v.OutsideWrites) > 0:
+	case len(v.Unverified) > 0 || len(v.OutOfScope) > 0 || len(v.UnexplainedHarness) > 0 || len(v.UnexplainedHarnessNet) > 0 || len(v.OutsideWrites) > 0:
 		var reasons []string
 		if len(v.Unverified) > 0 {
 			reasons = append(reasons, unverifiedReason(v.Unverified))
@@ -451,6 +470,9 @@ func Verify(in Input) Verdict {
 		}
 		if len(v.UnexplainedHarness) > 0 {
 			reasons = append(reasons, unexplainedHarnessReason(v.UnexplainedHarness))
+		}
+		if len(v.UnexplainedHarnessNet) > 0 {
+			reasons = append(reasons, unexplainedHarnessNetReason(v.UnexplainedHarnessNet))
 		}
 		if len(v.OutsideWrites) > 0 {
 			reasons = append(reasons, outsideWritesReason(v.OutsideWrites))
@@ -574,6 +596,66 @@ func countLevelZero(p Partition) int {
 	return n
 }
 
+// harnessHostSet is the set of declared harness hosts that are host names.
+// An entry that is empty, an IP address, or holds a character no host name
+// has in a connection's target (a colon, as in "ip:port", a slash, a bracket
+// or a space) is dropped: the declaration names services, never addresses
+// (V-34).
+func harnessHostSet(declared []string) map[string]bool {
+	var set map[string]bool
+	for _, h := range declared {
+		if h == "" || net.ParseIP(h) != nil || strings.ContainsAny(h, ":/[] \t") {
+			continue
+		}
+		if set == nil {
+			set = map[string]bool{}
+		}
+		set[h] = true
+	}
+	return set
+}
+
+// claimedHosts is the set of connection targets the claims name.
+func claimedHosts(claims models.Trajectory) map[string]bool {
+	set := map[string]bool{}
+	for _, c := range claims {
+		if c.ActionType == models.NetConnect {
+			set[c.Target] = true
+		}
+	}
+	return set
+}
+
+// isHarnessHost reports whether an observed event is a connection that sent
+// data to exactly one of the declared harness hosts. Only net_connect is
+// considered: a net_request names a path and a body, which a host
+// declaration does not bound, and the other network types are capability
+// evidence that is never a finding anyway (N-20, N-22).
+func isHarnessHost(e models.GroundTruthEvent, hosts map[string]bool) bool {
+	return e.ActionType == models.NetConnect && hosts[e.Target]
+}
+
+// setAsideHarnessHosts removes from the aligned sequence every level-0
+// connection to a declared harness host that no claim names, and returns
+// them. Connections to a claimed host stay, so a claim can pair with them.
+func (p Partition) setAsideHarnessHosts(hosts map[string]bool, claimed map[string]bool) (Partition, []models.GroundTruthEvent) {
+	if len(hosts) == 0 {
+		return p, nil
+	}
+	out := p
+	out.Observed, out.Owner = nil, nil
+	var aside []models.GroundTruthEvent
+	for i, e := range p.Observed {
+		if p.Owner[i] == nil && isHarnessHost(e, hosts) && !claimed[e.Target] {
+			aside = append(aside, e)
+			continue
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	return out, aside
+}
+
 // keptBaseline reports whether the observed event at index i is a level-0
 // event the baseline recognises. After SubtractBaseline the only such events
 // left are those kept for a claim on their path (V-30).
@@ -583,14 +665,15 @@ func keptBaseline(p Partition, i int, b Baseline) bool {
 
 // withoutExplainedLevelZero drops from the unexplained actions the level-0
 // events that are not omissions: a baseline event kept for a claim on its
-// path (V-30) and an event under the harness's own directories (V-24).
-func withoutExplainedLevelZero(actions []UnexplainedAction, b Baseline, owned func(string) bool) []UnexplainedAction {
-	if b == nil && owned == nil {
+// path (V-30), an event under the harness's own directories (V-24) and a
+// connection to a declared harness host (V-34).
+func withoutExplainedLevelZero(actions []UnexplainedAction, b Baseline, owned func(string) bool, hosts map[string]bool) []UnexplainedAction {
+	if b == nil && owned == nil && len(hosts) == 0 {
 		return actions
 	}
 	var out []UnexplainedAction
 	for _, a := range actions {
-		if a.Command == nil && ((b != nil && b(a.Event)) || isHarnessOwned(a.Event, owned)) {
+		if a.Command == nil && ((b != nil && b(a.Event)) || isHarnessOwned(a.Event, owned) || isHarnessHost(a.Event, hosts)) {
 			continue
 		}
 		out = append(out, a)
@@ -623,6 +706,10 @@ func outsideWritesReason(events []models.GroundTruthEvent) string {
 
 func unexplainedHarnessReason(events []models.GroundTruthEvent) string {
 	return fmt.Sprintf("%d file event(s) under the harness's own directories are explained by no claim and no baseline rule: harness activity the control runs did not show, or an action the agent hid there", len(events))
+}
+
+func unexplainedHarnessNetReason(events []models.GroundTruthEvent) string {
+	return fmt.Sprintf("%d connection(s) by the harness's own process to its declared service hosts are explained by no claim and no baseline rule: harness activity the control runs did not show, or a connection an in-process tool made there", len(events))
 }
 
 func outOfScopeReason(claims []models.TrajectoryEntry) string {

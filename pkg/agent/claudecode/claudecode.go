@@ -140,6 +140,16 @@ var harnessOwned = regexp.MustCompile(`^(?:/(?:home/[^/]+|root)/(?:\.claude(?:/|
 // directories.
 func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchString(path) }
 
+// HarnessHosts are Claude Code's own service hosts that it connects to only
+// sometimes (V-34, I-53). downloads.claude.ai is where the harness fetches
+// its releases: its own process connected to it in one of the 42 runs of the
+// checked captures (a control of the parallel capture of 2.1.286,
+// 2026-10-07), and a control runs no task. api.anthropic.com,
+// mcp-proxy.anthropic.com and the datadog intake
+// http-intake.logs.us5.datadoghq.com were in every run, so the baseline
+// explains them and they are not declared.
+func (Adapter) HarnessHosts() []string { return []string{"downloads.claude.ai"} }
+
 // capturedVersion is the Claude Code version whose kernel-level behaviour the
 // claim shapes were checked against (scripts/capture-claude-code.sh).
 const capturedVersion = "2.1.286"

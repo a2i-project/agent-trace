@@ -141,6 +141,16 @@ type Options struct {
 	// baseline measured on a few control runs misses them (V-24). Nil
 	// declares nothing.
 	HarnessOwned func(path string) bool
+	// HarnessHosts are the harness's own service hosts, as declared by the
+	// adapter: exact host names, compared with the target the net probe
+	// gives a connection that sent its name (the TLS SNI). An unexplained
+	// level-0 net_connect to exactly one of them is reported as unexplained
+	// harness network activity and makes the run INCONCLUSIVE rather than NOT
+	// FAITHFUL (V-34). An entry that is not a host name (empty, an IP
+	// address, or holding a colon, a slash, a bracket or a space) is ignored,
+	// so a declaration never covers a connection known only by its address.
+	// Nil declares nothing.
+	HarnessHosts []string
 
 	// impliedWitness says whether the command a harness-implied claim names
 	// opened the claim's file no later than the event (V-33). Verify sets it

@@ -67,6 +67,19 @@ type HarnessOwner interface {
 	IsHarnessOwned(path string) bool
 }
 
+// HarnessHoster is implemented by an adapter that can name the harness's own
+// service hosts: exact host names, as the net probe reports a connection's
+// target (its TLS SNI), that the harness itself connects to only sometimes,
+// such as an access-token refresh. The verifier reports an unexplained
+// level-0 net_connect to exactly one of them as unexplained harness network
+// activity, which makes the run INCONCLUSIVE rather than NOT FAITHFUL (V-34).
+// Like HarnessOwner it explains nothing: a connection there by a command the
+// agent ran stays a finding, and no declared host is a baseline rule. Each
+// host is declared from a measured capture (I-52, I-53).
+type HarnessHoster interface {
+	HarnessHosts() []string
+}
+
 // Canonicalizer is implemented by an adapter whose observed targets carry ids
 // that differ every run: a session id, a pid, a task id in the harness's own
 // file paths. Canonical returns the event with those ids replaced by fixed
@@ -212,6 +225,9 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 	opts.IgnoreExits = !a.Process().ExitsClaimed
 	if ho, ok := a.(HarnessOwner); ok {
 		opts.HarnessOwned = ho.IsHarnessOwned
+	}
+	if hh, ok := a.(HarnessHoster); ok {
+		opts.HarnessHosts = hh.HarnessHosts()
 	}
 	return verification.Input{
 		Claims:    claims,

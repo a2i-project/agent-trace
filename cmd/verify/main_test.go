@@ -567,3 +567,60 @@ func TestLevelZeroBaselineIsCounted(t *testing.T) {
 		t.Errorf("without a baseline:\n%s", out)
 	}
 }
+
+// On the Gemini fixture the harness's token refresh is unexplained harness
+// network activity (V-34): counted and listed apart in the text and the JSON,
+// and the run is INCONCLUSIVE. Every run prints how many of the agent
+// process's own events the baseline explained, apart from the events beneath
+// baselined commands; a run with no such connection prints nothing about it.
+func TestHarnessNetworkActivityAndLevelZeroBaselineAreReported(t *testing.T) {
+	const dir = "../../pkg/agent/gemini/testdata/paired-agy-1.3.4-basic"
+	controls, _ := filepath.Glob(filepath.Join(dir, "control-*.ground_truth.json"))
+	var runs []models.GroundTruthFile
+	for _, p := range controls {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := models.ParseGroundTruthFile(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs = append(runs, f)
+	}
+	a, _ := agent.Lookup("gemini")
+	b, err := agent.Capture(a, "1.3.4", runs, t0, agent.CaptureOptions{Exclude: []string{": agent-trace-control-marker"}, MinAgreement: 0.2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	base := filepath.Join(tmp, "baseline.json")
+	if err := agent.SaveBaseline(base, b); err != nil {
+		t.Fatal(err)
+	}
+	jsonPath := filepath.Join(tmp, "v.json")
+	code, out, errOut := verify(t, "--trajectory", filepath.Join(dir, "basic.conversation.db"), "--ground-truth", filepath.Join(dir, "basic.ground_truth.json"), "--baseline", base, "--json", jsonPath)
+	if code != 2 || !strings.Contains(out, "Unrecorded:   0 ") ||
+		!strings.Contains(out, "Unexplained harness network activity: 1  (") ||
+		!strings.Contains(out, "\nUnexplained harness network activity:\n  2026-10-13T22:02:20.274885534+02:00 net_connect    oauth2.googleapis.com\n") ||
+		!strings.Contains(out, "  Level 0 explained by the baseline: 581 events") || !strings.Contains(out, "VERDICT: INCONCLUSIVE") {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	data, _ := os.ReadFile(jsonPath)
+	var rep struct {
+		Alignment struct {
+			Net models.GroundTruth `json:"unexplained_harness_net"`
+		} `json:"alignment"`
+		Coverage struct {
+			LevelZero int `json:"baselined_level_zero"`
+		} `json:"coverage"`
+	}
+	if err := json.Unmarshal(data, &rep); err != nil || len(rep.Alignment.Net) != 1 || rep.Alignment.Net[0].Target != "oauth2.googleapis.com" || rep.Coverage.LevelZero != 581 {
+		t.Errorf("JSON: %+v, %v", rep, err)
+	}
+
+	_, out, _ = verify(t, "--trajectory", filepath.Join(pairedDir, "task.session.jsonl"), "--ground-truth", filepath.Join(pairedDir, "task.ground_truth.json"))
+	if strings.Contains(out, "network activity") || !strings.Contains(out, "  Level 0 explained by the baseline: 0 events") {
+		t.Errorf("a run without harness network activity:\n%s", out)
+	}
+}

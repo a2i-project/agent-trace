@@ -58,6 +58,16 @@ var harnessOwned = regexp.MustCompile(`^(?:/(?:home/[^/]+|root)/(?:\.gemini/anti
 // directories (V-24, I-48).
 func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchString(path) }
 
+// HarnessHosts are agy's own service hosts that it connects to only sometimes
+// (V-34, I-52). oauth2.googleapis.com is its access-token refresh: on the
+// paired capture of agy 1.3.4 (2026-10-13) the agent's own process connected
+// to it once, one second into the task run, and in none of the five controls.
+// Every other host its process named there (daily-cloudcode-pa.googleapis.com,
+// antigravity-unleash.goog, play.googleapis.com, www.googleapis.com,
+// lh3.googleusercontent.com) was in all six runs, so the baseline explains
+// it and it is not declared.
+func (Adapter) HarnessHosts() []string { return []string{"oauth2.googleapis.com"} }
+
 var (
 	uuidRE        = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 	crashRE       = regexp.MustCompile(`/crashes/crash_\d+_`)

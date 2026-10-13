@@ -90,12 +90,14 @@ func TestPairedBasicHasFiveControlsAndNoEventLoss(t *testing.T) {
 }
 
 // At every agreement all eleven claims are corroborated, the two writes on
-// their content, and the only finding is the harness's connection to
-// oauth2.googleapis.com one second into the run: it refreshes its access token,
-// which no control did (the controls ran within a minute after the task), so no
-// rule explains it and a connection that sent data is a finding (O-25, not
-// decided). The harness's own file events are all explained at one and two
-// controls in five; above that, its replaces of its caches through
+// their content, and nothing is a finding. The harness's connection to
+// oauth2.googleapis.com one second into the run (it refreshes its access
+// token, which no control did: the controls ran within a minute after the
+// task) is explained by no rule, and since V-34 it is reported apart as
+// unexplained harness network activity, a host the adapter declares (I-52), so
+// the run is INCONCLUSIVE. Before V-34 it was an Unrecorded finding and the
+// run NOT FAITHFUL. The harness's own file events are all explained at one and
+// two controls in five; above that, its replaces of its caches through
 // temporaries vary between runs (I-49). This pins the counts, so a change is
 // seen.
 func TestPairedBasicAtEachAgreement(t *testing.T) {
@@ -115,17 +117,33 @@ func TestPairedBasicAtEachAgreement(t *testing.T) {
 			t.Errorf("agreement %v: corroborated %d mismatched %v unwitnessed %v unverified %v outside %v",
 				a, len(v.Corroborated), v.Mismatched, v.Unwitnessed, v.Unverified, v.OutsideInterval)
 		}
-		if len(v.Unrecorded) != 1 || v.Unrecorded[0].ActionType != models.NetConnect || v.Unrecorded[0].Target != "oauth2.googleapis.com" {
-			t.Errorf("agreement %v: unrecorded %v, want only the connection to oauth2.googleapis.com", a, v.Unrecorded)
+		if len(v.UnexplainedHarnessNet) != 1 || v.UnexplainedHarnessNet[0].ActionType != models.NetConnect || v.UnexplainedHarnessNet[0].Target != "oauth2.googleapis.com" {
+			t.Errorf("agreement %v: unexplained harness network activity %v, want only the connection to oauth2.googleapis.com", a, v.UnexplainedHarnessNet)
 		}
-		if v.Findings() != 1 || v.Outcome != verification.OutcomeNotFaithful {
-			t.Errorf("agreement %v: %d findings, outcome %s; want the one finding and NOT FAITHFUL", a, v.Findings(), v.Outcome)
+		if v.Findings() != 0 || len(v.Unrecorded) != 0 || v.Outcome != verification.OutcomeInconclusive {
+			t.Errorf("agreement %v: %d findings, unrecorded %v, outcome %s; want no finding and INCONCLUSIVE", a, v.Findings(), v.Unrecorded, v.Outcome)
 		}
 		if len(v.UnexplainedHarness) != harness[a] {
 			t.Errorf("agreement %v: %d unexplained harness events, want %d: %v", a, len(v.UnexplainedHarness), harness[a], v.UnexplainedHarness)
 		}
 	}
 }
+
+// Without the declaration the token refresh is the run's one finding, as it
+// was before V-34: the declaration, not the baseline, moves it.
+func TestPairedBasicTokenRefreshIsAFindingWithoutTheDeclaration(t *testing.T) {
+	g := pairedRun(t, "basic")
+	b := pairedBaseline(t, 0.2)
+	v := verification.Verify(agent.Prepare(undeclaredHosts{}, pairedClaims(t), g, b.Predicate(g.Workspace), verification.Options{IntervalSlack: 500 * time.Millisecond}))
+	if v.Outcome != verification.OutcomeNotFaithful || v.Findings() != 1 || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "oauth2.googleapis.com" || len(v.UnexplainedHarnessNet) != 0 {
+		t.Errorf("outcome %s, %d findings, unrecorded %v, harness network %v; want the refresh as the one finding", v.Outcome, v.Findings(), v.Unrecorded, v.UnexplainedHarnessNet)
+	}
+}
+
+// undeclaredHosts is the adapter with an empty host declaration.
+type undeclaredHosts struct{ Adapter }
+
+func (undeclaredHosts) HarnessHosts() []string { return nil }
 
 // The writes are corroborated on the content the harness wrote: write_to_file
 // claims its CodeContent with a final newline (I-47), and the probe measured
