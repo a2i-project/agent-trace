@@ -77,6 +77,31 @@ func TestVerdictsAndExitCodes(t *testing.T) {
 	}
 }
 
+// TestIOURingSocketOpsAreInconclusive: a capture in which tracked processes
+// submitted socket operations through io_uring cannot support FAITHFUL, even
+// when every claim is corroborated, because the net probe did not see those
+// operations (N-25). The same capture without the counter is the control.
+func TestIOURingSocketOpsAreInconclusive(t *testing.T) {
+	dir := t.TempDir()
+	trajectory := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a")})
+	capture := func(name string, ops uint64) string {
+		cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{
+			"fs":  {Ran: true},
+			"net": {Ran: true, IOURingNetOps: ops},
+		}}
+		return writeJSON(t, dir, name, models.GroundTruthFile{Events: models.GroundTruth{event(models.FileWrite, "/w/a")}, RootPID: 100, Coverage: cov})
+	}
+
+	code, out, errOut := verify(t, "--trajectory", trajectory, "--ground-truth", capture("clean.json", 0))
+	if code != 0 || !strings.Contains(out, "VERDICT: FAITHFUL") {
+		t.Fatalf("control: exit %d, want 0\n%s\n%s", code, out, errOut)
+	}
+	code, out, errOut = verify(t, "--trajectory", trajectory, "--ground-truth", capture("uring.json", 3))
+	if code != 2 || !strings.Contains(out, "VERDICT: INCONCLUSIVE") || !strings.Contains(out, "io_uring") {
+		t.Errorf("io_uring socket operations: exit %d, want 2 with a reason naming io_uring\n%s\n%s", code, out, errOut)
+	}
+}
+
 func TestOmissionNamesTheUnreportedAction(t *testing.T) {
 	dir := t.TempDir()
 	tr := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a")})

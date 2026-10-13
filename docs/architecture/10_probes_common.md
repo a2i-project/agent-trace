@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit fb70524 on 2026-10-12.
+Checked against commit 2c648e7 on 2026-10-13.
 
 ## Objective
 
@@ -27,7 +27,7 @@ All three observers satisfy both interfaces. `proc.Observer` adds `SetRootPID`, 
 
 The proc eBPF object (`proc.bpf.c`), the net object (`net.bpf.c`) and the TLS object (`tls.bpf.c`) each declare their own `tracked_pids` hash map. None is pinned or shared. Each object follows descendants itself: its `task_newtask` program (`handle_fork`) inserts the child's pid when the parent's tgid is in its map, and skips the event when `clone_flags` has `CLONE_THREAD`, since a thread shares an already tracked tgid. Each object's `sched_process_exit` program removes a tgid when the thread group leader exits, whether or not the process ever exec'd. The fs probe has no tracked set; it reports every event on the marked filesystems with the causing PID and leaves attribution to the verifier's forest. `cmd/watch` applies the scope rule afterwards ([step 10 below](#how-cmdwatch-builds-and-starts-probes)).
 
-Each eBPF object also keeps its loss counters in one-slot `BPF_MAP_TYPE_PERCPU_ARRAY` maps: `drop_count` (ring buffer output failed), `untracked_count` (`tracked_pids` update failed) and, in proc and net, `state_lost_count` (a per-process or per-connection state map update failed). `tls.bpf.c` adds `faulted_reads`. Userspace sums the per-CPU slots (`sumPerCPU`) and snapshots them in `Stop()` before it closes the maps.
+Each eBPF object also keeps its loss counters in one-slot `BPF_MAP_TYPE_PERCPU_ARRAY` maps: `drop_count` (ring buffer output failed), `untracked_count` (`tracked_pids` update failed) and, in proc and net, `state_lost_count` (a per-process or per-connection state map update failed). `net.bpf.c` adds `iouring_net_count` (io_uring network operations by tracked processes, N-25) and two io_uring diagnostics, and `tls.bpf.c` adds `faulted_reads`. Userspace sums the per-CPU slots (`sumPerCPU`) and snapshots them in `Stop()` before it closes the maps.
 
 ## Technologies
 
@@ -89,6 +89,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `UntrackedChildren` | `untracked_children` | proc, net (net and TLS maps summed) | `tracked_pids` full; a lower bound, one increment can be a whole subtree | Reason |
 | `StateMapFull` | `state_map_full` | proc (`execs`), net (`conns`) | per-process or per-connection state map full; net also counts a connect whose descriptor could not be resolved to its socket | Reason |
 | `ChannelDrops` | `channel_drops` | proc, net | Go events channel full; fs never drops (it blocks) | Reason |
+| `IOURingNetOps` | `io_uring_net_ops` | net | tracked processes submitted socket operations through io_uring, which no hook records (N-25; the classification is in [13_probe_net.md](13_probe_net.md)) | Reason |
 | `QueueOverflow` | `queue_overflow` | fs | fanotify `FAN_Q_OVERFLOW` seen | Reason |
 | `HashlessCloses` | `hashless_closes` | fs | a close was published without a content hash (P-16, or a failed read) | Note (content gap) |
 | `FaultedReads` | `faulted_reads` | net (TLS) | `SSL_write` plaintext read faulted | Note (content gap) |

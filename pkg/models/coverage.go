@@ -49,6 +49,12 @@ type ProbeCoverage struct {
 	// FaultedReads counts SSL_write calls whose plaintext could not be read.
 	// A content gap, not an event loss. Net probe only.
 	FaultedReads uint64 `json:"faulted_reads,omitempty"`
+	// IOURingNetOps counts operations on sockets that tracked processes
+	// submitted through io_uring, plus those whose target the probe could
+	// not resolve. The net probe hooks only syscalls, which these bypass, so
+	// a connection or a send may be missing: event loss (N-25). Net probe
+	// only.
+	IOURingNetOps uint64 `json:"io_uring_net_ops,omitempty"`
 	// QueueOverflow reports a kernel fanotify queue overflow, meaning some
 	// events were lost. Filesystem probe only.
 	QueueOverflow bool `json:"queue_overflow,omitempty"`

@@ -140,7 +140,15 @@ type Observer struct {
 	finalRingbufDrops   atomic.Uint64
 	finalUntracked      atomic.Uint64
 	finalStateFull      atomic.Uint64
+	finalIOURingNet     atomic.Uint64
+	finalIOURingOps     atomic.Uint64
+	finalIOURingRings   atomic.Uint64
 	kernelCountersFinal atomic.Bool
+
+	// iouringSubmitUnseen is set when the kernel has no io_uring_submit_req
+	// tracepoint, so io_uring operations cannot be classified; every ring a
+	// tracked process sets up then counts as network activity (N-25).
+	iouringSubmitUnseen bool
 
 	bootOffsetNs int64
 
@@ -207,6 +215,15 @@ func netTracepoints(objs *bpfObjects) []netTracepoint {
 	}
 }
 
+// iouringTracepoints lists the io_uring counters' programs (N-25). Unlike the
+// programs above, a missing tracepoint is not an error: a kernel built
+// without io_uring has neither, and New handles a kernel that has the
+// syscall but not io_uring_submit_req.
+func iouringTracepoints(objs *bpfObjects) (submit, setup netTracepoint) {
+	return netTracepoint{"io_uring", "io_uring_submit_req", objs.TraceIouringSubmit},
+		netTracepoint{"syscalls", "sys_enter_io_uring_setup", objs.TraceIouringSetup}
+}
+
 // New loads the eBPF programs, attaches the tracepoints, and opens the ring
 // buffer. The caller must call Start to begin receiving events and Stop to
 // release resources. Requires CAP_BPF + CAP_PERFMON (or root).
@@ -263,6 +280,20 @@ func New(cfg Config) (*Observer, error) {
 		}
 		links = append(links, l)
 	}
+	submitTP, setupTP := iouringTracepoints(&objs)
+	attached := map[string]bool{}
+	for _, tp := range []netTracepoint{submitTP, setupTP} {
+		l, err := link.Tracepoint(tp.group, tp.name, tp.prog, nil)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			closeAll()
+			return nil, fmt.Errorf("attach %s: %w", tp.name, err)
+		}
+		links = append(links, l)
+		attached[tp.name] = true
+	}
 
 	reader, err := ringbuf.NewReader(objs.NetEvents)
 	if err != nil {
@@ -281,6 +312,8 @@ func New(cfg Config) (*Observer, error) {
 		bootOffsetNs: bootOffsetNs,
 		conns:        make(map[uint64]*connection),
 		pending:      make(map[sslKey]*tlsparse.Stream),
+
+		iouringSubmitUnseen: !attached[submitTP.name] && attached[setupTP.name],
 	}
 
 	if cfg.ExePath != "" {
@@ -524,6 +557,9 @@ func (o *Observer) Coverage() Coverage {
 			drops:     o.finalRingbufDrops.Load(),
 			untracked: o.finalUntracked.Load(),
 			stateFull: o.finalStateFull.Load(),
+			uringNet:  o.finalIOURingNet.Load(),
+			uringOps:  o.finalIOURingOps.Load(),
+			uringRing: o.finalIOURingRings.Load(),
 		}
 	}
 	var k kernelCounts
@@ -540,6 +576,12 @@ func (o *Observer) Coverage() Coverage {
 	cov.RingbufDrops += k.drops
 	cov.UntrackedChildren += k.untracked
 	cov.StateMapFull += k.stateFull
+	cov.IOURingNetOps += k.uringNet
+	cov.IOURingOps += k.uringOps
+	cov.IOURingRings += k.uringRing
+	if o.iouringSubmitUnseen {
+		cov.IOURingNetOps += k.uringRing
+	}
 	return cov
 }
 
@@ -549,6 +591,9 @@ type kernelCounts struct {
 	drops     uint64 // records the net and TLS ring buffers discarded because they were full
 	untracked uint64 // descendants that could not be added to a tracked_pids map
 	stateFull uint64 // connections lost because the conns map was full
+	uringNet  uint64 // io_uring operations on sockets by tracked processes (N-25)
+	uringOps  uint64 // io_uring operations of any kind by tracked processes
+	uringRing uint64 // io_uring rings set up by tracked processes
 }
 
 // kernelCounters sums the counters above. An error means a map could not be
@@ -567,6 +612,9 @@ func (o *Observer) kernelCounters() (k kernelCounts, err error) {
 	add(&k.drops, o.objs.DropCount)
 	add(&k.untracked, o.objs.UntrackedCount)
 	add(&k.stateFull, o.objs.StateLostCount)
+	add(&k.uringNet, o.objs.IouringNetCount)
+	add(&k.uringOps, o.objs.IouringOpsCount)
+	add(&k.uringRing, o.objs.IouringSetupCount)
 	add(&k.faulted, o.tlsObjs.FaultedReads)
 	add(&k.drops, o.tlsObjs.DropCount)
 	add(&k.untracked, o.tlsObjs.UntrackedCount)
@@ -610,6 +658,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		UntrackedChildren: cov.UntrackedChildren,
 		StateMapFull:      cov.StateMapFull,
 		FaultedReads:      cov.FaultedReads,
+		IOURingNetOps:     cov.IOURingNetOps,
 		Content:           content,
 	}
 }
@@ -670,6 +719,9 @@ func (o *Observer) Stop() error {
 		o.finalRingbufDrops.Store(k.drops)
 		o.finalUntracked.Store(k.untracked)
 		o.finalStateFull.Store(k.stateFull)
+		o.finalIOURingNet.Store(k.uringNet)
+		o.finalIOURingOps.Store(k.uringOps)
+		o.finalIOURingRings.Store(k.uringRing)
 		o.kernelCountersFinal.Store(true)
 		if o.sslWriteLink != nil {
 			_ = o.sslWriteLink.Close()

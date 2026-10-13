@@ -198,6 +198,43 @@ static __always_inline void count_state_lost(void)
 		__sync_fetch_and_add(count, 1);
 }
 
+// io_uring counters (N-25). Every hook above is a sys_enter_* tracepoint,
+// which an operation submitted through io_uring never passes. The probe does
+// not record those operations; it counts them so the capture can say it is
+// blind. iouring_net_count is event loss: an operation on a socket (or one
+// whose target the probe cannot resolve) by a tracked process. The other two
+// are diagnostics: every operation a tracked process submitted, and every
+// ring it set up. Userspace sums the percpu slots and snapshots them in
+// Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} iouring_net_count SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} iouring_ops_count SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} iouring_setup_count SEC(".maps");
+
+static __always_inline void count_in(void *map)
+{
+	__u32 zero = 0;
+	__u64 *count = bpf_map_lookup_elem(map, &zero);
+	if (count)
+		__sync_fetch_and_add(count, 1);
+}
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 1);
@@ -1045,6 +1082,128 @@ SEC("tracepoint/syscalls/sys_enter_dup3")
 int trace_dup3(struct sys_enter_dup3_ctx *ctx)
 {
 	return dup_over((__u32)ctx->oldfd, (__u32)ctx->newfd);
+}
+
+// --- io_uring (N-25) --------------------------------------------------------
+//
+// trace_iouring_submit counts the operations a tracked process submits
+// through io_uring. The tracepoint fires once per request, in the submitting
+// task or in the ring's SQPOLL thread, which belongs to the same thread
+// group, so the tgid gate holds for both. It fires before the request runs,
+// so a request that later fails is still counted.
+//
+// An operation is network activity when its opcode only works on sockets, or
+// when it moves data (read, write, splice, tee) and its descriptor is a
+// socket. A data operation on a registered (fixed) file, or whose descriptor
+// cannot be read, is counted too: the probe cannot tell it is not a socket.
+// Everything else (file opens, stat, EPOLL_CTL, timeouts, ...) is not. libuv
+// in Node.js submits only IORING_OP_EPOLL_CTL, so a Node.js process does not
+// count (N-25).
+
+// Field layout of the io_uring_submit_req tracepoint up to opcode, which is
+// the same from the kernel that introduced the name to at least 6.17.
+// Handwritten rather than taken from vmlinux.h so that a kernel without the
+// event has no CO-RE relocation to fail at load: the observer then simply
+// does not attach this program.
+struct io_uring_submit_req_ctx {
+	__u64 pad;
+	void *ctx;
+	void *req;
+	__u64 user_data;
+	__u8  opcode;
+};
+
+#define IOSQE_FIXED_FILE 1 // bit 0 of the sqe flags, stored in req->flags
+
+static __always_inline int iouring_socket_only_op(__u8 op)
+{
+	switch (op) {
+	case IORING_OP_SENDMSG:
+	case IORING_OP_RECVMSG:
+	case IORING_OP_ACCEPT:
+	case IORING_OP_CONNECT:
+	case IORING_OP_SEND:
+	case IORING_OP_RECV:
+	case IORING_OP_SHUTDOWN:
+	case IORING_OP_SOCKET:
+	case IORING_OP_SEND_ZC:
+	case IORING_OP_SENDMSG_ZC:
+	case IORING_OP_BIND:
+	case IORING_OP_LISTEN:
+	case IORING_OP_RECV_ZC:
+		return 1;
+	}
+	return 0;
+}
+
+static __always_inline int iouring_data_op(__u8 op)
+{
+	switch (op) {
+	case IORING_OP_READV:
+	case IORING_OP_WRITEV:
+	case IORING_OP_READ_FIXED:
+	case IORING_OP_WRITE_FIXED:
+	case IORING_OP_READ:
+	case IORING_OP_WRITE:
+	case IORING_OP_SPLICE: // the sqe fd is fd_out
+	case IORING_OP_TEE:    // likewise
+	case IORING_OP_READ_MULTISHOT:
+	case IORING_OP_READV_FIXED:
+	case IORING_OP_WRITEV_FIXED:
+		return 1;
+	}
+	return 0;
+}
+
+// iouring_target_may_be_socket reports whether the descriptor of request req
+// is, or may be, a socket. The descriptor is req->cqe.fd, which io_init_req
+// copies from the sqe before this tracepoint fires; the file itself is
+// assigned only when the request runs.
+static __always_inline int iouring_target_may_be_socket(struct io_kiocb *req)
+{
+	if (!req || !bpf_core_field_exists(req->cqe.fd) || !bpf_core_field_exists(req->flags))
+		return 1;
+	__u8 flags = 0; // the low byte of req->flags, whatever its width (little-endian)
+	if (bpf_probe_read_kernel(&flags, sizeof(flags),
+				  (void *)req + bpf_core_field_offset(req->flags)))
+		return 1;
+	if (flags & IOSQE_FIXED_FILE)
+		return 1; // an index into the ring's registered files
+	int fd = -1;
+	if (bpf_core_read(&fd, sizeof(fd), &req->cqe.fd))
+		return 1;
+	if (fd < 0)
+		return 0; // the request fails with EBADF
+	struct file *f = NULL;
+	__u64 ino = 0;
+	return fd_socket((__u32)fd, &f, &ino) != FD_NONE;
+}
+
+SEC("tracepoint/io_uring/io_uring_submit_req")
+int trace_iouring_submit(struct io_uring_submit_req_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	count_in(&iouring_ops_count);
+	__u8 op = ctx->opcode;
+	if (iouring_socket_only_op(op) ||
+	    (iouring_data_op(op) && iouring_target_may_be_socket((struct io_kiocb *)ctx->req)))
+		count_in(&iouring_net_count);
+	return 0;
+}
+
+// trace_iouring_setup counts the rings tracked processes set up. A
+// diagnostic, except on a kernel without io_uring_submit_req, where the
+// observer reports every ring as possible network activity (N-25).
+SEC("tracepoint/syscalls/sys_enter_io_uring_setup")
+int trace_iouring_setup(void *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	count_in(&iouring_setup_count);
+	return 0;
 }
 
 struct task_newtask_ctx {

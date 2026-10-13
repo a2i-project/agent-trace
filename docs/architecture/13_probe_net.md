@@ -1,25 +1,25 @@
 # Network probe
 
-Checked against commit fb70524 on 2026-10-12.
+Checked against commit 2c648e7 on 2026-10-13.
 
 ## Objective
 
-The network probe (`pkg/probe/net`) records which remote endpoints the agent's process tree contacted and, when content capture is enabled, which HTTP requests it sent over TLS. It has two layers. N0, identity, is `net.bpf.c`: syscall tracepoints that see connects, listeners, every send and the first bytes of each connection, from which userspace extracts the TLS SNI hostname. N1, content, is `tls.bpf.c`: a uprobe on `SSL_write` that captures plaintext before encryption, located by `pkg/tlsoffset` and parsed by `pkg/tlsparse`. The common contract, clocks and coverage format are in [10_probes_common.md](10_probes_common.md). The reasons behind the design are in [../decisions/network.md](../decisions/network.md) (N-D1 to N-D5, N-6 to N-24).
+The network probe (`pkg/probe/net`) records which remote endpoints the agent's process tree contacted and, when content capture is enabled, which HTTP requests it sent over TLS. It has two layers. N0, identity, is `net.bpf.c`: syscall tracepoints that see connects, listeners, every send and the first bytes of each connection, from which userspace extracts the TLS SNI hostname. N1, content, is `tls.bpf.c`: a uprobe on `SSL_write` that captures plaintext before encryption, located by `pkg/tlsoffset` and parsed by `pkg/tlsparse`. The common contract, clocks and coverage format are in [10_probes_common.md](10_probes_common.md). The reasons behind the design are in [../decisions/network.md](../decisions/network.md) (N-D1 to N-D5, N-6 to N-25).
 
 ## Structure
 
 | File | Contents |
 |---|---|
-| `net.bpf.c` | N0 programs: `trace_connect`, `trace_bind`, `trace_listen`, `trace_write`, `trace_sendto`, `trace_sendmsg`, `trace_sendmmsg`, `trace_writev`, `trace_pwritev2`, `trace_sendfile`, `trace_splice`, `trace_close`, `trace_dup2`, `trace_dup3`, `handle_fork`, `handle_exit`; helpers `fd_socket`, `file_last_ref`, `capture_hello`, `capture_hello_iov`, `mark_sent`, `release_fd` |
+| `net.bpf.c` | N0 programs: `trace_connect`, `trace_bind`, `trace_listen`, `trace_write`, `trace_sendto`, `trace_sendmsg`, `trace_sendmmsg`, `trace_writev`, `trace_pwritev2`, `trace_sendfile`, `trace_splice`, `trace_close`, `trace_dup2`, `trace_dup3`, `trace_iouring_submit`, `trace_iouring_setup`, `handle_fork`, `handle_exit`; helpers `fd_socket`, `file_last_ref`, `capture_hello`, `capture_hello_iov`, `mark_sent`, `release_fd`, `iouring_socket_only_op`, `iouring_data_op`, `iouring_target_may_be_socket` |
 | `tls.bpf.c` | N1 programs: `probe_ssl_write` (uprobe), `handle_fork`, `handle_exit` |
 | `generate.go` | the two `bpf2go` directives (`bpf`, `tlsbpf`) |
-| `observer.go` | `Config`, `Observer`, `netTracepoints`, `New`, `prepareTLS`, `attachAndValidateTLS`, `Start`, `Stop`, `TrackPID`, `Coverage`, `CaptureCoverage`, `correlate`, `flushOpenConnections`, `handleNetRecord`, `emit`, `emitListener`, `emitGroundTruthOnly`, `unixTarget` |
+| `observer.go` | `Config`, `Observer`, `netTracepoints`, `iouringTracepoints`, `New`, `prepareTLS`, `attachAndValidateTLS`, `Start`, `Stop`, `TrackPID`, `Coverage`, `CaptureCoverage`, `correlate`, `flushOpenConnections`, `handleNetRecord`, `emit`, `emitListener`, `emitGroundTruthOnly`, `unixTarget` |
 | `correlator.go` | `Coverage` struct, `handleSSLFrame`, `emitNetRequest`, `newestHostForTGID` |
 | `pkg/tlsoffset` | `ScanELF` (find `SSL_write` candidates), `Cache` (validated offsets by ELF build ID) |
 | `pkg/tlsparse` | `ParseClientHello` (SNI and ALPN), `Stream`, `ParseHTTP1` |
 | `pkg/models/nettarget.go`, `bindexposure.go` | `CanonicalNetTarget`; `UnixTargetPrefix`, `UnboundListenTarget`, `ClassifyBindTarget` |
 
-Kernel maps in `net.bpf.c`: `tracked_pids` (hash, 4096), `conns` (hash, 8192, keyed by socket inode number, N-24), `binds` (hash, 4096), `net_events` (ring buffer, 256 KiB), `heap`, and the counters `drop_count`, `untracked_count`, `state_lost_count`. In `tls.bpf.c`: its own `tracked_pids` (hash, 4096), `ssl_events` (ring buffer, 1 MiB), `ssl_heap`, `faulted_reads`, `drop_count`, `untracked_count`.
+Kernel maps in `net.bpf.c`: `tracked_pids` (hash, 4096), `conns` (hash, 8192, keyed by socket inode number, N-24), `binds` (hash, 4096), `net_events` (ring buffer, 256 KiB), `heap`, and the counters `drop_count`, `untracked_count`, `state_lost_count`, `iouring_net_count`, `iouring_ops_count`, `iouring_setup_count`. In `tls.bpf.c`: its own `tracked_pids` (hash, 4096), `ssl_events` (ring buffer, 1 MiB), `ssl_heap`, `faulted_reads`, `drop_count`, `untracked_count`.
 
 Record types in `net.bpf.c`: `NET_CONNECT` 1, `NET_HELLO` 2, `NET_BIND` 3, `NET_CLOSE` 4, `NET_SOCK_BIND` 5, `NET_SOCK_LISTEN` 6, `NET_UNIX_CONNECT` 7, `NET_SEND` 8. `NET_BIND` is never emitted and the observer ignores it, a leftover of the abandoned write-bracket join (N-D1). The header's `sock` field carries the socket inode number on `NET_CONNECT`, `NET_HELLO`, `NET_SEND` and `NET_CLOSE` and is 0 on the others; its `tgid` and `fd` are the caller's, which on a send or close need not be the process that connected.
 
@@ -27,7 +27,7 @@ Record types in `net.bpf.c`: `NET_CONNECT` 1, `NET_HELLO` 2, `NET_BIND` 3, `NET_
 
 ## Technologies
 
-Syscall tracepoints and one uprobe through cilium/ebpf, two ring buffers, ELF parsing with `debug/elf`, x86_64 instruction pattern matching for the offset scan. See [10_probes_common.md](10_probes_common.md) for code generation and the constant-size rule.
+Syscall tracepoints, the `io_uring:io_uring_submit_req` tracepoint, and one uprobe through cilium/ebpf, two ring buffers, ELF parsing with `debug/elf`, x86_64 instruction pattern matching for the offset scan. See [10_probes_common.md](10_probes_common.md) for code generation and the constant-size rule.
 
 ## Workflow
 
@@ -42,6 +42,8 @@ Every program in both objects starts with `is_tracked(tgid)`. There is no host-w
 3. `trace_bind` records the address in `binds` and emits `NET_SOCK_BIND`; `AF_UNIX` binds carry the path in the payload. `trace_listen` looks the fd up in `binds` and emits `NET_SOCK_LISTEN` with that address, or with family 0 when the socket was never bound through `bind()`.
 4. The send hooks (N-23) look the socket up in `conns`. `trace_write` and `trace_sendto` call `capture_hello` with their buffer. `trace_writev`, `trace_pwritev2` (offset -1 only; any other offset fails on a socket), `trace_sendmsg` and `trace_sendmmsg` (its first message) call `capture_hello_iov`, which concatenates up to eight iovecs (`HELLO_MAX_IOV`, an unrolled loop) to at most 1024 bytes. The first send with readable bytes on a connection emits `NET_HELLO` with up to 1024 bytes (`HELLO_CAP_LEN`) and marks the entry captured. `trace_sendfile` (`sendfile64`) and `trace_splice` (its `fd_out`) read no bytes and call `mark_sent`, which emits a header-only `NET_SEND` once per connection. A hello read that faults, or an iovec copy that yields no bytes, also emits `NET_SEND`, and the entry stays uncaptured so a later send gets another attempt. A zero-length send is ignored.
 5. `trace_close`, and `trace_dup2` and `trace_dup3` for a `newfd` they replace (when `oldfd` is open and differs), call `release_fd`. It deletes the fd from `binds`. For a socket in `conns` it emits `NET_CLOSE` and deletes the entry only when the descriptor holds the last reference to the socket's file (`file_last_ref`: `f_ref` from kernel 6.13, `f_count` before, chosen by `bpf_core_field_exists`). While another descriptor still holds the socket, the entry stays, so a later send by that holder still marks it.
+
+6. `trace_iouring_submit`, on `io_uring_submit_req`, runs once per operation a tracked process submits through io_uring, in the submitting task or the ring's SQPOLL thread (same thread group), before the operation runs (N-25). It counts every operation in `iouring_ops_count`, and a network operation in `iouring_net_count`: an opcode that works only on sockets (`SENDMSG`, `RECVMSG`, `ACCEPT`, `CONNECT`, `SEND`, `RECV`, `SHUTDOWN`, `SOCKET`, `SEND_ZC`, `SENDMSG_ZC`, `BIND`, `LISTEN`, `RECV_ZC`), or a data opcode (`READV`, `WRITEV`, `READ_FIXED`, `WRITE_FIXED`, `READ`, `WRITE`, `SPLICE`, `TEE`, `READ_MULTISHOT`, `READV_FIXED`, `WRITEV_FIXED`) whose target may be a socket. `iouring_target_may_be_socket` reads the low byte of `req->flags` and `req->cqe.fd` (CO-RE, each guarded by `bpf_core_field_exists`): a registered file (`IOSQE_FIXED_FILE`), a missing field or a failed read counts, a negative fd does not, and otherwise `fd_socket` decides. The tracepoint context is a handwritten struct (opcode at offset 32), so a kernel without the event has nothing to relocate. `trace_iouring_setup`, on `sys_enter_io_uring_setup`, counts the rings tracked processes set up. Nothing is emitted: the operations are not recorded (O-18). `New` attaches both through `iouringTracepoints` and skips one whose tracepoint does not exist; when `io_uring_submit_req` is missing and the setup tracepoint is present, `Coverage` adds every ring to `IOURingNetOps`.
 
 Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps a `connection` per socket inode number (the header's `sock`), holding the tgid that connected. Every event of a connection carries that tgid as `PID`, whichever process sent or closed (`TestHandleNetRecord_RecordsFromAnotherProcessFollowTheSocket`).
 
@@ -63,7 +65,7 @@ Every N0 event carries `PID` (the tgid; for a connection, the tgid that connecte
 4. `handleSSLFrame` appends each frame to a `tlsparse.Stream` per (tgid, tid) and calls `ParseHTTP1` until it needs more bytes. A malformed request discards that thread's buffer and counts `FramesUnattributed`.
 5. `emitNetRequest` takes the host from the `Host` header, or from the newest SNI hostname of the same tgid when the header is absent, and counts `FramesUnattributed` when neither exists. It emits `net_request` with `Target` = `models.CanonicalNetTarget(method, host, port, path, query)` (form `METHOD https://host[:port]path[?query]`, host lowercased, port omitted when 443) and `RequestHash` = SHA-256 of the body when there is one. The plaintext is not kept (N-D3).
 
-`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `DNS`, `AddressProbes`, `OpenAtStop`, `Replaced`, `Dials`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, plus the kernel counters. `cmd/watch` prints them; only the kernel counters reach `ProbeCoverage`.
+`Coverage` (in `correlator.go`) holds the diagnostic counts `Connections`, `DNS`, `AddressProbes`, `OpenAtStop`, `Replaced`, `Dials`, `WithHostname`, `WithContent`, `FramesUnattributed`, `ContentUnsupported`, `IOURingOps`, `IOURingRings`, plus the kernel loss counters. `cmd/watch` prints the first ten; only the loss counters reach `ProbeCoverage`.
 
 ## Guarantees and loss accounting
 
@@ -74,6 +76,7 @@ The hostname comes from the ClientHello the client sent, so it needs no plaintex
 | net and TLS `drop_count` | a ring buffer output fails | `RingbufDrops` (summed) |
 | net and TLS `untracked_count` | a child cannot enter a `tracked_pids` map | `UntrackedChildren` (summed) |
 | net `state_lost_count` | a `conns` update fails, or a connect's descriptor cannot be resolved to its socket, so the connection gets no hello and no close and is never emitted | `StateMapFull` |
+| net `iouring_net_count` | a tracked process submits an io_uring network operation, or a data operation on a registered file or an unreadable target (N-25); every ring set up, on a kernel without `io_uring_submit_req` | `IOURingNetOps` |
 | `Dropped` (userspace) | the events channel is full | `ChannelDrops` |
 | `faulted_reads` | an `SSL_write` buffer read faults | `FaultedReads` |
 | N1 state | `ExePath` empty, attach failed, or active | `Content` |
@@ -82,7 +85,10 @@ Which of these fields `Assess` reads as event loss and which as a content gap is
 
 ## Known limits
 
-- All N0 hooks are `sys_enter_*` tracepoints, so socket operations submitted through io_uring or Linux AIO (`io_submit`) are invisible. A connection without a name whose data went only that way is emitted as `net_dial`: capability evidence, never aligned and never a finding (N-22, O-18).
+- All N0 hooks are `sys_enter_*` tracepoints, so socket operations submitted through io_uring or Linux AIO (`io_submit`) are not recorded. A connection without a name whose data went only that way is emitted as `net_dial`: capability evidence, never aligned and never a finding (N-22, O-18). io_uring network operations by tracked processes are counted in `IOURingNetOps`, which makes the run INCONCLUSIVE (N-25); Linux AIO is not counted.
+- `IOURingNetOps` also counts a read or write of a registered (fixed) file through io_uring, since the probe does not resolve the ring's file table, so a file-only program that uses registered files makes the run INCONCLUSIVE. A `SPLICE` or `TEE` is classified by its output descriptor only. `IORING_OP_URING_CMD` (socket options among other commands) is not counted.
+- On a kernel without the `io_uring_submit_req` tracepoint, every io_uring ring a tracked process sets up counts in `IOURingNetOps`, whatever it was used for.
+- A capture written before `IOURingNetOps` existed has no `io_uring_net_ops` field, which reads as zero.
 - Only tracked processes are hooked. A connection whose descriptor leaves the tracked tree (passed over `SCM_RIGHTS` to an outside process) and is written only there is a `net_dial`.
 - The send hooks fire at syscall entry, so a send that then fails still marks the connection as written.
 - `sendfile` and `splice` mark a connection written without reading its bytes, so a ClientHello sent that way yields no name and the connection is reported by address.

@@ -53,6 +53,9 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.ChannelDrops > 0 {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: events channel discarded %d event(s)", name, p.ChannelDrops))
 		}
+		if p.IOURingNetOps > 0 {
+			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: tracked processes submitted %d socket operation(s) through io_uring, which the syscall hooks do not see, so connections or sends may be missing", name, p.IOURingNetOps))
+		}
 		if p.QueueOverflow {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: kernel fanotify queue overflowed", name))
 		}

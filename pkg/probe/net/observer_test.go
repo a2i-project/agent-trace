@@ -214,12 +214,25 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	o.finalRingbufDrops.Store(7)
 	o.finalUntracked.Store(5)
 	o.finalStateFull.Store(6)
+	o.finalIOURingNet.Store(8)
+	o.finalIOURingOps.Store(9)
+	o.finalIOURingRings.Store(1)
 	o.kernelCountersFinal.Store(true)
 
 	got := o.Coverage()
-	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, UntrackedChildren: 5, StateMapFull: 6}
+	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, UntrackedChildren: 5, StateMapFull: 6,
+		IOURingNetOps: 8, IOURingOps: 9, IOURingRings: 1}
 	if got != want {
 		t.Errorf("Coverage() = %+v, want %+v", got, want)
+	}
+	if got := o.CaptureCoverage().IOURingNetOps; got != 8 {
+		t.Errorf("CaptureCoverage().IOURingNetOps = %d, want 8", got)
+	}
+
+	// Without io_uring_submit_req every ring counts as network activity.
+	o.iouringSubmitUnseen = true
+	if got := o.Coverage().IOURingNetOps; got != 9 {
+		t.Errorf("IOURingNetOps without the submit tracepoint = %d, want 8 plus the 1 ring", got)
 	}
 }
 

@@ -31,6 +31,9 @@ type Coverage struct {
 	RingbufDrops       uint64 // records the net and TLS ring buffers discarded because they were full
 	UntrackedChildren  uint64 // descendants left untracked because a tracked_pids map was full (lower bound)
 	StateMapFull       uint64 // connections lost because the kernel conns map was full (lower bound)
+	IOURingNetOps      uint64 // io_uring operations on sockets by tracked processes, which no hook records (N-25); event loss
+	IOURingOps         uint64 // io_uring operations of any kind by tracked processes; diagnostic
+	IOURingRings       uint64 // io_uring rings set up by tracked processes; diagnostic
 }
 
 // sslKey identifies the (tgid, tid) pair a run of ssl_frames belongs to.
