@@ -201,6 +201,9 @@ type record struct {
 	Timestamp time.Time `json:"timestamp"`
 	SessionID string    `json:"sessionId"`
 	Version   string    `json:"version"`
+	// Cwd is the session's working directory when the record was written,
+	// against which a Bash command's relative paths resolve (I-46).
+	Cwd string `json:"cwd"`
 	// ToolUseResult is the harness's structured result of the tool call, on the
 	// user record that carries the tool_result. For Write it says whether the
 	// file was created or updated, which decides whether the harness first
@@ -240,6 +243,23 @@ type toolResult struct {
 	// read is the content a Read returned, kept only when the result says it
 	// is the whole file as text (I-40).
 	read *string
+	// cwd is the result record's working directory, bash a Bash call's
+	// structured result (I-46).
+	cwd  string
+	bash *bashResult
+}
+
+// bashResult is the part of a Bash call's structured result that says
+// whether the harness went on to read the file the command read (I-46).
+type bashResult struct {
+	// interrupted is nil when the result does not carry the field, which a
+	// transcript cut to the result's type does not.
+	interrupted    *bool
+	isImage        bool
+	backgroundTask string
+	// interpretation is the harness's reading of a non-zero exit, such as
+	// "No matches found" for a search that exited 1.
+	interpretation string
 }
 
 // readFile is the file part of a Read's structured result (2.1.296): the
@@ -293,6 +313,7 @@ type toolUse struct {
 	ts        time.Time
 	messageID string
 	thread    string
+	cwd       string
 	seq       int // position in the merged read, to keep ties in file order
 }
 
@@ -341,7 +362,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			for _, b := range blocks {
 				switch b.Type {
 				case "tool_use":
-					uses = append(uses, toolUse{id: b.ID, name: b.Name, input: b.Input, ts: r.Timestamp, messageID: r.Message.ID, thread: thread, seq: len(uses)})
+					uses = append(uses, toolUse{id: b.ID, name: b.Name, input: b.Input, ts: r.Timestamp, messageID: r.Message.ID, thread: thread, cwd: r.Cwd, seq: len(uses)})
 				case "tool_result":
 					res := toolResult{ts: r.Timestamp}
 					// One structured result per record: with several tool
@@ -360,6 +381,11 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 							Error        string  `json:"error"`
 							// Read's result (I-40).
 							File *readFile `json:"file"`
+							// Bash's result (I-46).
+							Interrupted              *bool  `json:"interrupted"`
+							IsImage                  bool   `json:"isImage"`
+							BackgroundTaskID         string `json:"backgroundTaskId"`
+							ReturnCodeInterpretation string `json:"returnCodeInterpretation"`
 						}
 						if json.Unmarshal(r.ToolUseResult, &tr) == nil {
 							res.kind = tr.Type
@@ -379,9 +405,11 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 							if tr.Type == "text" && tr.File != nil && tr.File.whole() {
 								res.read = tr.File.Content
 							}
+							res.bash = &bashResult{interrupted: tr.Interrupted, isImage: tr.IsImage, backgroundTask: tr.BackgroundTaskID, interpretation: tr.ReturnCodeInterpretation}
 						}
 					}
 					res.isError = b.IsError
+					res.cwd = r.Cwd
 					if len(r.ToolUseResult) == 0 || string(r.ToolUseResult) == "null" {
 						if t := resultText(b.Content); !b.IsError && (strings.HasPrefix(t, writeCreated) || strings.HasPrefix(t, writeUpdatedHead)) {
 							res.text = t
@@ -440,6 +468,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			base.BlockID = u.messageID
 		}
 		entries, why := claimsFor(u, base, res)
+		if why == "" && u.name == toolBash && hasResult && harnessReadVersions[rep.AgentVersion] {
+			entries = append(entries, harnessReadClaims(u, base, res)...)
+		}
 		if u.name == toolWrite && why == "" && res.kind != "create" && res.kind != "update" {
 			writeUnknown++
 		}
@@ -475,6 +506,50 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("tools with no mapping and not declared non-effectful: %s; their effects, if any, will appear unexplained", strings.Join(rep.UnknownTools, ", ")))
 	}
 	return tr, rep, nil
+}
+
+// harnessReadClaims are the harness-implied claims of a Bash call (I-46,
+// V-33): one open of each file the harness reads after the call when its
+// command is a simple read command, after the call's own claim and in its
+// block, marked with the command. The harness reads only some of them (not a
+// file already in its record of file state), so each is optional and the
+// verifier lets it pair only with the exact open the command made first.
+// None when the transcript shows that the read did not happen (the call was
+// interrupted, sent to the background or returned an image, or a search did
+// not exit 0), when a search's exit is not shown, or when the working
+// directory is not recorded, or changed, between the call and its result.
+func harnessReadClaims(u toolUse, base models.TrajectoryEntry, res toolResult) []models.TrajectoryEntry {
+	var in struct {
+		Command    string `json:"command"`
+		Background bool   `json:"run_in_background"`
+	}
+	if json.Unmarshal(u.input, &in) != nil || in.Command == "" || in.Background {
+		return nil
+	}
+	if u.cwd == "" || res.cwd != u.cwd || !filepath.IsAbs(u.cwd) {
+		return nil
+	}
+	if b := res.bash; b != nil && (b.interrupted != nil && *b.interrupted || b.isImage || b.backgroundTask != "") {
+		return nil
+	}
+	var out []models.TrajectoryEntry
+	seen := map[string]bool{}
+	for _, r := range readCommandFiles(in.Command) {
+		// A search reads only on exit 0, which the transcript shows as a
+		// full Bash result with no interpretation of the exit and no error.
+		if r.exitZero && (res.bash == nil || res.bash.interrupted == nil || res.bash.interpretation != "" || res.isError) {
+			continue
+		}
+		path := resolveRead(u.cwd, r.path)
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		e := base
+		e.ActionType, e.Target, e.ImpliedBy = models.FileOpen, path, in.Command
+		out = append(out, e)
+	}
+	return out
 }
 
 const (

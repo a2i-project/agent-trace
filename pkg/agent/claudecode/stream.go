@@ -576,7 +576,9 @@ func collapseOpens(g models.GroundTruth) models.GroundTruth {
 // collapseOpenClaims is the claim-side twin of collapseOpens: adjacent opens of
 // one file among the file claims become one. Claims of other kinds (a command, a
 // connection) do not break a run, because the observed side only ever sees the
-// agent's own file events.
+// agent's own file events. A harness-implied open (I-46) merges only with
+// another implied by the same command, so the agent's own open never becomes
+// optional and an optional one never becomes the agent's.
 func collapseOpenClaims(t models.Trajectory) models.Trajectory {
 	out := make(models.Trajectory, 0, len(t))
 	lastFile := -1
@@ -585,7 +587,7 @@ func collapseOpenClaims(t models.Trajectory) models.Trajectory {
 			out = append(out, e)
 			continue
 		}
-		if lastFile >= 0 && e.ActionType == models.FileOpen && out[lastFile].ActionType == models.FileOpen && out[lastFile].Target == e.Target {
+		if lastFile >= 0 && e.ActionType == models.FileOpen && out[lastFile].ActionType == models.FileOpen && out[lastFile].Target == e.Target && out[lastFile].ImpliedBy == e.ImpliedBy {
 			if e.End != nil && (out[lastFile].End == nil || e.End.After(*out[lastFile].End)) {
 				end := *e.End
 				out[lastFile].End = &end
