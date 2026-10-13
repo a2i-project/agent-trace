@@ -116,6 +116,9 @@ func foldCwdFileRead(g models.GroundTruth) models.GroundTruth {
 //     and close, every one of which names the target, since the temporary's
 //     handle resolves to its final name by then.
 //
+// The version lock has a third shape, read between the two
+// (foldNamedLockRewrite, I-44).
+//
 // A direct write of the target has neither a create nor a rename on the
 // directory around it and is left alone, so an unseen variant stays visible.
 // A rename recorded as two directory renames, as captures made before P-18
@@ -127,6 +130,7 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 	// the harness's read of it (I-39).
 	replace := map[int]models.GroundTruth{}
 	foldRenamedFirst(g, used, replace)
+	foldNamedLockRewrite(g, used, replace)
 
 	for o, open := range g {
 		if used[o] || open.ActionType != models.FileOpen || open.PID == 0 {
@@ -338,6 +342,91 @@ func foldRenamedFirst(g models.GroundTruth, used []bool, replace map[int]models.
 			PID:        pid,
 			OutputHash: g[closeIdx].OutputHash,
 		})
+	}
+}
+
+// versionLock matches the harness's version lock,
+// ~/.local/state/claude/locks/<version>.lock.
+var versionLock = regexp.MustCompile(`^/(?:home/[^/]+|root)/\.local/state/claude/locks/[^/]+\.lock$`)
+
+// foldNamedLockRewrite folds the third shape the version lock's rewrite at
+// start-up reaches the probe in (I-44). The harness replaces the lock through
+// a temporary and a rename in every run; read before the rename it is the
+// temporary shape of foldAtomicWrites, read after it the renamed-first shape
+// of foldRenamedFirst. Read between the two, the create on the directory comes
+// first, the temporary's open and writes already name the lock, and the
+// directory's rename comes after the close, in either order with the close;
+// a second open of the lock inside the span is the harness reading the lock
+// back, which the temporary shape records as an open after the rename. The
+// result is what those shapes fold to: one write of the lock with the close's
+// hash, followed by one open of it when the span held a second open.
+//
+// Narrow on purpose: only the version lock, only when the create is this
+// process's previous event and lands in one batch with the open, and only
+// when every event of the process up to both the close and the rename is an
+// open, write or close of the lock or the directory's ambiguous rename. An
+// agent's file in this shape is not folded and stays visible.
+func foldNamedLockRewrite(g models.GroundTruth, used []bool, replace map[int]models.GroundTruth) {
+	for o, open := range g {
+		if used[o] || open.ActionType != models.FileOpen || open.PID == 0 || !versionLock.MatchString(open.Target) {
+			continue
+		}
+		target, dir, pid := open.Target, filepath.Dir(open.Target), open.PID
+		create := -1
+		for i := o - 1; i >= 0; i-- {
+			if g[i].PID != pid || used[i] {
+				continue
+			}
+			if e := g[i]; e.ActionType == models.FileWrite && e.Target == dir && e.PathIsAmbiguous && open.Timestamp.Sub(e.Timestamp) < batchSpan {
+				create = i
+			}
+			break
+		}
+		if create < 0 {
+			continue
+		}
+		closeIdx, renameIdx := -1, -1
+		var burst, reads []int
+		for i := o + 1; i < len(g) && (closeIdx < 0 || renameIdx < 0); i++ {
+			e := g[i]
+			if used[i] || e.PID != pid {
+				continue
+			}
+			switch {
+			case e.Target == target && e.ActionType == models.FileWrite && closeIdx < 0:
+				burst = append(burst, i)
+			case e.Target == target && e.ActionType == models.FileOpen:
+				reads = append(reads, i)
+			case e.Target == target && e.ActionType == models.FileClose && closeIdx < 0:
+				closeIdx = i
+			case e.Target == dir && e.ActionType == models.FileRename && e.PathIsAmbiguous && renameIdx < 0:
+				renameIdx = i
+			default:
+				i = len(g) // another event of this pid: not the shape
+			}
+		}
+		if closeIdx < 0 || renameIdx < 0 {
+			continue
+		}
+		for _, i := range append(append([]int{create, o, closeIdx, renameIdx}, burst...), reads...) {
+			used[i] = true
+		}
+		folded := models.GroundTruth{{
+			Timestamp:  g[create].Timestamp,
+			ActionType: models.FileWrite,
+			Target:     target,
+			PID:        pid,
+			OutputHash: g[closeIdx].OutputHash,
+		}}
+		if len(reads) > 0 {
+			folded = append(folded, models.GroundTruthEvent{
+				Timestamp:  g[reads[0]].Timestamp,
+				ActionType: models.FileOpen,
+				Target:     target,
+				PID:        pid,
+			})
+		}
+		replace[create] = folded
 	}
 }
 
