@@ -6,7 +6,7 @@
 # It runs the real agent, so it uses the account's model quota and needs root for
 # the probes: run it yourself, it asks for sudo once.
 #
-#   scripts/capture-claude-code.sh [--task basic|parallel|project|edits|tools] [--baseline-from DIR] [OUTPUT_DIR]
+#   scripts/capture-claude-code.sh [--task basic|parallel|project|edits|tools|shapes] [--baseline-from DIR] [OUTPUT_DIR]
 #
 # Tasks (each fixed, so results compare across versions):
 #   basic     Read, Write (create), Edit, Write (overwrite), Bash. Five calls.
@@ -36,6 +36,21 @@
 #             background and start one subagent that only replies, so the
 #             baseline covers what the harness does around a background command
 #             and a subagent.
+#   shapes    two shapes no other task produced, in a seeded workspace
+#             (scripts/seed/shapes: three one-line files and locked/data.txt).
+#             First a parallel block whose members should complete out of the
+#             order the model emitted them: two read-only Bash calls, the first
+#             of which sleeps two seconds before its cat, and a Read. Claude
+#             Code 2.1.296 runs a read-only Bash call concurrently with the
+#             calls around it. Then a block of two Bash calls that write files,
+#             which that version runs one after the other, as a contrast. Then a
+#             Read, a Write and an Edit of locked/data.txt in a directory the
+#             user cannot write to, where the harness cannot create its
+#             temporary file and rewrites the file in place, without a rename.
+#             A closing Bash. No network. Every run, controls included, has the
+#             write permission of locked/ removed while it runs, and the script
+#             refuses before it asks for sudo when such a directory stays
+#             writable (as for root). Its controls make the one Bash call.
 #
 # By default the script also runs CONTROLS control runs and builds the baseline
 # from them, with the same tools enabled as the task. With --baseline-from DIR it
@@ -71,14 +86,14 @@ task=basic
 baseline_from=
 while [ $# -gt 0 ]; do
   case $1 in
-    --task) task=${2:?--task needs basic, parallel, project, edits or tools}; shift 2 ;;
+    --task) task=${2:?--task needs basic, parallel, project, edits, tools or shapes}; shift 2 ;;
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
-case $task in basic|parallel|project|edits|tools) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
+case $task in basic|parallel|project|edits|tools|shapes) ;; *) echo "unknown task $task" >&2; exit 2 ;; esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
@@ -116,11 +131,37 @@ case $task in
     task_prompt='Do exactly these nine things in order, using the named tool for each, and nothing else. 1) Use the Bash tool with run_in_background set to true to run exactly: sleep 3; echo background-done | tee bg.txt . Do not wait for it and do not check on it until step 8. 2) In a single message, make three Read tool calls at the same time, for notes.txt, numbers.txt and analysis.ipynb. 3) In notes.txt, replace colour: red with colour: blue and replace size: small with size: large. If a tool named MultiEdit is available to you, make both changes with one MultiEdit call; if it is not, use the Edit tool once for each change. 4) Use the NotebookEdit tool on analysis.ipynb, with edit_mode replace, on the cell whose id is total, to set its source to exactly: print(sum([3, 5, 7])) . 5) Use the Write tool to create report.txt containing the single word draft. 6) Use the Write tool to overwrite report.txt with the single word final. 7) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Use the Write tool to create subagent.txt containing the single word from-subagent. Then reply with the single word done. 8) Use the Read tool on the output file whose path the Bash result of step 1 reported. 9) Use the Bash tool to run exactly: cat bg.txt notes.txt report.txt subagent.txt . Then reply with the single word done.'
     task_tools='Read Write Edit MultiEdit NotebookEdit Bash Agent'
     ;;
+  shapes)
+    # What the 2.1.296 binary says (read from its strings, not measured): the
+    # tool executor starts a call while an earlier one still runs only when
+    # every running call and the new one are concurrency-safe. Read, Grep,
+    # Glob, WebFetch and Agent always are; Write, Edit and NotebookEdit never
+    # are; Bash is when its command passes the read-only check (every simple
+    # command on an allowlist that includes sleep and cat, no output
+    # redirection). So the first block runs concurrently and its first member
+    # finishes last, and the second block, whose commands write, runs in claim
+    # order. The file tools write through one routine: a sibling temporary
+    # file renamed over the target, and, when the temporary cannot be created
+    # with EACCES while the target exists (or the rename fails with EXDEV,
+    # EPERM, EEXIST or EBUSY), an in-place rewrite of the target (open,
+    # truncate, write, fsync, close). A symlinked target is refused, not
+    # written in place. locked/ is made unwritable for the run below.
+    task_prompt='Do exactly these six things in order, and nothing else. If a step fails, do not retry it or work around it; go on to the next step. 1) In a single message, make these three tool calls at the same time, in this order: the Bash tool to run exactly: sleep 2; cat slow.txt , then the Bash tool to run exactly: cat fast.txt , then the Read tool on read.txt. 2) In a single message, make these two Bash tool calls at the same time, in this order: one to run exactly: sleep 2; echo one > one.txt , then one to run exactly: echo two > two.txt . 3) Use the Read tool on locked/data.txt. 4) Use the Write tool to overwrite locked/data.txt with the single word direct-one. 5) Use the Edit tool to replace direct-one with direct-two in locked/data.txt. 6) Use the Bash tool to run exactly: cat one.txt two.txt locked/data.txt . Then reply with the single word done.'
+    task_tools='Read Write Edit Bash'
+    ;;
 esac
 # A task with a directory under scripts/seed starts every run, controls
 # included, from a copy of it; the others start from three one-line files.
 seed=$root/scripts/seed/$task
-case $task in project|tools) [ -d "$seed" ] || { echo "missing seed directory $seed" >&2; exit 1; } ;; *) seed= ;; esac
+case $task in project|tools|shapes) [ -d "$seed" ] || { echo "missing seed directory $seed" >&2; exit 1; } ;; *) seed= ;; esac
+# The shapes task needs a directory the agent cannot write to, holding a file
+# it can: git keeps no directory modes, so every run's copy of locked/ loses
+# its write permission while the run lasts.
+locked=
+if [ "$task" = shapes ]; then
+  locked=locked
+  [ -f "$seed/$locked/data.txt" ] || { echo "missing $seed/$locked/data.txt" >&2; exit 1; }
+fi
 # The control claims nothing worth verifying, but it must use Bash once: the
 # harness runs setup commands the first time a session uses Bash (probing the
 # environment, writing a shell snapshot), and a baseline taken without a Bash
@@ -168,6 +209,21 @@ if [ -n "$baseline_from" ]; then
 fi
 
 mkdir -p "$out"
+# A directory without write permission stops the harness's temporary file only
+# when the agent runs as a user the mode binds: root, or a filesystem that
+# ignores modes, would let the write take its usual temporary-and-rename path.
+# Try it on the output filesystem, where the workspaces will be.
+if [ -n "$locked" ]; then
+  probe=$(mktemp -d "$out/.locked-probe.XXXXXX")
+  chmod a-w "$probe"
+  if [ -w "$probe" ]; then
+    chmod u+w "$probe"; rmdir "$probe"
+    echo "a directory without write permission is still writable here (uid $(id -u)); the shapes task needs one that is not" >&2
+    echo "run the script as an ordinary user, with OUTPUT_DIR on a filesystem that enforces modes" >&2
+    exit 1
+  fi
+  chmod u+w "$probe"; rmdir "$probe"
+fi
 echo "output: $out"
 echo "claude: $claude_bin ($version), task: $task"
 (cd "$root" && make build >/dev/null)
@@ -183,6 +239,10 @@ capture() { # label prompt tools
   else
     for f in b c d; do printf 'seed\n' >"$ws/$f.txt"; done
   fi
+  if [ -n "$locked" ]; then
+    chmod a-w "$ws/$locked"
+    [ ! -w "$ws/$locked" ] || { echo "   $ws/$locked is still writable" >&2; return 1; }
+  fi
   echo "== $label: session $session"
   (
     cd "$ws"
@@ -192,6 +252,8 @@ capture() { # label prompt tools
       "$claude_bin" -p "${claude_flags[@]}" --allowedTools "$tools" \
       --session-id "$session" "$prompt" >"$out/$label.watch.log" 2>&1
   ) || echo "   watch exited non-zero, see $out/$label.watch.log"
+  # Recording has ended: give the permission back so the output can be removed.
+  [ -z "$locked" ] || chmod u+w "$ws/$locked"
   local found
   found=$(find "$HOME/.claude/projects" -name "$session.jsonl" -print -quit 2>/dev/null || true)
   if [ -z "$found" ]; then
