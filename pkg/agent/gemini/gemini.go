@@ -184,7 +184,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 
 	var tr models.Trajectory
 	unknown := map[string]bool{}
-	var steps, sub, persistent, subagents int
+	var steps, sub, persistent, subagents, multi int
 	var fallbackTime bool
 	statuses := map[int]int{}
 
@@ -212,8 +212,11 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			if err != nil {
 				return nil, rep, fmt.Errorf("step %d: tool call: %w", idx, err)
 			}
-			if c.name == toolSubagent {
+			switch c.name {
+			case toolSubagent:
 				subagents++
+			case toolMultiRepl:
+				multi++
 			}
 			if status != statusCompleted {
 				rep.Count(fmt.Sprintf("%s (status %d)", c.name, status))
@@ -266,8 +269,10 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	rep.Entries = len(tr)
 	rep.Degradations = []string{
 		"the format records no process exit code, so exits are not aligned",
-		"file-tool claim shapes (which kernel events a view_file, write_to_file or replace_file_content produces) are a hypothesis until checked against a paired capture",
 		"calls the model issues together are separate steps with no block id, ordered by their started time; whether the harness always executes them in that order is unmeasured",
+	}
+	if multi > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d multi_replace_file_content call(s): its kernel events are unmeasured and it is claimed like replace_file_content (I-50)", multi))
 	}
 	if subagents > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d invoke_subagent call(s): a subagent's steps are in a conversation database of its own, which is not read, so what it did appears unexplained", subagents))

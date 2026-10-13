@@ -103,11 +103,11 @@ Current behaviour: Gemini `RunPersistent` commands are not claimed (I-17), so th
 Blocked by: An agent that uses a persistent shell in practice.
 
 ### O-16: File-tool claim shapes and fanotify multiplicity
-Status: Partly decided. Claude Code is settled by I-22 and I-23. Gemini is open.
+Status: Partly decided. Claude Code is settled by I-22 and I-23. Gemini is settled by I-50 for `view_file`, `write_to_file` and `replace_file_content`; `multi_replace_file_content` is open.
 Date: 2026-10-06, updated 2026-10-07.
 Question: Which kernel events does a real file tool produce, and how many?
-Current behaviour: For Claude Code 2.1.286 the shapes were measured on the first paired capture (**Verified**, see I-22) and hold on the seven later ones (eight fixtures in all, versions 2.1.286 and 2.1.296, one machine), including five Edits whose content hashes are corroborated (I-31). Gemini's file tools still use the guessed open, write, close sequence, and its adapter reports that. Whether other Claude Code versions, or a write that does not use a temporary file, behave the same is **Unverified**.
-Blocked by: A paired capture of Gemini (needs root and a working Gemini CLI, which has no headless authentication here), and captures of other Claude Code versions.
+Current behaviour: For Claude Code 2.1.286 the shapes were measured on the first paired capture (**Verified**, see I-22) and hold on the seven later ones (eight fixtures in all, versions 2.1.286 and 2.1.296, one machine), including five Edits whose content hashes are corroborated (I-31). Whether other Claude Code versions behave the same is **Unverified**. For agy 1.3.4 the shapes of `view_file`, `write_to_file` (creating a file and over an existing one) and `replace_file_content` were measured on the paired `basic` capture (I-50). `multi_replace_file_content` is claimed like `replace_file_content` and its session reports that its shape is unmeasured.
+Blocked by: A paired capture of agy with `multi_replace_file_content` (needs root), and captures of other Claude Code versions.
 
 ### O-13: Out-of-tree tagging (part 3 of P-14, delegation)
 Status: Open. Premise changed.
