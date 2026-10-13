@@ -32,31 +32,38 @@ type Adapter struct{}
 
 func (Adapter) Name() string { return Name }
 
-// Process records what is known and marks what is not. A run_command step has
-// an execution start (D13), but the process model is unmeasured: whether a
-// command execs its own shell, whether subagents share the agent's process, and
-// whether the sequence is ordered all need a live /proc experiment that has not
-// been run, so the fields below that are false or unmeasured say so in
-// Parse's Degradations and are not evidence.
+// Process is measured on agy 1.3.4 (I-47): strace -f of three print-mode runs
+// on 2026-10-13, one of them under a reset environment as the capture script
+// runs it. Every run_command execs its own `bash -c <CommandLine>` as a child
+// of the agy process (a call with RunPersistent was not seen, and is not
+// claimed, I-17). A subagent started with invoke_subagent runs in the same agy
+// process: its command was a child of that process like the main thread's.
+// Steps overlap: two run_command calls the model issued together were two
+// steps whose started-to-completed intervals overlapped (the harness ran the
+// second command after the first had exited), and the subagent's command ran
+// after a later command of the main thread. A step's started time preceded
+// the exec of its command and its completed time followed the command's exit
+// on every call measured, so the interval brackets execution (D13).
 func (Adapter) Process() agent.ProcessModel {
 	return agent.ProcessModel{
-		ShellPerCommand:    true, // unverified; RunPersistent can falsify it per call
-		SubagentsInProcess: false,
+		ShellPerCommand:    true,
+		SubagentsInProcess: true,
 		IntervalKind:       agent.IntervalExecution,
-		Concurrency:        agent.ConcurrencyUnmeasured,
+		Concurrency:        agent.Parallel,
 		ExitsClaimed:       false,
 	}
 }
 
 // Expresses: the format records no exit code and no request body, and carries
-// final content only for write_to_file. replace_file_content carries a target
-// and replacement fragments, so no output hash is stated there.
+// final content only for write_to_file, and there only when the content is
+// not empty (writeHash). replace_file_content carries a target and
+// replacement fragments, so no output hash is stated there.
 func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 	switch field {
 	case verification.DiffExitCode, verification.DiffRequestHash:
 		return false
 	case verification.DiffOutputHash:
-		return e.Tool == toolWriteFile
+		return e.Tool == toolWriteFile && (e.ActionType != models.FileClose || e.OutputHash != nil)
 	}
 	return true
 }
@@ -64,10 +71,42 @@ func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 // IsHarnessNoise declares nothing: the baseline is measured per version (D11).
 func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 
-// Normalize is the identity. How Gemini wraps the commands it runs has not been
-// measured, so no recovery is attempted, and a wrapped command will show as a
-// mismatch until it is.
-func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) { return e, true }
+// Normalize recovers the CommandLine of a run_command from the `bash -c`
+// wrapper the harness execs it with (I-47), in the exec and the exit of the
+// process. A truncated wrapper recovers a prefix of the command, which the
+// verifier pairs as such (V-26). It drops the " (deleted)" the kernel
+// appends to the path of a file unlinked before its event was read, which
+// names the same file. Nothing else is rewritten.
+func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
+	switch {
+	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
+		if cmd, ok := commandOf(e.Target); ok {
+			e.Target = cmd
+		}
+	case isFile(e.ActionType):
+		e.Target = deletedSuffix.ReplaceAllString(e.Target, "")
+	}
+	return e, true
+}
+
+// Canonical replaces the per-run ids in the harness's own file paths with
+// fixed tokens (I-48). It is applied only where runs are compared
+// (agent.Canonicalizer, I-41): a claim and the event it pairs with keep their
+// exact paths.
+func (Adapter) Canonical(e models.GroundTruthEvent) models.GroundTruthEvent {
+	if isFile(e.ActionType) {
+		e.Target = canonicalPath(e.Target)
+	}
+	return e
+}
+
+func isFile(a models.ActionType) bool {
+	switch a {
+	case models.FileOpen, models.FileRead, models.FileWrite, models.FileClose, models.FileRename, models.FileDelete:
+		return true
+	}
+	return false
+}
 
 const (
 	toolRunCommand  = "run_command"
@@ -76,6 +115,7 @@ const (
 	toolReplace     = "replace_file_content"
 	toolMultiRepl   = "multi_replace_file_content"
 	toolReadURL     = "read_url_content"
+	toolSubagent    = "invoke_subagent"
 	statusCompleted = 3
 )
 
@@ -144,7 +184,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 
 	var tr models.Trajectory
 	unknown := map[string]bool{}
-	var steps, sub, persistent int
+	var steps, sub, persistent, subagents int
 	var fallbackTime bool
 	statuses := map[int]int{}
 
@@ -171,6 +211,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			c, err := decodeCall(call)
 			if err != nil {
 				return nil, rep, fmt.Errorf("step %d: tool call: %w", idx, err)
+			}
+			if c.name == toolSubagent {
+				subagents++
 			}
 			if status != statusCompleted {
 				rep.Count(fmt.Sprintf("%s (status %d)", c.name, status))
@@ -222,10 +265,12 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	sort.Strings(rep.UnknownTools)
 	rep.Entries = len(tr)
 	rep.Degradations = []string{
-		"the process model is unmeasured (shell per command, subagents in process, ordering): it needs a live /proc experiment",
-		"how Gemini wraps the commands it runs is unmeasured, so no wrapper recovery is attempted and a wrapped command shows as a mismatch",
 		"the format records no process exit code, so exits are not aligned",
 		"file-tool claim shapes (which kernel events a view_file, write_to_file or replace_file_content produces) are a hypothesis until checked against a paired capture",
+		"calls the model issues together are separate steps with no block id, ordered by their started time; whether the harness always executes them in that order is unmeasured",
+	}
+	if subagents > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d invoke_subagent call(s): a subagent's steps are in a conversation database of its own, which is not read, so what it did appears unexplained", subagents))
 	}
 	if sub > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d step(s) have a subtrajectory, which is not followed", sub))
@@ -330,6 +375,21 @@ func str(raw json.RawMessage) string {
 	return s
 }
 
+// writeHash is the hash of the file a write_to_file leaves: the harness adds a
+// final newline to content that lacks one ("hello" was written as "hello\n")
+// and writes content that ends in one as it is ("one\ntwo\n"), measured with
+// strace on agy 1.3.4 on 2026-10-13 (I-47). What it writes for empty content
+// was not seen, so none is claimed.
+func writeHash(body string) *string {
+	if body == "" {
+		return nil
+	}
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return models.StringPtr(content.SHA256Bytes([]byte(body)))
+}
+
 func claimsFor(c call, base models.TrajectoryEntry) ([]models.TrajectoryEntry, string) {
 	if nonEffectful[c.name] {
 		return nil, reasonNonEffectful
@@ -373,7 +433,7 @@ func claimsFor(c call, base models.TrajectoryEntry) ([]models.TrajectoryEntry, s
 		if raw, ok := c.args["CodeContent"]; ok {
 			var body string
 			if json.Unmarshal(raw, &body) == nil {
-				h = models.StringPtr(content.SHA256Bytes([]byte(body)))
+				h = writeHash(body)
 			}
 		}
 		return fileClaims(p, h), ""

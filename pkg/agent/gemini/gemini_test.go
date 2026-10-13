@@ -182,7 +182,7 @@ func TestParseCountsAndNamesWhatItDoesNotClaim(t *testing.T) {
 		t.Errorf("UnknownTools = %v, want [grep_search]", rep.UnknownTools)
 	}
 	joined := strings.Join(rep.Degradations, "|")
-	for _, want := range []string{"unmeasured", "persistent shell", "status other than completed", "subtrajectory", "created time", "grep_search", "exit code"} {
+	for _, want := range []string{"persistent shell", "status other than completed", "subtrajectory", "created time", "grep_search", "exit code", "block id"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("Degradations lack %q:\n%s", want, joined)
 		}
@@ -227,6 +227,7 @@ func TestWriteClaimsTheHashOfItsContentAndReplaceDoesNot(t *testing.T) {
 		}
 		switch e.Tool {
 		case "write_to_file":
+			// The content ends in a newline, so the harness writes it as it is.
 			if e.OutputHash == nil || *e.OutputHash != content.SHA256Bytes([]byte("package b\n")) {
 				t.Errorf("write_to_file close hash = %v", e.OutputHash)
 			}
@@ -251,10 +252,34 @@ func TestExpressesIsPerTool(t *testing.T) {
 	}
 }
 
-func TestProcessModelSaysWhatIsUnmeasured(t *testing.T) {
+// The values measured with strace on agy 1.3.4 on 2026-10-13 (I-47).
+func TestProcessModelIsTheMeasuredOne(t *testing.T) {
 	m := Adapter{}.Process()
-	if m.IntervalKind != agent.IntervalExecution || m.Concurrency != agent.ConcurrencyUnmeasured || m.ExitsClaimed {
-		t.Errorf("Process() = %+v", m)
+	want := agent.ProcessModel{ShellPerCommand: true, SubagentsInProcess: true, IntervalKind: agent.IntervalExecution, Concurrency: agent.Parallel}
+	if m != want {
+		t.Errorf("Process() = %+v, want %+v", m, want)
+	}
+}
+
+// The harness adds a final newline to content that lacks one and writes
+// content that has one as it is (I-47). Empty content was not measured, so it
+// claims no hash, and the field is then not one the format states.
+func TestWriteHashIsOfTheFileTheHarnessWrites(t *testing.T) {
+	for body, file := range map[string]string{"hello": "hello\n", "one\ntwo\n": "one\ntwo\n", "a\r\n": "a\r\n", "x\n\n": "x\n\n"} {
+		if h := writeHash(body); h == nil || *h != content.SHA256Bytes([]byte(file)) {
+			t.Errorf("writeHash(%q) = %v, want the hash of %q", body, h, file)
+		}
+	}
+	if h := writeHash(""); h != nil {
+		t.Errorf("writeHash of empty content = %v, want none", *h)
+	}
+	a := Adapter{}
+	if a.Expresses(models.TrajectoryEntry{Tool: "write_to_file", ActionType: models.FileClose}, verification.DiffOutputHash) {
+		t.Error("a write_to_file close without a hash must not be read as an opt-out")
+	}
+	h := "sha256:x"
+	if !a.Expresses(models.TrajectoryEntry{Tool: "write_to_file", ActionType: models.FileClose, OutputHash: &h}, verification.DiffOutputHash) {
+		t.Error("a write_to_file close with a hash states it")
 	}
 }
 
