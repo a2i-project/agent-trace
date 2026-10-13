@@ -73,7 +73,7 @@ Consequences: A session read without its directory misses claims and reads as om
 Alternatives rejected: Reading only the main transcript.
 
 ### D9: Flatten subagents, keeping the originating thread id as metadata
-Status: Accepted, implemented (`TrajectoryEntry.ThreadID`). The alignment does not yet use it (O-2).
+Status: Accepted, implemented (`TrajectoryEntry.ThreadID`). The alignment does not yet use it (O-29); `BlockID` is used since V-32.
 Date: design 2026-09 (in the archived integration design, before 2026-09-19); built 2026-10-06 (commits 56fef6e, 7d52eea).
 Context: A `/proc` ancestry check on a live Claude Code session showed that a subagent's shell commands are children of the same agent PID as the main thread's. Nothing in the observed data distinguishes a subagent call.
 Decision: Flatten subagent claims into one sequence and keep the thread id on each entry. Forced by the observation, not chosen.

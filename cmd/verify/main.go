@@ -216,6 +216,9 @@ func report(w io.Writer, r reportInput) {
 	if v.Ambiguous {
 		p("  note: more than one alignment is equally good, so the position a finding points at is one of several\n")
 	}
+	for _, d := range v.Degradations {
+		p("  degradation: %s\n", d)
+	}
 
 	c := v.Coverage
 	p("\nCoverage (is every observed event explained by a claim?):\n")
@@ -503,25 +506,26 @@ type jsonCommand struct {
 
 // jsonReport is the machine-readable verdict.
 type jsonReport struct {
-	Trajectory  string                    `json:"trajectory"`
-	GroundTruth string                    `json:"ground_truth"`
-	Adapter     string                    `json:"adapter"`
-	RootPID     uint32                    `json:"root_pid"`
-	Workspace   string                    `json:"workspace,omitempty"`
-	FSScope     *models.FSScope           `json:"fs_scope,omitempty"`
-	Baseline    *agent.Baseline           `json:"baseline,omitempty"`
-	Parse       agent.Report              `json:"parse"`
-	Outcome     string                    `json:"outcome"`
-	ExitCode    int                       `json:"exit_code"`
-	Findings    int                       `json:"findings"`
-	Advisory    bool                      `json:"advisory"`
-	Ambiguous   bool                      `json:"ambiguous"`
-	Reasons     []string                  `json:"reasons,omitempty"`
-	Alignment   jsonAlignment             `json:"alignment"`
-	Coverage    jsonCoverage              `json:"coverage"`
-	Capability  models.GroundTruth        `json:"capability,omitempty"`
-	Commands    []jsonCommand             `json:"commands"`
-	Complete    verification.Completeness `json:"completeness"`
+	Trajectory   string                    `json:"trajectory"`
+	GroundTruth  string                    `json:"ground_truth"`
+	Adapter      string                    `json:"adapter"`
+	RootPID      uint32                    `json:"root_pid"`
+	Workspace    string                    `json:"workspace,omitempty"`
+	FSScope      *models.FSScope           `json:"fs_scope,omitempty"`
+	Baseline     *agent.Baseline           `json:"baseline,omitempty"`
+	Parse        agent.Report              `json:"parse"`
+	Outcome      string                    `json:"outcome"`
+	ExitCode     int                       `json:"exit_code"`
+	Findings     int                       `json:"findings"`
+	Advisory     bool                      `json:"advisory"`
+	Ambiguous    bool                      `json:"ambiguous"`
+	Reasons      []string                  `json:"reasons,omitempty"`
+	Degradations []string                  `json:"degradations,omitempty"`
+	Alignment    jsonAlignment             `json:"alignment"`
+	Coverage     jsonCoverage              `json:"coverage"`
+	Capability   models.GroundTruth        `json:"capability,omitempty"`
+	Commands     []jsonCommand             `json:"commands"`
+	Complete     verification.Completeness `json:"completeness"`
 }
 
 type jsonAlignment struct {
@@ -551,7 +555,7 @@ func writeJSONReport(path string, r reportInput) error {
 	rep := jsonReport{
 		Trajectory: r.trajectoryPath, GroundTruth: r.groundTruthPath, Adapter: r.adapter,
 		RootPID: r.gt.RootPID, Workspace: r.gt.Workspace, FSScope: r.gt.FSScope, Baseline: r.baseline, Parse: r.parse,
-		Outcome: v.Outcome.String(), ExitCode: v.Outcome.ExitCode(), Findings: v.Findings(), Advisory: v.Advisory, Ambiguous: v.Ambiguous, Reasons: v.Reasons,
+		Outcome: v.Outcome.String(), ExitCode: v.Outcome.ExitCode(), Findings: v.Findings(), Advisory: v.Advisory, Ambiguous: v.Ambiguous, Reasons: v.Reasons, Degradations: v.Degradations,
 		Alignment: jsonAlignment{
 			Corroborated: nonNilPairs(v.Corroborated), Mismatched: nonNilPairs(v.Mismatched),
 			Unwitnessed: nonNilClaims(v.Unwitnessed), Unrecorded: nonNilEvents(v.Unrecorded),

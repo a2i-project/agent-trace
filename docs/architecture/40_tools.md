@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 088f58e on 2026-10-13.
+Checked against commit d954104 on 2026-10-13.
 
 ## Objective
 
@@ -62,7 +62,7 @@ The report, on standard output, contains in order:
 
 1. the inputs: entry count, adapter, event count, root pid, the capture's fs scope or a note that it predates the record, baseline rules and runs;
 2. the adapter `Report`: tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations;
-3. the alignment counts: Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, Unexplained harness activity, Outside writes, and an ambiguity note;
+3. the alignment counts: Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, Unexplained harness activity, Outside writes, an ambiguity note, and one line per alignment degradation (a parallel block aligned in trajectory order, V-32), also in the JSON as `degradations`;
 4. the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability evidence count;
 5. the detail lists;
 6. the forensic view;

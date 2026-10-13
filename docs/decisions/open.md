@@ -52,7 +52,7 @@ Date: raised 2026-09 (in the archived integration design, before 2026-09-19).
 Question: A sequential agent cannot produce overlapping intervals, so overlap is an anomaly. Flattened subagents make it legitimate per thread, but the thread id is attacker-controlled.
 Options: (a) finding per thread id; (b) report only; (c) ignore.
 Current behaviour: (c).
-Blocked by: O-2.
+Blocked by: O-29 (the thread part of O-2; the parallel-block part is decided as V-32).
 
 ### O-8: Is the V7 baseline sufficient at level 0?
 Status: Open.
