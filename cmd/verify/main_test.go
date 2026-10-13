@@ -542,3 +542,28 @@ func TestHarnessImpliedClaimsAreReportedApart(t *testing.T) {
 		}
 	}
 }
+
+// The report counts the agent process's own events the baseline explained
+// apart from the events beneath baselined commands, in the text and the JSON:
+// on the P5 capture the baseline explains six level-0 events and no command.
+func TestLevelZeroBaselineIsCounted(t *testing.T) {
+	const dir = "testdata/p5"
+	jsonPath := filepath.Join(t.TempDir(), "v.json")
+	_, out, _ := verify(t, "--trajectory", filepath.Join(dir, "honest.json"), "--ground-truth", filepath.Join(dir, "ground_truth.json"), "--baseline", filepath.Join(dir, "baseline.json"), "--json", jsonPath)
+	if !strings.Contains(out, "  Explained by the baseline:      0 events\n  Level 0 explained by the baseline: 6 events (") {
+		t.Errorf("with the baseline:\n%s", out)
+	}
+	data, _ := os.ReadFile(jsonPath)
+	var rep struct {
+		Coverage struct {
+			LevelZero *int `json:"baselined_level_zero"`
+		} `json:"coverage"`
+	}
+	if err := json.Unmarshal(data, &rep); err != nil || rep.Coverage.LevelZero == nil || *rep.Coverage.LevelZero != 6 {
+		t.Errorf("JSON baselined_level_zero = %v, %v", rep.Coverage.LevelZero, err)
+	}
+	_, out, _ = verify(t, "--trajectory", filepath.Join(dir, "honest.json"), "--ground-truth", filepath.Join(dir, "ground_truth.json"))
+	if !strings.Contains(out, "  Level 0 explained by the baseline: 0 events (") {
+		t.Errorf("without a baseline:\n%s", out)
+	}
+}

@@ -343,7 +343,9 @@ func Verify(in Input) Verdict {
 	// A baseline event on a path some claim names stays in the sequence, so
 	// the claim can pair with it; one left unpaired is counted as baselined
 	// after alignment, as if it had been subtracted (V-30).
+	levelZero := countLevelZero(part)
 	part, _ = part.SubtractBaseline(in.Baseline, claimed)
+	baselinedLevelZero := levelZero - countLevelZero(part)
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in
 	// the sequence it could pair with a claim and leave a real one unpaired at
@@ -403,6 +405,7 @@ func Verify(in Input) Verdict {
 				// A baseline event kept for a claim on its path that found no
 				// pair: explained by the baseline, as if subtracted (V-30).
 				if keptBaseline(part, e.EventIndex, in.Baseline) {
+					baselinedLevelZero++
 					continue
 				}
 				// A harness-owned event on a claimed path that still found no pair.
@@ -416,6 +419,7 @@ func Verify(in Input) Verdict {
 	}
 	v.Coverage = CheckCoverage(part, alignments)
 	v.Coverage.UnexplainedActions = withoutExplainedLevelZero(v.Coverage.UnexplainedActions, in.Baseline, in.Options.HarnessOwned)
+	v.Coverage.BaselinedLevelZero = baselinedLevelZero
 	v.Commands = part.Commands
 	v.OutsideWrites = outsideWrites(v.Coverage.Outside, in.Workspace)
 
@@ -556,6 +560,18 @@ func (p Partition) setAsideHarnessOwned(owned func(string) bool, claimed map[str
 // considered: a command or a connection has no path to declare.
 func isHarnessOwned(e models.GroundTruthEvent, owned func(string) bool) bool {
 	return owned != nil && LaneOf(e.ActionType) == LaneFS && owned(e.Target)
+}
+
+// countLevelZero counts the level-0 events of the aligned sequence: those
+// with no owning command.
+func countLevelZero(p Partition) int {
+	n := 0
+	for _, o := range p.Owner {
+		if o == nil {
+			n++
+		}
+	}
+	return n
 }
 
 // keptBaseline reports whether the observed event at index i is a level-0

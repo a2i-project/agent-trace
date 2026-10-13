@@ -228,6 +228,7 @@ func report(w io.Writer, r reportInput) {
 	p("  Unexplained subtrees: %d  (commands nothing claims)\n", len(c.UnexplainedSubtrees))
 	p("  Explained by a claimed command: %d events\n", c.Explained)
 	p("  Explained by the baseline:      %d events\n", c.Baselined)
+	p("  Level 0 explained by the baseline: %d events (the agent process's own; the line above counts only events beneath baselined commands)\n", c.BaselinedLevelZero)
 	p("  Quiet forks:                    %d (forked, never exec'd, nothing observed: nothing to explain)\n", len(c.Quiet))
 	p("  Outside the agent's tree:       %d events (reported, not the agent's)\n", len(c.Outside))
 	p("  Unplaced (no pid):              %d events\n", len(c.Unknown))
@@ -572,6 +573,7 @@ type jsonCoverage struct {
 	UnexplainedSubtrees []uint32           `json:"unexplained_subtrees"`
 	Explained           int                `json:"explained"`
 	Baselined           int                `json:"baselined"`
+	BaselinedLevelZero  int                `json:"baselined_level_zero"`
 	Quiet               []uint32           `json:"quiet"`
 	Outside             models.GroundTruth `json:"outside"`
 	Unknown             models.GroundTruth `json:"unknown"`
@@ -592,7 +594,7 @@ func writeJSONReport(path string, r reportInput) error {
 			OutsideWrites:      nonNilEvents(v.OutsideWrites),
 		},
 		Coverage: jsonCoverage{
-			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined,
+			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined, BaselinedLevelZero: v.Coverage.BaselinedLevelZero,
 			Outside: nonNilEvents(v.Coverage.Outside), Unknown: nonNilEvents(v.Coverage.Unknown), Complete: v.Coverage.Complete,
 			UnexplainedSubtrees: []uint32{}, Quiet: []uint32{},
 		},

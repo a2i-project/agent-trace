@@ -87,6 +87,11 @@ type Coverage struct {
 	Explained int
 	// Baselined counts the events inside subtrees the baseline explains.
 	Baselined int
+	// BaselinedLevelZero counts the agent process's own (level-0) events the
+	// baseline explains: those subtracted before alignment and those kept for
+	// a claim on their path that stayed unpaired (V-30). Verify sets it;
+	// CheckCoverage leaves it zero. Baselined does not include them.
+	BaselinedLevelZero int
 	// Unknown holds events with no pid, which cannot be placed and so cannot be
 	// shown to be explained.
 	Unknown models.GroundTruth

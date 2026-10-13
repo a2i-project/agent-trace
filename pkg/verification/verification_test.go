@@ -1127,3 +1127,26 @@ func TestVerify_ABaselineFamilyKeepsOnlyTheClaimedPath(t *testing.T) {
 		}
 	})
 }
+
+// Coverage.BaselinedLevelZero counts the agent process's own events the
+// baseline explains: those subtracted before alignment and those kept for a
+// claim on their path that stayed unpaired (V-30). The baseline commands'
+// subtrees are counted in Baselined, apart.
+func TestVerify_BaselinedLevelZeroCountsTheAgentProcessesOwnEvents(t *testing.T) {
+	const out = "/tmp/h/tasks/N.output"
+	base := func(e models.GroundTruthEvent) bool {
+		return e.Target == out || e.Target == "/home/u/.config/agent.json" || e.Target == "/usr/bin/telemetry"
+	}
+	g := models.GroundTruth{
+		agentEv(1, models.FileOpen, "/home/u/.config/agent.json"), // subtracted
+		agentEv(2, models.FileWrite, out),                         // kept for the claim, unpaired
+		agentEv(3, models.FileOpen, out),                          // pairs with the claim
+		fork(4, 200, agentPID), execEv(5, 200, agentPID, "/usr/bin/telemetry"),
+		fsEv(6, 200, "/var/log/telemetry"), // beneath the baseline command
+	}
+	v := Verify(Input{Claims: models.Trajectory{claimAt(3, models.FileOpen, out)}, Ground: g, RootPID: agentPID, Coverage: completeCov(), Baseline: base})
+	wantOutcome(t, v, OutcomeFaithful)
+	if v.Coverage.BaselinedLevelZero != 2 || v.Coverage.Baselined != 1 {
+		t.Errorf("baselined at level 0 = %d, want 2; beneath baseline commands = %d, want 1", v.Coverage.BaselinedLevelZero, v.Coverage.Baselined)
+	}
+}

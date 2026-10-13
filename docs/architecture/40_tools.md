@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 5399649 on 2026-10-13.
+Checked against commit 12358f1 on 2026-10-13.
 
 ## Objective
 
@@ -63,13 +63,13 @@ The report, on standard output, contains in order:
 1. the inputs: entry count, adapter, event count, root pid, the capture's fs scope or a note that it predates the record, baseline rules and runs;
 2. the adapter `Report`: tool calls and claims, tools that produced no claim, unknown tools as a warning, parse errors, limitations;
 3. the alignment counts: Corroborated, Mismatched, Unwitnessed, Unrecorded, Outside interval, Unverified, Out of scope, Unexplained harness activity, Outside writes, and, only when the adapter derived harness-implied claims, `Harness implied: P of N` (paired of all, V-33), an ambiguity note, and one line per alignment degradation (a parallel block aligned in trajectory order, V-32), also in the JSON as `degradations`;
-4. the coverage counts (unexplained subtrees, events explained by a claimed command, by the baseline, quiet forks, outside events, unplaced events) and the capability evidence count;
+4. the coverage counts (unexplained subtrees, events explained by a claimed command, events beneath baselined commands (`Explained by the baseline`), the agent process's own events the baseline explained (`Level 0 explained by the baseline`, which the line before does not include), quiet forks, outside events, unplaced events) and the capability evidence count;
 5. the detail lists, among them `Harness implied`: each open a harness-implied claim explained, with the command that implied it;
 6. the forensic view;
 7. the completeness judgement with notes;
 8. the `VERDICT` line, with the reasons when the outcome is INCONCLUSIVE or the findings advisory.
 
-The forensic view lists every command, claimed, baselined, unexplained or quiet, with its exit code and what happened beneath it: programs run, files written, opened, renamed and deleted, connections, requests, listeners, Unix sockets, DNS connections (`dns`) and connections that sent nothing (`dials (nothing sent)`), as distinct sorted targets capped at twelve per group. It is what honest trajectories do not record, a tool's own accesses while it runs (D3, P-17), and it is reported so a reader can judge a command the verdict only explains. None of it is a finding. The JSON report carries every event of each command, uncapped. Its `alignment` object gains `harness_implied` and `harness_implied_unpaired`, each entry an `implied_by` command, the `claim` and, when paired, the `event`, only when the adapter derived such claims; a claim's own JSON form never carries the marker (V-33). A write error on `--json` is exit 3 after the text report has been printed.
+The forensic view lists every command, claimed, baselined, unexplained or quiet, with its exit code and what happened beneath it: programs run, files written, opened, renamed and deleted, connections, requests, listeners, Unix sockets, DNS connections (`dns`) and connections that sent nothing (`dials (nothing sent)`), as distinct sorted targets capped at twelve per group. It is what honest trajectories do not record, a tool's own accesses while it runs (D3, P-17), and it is reported so a reader can judge a command the verdict only explains. None of it is a finding. The JSON report carries every event of each command, uncapped. Its `alignment` object gains `harness_implied` and `harness_implied_unpaired`, each entry an `implied_by` command, the `claim` and, when paired, the `event`, only when the adapter derived such claims; a claim's own JSON form never carries the marker (V-33). Its `coverage` object carries `baselined` (events beneath baselined commands) and `baselined_level_zero` (the agent process's own events the baseline explained). A write error on `--json` is exit 3 after the text report has been printed.
 
 | Exit code | When |
 |---|---|
