@@ -1,0 +1,5528 @@
+{
+ "events": [
+  {
+   "timestamp": "2026-10-13T16:59:12.921841243+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/dash",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.92241317+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.923044229+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.923044231+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.924047107+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/setpriv",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.924328671+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.924893928+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.924991312+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libcap-ng.so.0.0.0",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.92505817+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.925769145+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/locale/locale-archive",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.926036141+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.926104632+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.926203741+02:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.926336959+02:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.926482909+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.92648291+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_systemd.so.2",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.926675447+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.926857907+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libcap.so.2.75",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.927693941+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.927693942+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_sss.so.2",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928027548+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928167088+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928173663+02:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928193492+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928281288+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928310821+02:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928552619+02:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928638411+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/org.gnome.DisplayManager",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.928824985+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/io.systemd.DynamicUser",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.92969365+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.929902546+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/claude/versions/2.1.296",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.930383388+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.931477726+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.931477727+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.931623576+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.931694756+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.931857916+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.931961451+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:12.939346803+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/zoneinfo/Europe/Prague",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.019352369+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.021660674+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.021807911+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/remote-settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.021832721+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/remote-settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.022710621+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.024374549+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ca-certificates.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.024934782+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_R46.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.024961654+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.024961655+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.024961656+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_2_G3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.024961657+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_RSA_R2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026529+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Services_Root_Certificate_Authority_-_G2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02502653+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026531+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CFCA_EV_ROOT.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026532+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026533+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_ECC.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026534+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Extended_Validation_Root.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026535+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GDCA_TrustAUTH_R5_ROOT.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026536+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026537+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_G3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025026538+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G4.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171716+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R5.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171717+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Public_Sector_Root_CA_1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171718+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171719+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_G1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02517172+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CA_Disig_Root_R2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171721+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_ECC_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171722+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_RSA_G1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171723+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_RootCA_2015.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171724+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Autoridad_de_Certificacion_Firmaprofesional_CIF_A62634068.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171725+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171726+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NAVER_Global_Root_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171727+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA_2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171728+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171729+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_C1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02517173+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171731+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_C3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171732+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Root_Certificate_Authority_-_G2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171733+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171734+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_2_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171735+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_ECC_RootCA1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171736+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_1_2020.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171737+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Global_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025171738+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/certSIGN_Root_CA_G2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527201+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527202+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA12.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527203+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_ECC_G1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527204+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hongkong_Post_Root_CA_3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527205+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA15.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527206+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Entrust_Root_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527207+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527209+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_RSA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02552721+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ssl-cert-snakeoil.pem",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527211+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_1_G3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527212+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Trusted_Root_G4.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527213+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_ECC_RootCA_2015.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527214+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GC_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527215+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527216+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_R1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527217+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527218+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_RSA_Root_2023.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527219+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsec_e-Szigno_Root_CA_2009.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02552722+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_E1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527221+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_ECC_Root_CA_2022.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527222+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA14.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527223+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527224+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_ECC_Root_Certificate_Authority_2017.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527225+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_Root_CA_v2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527226+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_R46.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527227+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HiPKI_Root_CA_-_G1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527228+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Actalis_Authentication_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527229+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_EC-384_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02552723+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_ECC_P384_Root_G5.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527231+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NetLock_Arany_=Class_Gold=_F\u0151tan\u00fas\u00edtv\u00e1ny.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527232+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_RSA_TLS_2021.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527233+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527234+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527235+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SwissSign_RSA_TLS_Root_CA_2022_-_1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527236+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_1_2020.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527237+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_RSA_Root_CA_2021.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527238+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ACCVRAIZ1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527239+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02552724+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM_SERVIDORES_SEGUROS.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527241+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ANF_Secure_Server_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527242+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527243+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_4.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527244+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_2011.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527245+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_ECC_TLS_2021.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527246+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_3_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527247+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_ECC_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527248+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_RSA_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527249+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certigna_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02552725+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527251+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_2_2023.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527252+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_2_2023.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527253+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_2009.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527254+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_EV_2009.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527255+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527256+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_RSA4096_Root_G5.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527257+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R4.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527258+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R4.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527259+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R6.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527261+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_E46.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.025527262+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Go_Daddy_Root_Certificate_Authority_-_G2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404952+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_ECC_Root_CA_2021.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404953+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Commercial_Root_CA_1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404954+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Izenpe.com.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404955+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_RSA_Root_Certificate_Authority_2017.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404956+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GB_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404957+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_3_G3.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404958+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_ECC.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404959+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_RSA_Root_CA_2022.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02640496+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SZAFIR_ROOT_CA2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404961+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_E46.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404962+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_RootCA2.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404963+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TUBITAK_Kamu_SM_SSL_Kok_Sertifikasi_-_Surum_1.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404964+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_CYBER_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404965+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Root_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404966+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_ECC_Root_2020.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404967+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_RSA_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404968+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TunTrust_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404969+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Global_G2_Root.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.02640497+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_ECC_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404971+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_RSA_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404972+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ePKI_Root_Certification_Authority.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404973+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_Root_CA_2017.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404974+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_TLS_Root_CA_2023.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.026404975+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_ECC_Root_CA.crt",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.027722578+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.027752521+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.028651296+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.031789548+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.031833921+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.03210989+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032109891+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032655707+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032691389+02:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032752932+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032752933+02:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032817632+02:00",
+   "action_type": "file_open",
+   "target": "/etc/host.conf",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032817633+02:00",
+   "action_type": "file_open",
+   "target": "/run/systemd/resolve/stub-resolv.conf",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032817634+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032878637+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.032878639+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_mdns4_minimal.so.2",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.033067391+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.033238211+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.033255149+02:00",
+   "action_type": "file_open",
+   "target": "/etc/gai.conf",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.033278382+02:00",
+   "action_type": "net_dial",
+   "target": "160.79.104.10:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.033295304+02:00",
+   "action_type": "net_dial",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.033404054+02:00",
+   "action_type": "net_dial",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.036198158+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.040979491+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/known_marketplaces.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.042898224+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.042898225+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.044325665+02:00",
+   "action_type": "process_fork",
+   "target": "1477454",
+   "pid": 1477454,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.044428617+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-5 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "pid": 1477454,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.044513426+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/git",
+   "pid": 1477454
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.044660772+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477454
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.044905028+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477454
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.044905029+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477454
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.04490503+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libz.so.1.3.1",
+   "pid": 1477454
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.044961903+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477454
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.04526623+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gitconfig",
+   "pid": 1477454
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.045296591+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-5 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "exit_code": 128,
+   "pid": 1477454,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.050539378+02:00",
+   "action_type": "process_fork",
+   "target": "1477455",
+   "pid": 1477455,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.050579819+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c hook.applypatch-msg.enabled=false -c hook.pre-applypatch.enabled=false -c hook.post-applypatch.enabled=false -c hook.pre-commit.enabled=false -c hook.pre-merge-commit.enabled=false -c hook.prepare-commit-msg.enabled=false -c hook.commit-msg.enabled=false -c hook.post-commit.enabled=false -c hook.pre-rebase.enabled=false -c hook.post-checkout.enabled=false -c hook.post-merge.enabled=false -c hook.pre-push.enabled=false -c hook.pre-receive.enabled=false -c hook.update.enabled=false -c hook.proc-receive.enabled=false -c hook.post-receive.enabled=false -c hook.post-update.enabled=false -c hook.reference-transaction.enabled=false -c hook.push-to-checkout.enabled=false -c hook.pre-auto-gc.enabled=false -c hook.post-rewrite.enabled=false -c hook.sendemail-validate.enabled=false -c hook.fsmonitor-watchman.enabled=false -c hook.p4-changelist.enabled=false -c",
+   "pid": 1477455,
+   "ppid": 1477443,
+   "is_top_level": true,
+   "target_truncated": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.05064382+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/git",
+   "pid": 1477455
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.050834793+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477455
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.051062155+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477455
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.051062156+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477455
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.051109761+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libz.so.1.3.1",
+   "pid": 1477455
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.051125932+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477455
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.051589379+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gitconfig",
+   "pid": 1477455
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.05176153+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c hook.applypatch-msg.enabled=false -c hook.pre-applypatch.enabled=false -c hook.post-applypatch.enabled=false -c hook.pre-commit.enabled=false -c hook.pre-merge-commit.enabled=false -c hook.prepare-commit-msg.enabled=false -c hook.commit-msg.enabled=false -c hook.post-commit.enabled=false -c hook.pre-rebase.enabled=false -c hook.post-checkout.enabled=false -c hook.post-merge.enabled=false -c hook.pre-push.enabled=false -c hook.pre-receive.enabled=false -c hook.update.enabled=false -c hook.proc-receive.enabled=false -c hook.post-receive.enabled=false -c hook.post-update.enabled=false -c hook.reference-transaction.enabled=false -c hook.push-to-checkout.enabled=false -c hook.pre-auto-gc.enabled=false -c hook.post-rewrite.enabled=false -c hook.sendemail-validate.enabled=false -c hook.fsmonitor-watchman.enabled=false -c hook.p4-changelist.enabled=false -c",
+   "exit_code": 128,
+   "pid": 1477455,
+   "ppid": 1477443,
+   "is_top_level": true,
+   "target_truncated": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.052631896+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.052668615+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.053825697+02:00",
+   "action_type": "file_open",
+   "target": "/etc/machine-id",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.05491706+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.055061469+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.056139219+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/os-release",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.058491408+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.058544048+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.061533148+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.061578624+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.066974002+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.067291573+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.068208789+02:00",
+   "action_type": "net_dial",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.069904356+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.070416438+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.07212022+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/installed_plugins.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.078207134+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.079886516+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.080135019+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081007485+02:00",
+   "action_type": "process_fork",
+   "target": "1477457",
+   "pid": 1477457,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081084854+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c hook.applypatch-msg.enabled=false -c hook.pre-applypatch.enabled=false -c hook.post-applypatch.enabled=false -c hook.pre-commit.enabled=false -c hook.pre-merge-commit.enabled=false -c hook.prepare-commit-msg.enabled=false -c hook.commit-msg.enabled=false -c hook.post-commit.enabled=false -c hook.pre-rebase.enabled=false -c hook.post-checkout.enabled=false -c hook.post-merge.enabled=false -c hook.pre-push.enabled=false -c hook.pre-receive.enabled=false -c hook.update.enabled=false -c hook.proc-receive.enabled=false -c hook.post-receive.enabled=false -c hook.post-update.enabled=false -c hook.reference-transaction.enabled=false -c hook.push-to-checkout.enabled=false -c hook.pre-auto-gc.enabled=false -c hook.post-rewrite.enabled=false -c hook.sendemail-validate.enabled=false -c hook.fsmonitor-watchman.enabled=false -c hook.p4-changelist.enabled=false -c",
+   "pid": 1477457,
+   "ppid": 1477443,
+   "is_top_level": true,
+   "target_truncated": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081106733+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/git",
+   "pid": 1477457
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081377776+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477457
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.08152622+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477457
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081543096+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477457
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081584234+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libz.so.1.3.1",
+   "pid": 1477457
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081622135+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477457
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081962087+02:00",
+   "action_type": "net_bind",
+   "target": "unix:/tmp/cc-socks/1477443.sock",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.081978523+02:00",
+   "action_type": "net_listen",
+   "target": "unix:/tmp/cc-socks/1477443.sock",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.082022505+02:00",
+   "action_type": "file_write",
+   "target": "/tmp/cc-socks",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.082092985+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gitconfig",
+   "pid": 1477457
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.082286405+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c hook.applypatch-msg.enabled=false -c hook.pre-applypatch.enabled=false -c hook.post-applypatch.enabled=false -c hook.pre-commit.enabled=false -c hook.pre-merge-commit.enabled=false -c hook.prepare-commit-msg.enabled=false -c hook.commit-msg.enabled=false -c hook.post-commit.enabled=false -c hook.pre-rebase.enabled=false -c hook.post-checkout.enabled=false -c hook.post-merge.enabled=false -c hook.pre-push.enabled=false -c hook.pre-receive.enabled=false -c hook.update.enabled=false -c hook.proc-receive.enabled=false -c hook.post-receive.enabled=false -c hook.post-update.enabled=false -c hook.reference-transaction.enabled=false -c hook.push-to-checkout.enabled=false -c hook.pre-auto-gc.enabled=false -c hook.post-rewrite.enabled=false -c hook.sendemail-validate.enabled=false -c hook.fsmonitor-watchman.enabled=false -c hook.p4-changelist.enabled=false -c",
+   "exit_code": 128,
+   "pid": 1477457,
+   "ppid": 1477443,
+   "is_top_level": true,
+   "target_truncated": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.082961462+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.082961463+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.0000000000000000000000000000000000000000000000000000000000000000.key.tmp.63b344fe",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.082961463+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions/1477443.0000000000000000000000000000000000000000000000000000000000000000.key.tmp.63b344fe",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.082961463+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/sessions/1477443.0000000000000000000000000000000000000000000000000000000000000000.key.tmp.63b344fe",
+   "output_hash": "sha256:b9afa03985c1af7bd3af906f2d8e9605780bd06dd919451a713715113493ed72",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.083015748+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.claude/sessions",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.089149361+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.089238972+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.local/state/claude/locks",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.089238973+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/state/claude/locks/2.1.296.lock",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.089292496+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/state/claude/locks/2.1.296.lock",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.089292496+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.local/state/claude/locks/2.1.296.lock",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.089292496+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.local/state/claude/locks/2.1.296.lock",
+   "output_hash": "sha256:7a0b516f7acac03da81ac60703b99f01f32b025b546269793d89ef43b5c76703",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.089292497+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.local/state/claude/locks",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.092408288+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.099957505+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.100606512+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.100651998+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.100894704+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/cache/model-catalog/00000000-0000-0000-0000-000000000000-0b3c83477e0f-cc.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.114793741+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.114908619+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.119442135+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.11969067+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.124204445+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/installed_plugins.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.124416207+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/installed_plugins.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.126225199+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/installed_plugins.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.126429061+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/installed_plugins.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.129304183+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/installed_plugins.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.131859544+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.131912805+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.132032136+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.132071836+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.132479354+02:00",
+   "action_type": "process_fork",
+   "target": "1477459",
+   "pid": 1477459,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.132531624+02:00",
+   "action_type": "process_exec",
+   "target": "/home/user/.local/share/claude/versions/2.1.296 --no-config --files --hidden /ws/control-5",
+   "pid": 1477459,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.132594543+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/claude/versions/2.1.296",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.13271684+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.132951643+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.132951644+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.13299606+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.133087935+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.133087937+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.133155193+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.135183675+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gitconfig",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.135402192+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.config/git/ignore",
+   "pid": 1477459
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.137150701+02:00",
+   "action_type": "process_exit",
+   "target": "/home/user/.local/share/claude/versions/2.1.296 --no-config --files --hidden /ws/control-5",
+   "exit_code": 0,
+   "pid": 1477459,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.155526156+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/installed_plugins.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.155605755+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/known_marketplaces.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.188228027+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.188553363+02:00",
+   "action_type": "process_fork",
+   "target": "1477474",
+   "pid": 1477474,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.188600533+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/sh -c uname -s\nuname -r\nuname -m\nfor c in npm yarn pnpm; do command -v \"$c\" >/dev/null 2>&1 && printf \"%s,\" \"$c\"; done; echo\nfor c in bun deno node; do command -v \"$c\" >/dev/null 2>&1 && printf \"%s,\" \"$c\"; done; echo",
+   "pid": 1477474,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.188752903+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/dash",
+   "pid": 1477474
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.188855958+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477474
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189032276+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477474
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189056677+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477474
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189422119+02:00",
+   "action_type": "process_fork",
+   "target": "1477476",
+   "pid": 1477476,
+   "ppid": 1477474
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189443194+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/uname -s",
+   "pid": 1477476,
+   "ppid": 1477474,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189460874+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189535507+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189640252+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.18965805+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189684389+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189715688+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189741734+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.189765598+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477476
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.190572191+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.190721213+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191148179+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/uname -s",
+   "exit_code": 0,
+   "pid": 1477476,
+   "ppid": 1477474,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191548437+02:00",
+   "action_type": "process_fork",
+   "target": "1477477",
+   "pid": 1477477,
+   "ppid": 1477474
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191569525+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/uname -r",
+   "pid": 1477477,
+   "ppid": 1477474,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191596841+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191741258+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191889091+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191918271+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191942205+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.191979584+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.192011557+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.192011558+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477477
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193152241+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/uname -r",
+   "exit_code": 0,
+   "pid": 1477477,
+   "ppid": 1477474,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.1933608+02:00",
+   "action_type": "process_fork",
+   "target": "1477478",
+   "pid": 1477478,
+   "ppid": 1477474
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193381435+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/uname -m",
+   "pid": 1477478,
+   "ppid": 1477474,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193412548+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.19361379+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193775442+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193796363+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193855579+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193891679+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193934465+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.193980746+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477478
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.194243857+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.195695383+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/uname -m",
+   "exit_code": 0,
+   "pid": 1477478,
+   "ppid": 1477474,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.19595536+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.196022886+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/sh -c uname -s\nuname -r\nuname -m\nfor c in npm yarn pnpm; do command -v \"$c\" >/dev/null 2>&1 && printf \"%s,\" \"$c\"; done; echo\nfor c in bun deno node; do command -v \"$c\" >/dev/null 2>&1 && printf \"%s,\" \"$c\"; done; echo",
+   "exit_code": 0,
+   "pid": 1477474,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.196118012+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.196209803+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.196463537+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.196544245+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.196620364+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.197116515+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.197116516+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.197192026+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.197192026+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.203684871+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.203809414+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/known_marketplaces.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.205543169+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.205567296+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.205567296+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.206757186+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/marketplaces/agentmemory/.claude-plugin/marketplace.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.207514545+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.212558536+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/known_marketplaces.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.213392803+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.213414182+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.21342542+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "output_hash": "sha256:e2fc6f6bdb7ff75c5b780aca48b685c5f7e4dda31746959209a06d94951efb40",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.217688985+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/os-release",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.21861401+02:00",
+   "action_type": "process_fork",
+   "target": "1477480",
+   "pid": 1477480,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.218664224+02:00",
+   "action_type": "process_exec",
+   "target": "/home/user/.local/share/claude/versions/2.1.296 --version",
+   "pid": 1477480,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.218682718+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/claude/versions/2.1.296",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.218858432+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.21907069+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219070691+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219123513+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219150614+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219266022+02:00",
+   "action_type": "process_fork",
+   "target": "1477481",
+   "pid": 1477481,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219307042+02:00",
+   "action_type": "process_exec",
+   "target": "/home/user/.local/share/claude/versions/2.1.296 --no-config --files --hidden --no-ignore --max-depth 4 --glob .orphaned_at /home/user/.claude/plugins/cache",
+   "pid": 1477481,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219320505+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219320506+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477480
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219320507+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/claude/versions/2.1.296",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219389917+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219508118+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219526876+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.21954427+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219580481+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219607219+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219635048+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477481
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.21990844+02:00",
+   "action_type": "file_write",
+   "target": "/tmp/claude-1000/fswatch-probe-HGDQwK",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.219908441+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/claude-1000/fswatch-probe-HGDQwK/probe",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.220200831+02:00",
+   "action_type": "file_write",
+   "target": "/tmp/claude-1000/fswatch-probe-HGDQwK/probe",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.220970898+02:00",
+   "action_type": "process_exit",
+   "target": "/home/user/.local/share/claude/versions/2.1.296 --version",
+   "exit_code": 0,
+   "pid": 1477480,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.223085836+02:00",
+   "action_type": "process_exit",
+   "target": "/home/user/.local/share/claude/versions/2.1.296 --no-config --files --hidden --no-ignore --max-depth 4 --glob .orphaned_at /home/user/.claude/plugins/cache",
+   "exit_code": 1,
+   "pid": 1477481,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.240234775+02:00",
+   "action_type": "file_close",
+   "target": "/tmp/claude-1000/fswatch-probe-HGDQwK/probe",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.240339339+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/claude-1000/fswatch-probe-HGDQwK/probe",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.241015073+02:00",
+   "action_type": "file_write",
+   "target": "/tmp/claude-1000/fswatch-probe-HGDQwK/probe",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.258379833+02:00",
+   "action_type": "file_close",
+   "target": "/tmp/claude-1000/fswatch-probe-HGDQwK/probe",
+   "output_hash": "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.344334688+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/projects/-ws-control-5",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.344334689+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.344334689+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.344548611+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "output_hash": "sha256:73287216d6f7a8d1aaa00cad560b8b16e9afd3070759f629463ccc6351321d1f",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.429535533+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/remote-settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.429535533+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/remote-settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.434940618+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/remote-settings.json",
+   "output_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.438327457+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.438410525+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.440465452+02:00",
+   "action_type": "process_fork",
+   "target": "1477500",
+   "pid": 1477500,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.440666058+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-5 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "pid": 1477500,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.440737112+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/git",
+   "pid": 1477500
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.441074651+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477500
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.441423081+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477500
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.441470265+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477500
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.4415498+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libz.so.1.3.1",
+   "pid": 1477500
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.441626048+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477500
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.442650319+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gitconfig",
+   "pid": 1477500
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.442855105+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor= -C /ws/control-5 ls-files --error-unmatch -- :(icase).claude/settings.local.json",
+   "exit_code": 128,
+   "pid": 1477500,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.44908979+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.449183161+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/settings.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.460490096+02:00",
+   "action_type": "file_open",
+   "target": "/etc/machine-id",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.517937453+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.51915899+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.519158991+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json.tmp.caf387f7",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.519158991+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json.tmp.caf387f7",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.519221921+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/policy-limits.json.stamp.json.tmp.caf387f7",
+   "output_hash": "sha256:743d443a7edd5eb982184c4d39562c106cff7a953f014f521c15feb7a6993a58",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.519513864+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.claude",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.57243392+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.574488203+02:00",
+   "action_type": "file_write",
+   "target": "/home/user",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.574488204+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude.json.tmp.1477443.286c3d86236f",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.577227711+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude.json.tmp.1477443.286c3d86236f",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.580141125+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude.json.tmp.1477443.286c3d86236f",
+   "output_hash": "sha256:d1d5da9ebe8f6bc8658ff4dca1e88a2af28732521233b112164150fecd492542",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.580417977+02:00",
+   "action_type": "file_rename",
+   "target": "/home/user",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.710750254+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.711029553+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/.credentials.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.712630731+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/known_marketplaces.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.725602873+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/mcp-needs-auth-cache.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.73092421+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/state/mcp-discover-verdicts.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.730980616+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/known_marketplaces.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.731550218+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/marketplaces/claude-plugins-official/.claude-plugin/marketplace.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.741408383+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/known_marketplaces.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.742206583+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.742507152+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.742544236+02:00",
+   "action_type": "net_dial",
+   "target": "160.79.104.10:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.742563491+02:00",
+   "action_type": "net_dial",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.742656313+02:00",
+   "action_type": "net_dial",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.742673295+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/plugins/marketplaces/agentmemory/.claude-plugin/marketplace.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:13.745713792+02:00",
+   "action_type": "net_connect",
+   "target": "mcp-proxy.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:14.421914192+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude.json",
+   "input_hash": "sha256:d1d5da9ebe8f6bc8658ff4dca1e88a2af28732521233b112164150fecd492542",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:14.732606094+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.cache/claude-cli-nodejs/-ws-control-5/mcp-logs-claude-ai-Claude-Docs",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:14.732606095+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.cache/claude-cli-nodejs/-ws-control-5/mcp-logs-claude-ai-Claude-Docs/2026-10-13T14-59-13-727Z.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:14.733006332+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.cache/claude-cli-nodejs/-ws-control-5/mcp-logs-claude-ai-Claude-Docs/2026-10-13T14-59-13-727Z.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:14.733006332+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.cache/claude-cli-nodejs/-ws-control-5/mcp-logs-claude-ai-Claude-Docs/2026-10-13T14-59-13-727Z.jsonl",
+   "output_hash": "sha256:1382f9a22489db1249a26c9289fb71057a234233b89a61316718b9306a6250d7",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.996666011+02:00",
+   "action_type": "process_fork",
+   "target": "1477514",
+   "pid": 1477514,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.996851558+02:00",
+   "action_type": "process_exec",
+   "target": "/bin/bash -c env",
+   "pid": 1477514,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.996875192+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/bash",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.99720251+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.99736178+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.997384062+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.5",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.997417912+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.997997812+02:00",
+   "action_type": "file_open",
+   "target": "/etc/bash.bashrc",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.99802538+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.bashrc",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998064382+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/env",
+   "pid": 1477514,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998123619+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998162409+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998312863+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998330594+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998413971+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998413973+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.99846183+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:15.998478957+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477514
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.000066672+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/env",
+   "exit_code": 0,
+   "pid": 1477514,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.004651965+02:00",
+   "action_type": "process_fork",
+   "target": "1477515",
+   "pid": 1477515,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.00473622+02:00",
+   "action_type": "process_exec",
+   "target": "/bin/bash -c -l SNAPSHOT_FILE=/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh\n      <snapshot script elided>",
+   "pid": 1477515,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.004772006+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/bash",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.005011514+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.00519706+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.005216125+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.5",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.005255295+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.005842642+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006001884+02:00",
+   "action_type": "process_fork",
+   "target": "1477516",
+   "pid": 1477516,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006163243+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/run-parts --list --regex ^[a-zA-Z0-9_][a-zA-Z0-9._-]*\\.sh$ /etc/profile.d",
+   "pid": 1477516,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006175955+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/run-parts",
+   "pid": 1477516
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006330521+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477516
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006477424+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477516
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006477425+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477516
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006796727+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/run-parts --list --regex ^[a-zA-Z0-9_][a-zA-Z0-9._-]*\\.sh$ /etc/profile.d",
+   "exit_code": 0,
+   "pid": 1477516,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.006976176+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/01-locale-fix.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007099834+02:00",
+   "action_type": "process_fork",
+   "target": "1477517",
+   "pid": 1477517,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007223249+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/locale-check C.UTF-8",
+   "pid": 1477517,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007232916+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/locale-check",
+   "pid": 1477517
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007312046+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477517
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007478864+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477517
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007490858+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477517
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007630078+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/locale-check C.UTF-8",
+   "exit_code": 0,
+   "pid": 1477517,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007713231+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/systemd/profile.d/70-systemd-shell-extra.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007772987+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/Z99-cloud-locale-test.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.007995473+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/Z99-cloudinit-warnings.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008130684+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/apps-bin-path.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008220888+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/bash_completion.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008267988+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/cedilla-portuguese.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008320928+02:00",
+   "action_type": "file_open",
+   "target": "/usr/share/libdebuginfod-common/debuginfod.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008427714+02:00",
+   "action_type": "process_fork",
+   "target": "1477518",
+   "pid": 1477518,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008619418+02:00",
+   "action_type": "process_fork",
+   "target": "1477519",
+   "pid": 1477519,
+   "ppid": 1477518
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.00871329+02:00",
+   "action_type": "process_fork",
+   "target": "1477520",
+   "pid": 1477520,
+   "ppid": 1477518
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008772267+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/find /etc/debuginfod -name *.urls -print0",
+   "pid": 1477519,
+   "ppid": 1477518,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008780604+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/find",
+   "pid": 1477519
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008792826+02:00",
+   "action_type": "process_fork",
+   "target": "1477521",
+   "pid": 1477521,
+   "ppid": 1477518
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008852099+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/xargs -0 cat",
+   "pid": 1477520,
+   "ppid": 1477518,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008861504+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/xargs",
+   "pid": 1477520
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008903852+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/tr \\n  ",
+   "pid": 1477521,
+   "ppid": 1477518,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008910855+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008959685+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477520
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008959686+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477519
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.008979897+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009227977+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477519
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009227978+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477520
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009227979+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.00922798+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009227981+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477520
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009227982+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477519
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009227983+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009227984+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477519
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009296582+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009296583+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009296584+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477519
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009296586+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477521
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009332269+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477519
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009713249+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/find /etc/debuginfod -name *.urls -print0",
+   "exit_code": 0,
+   "pid": 1477519,
+   "ppid": 1477518,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009745614+02:00",
+   "action_type": "process_fork",
+   "target": "1477523",
+   "pid": 1477523,
+   "ppid": 1477520
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009834275+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/local/bin/cat /etc/debuginfod/elfutils.urls",
+   "pid": 1477523,
+   "ppid": 1477520,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009841176+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat /etc/debuginfod/elfutils.urls",
+   "pid": 1477523,
+   "ppid": 1477520,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.009860106+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.010009954+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.010180974+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.010202821+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.010238824+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.010276537+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.010321428+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.010351038+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.011931028+02:00",
+   "action_type": "file_open",
+   "target": "/etc/debuginfod/elfutils.urls",
+   "pid": 1477523
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.011968594+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat /etc/debuginfod/elfutils.urls",
+   "exit_code": 0,
+   "pid": 1477523,
+   "ppid": 1477520,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.012138568+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/xargs -0 cat",
+   "exit_code": 0,
+   "pid": 1477520,
+   "ppid": 1477518,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.01216278+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/tr \\n  ",
+   "exit_code": 0,
+   "pid": 1477521,
+   "ppid": 1477518,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.012665086+02:00",
+   "action_type": "process_fork",
+   "target": "1477524",
+   "pid": 1477524,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.012887344+02:00",
+   "action_type": "process_fork",
+   "target": "1477525",
+   "pid": 1477525,
+   "ppid": 1477524
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.012983116+02:00",
+   "action_type": "process_fork",
+   "target": "1477526",
+   "pid": 1477526,
+   "ppid": 1477524
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013047974+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/find /etc/debuginfod -name *.certpath -print0",
+   "pid": 1477525,
+   "ppid": 1477524,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.01307107+02:00",
+   "action_type": "process_fork",
+   "target": "1477527",
+   "pid": 1477527,
+   "ppid": 1477524
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013086947+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/find",
+   "pid": 1477525
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013142984+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/xargs -0 cat",
+   "pid": 1477526,
+   "ppid": 1477524,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013167136+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/tr \\n :",
+   "pid": 1477527,
+   "ppid": 1477524,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013167859+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/xargs",
+   "pid": 1477526
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013202657+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013268644+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477525
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013268645+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477526
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013268646+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013489774+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477525
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013489775+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477526
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013489776+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013541692+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477526
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013541693+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013541694+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477525
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013614369+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.01361437+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477525
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013614371+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013614372+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477525
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013699194+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013699195+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477525
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.013699196+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477527
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014104601+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/find /etc/debuginfod -name *.certpath -print0",
+   "exit_code": 0,
+   "pid": 1477525,
+   "ppid": 1477524,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014188049+02:00",
+   "action_type": "process_fork",
+   "target": "1477528",
+   "pid": 1477528,
+   "ppid": 1477526
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014268788+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/local/bin/cat",
+   "pid": 1477528,
+   "ppid": 1477526,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014275118+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 1477528,
+   "ppid": 1477526,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014287735+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.01436469+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014515036+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014536458+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014571117+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014600578+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014632966+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.014673268+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477528
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.016147433+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 1477528,
+   "ppid": 1477526,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.016344778+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/xargs -0 cat",
+   "exit_code": 0,
+   "pid": 1477526,
+   "ppid": 1477524,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.016427052+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/tr \\n :",
+   "exit_code": 0,
+   "pid": 1477527,
+   "ppid": 1477524,
+   "is_top_level": false
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017020394+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/gawk.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017084035+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/gnome-session_gnomerc.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017162169+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/im-config_wayland.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017187734+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/vte-2.91.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.01722995+02:00",
+   "action_type": "file_open",
+   "target": "/etc/profile.d/xdg_dirs_desktop_session.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017275079+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.profile",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.01732569+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.bashrc",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.01736127+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.bashrc",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017428747+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots",
+   "pid": 1477515,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017428748+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017479388+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017479388+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017479388+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017540505+02:00",
+   "action_type": "process_fork",
+   "target": "1477529",
+   "pid": 1477529,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017612444+02:00",
+   "action_type": "process_fork",
+   "target": "1477530",
+   "pid": 1477530,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017856016+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017860236+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/head -n 1000",
+   "pid": 1477530,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017885229+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.017999793+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.018177658+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.018205777+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.018234155+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.018234157+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.018293399+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.0182934+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019420535+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019427031+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/head -n 1000",
+   "exit_code": 0,
+   "pid": 1477530,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019575023+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477530
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019751977+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019781196+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019781196+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019886849+02:00",
+   "action_type": "process_fork",
+   "target": "1477531",
+   "pid": 1477531,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.019977774+02:00",
+   "action_type": "process_fork",
+   "target": "1477532",
+   "pid": 1477532,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020070063+02:00",
+   "action_type": "process_fork",
+   "target": "1477533",
+   "pid": 1477533,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020137325+02:00",
+   "action_type": "process_fork",
+   "target": "1477534",
+   "pid": 1477534,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020182674+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cut -d  -f3",
+   "pid": 1477532,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020208385+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020263694+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/grep -vE ^_[^_]",
+   "pid": 1477533,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020282664+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/grep",
+   "pid": 1477533
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020368141+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020417415+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477533
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020626439+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020655975+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020683832+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477533
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020726323+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477533
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020726325+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020792739+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477533
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.02079274+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020792741+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.020909668+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477532
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.022933354+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cut -d  -f3",
+   "exit_code": 0,
+   "pid": 1477532,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.023121924+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/grep -vE ^_[^_]",
+   "exit_code": 0,
+   "pid": 1477533,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.023312247+02:00",
+   "action_type": "process_fork",
+   "target": "1477535",
+   "pid": 1477535,
+   "ppid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.023864442+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.023917879+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.023944107+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.024071512+02:00",
+   "action_type": "process_fork",
+   "target": "1477536",
+   "pid": 1477536,
+   "ppid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.024583978+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.024627591+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.024627591+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.024770916+02:00",
+   "action_type": "process_fork",
+   "target": "1477537",
+   "pid": 1477537,
+   "ppid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.025207775+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.025265402+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.025265402+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.025316185+02:00",
+   "action_type": "process_fork",
+   "target": "1477538",
+   "pid": 1477538,
+   "ppid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.025897495+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.02596841+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.02596841+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.026068372+02:00",
+   "action_type": "process_fork",
+   "target": "1477539",
+   "pid": 1477539,
+   "ppid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.026618241+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.026679165+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.026679165+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.026796903+02:00",
+   "action_type": "process_fork",
+   "target": "1477540",
+   "pid": 1477540,
+   "ppid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.027423051+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.027476243+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.027476243+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477534
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.027914524+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.027984035+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.027984035+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.028105655+02:00",
+   "action_type": "process_fork",
+   "target": "1477541",
+   "pid": 1477541,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.028324942+02:00",
+   "action_type": "process_fork",
+   "target": "1477542",
+   "pid": 1477542,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.02852381+02:00",
+   "action_type": "process_fork",
+   "target": "1477543",
+   "pid": 1477543,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.02867821+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/grep on",
+   "pid": 1477542,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.028690977+02:00",
+   "action_type": "process_fork",
+   "target": "1477544",
+   "pid": 1477544,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.028846894+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/awk {print \"set -o \" $1}",
+   "pid": 1477543,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029067913+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/head -n 1000",
+   "pid": 1477544,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029192134+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/grep",
+   "pid": 1477542
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029192136+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/gawk",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029192137+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029192138+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477542
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029192139+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.02919214+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029481134+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029555595+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477542
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029629342+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029629343+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477542
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029629344+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libreadline.so.8.3",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029791725+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477542
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029791726+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029791727+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libmpfr.so.6.2.2",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029791728+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.029791729+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgmp.so.10.5.0",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.030072257+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.030072258+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.030072259+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.03007226+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.030072261+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.030274163+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.5",
+   "pid": 1477543
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.030274164+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.030500203+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/grep on",
+   "exit_code": 0,
+   "pid": 1477542,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.031671482+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/awk {print \"set -o \" $1}",
+   "exit_code": 0,
+   "pid": 1477543,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.033857807+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.033883934+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/head -n 1000",
+   "exit_code": 0,
+   "pid": 1477544,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.034394611+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477544
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.034590441+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.034651372+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.034651372+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.03469719+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.03469719+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.034770124+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.034966581+02:00",
+   "action_type": "process_fork",
+   "target": "1477545",
+   "pid": 1477545,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035187386+02:00",
+   "action_type": "process_fork",
+   "target": "1477546",
+   "pid": 1477546,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035387763+02:00",
+   "action_type": "process_fork",
+   "target": "1477547",
+   "pid": 1477547,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035471217+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/sed s/^alias //g",
+   "pid": 1477546,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035524389+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/sed",
+   "pid": 1477546
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035566781+02:00",
+   "action_type": "process_fork",
+   "target": "1477548",
+   "pid": 1477548,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035683286+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477546
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035685907+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/sed s/^/alias -- /",
+   "pid": 1477547,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035735591+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/sed",
+   "pid": 1477547
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035968006+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/head -n 1000",
+   "pid": 1477548,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.035973984+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036022151+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036093783+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477546
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036093784+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302",
+   "pid": 1477546
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036214253+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477546
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036214254+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477547
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036214255+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036214256+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477546
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036403209+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477546
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036565628+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477547
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036565629+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036668083+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302",
+   "pid": 1477547
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036668084+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036668085+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477547
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036796595+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/sed s/^alias //g",
+   "exit_code": 0,
+   "pid": 1477546,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036867274+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036867275+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477547
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036867276+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036867277+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477547
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.036867278+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.037082908+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.037659486+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/sed s/^/alias -- /",
+   "exit_code": 0,
+   "pid": 1477547,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.040289091+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/head -n 1000",
+   "exit_code": 0,
+   "pid": 1477548,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.040649263+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477548
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.040962204+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.040962204+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.040962204+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.041061674+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.041061674+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.041061674+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.04126802+02:00",
+   "action_type": "process_fork",
+   "target": "1477549",
+   "pid": 1477549,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.041683926+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.041725162+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 1477549,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.041750705+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.041983245+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.042305782+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.042359012+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.042404414+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.042453326+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.042529643+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.042529645+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.044739217+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.044832706+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 1477549,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.045132639+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477549
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.045394369+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.045468601+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.045468601+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.045524124+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.045524125+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.04566769+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.045850466+02:00",
+   "action_type": "process_fork",
+   "target": "1477550",
+   "pid": 1477550,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.046284752+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.046343734+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 1477550,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.04639654+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.046826538+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.04729752+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.047372408+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.047438345+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.047438347+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.047592866+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.047592867+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.050149948+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.050208397+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 1477550,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.050499983+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477550
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.050750728+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.050822039+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.050822039+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.051018069+02:00",
+   "action_type": "process_fork",
+   "target": "1477551",
+   "pid": 1477551,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.051372883+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.051415992+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 1477551,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.051458565+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.051665216+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.052161477+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.052161478+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.052273547+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.052386199+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.05246914+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.052553939+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.056103289+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.056193494+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 1477551,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.056584089+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477551
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.056912572+02:00",
+   "action_type": "process_fork",
+   "target": "1477552",
+   "pid": 1477552,
+   "ppid": 1477515
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.057278283+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.057316814+02:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/cat",
+   "pid": 1477552,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.057340401+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/stty",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.057637676+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.058052326+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.058104093+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.058183389+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.058260101+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.058333599+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.058435351+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.061877519+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.061992447+02:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/cat",
+   "exit_code": 0,
+   "pid": 1477552,
+   "ppid": 1477515,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.062531455+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477552
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.062868998+02:00",
+   "action_type": "process_exit",
+   "target": "/bin/bash -c -l SNAPSHOT_FILE=/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh\n      <snapshot script elided>",
+   "exit_code": 0,
+   "pid": 1477515,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.070312642+02:00",
+   "action_type": "file_write",
+   "target": "/tmp/claude-1000/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f/tasks",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.070312643+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/claude-1000/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f/tasks/b2sp5560n.output",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.071722199+02:00",
+   "action_type": "process_fork",
+   "target": "1477553",
+   "pid": 1477553,
+   "ppid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.071935067+02:00",
+   "action_type": "process_exec",
+   "target": "/bin/bash -c source /home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval ': agent-trace-control-marker' < /dev/null && pwd -P >| /tmp/claude-65db-cwd",
+   "pid": 1477553,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.072049006+02:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/bash",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.072370118+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.072792742+02:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.072883873+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.5",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.072944352+02:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.074309018+02:00",
+   "action_type": "file_open",
+   "target": "/etc/bash.bashrc",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.074483559+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.bashrc",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.074731244+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.077554178+02:00",
+   "action_type": "process_exit",
+   "target": "/bin/bash -c source /home/user/.claude/shell-snapshots/snapshot-bash-1791903556003-2m3lo7.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval ': agent-trace-control-marker' < /dev/null && pwd -P >| /tmp/claude-65db-cwd",
+   "exit_code": 0,
+   "pid": 1477553,
+   "ppid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.078874724+02:00",
+   "action_type": "file_write",
+   "target": "/tmp",
+   "pid": 1477553,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.078874725+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/claude-65db-cwd",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.078874725+02:00",
+   "action_type": "file_write",
+   "target": "/tmp/claude-65db-cwd",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.078874725+02:00",
+   "action_type": "file_close",
+   "target": "/tmp/claude-65db-cwd",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.078874727+02:00",
+   "action_type": "file_close",
+   "target": "/tmp/claude-1000/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f/tasks/b2sp5560n.output",
+   "pid": 1477553
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.079761989+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/claude-1000/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f/tasks/b2sp5560n.output",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.080565529+02:00",
+   "action_type": "file_open",
+   "target": "/tmp/claude-65db-cwd",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.080928067+02:00",
+   "action_type": "file_delete",
+   "target": "/tmp/claude-1000/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f/tasks",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.081408426+02:00",
+   "action_type": "file_delete",
+   "target": "/tmp",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.126284983+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:73287216d6f7a8d1aaa00cad560b8b16e9afd3070759f629463ccc6351321d1f",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.126284983+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.126284983+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.126575474+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:73287216d6f7a8d1aaa00cad560b8b16e9afd3070759f629463ccc6351321d1f",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.127403456+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:73287216d6f7a8d1aaa00cad560b8b16e9afd3070759f629463ccc6351321d1f",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.127403456+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.127403456+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "output_hash": "sha256:9363742b001597f3e22ad5835177a3a0e072618cb46996332283c2bac9a30a41",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.979986165+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:9363742b001597f3e22ad5835177a3a0e072618cb46996332283c2bac9a30a41",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.979986165+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.979986165+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.983119582+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "input_hash": "sha256:e2fc6f6bdb7ff75c5b780aca48b685c5f7e4dda31746959209a06d94951efb40",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.985479008+02:00",
+   "action_type": "file_delete",
+   "target": "/tmp/cc-socks",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.985610803+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.claude/sessions",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.986574378+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.claude/shell-snapshots",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.986574379+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.cache/claude-cli-nodejs/-ws-control-5/mcp-logs-claude-ai-Claude-Docs/2026-10-13T14-59-13-727Z.jsonl",
+   "input_hash": "sha256:1382f9a22489db1249a26c9289fb71057a234233b89a61316718b9306a6250d7",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.986574379+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.cache/claude-cli-nodejs/-ws-control-5/mcp-logs-claude-ai-Claude-Docs/2026-10-13T14-59-13-727Z.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.986574379+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.cache/claude-cli-nodejs/-ws-control-5/mcp-logs-claude-ai-Claude-Docs/2026-10-13T14-59-13-727Z.jsonl",
+   "output_hash": "sha256:c75262e082e378f42f1563923e7afeb721f386f7868cf3f700ab8a42cb3754a0",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.988077563+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:9363742b001597f3e22ad5835177a3a0e072618cb46996332283c2bac9a30a41",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.988366308+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:9363742b001597f3e22ad5835177a3a0e072618cb46996332283c2bac9a30a41",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.988366308+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.988366308+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.988478299+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "input_hash": "sha256:9363742b001597f3e22ad5835177a3a0e072618cb46996332283c2bac9a30a41",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.988478299+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.988478299+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/projects/-ws-control-5/c1f40947-f768-436a-b8cd-c067a10c911f.jsonl",
+   "output_hash": "sha256:10f17a203c09c742527e0a06c6343658c47bba4ec591097c1f2f3d169306b1fa",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.990442223+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.990641061+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.990641062+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "input_hash": "sha256:e2fc6f6bdb7ff75c5b780aca48b685c5f7e4dda31746959209a06d94951efb40",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.990669888+02:00",
+   "action_type": "file_write",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.990680962+02:00",
+   "action_type": "file_close",
+   "target": "/home/user/.claude/sessions/1477443.json",
+   "output_hash": "sha256:0482702c67d6856ab147cfb1ad380b968e788b73b17a0879bbfde28586bc2221",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.990711001+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.claude/sessions",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:16.990775556+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:17.003954863+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:17.271287838+02:00",
+   "action_type": "net_dial",
+   "target": "[2607:6bc0::10]:443",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:17.274640042+02:00",
+   "action_type": "net_connect",
+   "target": "api.anthropic.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:17.504084005+02:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:17.504762392+02:00",
+   "action_type": "net_dns",
+   "target": "127.0.0.53:53",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:17.521179225+02:00",
+   "action_type": "net_connect",
+   "target": "http-intake.logs.us5.datadoghq.com",
+   "pid": 1477443,
+   "is_top_level": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:18.02158621+02:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/state/claude/locks/2.1.296.lock",
+   "input_hash": "sha256:7a0b516f7acac03da81ac60703b99f01f32b025b546269793d89ef43b5c76703",
+   "pid": 1477443
+  },
+  {
+   "timestamp": "2026-10-13T16:59:18.021894328+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.local/state/claude/locks",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  },
+  {
+   "timestamp": "2026-10-13T16:59:18.02212213+02:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.claude/sessions",
+   "pid": 1477443,
+   "path_is_ambiguous": true
+  }
+ ],
+ "coverage": {
+  "schema": 1,
+  "probes": {
+   "fs": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "hashless_closes": 32
+   },
+   "net": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "content": "identity_only"
+   },
+   "proc": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0
+   }
+  }
+ },
+ "root_pid": 1477443,
+ "workspace": "/ws/control-5",
+ "fs_scope": {
+  "rule": "tree-or-workspace",
+  "mounts": [
+   "/",
+   "/boot/efi",
+   "/dev/shm",
+   "/media/user/OS",
+   "/run",
+   "/run/credentials/systemd-journald.service",
+   "/run/credentials/systemd-resolved.service",
+   "/run/lock",
+   "/run/user/1000",
+   "/tmp"
+  ],
+  "unmarked": {
+   "/var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged": "fanotify_mark on /var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged: operation not supported"
+  },
+  "dropped_outside": 205,
+  "unresolved": {
+   "file_delete": 1
+  }
+ }
+}
