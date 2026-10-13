@@ -163,8 +163,8 @@ case $agent:$task in
     task_tools='run_command view_file write_to_file replace_file_content'
     ;;
   gemini:search)
-    task_prompt='Do exactly these four things in order, one tool call at a time, using the named tool for each, and nothing else. 1) Use list_dir on the current directory. 2) Use grep_search to search the current directory for the word seed. 3) Use find_by_name to find the files matching *.txt in the current directory. 4) Use run_command to run exactly: echo hi . Then reply with the single word done.'
-    task_tools='run_command list_dir grep_search find_by_name'
+    task_prompt='Do exactly these six things in order, one tool call at a time, using the named tool for each, and nothing else. 1) Use list_dir on the current directory. 2) Use grep_search to search the current directory for the word seed. 3) Use find_by_name to find the files matching *.txt in the current directory. 4) Use write_to_file to create m.txt containing exactly two lines, alpha and beta. 5) Use multi_replace_file_content on m.txt, in one call with two replacement chunks, to replace alpha with one and beta with two. 6) Use run_command to run exactly: cat m.txt . Then reply with the single word done.'
+    task_tools='run_command list_dir grep_search find_by_name write_to_file multi_replace_file_content'
     ;;
 esac
 
