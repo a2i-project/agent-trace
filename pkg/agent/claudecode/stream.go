@@ -32,6 +32,13 @@ import (
 // rename), folds as narrowly as it was seen (foldInPlaceWrites, I-45); any
 // other unseen variant is left alone and shows as unexplained rather than
 // being guessed at.
+//
+// The captures above were made before the probe named directory entries
+// (P-25): a create, a rename or a delete named only its directory and was
+// ambiguous. A capture made since names each, and a rename is two events, its
+// source and its destination. Every fold below takes both: the older shapes
+// for the checked-in captures, the named one, under stricter rules since the
+// names are evidence, for new ones (I-56).
 
 // The file tools name the temporary <path>.tmp.<pid>.<12 hex>; the version
 // lock and the session key name it <path>.tmp.<8 hex>. The fold sees the raw
@@ -146,9 +153,22 @@ func foldInPlaceWrites(g models.GroundTruth) models.GroundTruth {
 // writes of the file, or its first event after the close. A create or a rename
 // of the directory there means a replace in a shape no fold knows, which stays
 // visible; the in-place rewrite has neither.
+//
+// A capture with names (P-25) reports a rename by name instead: a rename
+// naming the file, or a temporary of it, in the same places is a replace too
+// (I-56).
 func nextToDirEvent(g models.GroundTruth, o, c int, w models.GroundTruthEvent) bool {
 	dir := filepath.Dir(w.Target)
-	onDir := func(e models.GroundTruthEvent) bool { return e.Target == dir && e.PathIsAmbiguous }
+	onDir := func(e models.GroundTruthEvent) bool {
+		if e.Target == dir && e.PathIsAmbiguous {
+			return true
+		}
+		if e.ActionType != models.FileRename || e.PathIsAmbiguous {
+			return false
+		}
+		m := tmpName.FindStringSubmatch(e.Target)
+		return e.Target == w.Target || (m != nil && m[1] == w.Target)
+	}
 	for i := o - 1; i >= 0; i-- {
 		e := g[i]
 		if e.PID != w.PID {
@@ -239,6 +259,13 @@ func foldCwdFileRead(g models.GroundTruth) models.GroundTruth {
 // The version lock has a third shape, read between the two
 // (foldNamedLockRewrite, I-44).
 //
+// Those shapes are what the probe reported before it named directory entries
+// (P-25). Since then every event of a replace names its file: the create, the
+// open, the writes and the close name the temporary, the rename is two events,
+// one naming the temporary and one the target, and none is ambiguous
+// (foldReplacesWithNames, I-56). The older shapes stay for the captures made
+// before.
+//
 // A direct write of the target has neither a create nor a rename on the
 // directory around it and is left alone, so an unseen variant stays visible.
 // A rename recorded as two directory renames, as captures made before P-18
@@ -249,6 +276,7 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 	// becomes: one write, preceded by an open of the target when the batch held
 	// the harness's read of it (I-39).
 	replace := map[int]models.GroundTruth{}
+	foldReplacesWithNames(g, used, replace)
 	foldRenamedFirst(g, used, replace)
 	foldNamedLockRewrite(g, used, replace)
 
@@ -261,6 +289,12 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 			continue
 		}
 		target, dir, pid := m[1], filepath.Dir(m[1]), open.PID
+		// A temporary whose create the probe named comes from a capture with
+		// names (P-25): foldReplacesWithNames judged it already, and what it
+		// left stays as it is.
+		if p := previousOf(g, used, o, pid); p >= 0 && g[p].Target == open.Target {
+			continue
+		}
 
 		// The close and the rename arrive in either order, and the close can name
 		// the temporary or the target: fanotify resolves a path when the event is
@@ -290,7 +324,10 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 				if e.Target == target {
 					burst = append(burst, pending...)
 				}
-			case e.ActionType == models.FileRename && renameIdx < 0 && (e.Target == dir || e.Target == target || e.Target == open.Target):
+			case e.ActionType == models.FileRename && renameIdx < 0 && e.Target == dir:
+				// A capture made before P-25 reports a rename on the
+				// directory only. A named rename belongs to the shape
+				// foldReplacesWithNames takes, under its stricter rules.
 				renameIdx = i
 			}
 			pending = nil
@@ -342,6 +379,140 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 		}
 	}
 	return out
+}
+
+// foldReplacesWithNames folds a replace through the temporary as the probe
+// reports it when it names directory entries (P-25, I-56). For one process,
+// with T the temporary <X>.tmp.<suffix> and X the target:
+//
+//   - the create of T, a file_write naming T;
+//   - the open of T, its writes and its close with the hash of the content,
+//     all naming T: the kernel takes the name when the event happens, so a
+//     record read after the rename still names T;
+//   - the rename's source, a file_rename naming T, after the close, or right
+//     after the create in the same record when the kernel merged it into the
+//     create's unread record (the read-after-rename case of I-32);
+//   - the rename's destination, a file_rename naming X, the process's next
+//     event on T or X after the close and the source.
+//
+// Names are evidence, so every one is required and must name exactly T or X.
+// Events of the process on other paths may lie between (its other threads
+// share its pid); any other event of the process on T or X, or an event on
+// another temporary of X before the destination, ends the shape and leaves
+// it as the probe reported it. One exception, for the destination only: the
+// probe drops a rename that repeats the previous event on its path by the
+// same process (P-18), and the kernel merges a rename into an unread one of
+// the same name, so a second replace of X with no event on X since the
+// previous one's destination has none. It is taken as present when the last
+// event on X before the source (or the close, when the source was merged) is
+// a rename of X by the same process. The result is one file_write of X at
+// the create's time with the close's hash, which is what the older shapes
+// fold to.
+func foldReplacesWithNames(g models.GroundTruth, used []bool, replace map[int]models.GroundTruth) {
+	for o, open := range g {
+		if used[o] || open.ActionType != models.FileOpen || open.PID == 0 || open.PathIsAmbiguous {
+			continue
+		}
+		m := tmpName.FindStringSubmatch(open.Target)
+		if m == nil {
+			continue
+		}
+		tmp, target, pid := open.Target, m[1], open.PID
+		is := func(i int, typ models.ActionType, path string) bool {
+			if i < 0 {
+				return false
+			}
+			e := g[i]
+			return e.PID == pid && e.ActionType == typ && e.Target == path && !e.PathIsAmbiguous
+		}
+
+		// Backwards: the create, and before the open the source when the
+		// kernel merged it into the create's record (same record, same time).
+		create, source := previousOf(g, used, o, pid), -1
+		if create >= 0 && is(create, models.FileRename, tmp) {
+			source = create
+			create = previousOf(g, used, create, pid)
+		}
+		if !is(create, models.FileWrite, tmp) || g[create].OutputHash != nil ||
+			(source >= 0 && !g[source].Timestamp.Equal(g[create].Timestamp)) {
+			continue
+		}
+
+		// Forwards: the writes and the close of T, then the source (unless
+		// merged ahead) and the destination.
+		var burst []int
+		closeIdx, dest := -1, -1
+	scan:
+		for i := o + 1; i < len(g); i++ {
+			e := g[i]
+			if used[i] || e.PID != pid {
+				continue
+			}
+			if e.Target != tmp && e.Target != target {
+				if n := tmpName.FindStringSubmatch(e.Target); n != nil && n[1] == target {
+					break // another replace of X begins: this one has no destination of its own
+				}
+				continue
+			}
+			switch {
+			case closeIdx < 0 && is(i, models.FileWrite, tmp) && e.OutputHash == nil:
+				burst = append(burst, i)
+			case closeIdx < 0 && is(i, models.FileClose, tmp):
+				closeIdx = i
+			case closeIdx >= 0 && source < 0 && is(i, models.FileRename, tmp):
+				source = i
+			case closeIdx >= 0 && source >= 0 && is(i, models.FileRename, target):
+				dest = i
+				break scan
+			default:
+				break scan
+			}
+		}
+		if closeIdx < 0 || source < 0 {
+			continue
+		}
+		if dest < 0 && !destinationCollapsed(g, pid, target, max(source, closeIdx)) {
+			continue
+		}
+
+		for _, i := range append([]int{create, source, o, closeIdx}, burst...) {
+			used[i] = true
+		}
+		if dest >= 0 {
+			used[dest] = true
+		}
+		replace[create] = models.GroundTruth{{
+			Timestamp:  g[create].Timestamp,
+			ActionType: models.FileWrite,
+			Target:     target,
+			PID:        pid,
+			OutputHash: g[closeIdx].OutputHash,
+		}}
+	}
+}
+
+// previousOf returns the index of pid's last event before i that no fold has
+// taken, or -1.
+func previousOf(g models.GroundTruth, used []bool, i int, pid uint32) int {
+	for j := i - 1; j >= 0; j-- {
+		if g[j].PID == pid && !used[j] {
+			return j
+		}
+	}
+	return -1
+}
+
+// destinationCollapsed reports whether a missing rename of target by pid is
+// explained by an earlier one the probe or the kernel folded it into (P-18):
+// the last event on target before index i, by any process, is a named rename
+// of target by pid.
+func destinationCollapsed(g models.GroundTruth, pid uint32, target string, i int) bool {
+	for j := i - 1; j >= 0; j-- {
+		if e := g[j]; e.Target == target {
+			return e.ActionType == models.FileRename && e.PID == pid && !e.PathIsAmbiguous
+		}
+	}
+	return false
 }
 
 // splitRenameHalf returns the index of the second directory-level rename one

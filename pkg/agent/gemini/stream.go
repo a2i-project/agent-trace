@@ -14,10 +14,11 @@ import (
 //
 //   - view_file opens the file three times in a row.
 //   - write_to_file of a new file: an ambiguous write of the file's directory
-//     (the create, which fanotify reports without the name), then in the same
-//     batch the file's open, whose input hash is that of empty content (the
-//     probe stamps it on the open that created the file, P-22), its write and
-//     its close with the hash of the content.
+//     (the create, which fanotify reported without the name before P-25, and
+//     reports as a write naming the file since), then in the same batch the
+//     file's open, whose input hash is that of empty content (the probe stamps
+//     it on the open that created the file, P-22), its write and its close
+//     with the hash of the content.
 //   - write_to_file over an existing file and replace_file_content: an open
 //     (the harness reads the file), then the open that truncates it, its write
 //     and its close with the hash of the content.
@@ -70,19 +71,22 @@ func agentFile(e models.GroundTruthEvent, started map[uint32]bool) bool {
 	return isFile(e.ActionType) && e.PID != 0 && !started[e.PID] && !harnessOwned.MatchString(e.Target)
 }
 
-// foldCreates drops an ambiguous file_write of a directory by the agent's
-// process when that process's next event is the open that created a file
-// directly in that directory, in the same batch: the open is not ambiguous
-// and carries the hash of empty content, which the probe stamps only on the
-// first open of a file born during the capture (P-22). The create says
-// nothing the open, write and close of the file do not, and no claim states
-// it. An ambiguous write of a directory followed by anything else (another
-// file's open, an open with content, a later batch, another event of the
-// process) is kept and shows as it is.
+// foldCreates drops the create of a file by the agent's process when that
+// process's next event is the open that created the file, in the same batch:
+// the open is not ambiguous and carries the hash of empty content, which the
+// probe stamps only on the first open of a file born during the capture
+// (P-22). The create says nothing the open, write and close of the file do
+// not, and no claim states it. A capture made before the probe named
+// directory entries (P-25) reports the create as an ambiguous file_write of
+// the directory, and the open then names a file directly in it; a capture
+// made since reports it as a file_write naming the file, with no hash, and
+// the open must name that same file (I-56). A create followed by anything
+// else (another file's open, an open with content, a later batch, another
+// event of the process) is kept and shows as it is.
 func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTruth {
 	var drop []int
 	for i, e := range g {
-		if e.ActionType != models.FileWrite || !e.PathIsAmbiguous || !agentFile(e, started) {
+		if e.ActionType != models.FileWrite || e.OutputHash != nil || !agentFile(e, started) {
 			continue
 		}
 		for j := i + 1; j < len(g); j++ {
@@ -90,7 +94,11 @@ func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTru
 			if n.PID != e.PID {
 				continue
 			}
-			if n.ActionType == models.FileOpen && !n.PathIsAmbiguous && filepath.Dir(n.Target) == e.Target &&
+			created := filepath.Dir(n.Target) == e.Target // before P-25: the create names the directory
+			if !e.PathIsAmbiguous {
+				created = n.Target == e.Target // since P-25: the create names the file
+			}
+			if n.ActionType == models.FileOpen && !n.PathIsAmbiguous && created &&
 				n.InputHash != nil && *n.InputHash == emptyHash && n.Timestamp.Sub(e.Timestamp) < batchSpan &&
 				!harnessOwned.MatchString(n.Target) {
 				drop = append(drop, i)
