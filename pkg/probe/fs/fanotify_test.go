@@ -240,7 +240,7 @@ func TestProcessRawEvent_RepeatedWritesAndRenamesCollapse(t *testing.T) {
 		{Mask: unix.FAN_MODIFY, PID: 2, Path: "/mock/a"},                         // another process: emitted
 		{Mask: unix.FAN_OPEN, PID: 1, Path: "/mock/a"},                           // resets a
 		{Mask: unix.FAN_MODIFY, PID: 1, Path: "/mock/a"},                         // emitted again
-		{Mask: unix.FAN_MOVED_FROM, PID: 1, Path: "/mock"},                       // one rename, two notifications
+		{Mask: unix.FAN_MOVED_FROM, PID: 1, Path: "/mock"},                       // one rename, two directory-only records (before P-25)
 		{Mask: unix.FAN_MOVED_TO, PID: 1, Path: "/mock"},                         //
 		{Mask: unix.FAN_MOVED_FROM | unix.FAN_MOVED_TO, PID: 1, Path: "/mock/d"}, // merged: one event
 	}

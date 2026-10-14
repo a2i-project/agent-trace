@@ -155,6 +155,7 @@ func TestTier6_E2E_ShellCmdBuildsAForest(t *testing.T) {
 	for e := range fsObs.Events() {
 		fsEvents = append(fsEvents, e)
 	}
+	logAmbiguous(t, fsEvents)
 
 	// Build the tree from exec and fork records, as the verifier will.
 	parent := map[uint32]uint32{}

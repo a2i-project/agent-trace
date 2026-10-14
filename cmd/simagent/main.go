@@ -70,7 +70,6 @@ func resolveSingleIPv4(host string) (string, error) {
 	return "", fmt.Errorf("no IPv4 address found for %s", host)
 }
 
-
 func main() {
 	var workspace string
 	var trajectoryOut string
@@ -131,9 +130,9 @@ func main() {
 	}
 	addEntryWithRequestHash := func(action models.ActionType, target, requestHash string) {
 		trajectory = append(trajectory, models.TrajectoryEntry{
-			Timestamp:  time.Now(),
-			ActionType: action,
-			Target:     target,
+			Timestamp:   time.Now(),
+			ActionType:  action,
+			Target:      target,
 			RequestHash: &requestHash,
 		})
 	}
@@ -147,8 +146,8 @@ func main() {
 
 	// 1. WriteFile
 	// os.WriteFile triggers, in this order:
-	// - FAN_CREATE (FileWrite, resolved to the directory: the create event is
-	//   a DFID-only record, so it covers the file by the directory fallback)
+	// - FAN_CREATE (FileWrite, naming the file: the probe asks for the entry's
+	//   name, P-25)
 	// - FAN_OPEN (FileOpen)
 	// - FAN_MODIFY (FileWrite), merged with the close
 	// - FAN_CLOSE_WRITE (FileClose)
@@ -170,11 +169,12 @@ func main() {
 	delay()
 
 	// 2. Rename
-	// os.Rename triggers FAN_MOVED_FROM and FAN_MOVED_TO on the directory; the
-	// probe emits them as one FileRename whether or not the kernel merged
-	// them (P-18).
+	// os.Rename triggers FAN_MOVED_FROM naming the source and FAN_MOVED_TO
+	// naming the destination; the probe emits each as a FileRename, so a
+	// rename is claimed as its source and then its destination (P-25).
 	f2 := filepath.Join(workspace, "file2.txt")
 	addEntry(models.FileRename, f1)
+	addEntry(models.FileRename, f2)
 	err = os.Rename(f1, f2)
 	if err != nil {
 		log.Fatalf("failed to rename file: %v", err)
@@ -255,10 +255,7 @@ func main() {
 	}
 
 	// 4. Delete
-	// os.Remove triggers:
-	// - FAN_DELETE (FileDelete)
-	// Note: on tmpfs, this might report the parent dir in DFID, but we use TempDir
-	// and if the kernel provides DFID_NAME, it gives the full path. We'll report the full path.
+	// os.Remove triggers FAN_DELETE (FileDelete), naming the file (P-25).
 	addEntry(models.FileDelete, f2)
 	err = os.Remove(f2)
 	if err != nil {

@@ -22,21 +22,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// fanotify constants. Defined locally to avoid depending on a specific
-// x/sys/unix version for newer kernel flags.
+// fanotify constants, from golang.org/x/sys/unix.
 const (
-	// FAN_REPORT_FID requests a file-handle info record (type 1) for the
-	// object itself in every event.
-	fanReportFid = 0x00000200
-
-	// FAN_REPORT_DFID_NAME = FAN_REPORT_DIR_FID | FAN_REPORT_NAME.
-	// Requests directory file-handle + entry name in event info records.
-	fanReportDfidName = 0x00002400
+	// reportFlags asks for file handles instead of file descriptors:
+	// FAN_REPORT_FID, a record with the handle of the object itself on events
+	// on a file's content, and FAN_REPORT_DFID_NAME (FAN_REPORT_DIR_FID |
+	// FAN_REPORT_NAME, 0xc00), a record with the handle of the directory and
+	// the entry's name on every event (P-25). Before P-25 the probe asked for
+	// 0x2400, FAN_REPORT_DIR_FID | FAN_REPORT_FD_ERROR: no name, so a create,
+	// delete or rename named only its directory.
+	reportFlags = unix.FAN_REPORT_FID | unix.FAN_REPORT_DFID_NAME
 
 	// Info record types.
-	fanEventInfoTypeFid      = 1 // file handle for the object itself
-	fanEventInfoTypeDfidName = 2 // parent dir handle + null-terminated name
-	fanEventInfoTypeDfid     = 3 // parent dir handle, no name (merged events)
+	fanEventInfoTypeFid      = unix.FAN_EVENT_INFO_TYPE_FID       // file handle for the object itself
+	fanEventInfoTypeDfidName = unix.FAN_EVENT_INFO_TYPE_DFID_NAME // parent dir handle + null-terminated name
+	fanEventInfoTypeDfid     = unix.FAN_EVENT_INFO_TYPE_DFID      // parent dir handle, no name
 
 	// Size of struct fanotify_event_metadata (24 bytes on all architectures).
 	metadataSize = 24
@@ -81,13 +81,10 @@ type rawEvent struct {
 // --- Kernel interaction (requires CAP_SYS_ADMIN) --------------------------
 
 // initFanotify creates a fanotify file descriptor configured for
-// notification-only FID-mode events (no permission decisions).
-//
-// FAN_REPORT_FID provides a file-handle record for the object itself,
-// which remains resolvable even when the kernel merges events and drops
-// the filename from the DFID_NAME record.
+// notification-only FID-mode events (no permission decisions), with the
+// handle and name records of reportFlags.
 func initFanotify() (int, error) {
-	flags := uint(unix.FAN_CLASS_NOTIF | fanReportFid | fanReportDfidName | unix.FAN_CLOEXEC)
+	flags := uint(unix.FAN_CLASS_NOTIF | reportFlags | unix.FAN_CLOEXEC)
 	fd, err := unix.FanotifyInit(flags, 0)
 	if err != nil {
 		return -1, fmt.Errorf("fanotify_init: %w", err)
@@ -353,15 +350,23 @@ func readMetadata(buf []byte) eventMetadata {
 // filesystem path. Preference order:
 //  1. DFID_NAME (type 2): parent directory handle + entry name (full path)
 //  2. FID (type 1): file handle resolved directly via open_by_handle_at
-//  3. DFID (type 3): parent directory handle only (no filename; merged events)
+//  3. DFID (type 3): parent directory handle only (no filename)
+//
+// The kernel takes the name in a DFID_NAME record when the event happens, so
+// case 1 names the entry as it was then; a FID record resolves to wherever
+// the file is when the record is read. With reportFlags every record carries
+// a DFID_NAME record (P-25), and on kernel 6.17 none carried a DFID-only one;
+// FID is the fallback for a directory that no longer resolves. A capture made
+// with the flags before P-25 had no names, so its create, delete and rename
+// records resolved through case 3.
 //
 // The second return value, ambiguous, is true only when the DFID-only
-// fallback (case 3) is what actually produced the returned path -- i.e. the
-// kernel merged events and dropped the filename, leaving only a directory
-// handle. It is false whenever DFID_NAME or FID resolved a specific,
-// non-degraded path. Callers use this to restrict the "directory covers any
-// file inside it" matching leniency to genuinely coarse-resolution events,
-// not to every ground-truth event whose target happens to be a directory.
+// fallback (case 3) is what actually produced the returned path, leaving only
+// a directory, or when nothing resolved. It is false whenever DFID_NAME or
+// FID resolved a specific path. Callers use this to restrict the "directory
+// covers any file inside it" matching leniency to genuinely coarse-resolution
+// events, not to every ground-truth event whose target happens to be a
+// directory.
 func resolveEventPath(infoData []byte, resolve handleResolver) (path string, ambiguous bool) {
 	var fidPath, dfidNamePath, dfidPath string
 

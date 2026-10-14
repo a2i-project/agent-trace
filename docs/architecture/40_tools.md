@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit f447bc8 on 2026-10-14.
+Checked against commit 984d9ef on 2026-10-14.
 
 ## Objective
 
@@ -134,7 +134,7 @@ A simulated agent that performs a fixed script of actions in a workspace and wri
 | `--drop-entry N` | -1 | Remove claim N before writing |
 | `--attack MODE` | empty | Tamper with the trajectory, below |
 
-The fixed script, in claim order: write `file1.txt` (claimed in kernel order as `file_write` create, `file_open`, `file_write`, `file_close` with the content hash), rename it to `file2.txt` (`file_rename`), run `<abs path of wc> -l file2.txt` (`process_exec`, `process_exit` with its code) unless `--file-only`, the optional shell command, delete `file2.txt` (`file_delete`), then the optional fetch. Without `--fetch-via-curl` the request is made in-process over a single pinned IPv4 connection and claimed as `net_connect` to the host.
+The fixed script, in claim order: write `file1.txt` (claimed in kernel order as `file_write` create, `file_open`, `file_write`, `file_close` with the content hash), rename it to `file2.txt` (`file_rename` of `file1.txt`, then of `file2.txt`: the probe reports a rename as its source and its destination, P-25), run `<abs path of wc> -l file2.txt` (`process_exec`, `process_exit` with its code) unless `--file-only`, the optional shell command, delete `file2.txt` (`file_delete`), then the optional fetch. Without `--fetch-via-curl` the request is made in-process over a single pinned IPv4 connection and claimed as `net_connect` to the host.
 
 | `--attack` | Tampering | Expected finding |
 |---|---|---|

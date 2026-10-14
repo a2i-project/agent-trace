@@ -106,6 +106,7 @@ func runTier2Agent(t *testing.T, extraArgs ...string) capture {
 		t.Fatalf("ParseTrajectory: %v", err)
 	}
 
+	logAmbiguous(t, g)
 	return capture{tr: tr, g: g, root: cmd.Process.Pid, cov: coverageOf(map[string]probe.CoverageReporter{"fs": fsObs, "proc": procObs})}
 }
 

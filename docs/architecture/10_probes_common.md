@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit bd4cd8d on 2026-10-14.
+Checked against commit 984d9ef on 2026-10-14.
 
 ## Objective
 
@@ -74,7 +74,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `PID` | `pid` | all probes; 0 means not recorded |
 | `PPID` | `ppid` | proc only, on fork, exec and exit records |
 | `IsTopLevel` | `is_top_level` | legacy: proc on exec and exit, net on `net_connect` and `net_request` (always true); fs leaves it nil |
-| `PathIsAmbiguous` | `path_is_ambiguous` | fs, when only the parent directory resolved |
+| `PathIsAmbiguous` | `path_is_ambiguous` | fs, when only the parent directory resolved: the create, delete and rename records of captures made before P-25, which requested no entry names |
 | `TargetTruncated` | `target_truncated` | proc, when the command line or the program path did not fit the record (P-19) |
 | `RequestHash` | `request_hash` | net, on `net_request` with a body |
 

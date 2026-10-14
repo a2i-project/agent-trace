@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -70,40 +71,37 @@ func assertHasEvent(t *testing.T, events []models.GroundTruthEvent, action model
 	}
 }
 
-// assertHasEventInDir checks that at least one event with the given action
-// type exists and its target is either the exact path or its parent directory.
-// On some filesystems (tmpfs), directory events (DELETE, RENAME) resolve
-// only to the parent directory because DFID_NAME info records lack the
-// filename. On ext4/xfs this resolves to the full path.
-//
-// It also pins Fix 6 against a real kernel, not a mock: resolveEventPath
-// guarantees PathIsAmbiguous is true exactly when the DFID-only fallback (no
-// filename) produced the target, and false whenever DFID_NAME or FID
-// resolved the full path. Whichever branch this filesystem actually took,
-// the flag must agree with it.
-func assertHasEventInDir(t *testing.T, events []models.GroundTruthEvent, action models.ActionType, target string) {
+// assertHasNamedEvent checks that an event with the given action type names
+// target exactly and is not ambiguous. Before P-25 the probe requested no
+// entry names, so a delete or a rename resolved only to its directory and was
+// ambiguous, and this helper accepted the directory; since then every
+// directory-entry record carries the name, on tmpfs as on ext4 (measured on
+// kernel 6.17, 12_probe_fs.md), so the directory no longer passes.
+func assertHasNamedEvent(t *testing.T, events []models.GroundTruthEvent, action models.ActionType, target string) {
 	t.Helper()
-	dir := filepath.Dir(target)
 	for _, e := range events {
-		if e.ActionType != action {
+		if e.ActionType != action || e.Target != target {
 			continue
 		}
-		switch e.Target {
-		case target:
-			if e.PathIsAmbiguous {
-				t.Errorf("%s on %s resolved to the full path but PathIsAmbiguous was true", action, target)
-			}
-			return
-		case dir:
-			if !e.PathIsAmbiguous {
-				t.Errorf("%s on %s resolved only to parent dir %s but PathIsAmbiguous was false", action, target, dir)
-			}
-			return
+		if e.PathIsAmbiguous {
+			t.Errorf("%s on %s is named but marked ambiguous", action, target)
 		}
+		return
 	}
-	t.Errorf("expected event %s on %s (or dir %s), got %d events:", action, target, dir, len(events))
+	t.Errorf("expected event %s on %s, got %d events:", action, target, len(events))
 	for _, e := range events {
 		t.Logf("  %s %s (ambiguous=%v)", e.ActionType, e.Target, e.PathIsAmbiguous)
+	}
+}
+
+// assertNoAmbiguousEvent fails on any event that names only a directory: with
+// names requested (P-25) the probe has none to report.
+func assertNoAmbiguousEvent(t *testing.T, events []models.GroundTruthEvent) {
+	t.Helper()
+	for _, e := range events {
+		if e.PathIsAmbiguous {
+			t.Errorf("ambiguous event %s %q (pid %d)", e.ActionType, e.Target, e.PID)
+		}
 	}
 }
 
@@ -121,6 +119,9 @@ func TestObserver_CreateFile(t *testing.T) {
 	_ = obs.Stop()
 
 	assertHasEvent(t, events, models.FileWrite, target)
+	// The create names the file too (P-25); before, it was an ambiguous write
+	// of the directory.
+	assertNoAmbiguousEvent(t, events)
 }
 
 func TestObserver_ModifyFile(t *testing.T) {
@@ -637,9 +638,9 @@ func TestObserver_DeleteFile(t *testing.T) {
 	events := collectEvents(obs, 500*time.Millisecond)
 	_ = obs.Stop()
 
-	// On tmpfs, DELETE resolves to the parent directory only (DFID without
-	// filename). On ext4/xfs, DFID_NAME provides the full path.
-	assertHasEventInDir(t, events, models.FileDelete, target)
+	// The delete names the file (P-25), on tmpfs as on ext4.
+	assertHasNamedEvent(t, events, models.FileDelete, target)
+	assertNoAmbiguousEvent(t, events)
 }
 
 func TestObserver_RenameFile(t *testing.T) {
@@ -661,11 +662,75 @@ func TestObserver_RenameFile(t *testing.T) {
 	events := collectEvents(obs, 500*time.Millisecond)
 	_ = obs.Stop()
 
-	// Rename produces MOVED_FROM (source) and MOVED_TO (destination),
-	// both mapped to FileRename. On tmpfs, these resolve to the parent
-	// directory only; on ext4/xfs, DFID_NAME gives the full path.
-	assertHasEventInDir(t, events, models.FileRename, src)
-	assertHasEventInDir(t, events, models.FileRename, dst)
+	// A rename is two events, MOVED_FROM naming the source and MOVED_TO
+	// naming the destination (P-25). Before P-25 both resolved to the
+	// directory, and one ambiguous event satisfied both checks.
+	assertHasNamedEvent(t, events, models.FileRename, src)
+	assertHasNamedEvent(t, events, models.FileRename, dst)
+	assertNoAmbiguousEvent(t, events)
+}
+
+// A replace through a temporary, the way Claude Code writes a file (I-22),
+// under the probe's filesystem-wide mark: every event names the temporary or
+// the target and none is ambiguous, the rename is its source and its
+// destination, and the close carries the new content's hash under the
+// temporary's name (P-25). The adapter folds this shape (I-56); the sequence
+// is logged so a CI run shows the order the kernel and the read loop gave.
+func TestObserver_AReplaceThroughATemporaryIsNamed(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "notes.txt")
+	tmp := target + ".tmp.1.0123456789ab"
+	if err := os.WriteFile(target, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	obs := startObserver(t, dir)
+	time.Sleep(50 * time.Millisecond)
+
+	if _, err := os.ReadFile(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tmp, []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		t.Fatal(err)
+	}
+	events := collectEvents(obs, 500*time.Millisecond)
+	_ = obs.Stop()
+	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp.Before(events[j].Timestamp) })
+	for _, e := range events {
+		t.Logf("  %s %s", e.ActionType, strings.TrimPrefix(e.Target, dir+"/"))
+	}
+
+	assertNoAmbiguousEvent(t, events)
+	at := map[string]int{}
+	for i, e := range events {
+		key := string(e.ActionType) + " " + e.Target
+		if _, seen := at[key]; !seen {
+			at[key] = i
+		}
+		if e.Target != target && e.Target != tmp {
+			t.Errorf("%s %s names neither the temporary nor the target", e.ActionType, e.Target)
+		}
+	}
+	for _, key := range []string{
+		"file_open " + target, "file_write " + tmp, "file_open " + tmp, "file_close " + tmp,
+		"file_rename " + tmp, "file_rename " + target,
+	} {
+		if _, ok := at[key]; !ok {
+			t.Errorf("no %s", key)
+		}
+	}
+	if at["file_rename "+target] < at["file_close "+tmp] || at["file_rename "+target] < at["file_rename "+tmp] {
+		t.Errorf("the destination precedes the close or the source")
+	}
+	want := content.SHA256Bytes([]byte("new\n"))
+	for _, e := range events {
+		if e.ActionType == models.FileClose && e.Target == tmp && (e.OutputHash == nil || *e.OutputHash != want) {
+			t.Errorf("close of the temporary carries %v, want %s", e.OutputHash, want)
+		}
+	}
 }
 
 // TestObserver_OpenAfterRenameCarriesShadowHash pins the F4.2 rename fix: a

@@ -100,11 +100,9 @@ type Observer struct {
 	// shadowHashesByInode is shadowHashes' companion index, keyed by the
 	// file's (device, inode) instead of its path. A path-keyed lookup alone
 	// misses a file that was renamed since it was last hashed: FAN_OPEN on
-	// the new name won't find an entry under the old one, and the two
-	// FAN_MOVED_FROM/FAN_MOVED_TO events for the rename are not reliably
-	// resolvable back to the same path anyway (a fanotify DFID_NAME record
-	// can resolve ambiguously to just the parent directory -- see rawEvent.
-	// Ambiguous). Device+inode identifies the underlying file regardless of
+	// the new name won't find an entry under the old one, and the
+	// FAN_MOVED_FROM/FAN_MOVED_TO records name the two paths but nothing
+	// links them to each other. Device+inode identifies the underlying file regardless of
 	// what it's currently named, since a rename never changes it, so this
 	// index survives renames for free. Populated in hashSettledFD from the
 	// fd it just hashed; consulted in processRawEvent as a fallback when a
@@ -155,12 +153,13 @@ type Observer struct {
 	// lastEmitted records, per path, the last action type emitted for it and
 	// by which pid. A write-class or rename event that repeats the last one
 	// on its path from the same process is not emitted again: the kernel
-	// merges consecutive notifications on one object into one mask when
-	// nothing reads between them and delivers them apart otherwise, so
-	// without this the number of file_write events for one write (the
-	// truncating open and the write) or of file_rename events for one rename
-	// (the two names) depended on timing. Position is what the verifier
-	// pairs on, so the count must not (P-18).
+	// merges notifications on one object (one directory and name since
+	// P-25) into one mask when nothing reads between them and delivers them
+	// apart otherwise, so without this the number of file_write events for
+	// one write (the truncating open and the write), or of file_rename
+	// events for renames onto one name, depended on timing. Position is what
+	// the verifier pairs on, so the count must not (P-18). The two halves of
+	// one rename name two paths since P-25 and are two events.
 	lastEmitted map[string]emitted
 
 	// settleDelay is how long a path must be quiet (no write-class event,
@@ -802,11 +801,9 @@ func identify(path string, mountFD int, handleType int32, handleData []byte) (ke
 // names, and false when the probe has none. It tries shadowHashesByInode via
 // the event's file handle first, then shadowHashes by path. The inode matters
 // across a rename: shadowHashes is keyed by the path a file had when it was
-// last hashed (at its FAN_CLOSE_WRITE settle), and a FAN_MOVED_FROM/TO pair is
-// not reliably resolvable back to that same path (a fanotify DFID_NAME record
-// can degrade to just the parent directory under load -- see
-// rawEvent.Ambiguous), so a rename can silently orphan the path-keyed entry.
-// Device+inode identifies the file regardless of what it's currently named.
+// last hashed (at its FAN_CLOSE_WRITE settle), and the probe does not link a
+// FAN_MOVED_FROM to its FAN_MOVED_TO, so a rename orphans the path-keyed
+// entry. Device+inode identifies the file regardless of what it's currently named.
 func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, handleData []byte) (string, bool) {
 	// The inode first: after an atomic replace the path names a new inode
 	// whose hash was settled under the temporary's name, while the path's
@@ -1012,6 +1009,9 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int) (digest 
 	if pathFD >= 0 {
 		procPath := fmt.Sprintf("/proc/self/fd/%d", pathFD)
 		suppressPath, _ = os.Readlink(procPath)
+		// The read's own FAN_OPEN names the file by its directory and name
+		// (P-25), which carry no mark of a deletion.
+		suppressPath = strings.TrimSuffix(suppressPath, " (deleted)")
 		if suppressPath == "" {
 			suppressPath = target
 		}

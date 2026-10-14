@@ -99,7 +99,27 @@ func runFileOnly(t *testing.T) capture {
 	if err != nil {
 		t.Fatalf("models.ParseTrajectory: %v", err)
 	}
+	logAmbiguous(t, g)
 	return capture{tr: tr, g: g, root: root, cov: coverageOf(map[string]probe.CoverageReporter{"fs": obs})}
+}
+
+// logAmbiguous logs how many file events of the capture name only a
+// directory. With entry names requested (P-25) the fs probe is expected to
+// report none; a CI run's log shows whether any remain, and which.
+func logAmbiguous(t *testing.T, g models.GroundTruth) {
+	t.Helper()
+	files, amb := 0, 0
+	for _, e := range g {
+		switch e.ActionType {
+		case models.FileOpen, models.FileRead, models.FileWrite, models.FileClose, models.FileRename, models.FileDelete:
+			files++
+			if e.PathIsAmbiguous {
+				amb++
+				t.Logf("ambiguous fs event: %s %q pid %d", e.ActionType, e.Target, e.PID)
+			}
+		}
+	}
+	t.Logf("ambiguous fs events: %d of %d file events", amb, files)
 }
 
 func skipUnprivileged(t *testing.T) {
@@ -141,12 +161,11 @@ func TestTier1_E2E_NotFaithful_Omission(t *testing.T) {
 	if verdict.Outcome != verification.OutcomeNotFaithful {
 		t.Fatalf("outcome = %s, want NOT FAITHFUL due to omission", verdict.Outcome)
 	}
-	// The create is reported by the kernel as a write on the directory (a
-	// DFID-only record that covers the file), so the unrecorded event may name
-	// the file or its directory.
+	// The create names the file (P-25). Before, the kernel reported it as a
+	// write on the directory and the unrecorded event could name either.
 	found := false
 	for _, e := range verdict.Unrecorded {
-		if e.ActionType == dropped.ActionType && (e.Target == dropped.Target || e.Target == filepath.Dir(dropped.Target)) {
+		if e.ActionType == dropped.ActionType && e.Target == dropped.Target && !e.PathIsAmbiguous {
 			found = true
 		}
 	}

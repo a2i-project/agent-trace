@@ -11,8 +11,8 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/probe"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
-	"github.com/agent-trace/agent-trace/pkg/probe/proc"
 	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
+	"github.com/agent-trace/agent-trace/pkg/probe/proc"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
@@ -134,6 +134,7 @@ func runTier3Agent(t *testing.T, extraArgs ...string) capture {
 		t.Fatalf("ParseTrajectory: %v", err)
 	}
 
+	logAmbiguous(t, g)
 	return capture{
 		tr: tr, g: g, root: cmd.Process.Pid,
 		cov: coverageOf(map[string]probe.CoverageReporter{"fs": fsObs, "proc": procObs, "net": netObs}),
