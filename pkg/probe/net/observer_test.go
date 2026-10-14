@@ -242,6 +242,84 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	}
 }
 
+// A net probe that never tracked a pid observed nothing, since every program
+// is gated on tracked_pids. Its coverage says Ran=false, so Assess does not
+// read its silence as a complete record of no network activity, while its
+// counters are kept (N-26). One that tracked a pid reports Ran=true.
+func TestCaptureCoverage_NothingTrackedIsNotRan(t *testing.T) {
+	o := &Observer{}
+	o.finalRingbufDrops.Store(4)
+	o.kernelCountersFinal.Store(true)
+	pc := o.CaptureCoverage()
+	if pc.Ran {
+		t.Errorf("Ran = true with no tracked pid, want false")
+	}
+	if pc.RingbufDrops != 4 {
+		t.Errorf("RingbufDrops = %d, want the counters kept", pc.RingbufDrops)
+	}
+	c := verification.Assess(&models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"net": pc}})
+	if len(c.Reasons) != 0 || len(c.Notes) != 0 {
+		t.Errorf("Assess = %+v, want the net probe skipped as not run", c)
+	}
+
+	o.tracking.Store(true)
+	if pc := o.CaptureCoverage(); !pc.Ran {
+		t.Errorf("Ran = false after a pid was tracked, want true")
+	}
+}
+
+// TestObserver_HostWideRunIsNotRan: an observer started with no tracked pid,
+// as cmd/watch builds it in host-wide mode, reports Ran=false even when a
+// process connects during the capture; an observer given the pid through
+// TrackPID reports Ran=true and sees the connection.
+func TestObserver_HostWideRunIsNotRan(t *testing.T) {
+	skipUnprivileged(t)
+
+	ports := sinks(t, 1)
+	connect := func() {
+		c, err := stdnet.Dial("tcp4", fmt.Sprintf("127.0.0.1:%d", ports[0]))
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		_, _ = c.Write([]byte("data"))
+		_ = c.Close()
+	}
+
+	idle, err := New(Config{EventBufSize: 64})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	idle.Start()
+	time.Sleep(150 * time.Millisecond) // let tracepoints attach; CI sets the bound
+	connect()
+	time.Sleep(300 * time.Millisecond)
+	if events := drainEvents(t, idle); len(events) != 0 {
+		t.Errorf("an observer with no tracked pid emitted %+v, want nothing", events)
+	}
+	if idle.CaptureCoverage().Ran {
+		t.Errorf("Ran = true with no tracked pid, want false")
+	}
+
+	tracked, err := New(Config{EventBufSize: 64})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := tracked.TrackPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("TrackPID: %v", err)
+	}
+	tracked.Start()
+	time.Sleep(150 * time.Millisecond)
+	connect()
+	time.Sleep(300 * time.Millisecond)
+	target := fmt.Sprintf("127.0.0.1:%d", ports[0])
+	if at, _ := typeOf(t, drainEvents(t, tracked), target); at != models.NetConnect {
+		t.Errorf("tracked connection to %s is %q, want net_connect", target, at)
+	}
+	if !tracked.CaptureCoverage().Ran {
+		t.Errorf("Ran = false after TrackPID, want true")
+	}
+}
+
 // TestObserver_CountsUntrackedChildren is the net probe's counterpart: a tiny
 // tracked_pids map, more concurrently live children than it can hold, and the
 // overflow must show in Coverage live and after Stop.
@@ -1021,6 +1099,7 @@ func TestFaultedHello_IsConnectionAndContentGap(t *testing.T) {
 		t.Errorf("emitted %v, want %v", got, want)
 	}
 
+	o.tracking.Store(true)
 	o.finalHelloFaults.Store(1)
 	o.kernelCountersFinal.Store(true)
 	pc := o.CaptureCoverage()

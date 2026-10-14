@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 1850f59 on 2026-10-14.
+Checked against commit 4170b94 on 2026-10-14.
 
 ## Objective
 
@@ -48,7 +48,7 @@ The fs probe uses fanotify through `golang.org/x/sys/unix`; it has no eBPF compo
 3. For each name in `--probes` (default `fs,proc`), it calls the builder in `probeBuilders`. Adding a probe means adding one entry there. Any probe that is not a `probe.CoverageReporter` aborts the run.
 4. Every probe gets a collector goroutine at once. Every probe other than proc and net (today only fs) is also started at once; proc and net are started later.
 5. In exec-wrap mode watch sleeps 200 ms, resolves the command with `exec.LookPath`, and starts it held (`startHeld`, P-23): the process is `/bin/sh` running a short script that blocks on a pipe passed as descriptor 3 and then execs the agent in place, so the agent runs under the pid watch already knows. watch records that pid as `groundRoot`, calls `proc.Observer.SetRootPID(pid)`, starts proc, calls `net.Observer.TrackPID(pid)` and runs `net.Observer.Start` in a goroutine (it blocks during TLS offset validation), and only then writes to the pipe. The agent is therefore in both tracked sets from its first instruction. If a registration fails, watch closes the pipe and kills the held process, and the agent never runs. After the agent exits (or on SIGINT/SIGTERM, which kills it) watch sleeps 300 ms so trailing events drain.
-6. With `--root-pid N`, `groundRoot` is N and the same calls are made for N; watch records until a signal. With neither, `groundRoot` stays 0, proc runs host-wide (optionally narrowed by `--proc-filter`) and net is started with no tracked pid.
+6. With `--root-pid N`, `groundRoot` is N and the same calls are made for N; watch records until a signal. With neither, `groundRoot` stays 0, proc runs host-wide (optionally narrowed by `--proc-filter`) and net is started with no tracked pid, so it records nothing and its coverage says `Ran=false` (N-26).
 7. `stopEverything` stops the other probes, then net, then proc, and waits for the collectors.
 8. `buildCoverage` asks every started probe for `CaptureCoverage()` and writes `ProbeCoverage{Ran: false}` for every known probe that was not selected.
 9. watch prints the loss counters, runs `verification.Assess` and logs a warning with the Reasons when the capture is incomplete.
@@ -84,7 +84,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 
 | Field | JSON | Producers | Meaning | `Assess` |
 |---|---|---|---|---|
-| `Ran` | `ran` | all | probe was started | a probe with `Ran=false` is skipped |
+| `Ran` | `ran` | all | probe was started; the net probe also reports false when it never tracked a pid, since it then watched nothing (N-26) | a probe with `Ran=false` is skipped |
 | `RingbufDrops` | `ringbuf_drops` | proc, net (net and TLS rings summed) | kernel ring buffer full, record discarded | Reason (event loss) |
 | `UntrackedChildren` | `untracked_children` | proc, net (net and TLS maps summed) | `tracked_pids` full; a lower bound, one increment can be a whole subtree | Reason |
 | `StateMapFull` | `state_map_full` | proc (`execs`), net (`conns`) | per-process or per-connection state map full; net also counts a connect whose descriptor could not be resolved to its socket | Reason |
@@ -138,7 +138,7 @@ Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, Probe
 - Each eBPF object tracks descendants independently, so the proc and net tracked sets can diverge when one map fills and the other does not.
 - The launched agent's `argv[0]` is the resolved program path, not the name given on the command line, because the hold script execs the path `exec.LookPath` returned. A program that is not a valid executable but that a shell would run as a script (no `#!` line) is run by `/bin/sh` instead of failing to start.
 - With `--root-pid N` the process is already running, so whatever it forked before `SetRootPID` or `TrackPID` runs is untracked and nothing counts it.
-- In host-wide mode (no agent command and no `--root-pid`) the net probe tracks no pid, records nothing, and still reports `Ran=true` with no loss.
+- In host-wide mode (no agent command and no `--root-pid`) the net probe tracks no pid and records nothing; it reports `Ran=false`, so `watch` prints it as not run although it was selected.
 - The boot offset is computed once per probe, so wall-clock steps during a run shift kernel timestamps relative to fs timestamps.
 - `IsTopLevel` is a legacy field still written by proc and net.
 - CI checks the freshness of the proc bindings only; the net and TLS bindings can go stale without a failing job.

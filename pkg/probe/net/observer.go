@@ -68,7 +68,8 @@ type Config struct {
 	// later via TrackPID. There is no global (untracked) mode: net.bpf.c
 	// gates every program on tracked_pids membership unconditionally (see
 	// docs/architecture/13_probe_net.md), so an Observer with no tracked PID at all
-	// sees nothing until TrackPID is called.
+	// sees nothing until TrackPID is called, and its CaptureCoverage reports
+	// Ran=false (N-26).
 	TrackedPID int32
 
 	// EventBufSize is the channel buffer size for emitted events. Defaults
@@ -133,6 +134,10 @@ type Observer struct {
 	cfg      Config
 	dropped  atomic.Uint64
 	stopOnce sync.Once
+
+	// tracking is raised once a pid is in tracked_pids, by New or TrackPID.
+	// Until then the probe watches nothing (N-26).
+	tracking atomic.Bool
 
 	// Kernel-side counters snapshotted by Stop, before it closes the maps
 	// they live in. kernelCountersFinal is raised after the values are set.
@@ -316,6 +321,7 @@ func New(cfg Config) (*Observer, error) {
 
 		iouringSubmitUnseen: !attached[submitTP.name] && attached[setupTP.name],
 	}
+	o.tracking.Store(cfg.TrackedPID > 0)
 
 	if cfg.ExePath != "" {
 		if err := o.prepareTLS(cfg); err != nil {
@@ -536,6 +542,7 @@ func (o *Observer) TrackPID(pid int32) error {
 	if err := o.objs.TrackedPids.Update(&p, &one, ebpf.UpdateAny); err != nil {
 		return fmt.Errorf("update tracked_pids: %w", err)
 	}
+	o.tracking.Store(true)
 	if o.tlsObjs.TrackedPids != nil {
 		if err := o.tlsObjs.TrackedPids.Update(&p, &one, ebpf.UpdateAny); err != nil {
 			return fmt.Errorf("update tls tracked_pids: %w", err)
@@ -647,6 +654,12 @@ func (o *Observer) Events() <-chan models.GroundTruthEvent {
 }
 
 // CaptureCoverage reports the loss counters for this capture. Call after Stop.
+//
+// Ran is false when no pid was ever tracked: every program is gated on
+// tracked_pids, so such a probe observed nothing, and an empty capture with
+// Ran=true would read as a complete record of no network activity. Ran=false
+// says what a probe that was not started says: its silence is no evidence
+// (N-26).
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 	cov := o.Coverage()
 	content := models.ContentActive
@@ -657,7 +670,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		content = models.ContentAttachFailed
 	}
 	return models.ProbeCoverage{
-		Ran:               true,
+		Ran:               o.tracking.Load(),
 		RingbufDrops:      cov.RingbufDrops,
 		ChannelDrops:      o.Dropped(),
 		UntrackedChildren: cov.UntrackedChildren,

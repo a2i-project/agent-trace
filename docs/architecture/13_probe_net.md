@@ -1,10 +1,10 @@
 # Network probe
 
-Checked against commit 1850f59 on 2026-10-14.
+Checked against commit 4170b94 on 2026-10-14.
 
 ## Objective
 
-The network probe (`pkg/probe/net`) records which remote endpoints the agent's process tree contacted and, when content capture is enabled, which HTTP requests it sent over TLS. It has two layers. N0, identity, is `net.bpf.c`: syscall tracepoints that see connects, listeners, every send and the first bytes of each connection, from which userspace extracts the TLS SNI hostname. N1, content, is `tls.bpf.c`: a uprobe on `SSL_write` that captures plaintext before encryption, located by `pkg/tlsoffset` and parsed by `pkg/tlsparse`. The common contract, clocks and coverage format are in [10_probes_common.md](10_probes_common.md). The reasons behind the design are in [../decisions/network.md](../decisions/network.md) (N-D1 to N-D5, N-6 to N-25).
+The network probe (`pkg/probe/net`) records which remote endpoints the agent's process tree contacted and, when content capture is enabled, which HTTP requests it sent over TLS. It has two layers. N0, identity, is `net.bpf.c`: syscall tracepoints that see connects, listeners, every send and the first bytes of each connection, from which userspace extracts the TLS SNI hostname. N1, content, is `tls.bpf.c`: a uprobe on `SSL_write` that captures plaintext before encryption, located by `pkg/tlsoffset` and parsed by `pkg/tlsparse`. The common contract, clocks and coverage format are in [10_probes_common.md](10_probes_common.md). The reasons behind the design are in [../decisions/network.md](../decisions/network.md) (N-D1 to N-D5, N-6 to N-26).
 
 ## Structure
 
@@ -33,7 +33,7 @@ Syscall tracepoints, the `io_uring:io_uring_submit_req` tracepoint, and one upro
 
 ### Scoping
 
-Every program in both objects starts with `is_tracked(tgid)`. There is no host-wide mode: an observer with no tracked pid sees nothing. `TrackPID` writes the pid into the net map and, when N1 is loaded, into the TLS map. Each object then follows children through its own `handle_fork` (with the `CLONE_THREAD` guard) and removes exiting thread group leaders in `handle_exit`.
+Every program in both objects starts with `is_tracked(tgid)`. There is no host-wide mode: an observer with no tracked pid sees nothing. `TrackPID` writes the pid into the net map and, when N1 is loaded, into the TLS map. The observer remembers whether a pid ever entered the net map (`Config.TrackedPID` at `New`, or a successful `TrackPID`); `CaptureCoverage` reports `Ran=false` when none did, so a capture that watched no process does not read as a complete record of no network activity (N-26, `TestObserver_HostWideRunIsNotRan`). Each object then follows children through its own `handle_fork` (with the `CLONE_THREAD` guard) and removes exiting thread group leaders in `handle_exit`.
 
 ### N0: identity
 
@@ -81,6 +81,7 @@ The hostname comes from the ClientHello the client sent, so it needs no plaintex
 | `faulted_reads` | an `SSL_write` buffer read faults | `FaultedReads` |
 | net `hello_fault_count` | a send hook cannot read the first bytes of a connection still waiting for its hello; the connection is still marked written (`NET_SEND`), its hostname may be lost | `HelloFaults` |
 | N1 state | `ExePath` empty, attach failed, or active | `Content` |
+| tracked set | no pid ever entered `tracked_pids` | `Ran` is false (N-26) |
 
 Which of these fields `Assess` reads as event loss and which as a content gap is in [10_probes_common.md](10_probes_common.md#probecoverage).
 
