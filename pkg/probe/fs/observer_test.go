@@ -1505,3 +1505,36 @@ func TestObserver_WriteJustBeforeStopIsCountedWithoutDrainTime(t *testing.T) {
 		assertHasEvent(t, events, models.FileClose, filepath.Join(dir, "last.txt"))
 	}
 }
+
+// A delete inside a directory removed before the observer reads it resolves
+// to no path and is counted. The observer is started only after the removal,
+// so the kernel's records wait in the queue until their directory is gone.
+func TestObserver_DeleteInARemovedDirectoryIsCounted(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "leaf"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	obs, err := New(Config{Path: dir, EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// A child removes the tree, so its records are not the observer's own.
+	if out, err := exec.Command("rm", "-rf", sub).CombinedOutput(); err != nil {
+		t.Fatalf("rm: %v\n%s", err, out)
+	}
+	obs.Start()
+	time.Sleep(200 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	for range obs.Events() {
+	}
+	if got := obs.CaptureCoverage().UnresolvedPaths; got == 0 {
+		t.Error("UnresolvedPaths = 0 after a delete inside a removed directory")
+	}
+}

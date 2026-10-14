@@ -65,6 +65,9 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.HashlessCloses > 0 {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d file close(s) were published without a content hash, so a claimed content for those is neither confirmed nor refuted", name, p.HashlessCloses))
 		}
+		if p.UnresolvedPaths > 0 {
+			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d file event(s) by any process had no resolvable path, because their directory was removed before they were read, and are not in the capture (V-35)", name, p.UnresolvedPaths))
+		}
 		if p.FaultedReads > 0 {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d SSL payload read(s) faulted, request content is missing for those", name, p.FaultedReads))
 		}

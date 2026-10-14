@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -262,5 +263,23 @@ func TestProcessRawEvent_RepeatedWritesAndRenamesCollapse(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("emitted:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// A record no handle resolved is counted once per action type, before the
+// path filter it cannot pass; the observer's own records are not counted.
+func TestProcessRawEvent_CountsUnresolvedPaths(t *testing.T) {
+	obs := &Observer{events: make(chan models.GroundTruthEvent, 8), cfg: Config{PathFilter: "/mock"}}
+	raws := []rawEvent{
+		{Mask: unix.FAN_DELETE, PID: 7},
+		{Mask: unix.FAN_MOVED_FROM | unix.FAN_CREATE, PID: 7},
+		{Mask: unix.FAN_DELETE, PID: int32(os.Getpid())},
+		{Mask: unix.FAN_DELETE, PID: 7, Path: "/mock/d"},
+	}
+	for i := range raws {
+		obs.processRawEvent(&raws[i], time.Now())
+	}
+	if got := obs.CaptureCoverage().UnresolvedPaths; got != 3 {
+		t.Errorf("UnresolvedPaths = %d, want 3", got)
 	}
 }

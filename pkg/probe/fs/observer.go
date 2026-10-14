@@ -87,6 +87,9 @@ type Observer struct {
 	// undrained counts the records still queued when the stop drain ran out
 	// of time (drainAtStop): event loss, a lower bound.
 	undrained atomic.Uint64
+	// unresolved counts the events whose path no handle resolved, one per
+	// action type of each such record (V-35).
+	unresolved atomic.Uint64
 	// stopDrain is how long the read loop keeps reading records after the
 	// stop signal before it counts the rest instead. Defaults to
 	// stopDrainBudget; tests lower it to provoke the count.
@@ -323,6 +326,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		QueueOverflow:    o.Overflow(),
 		HashlessCloses:   o.hashlessCloses.Load(),
 		UndrainedRecords: o.undrained.Load(),
+		UnresolvedPaths:  o.unresolved.Load(),
 	}
 }
 
@@ -607,6 +611,14 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	// PID filter.
 	if o.cfg.PIDFilter > 0 && e.PID != o.cfg.PIDFilter {
 		return
+	}
+
+	// A record no handle resolved (its directory was removed before it was
+	// read) is counted before the path filter, which it can never pass, so
+	// the count does not depend on the filter. The observer's own records
+	// are left out, as cmd/watch leaves them out of the capture.
+	if e.Path == "" && e.PID != int32(os.Getpid()) {
+		o.unresolved.Add(uint64(len(maskToActionTypes(e.Mask))))
 	}
 
 	// Path filter.

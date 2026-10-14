@@ -70,6 +70,13 @@ type ProbeCoverage struct {
 	// probe's stop drain ran out of time: events of the run that were never
 	// read. Event loss, a lower bound. Filesystem probe only.
 	UndrainedRecords uint64 `json:"undrained_records,omitempty"`
+	// UnresolvedPaths counts the file events whose path no handle resolved,
+	// one per action type of each record, from any process but the
+	// recorder's: a delete or write in a directory removed before the event
+	// was read. cmd/watch leaves them out of the capture and lists them by
+	// type in FSScope.Unresolved. A note, not event loss (V-35).
+	// Filesystem probe only.
+	UnresolvedPaths uint64 `json:"unresolved_paths,omitempty"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.

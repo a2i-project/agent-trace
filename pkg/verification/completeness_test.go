@@ -32,6 +32,8 @@ func TestAssess(t *testing.T) {
 		{name: "fanotify overflow", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, QueueOverflow: true}}), wantReason: "fs probe: kernel fanotify queue overflowed"},
 		{name: "records left in the fanotify queue at stop are event loss", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, UndrainedRecords: 5}}), wantReason: "fs probe: 5 record(s) were still queued when the capture stopped"},
 		{name: "undrained records on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: false, UndrainedRecords: 5}}), wantComplete: true},
+		{name: "unresolved file events are a note, not a loss (V-35)", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, UnresolvedPaths: 2}}), wantComplete: true, wantNotes: 1},
+		{name: "unresolved file events on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: false, UnresolvedPaths: 2}}), wantComplete: true},
 		{name: "counters on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, RingbufDrops: 9}}), wantComplete: true},
 		{name: "faulted reads are a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, FaultedReads: 4}}), wantComplete: true, wantNotes: 1},
 		{name: "attach failure is a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},

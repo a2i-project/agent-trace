@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 3383b40 on 2026-10-14.
+Checked against commit f447bc8 on 2026-10-14.
 
 ## Objective
 
@@ -92,6 +92,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `IOURingNetOps` | `io_uring_net_ops` | net | tracked processes submitted socket operations through io_uring, which no hook records (N-25; the classification is in [13_probe_net.md](13_probe_net.md)) | Reason |
 | `QueueOverflow` | `queue_overflow` | fs | fanotify `FAN_Q_OVERFLOW` seen | Reason |
 | `UndrainedRecords` | `undrained_records` | fs | records still queued when the stop drain's time budget ran out, never read (P-24); a lower bound | Reason |
+| `UnresolvedPaths` | `unresolved_paths` | fs | file events whose path no handle resolved, by any process but the recorder, one per action type of each record; `watch` leaves them out of the capture | Note (V-35) |
 | `HashlessCloses` | `hashless_closes` | fs | a close was published without a content hash (P-16, or a failed read) | Note (content gap) |
 | `FaultedReads` | `faulted_reads` | net (TLS) | `SSL_write` plaintext read faulted | Note (content gap) |
 | `Content` | `content` | net | `active`, `identity_only` or `attach_failed` | `attach_failed` is a Note |
@@ -122,7 +123,7 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 
 ## Guarantees and loss accounting
 
-Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, ProbeCoverage above; the outcome rules are in [20_verifier.md](20_verifier.md#outcome-rules)). Not every loss has a counter: a failed update of the net probe's `binds` map is counted nowhere, and the file events `watch` counts in `fs_scope.unresolved` are not read by `Assess`. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
+Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, ProbeCoverage above; the outcome rules are in [20_verifier.md](20_verifier.md#outcome-rules)). Not every loss has a counter: a failed update of the net probe's `binds` map is counted nowhere. It costs a listener's address, never an event (P-12), and listeners are capability evidence outside the verdict, so a counter for it would be a Note. The file events whose path no handle resolved are counted by the fs probe in `UnresolvedPaths`, a Note (V-35); `fs_scope.unresolved` lists the same events by type as `watch` dropped them, and `Assess` does not read it, so a capture written before the counter existed carries no note for them. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
 
 ### Adding a loss counter
 
