@@ -235,6 +235,22 @@ static __always_inline void count_in(void *map)
 		__sync_fetch_and_add(count, 1);
 }
 
+// hello_fault_count counts hello reads that faulted: a send hook found a
+// connection with no hello yet and could not read the bytes it sends (a
+// buffer page not resident, a bad pointer, an unreadable msghdr or iovec).
+// The connection is still marked sent (NET_SEND), so it is not lost; what is
+// lost is its hostname, since a later send is captured in its place and is
+// usually not a ClientHello. A content gap, not event loss (N-D5). One
+// connection can fault more than once, and a later send can still yield its
+// hello, so the value bounds the connections affected from above.
+// Userspace sums the percpu slots and snapshots them in Stop().
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} hello_fault_count SEC(".maps");
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 1);
@@ -683,7 +699,8 @@ int trace_listen(struct sys_enter_listen_ctx *ctx)
 // send by any tracked process holding the connection counts, not only one by
 // the process that connected. The first send that carries readable bytes
 // emits NET_HELLO with up to HELLO_CAP_LEN of them; a send whose bytes are
-// not read, or whose read faults, emits NET_SEND once. Either marks the
+// not read, or whose read faults, emits NET_SEND once. A faulted read is also
+// counted in hello_fault_count. Either marks the
 // connection as having carried data. All hooks fire at syscall entry, so a
 // send that then fails still counts, like a failed connect. A zero-length
 // send carries nothing and is ignored.
@@ -713,7 +730,8 @@ static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, 
 		// must not be treated as an empty capture that later reads as "no
 		// content, but not disagreement" (N-D5). The connection still
 		// carried data, so it is marked sent, and a later write gets
-		// another capture attempt.
+		// another capture attempt. The fault is counted.
+		count_in(&hello_fault_count);
 		mark_sent(e, tgid, fd, ino, cs);
 		return 0;
 	}
@@ -779,6 +797,8 @@ static __always_inline int capture_hello_iov(__u32 tgid, __u32 fd, __u64 iov_ptr
 		off += n;
 	}
 
+	if (fault)
+		count_in(&hello_fault_count);
 	if (fault || off == 0) {
 		mark_sent(e, tgid, fd, ino, cs);
 		return 0;
@@ -877,10 +897,16 @@ static __always_inline int capture_hello_msg(__u32 tgid, __u32 fd, __u64 msg)
 	struct msghdr_bpf mh = {0};
 	if (bpf_probe_read_user(&mh, sizeof(mh), (void *)msg)) {
 		// The message cannot be read here, but the call may still send it.
+		// Counted as a hello fault only on a connection still waiting for
+		// its hello, like the reads in capture_hello_iov.
 		__u64 ino = 0;
 		struct conn_state *cs = lookup_conn(fd, &ino);
+		if (!cs)
+			return 0;
+		if (!cs->hello_captured)
+			count_in(&hello_fault_count);
 		struct net_event *e = reserve_event();
-		if (cs && e)
+		if (e)
 			mark_sent(e, tgid, fd, ino, cs);
 		return 0;
 	}

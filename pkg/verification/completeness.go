@@ -68,6 +68,9 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.Content == models.ContentAttachFailed {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: content capture failed to attach, identity only", name))
 		}
+		if p.HelloFaults > 0 {
+			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d ClientHello read(s) faulted, so a connection may be reported by address instead of hostname", name, p.HelloFaults))
+		}
 	}
 	c.Complete = len(c.Reasons) == 0
 	return c

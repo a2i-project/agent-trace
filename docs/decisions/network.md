@@ -47,7 +47,7 @@ Status: Accepted, implemented (`FaultedReads` counter, a note in `Assess`).
 Date: 2026-09-14.
 Context: `bpf_probe_read_user` can fault on a paged-out buffer.
 Decision: Drop the frame, count it, and warn. The missing content compares as a probe gap.
-Consequences: An agent could in principle exploit faults to hide content; the counter makes it visible (P-11 in [probes.md](probes.md)).
+Consequences: An agent could in principle exploit faults to hide content; the counter makes it visible (P-11 in [probes.md](probes.md)). Amended 2026-10-14: the same rule covers the ClientHello read in `net.bpf.c`. A faulted hello read marks the connection written (`NET_SEND`, N-23) and is counted in `HelloFaults`, a note in `Assess`: the hostname is missing, no event is.
 Alternatives rejected: Reporting a mismatch for unreadable content.
 
 ## Architecture and scope

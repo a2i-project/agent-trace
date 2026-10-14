@@ -335,3 +335,38 @@ func TestHandleNetRecord_RecordsFromAnotherProcessFollowTheSocket(t *testing.T) 
 		t.Errorf("coverage = %+v, %d open, want Dials 1, WithHostname 1, none open", o.coverage, len(o.conns))
 	}
 }
+
+// TestObserver_FaultedHelloReadIsConnectionAndCounted: a connection whose
+// only write comes from an anonymous page never touched, so the page is not
+// resident and the probe's read of the hello faults while the kernel's own
+// copy succeeds and sends zeros. The connection carried data, so it is
+// net_connect by address, not net_dial, and the fault is counted in
+// HelloFaults. A connection that sends nothing is the control.
+func TestObserver_FaultedHelloReadIsConnectionAndCounted(t *testing.T) {
+	skipUnprivileged(t)
+
+	ports := sinks(t, 2)
+	obs := startObserver(t)
+
+	pyPID := runPython(t, fmt.Sprintf(`
+import mmap, os, socket
+page = mmap.mmap(-1, 4096)  # anonymous, never touched: not resident
+s = socket.socket()
+s.connect(("127.0.0.1", %d))
+if os.write(s.fileno(), memoryview(page)[:100]) != 100:
+    raise SystemExit("short write")
+s.close()
+s = socket.socket()
+s.connect(("127.0.0.1", %d))
+s.close()
+`, ports[0], ports[1]))
+	time.Sleep(300 * time.Millisecond)
+
+	events := drainEvents(t, obs)
+	expectTypes(t, events, pyPID,
+		map[int]models.ActionType{ports[0]: models.NetConnect, ports[1]: models.NetDial},
+		map[int]string{ports[0]: "only write faulted", ports[1]: "nothing sent"})
+	if got := obs.CaptureCoverage().HelloFaults; got == 0 {
+		t.Errorf("HelloFaults = 0, want at least the one faulted hello read")
+	}
+}

@@ -72,6 +72,7 @@ const (
 	bpfMapConns               = "conns"
 	bpfMapDropCount           = "drop_count"
 	bpfMapHeap                = "heap"
+	bpfMapHelloFaultCount     = "hello_fault_count"
 	bpfMapIouringNetCount     = "iouring_net_count"
 	bpfMapIouringOpsCount     = "iouring_ops_count"
 	bpfMapIouringSetupCount   = "iouring_setup_count"
@@ -169,6 +170,7 @@ type bpfMapSpecs struct {
 	Conns             *ebpf.MapSpec `ebpf:"conns"`
 	DropCount         *ebpf.MapSpec `ebpf:"drop_count"`
 	Heap              *ebpf.MapSpec `ebpf:"heap"`
+	HelloFaultCount   *ebpf.MapSpec `ebpf:"hello_fault_count"`
 	IouringNetCount   *ebpf.MapSpec `ebpf:"iouring_net_count"`
 	IouringOpsCount   *ebpf.MapSpec `ebpf:"iouring_ops_count"`
 	IouringSetupCount *ebpf.MapSpec `ebpf:"iouring_setup_count"`
@@ -208,6 +210,7 @@ type bpfMaps struct {
 	Conns             *ebpf.Map `ebpf:"conns"`
 	DropCount         *ebpf.Map `ebpf:"drop_count"`
 	Heap              *ebpf.Map `ebpf:"heap"`
+	HelloFaultCount   *ebpf.Map `ebpf:"hello_fault_count"`
 	IouringNetCount   *ebpf.Map `ebpf:"iouring_net_count"`
 	IouringOpsCount   *ebpf.Map `ebpf:"iouring_ops_count"`
 	IouringSetupCount *ebpf.Map `ebpf:"iouring_setup_count"`
@@ -223,6 +226,7 @@ func (m *bpfMaps) Close() error {
 		m.Conns,
 		m.DropCount,
 		m.Heap,
+		m.HelloFaultCount,
 		m.IouringNetCount,
 		m.IouringOpsCount,
 		m.IouringSetupCount,

@@ -143,6 +143,7 @@ type Observer struct {
 	finalIOURingNet     atomic.Uint64
 	finalIOURingOps     atomic.Uint64
 	finalIOURingRings   atomic.Uint64
+	finalHelloFaults    atomic.Uint64
 	kernelCountersFinal atomic.Bool
 
 	// iouringSubmitUnseen is set when the kernel has no io_uring_submit_req
@@ -553,13 +554,14 @@ func (o *Observer) Coverage() Coverage {
 	cov := o.coverage
 	snapshot := func() kernelCounts {
 		return kernelCounts{
-			faulted:   o.finalFaulted.Load(),
-			drops:     o.finalRingbufDrops.Load(),
-			untracked: o.finalUntracked.Load(),
-			stateFull: o.finalStateFull.Load(),
-			uringNet:  o.finalIOURingNet.Load(),
-			uringOps:  o.finalIOURingOps.Load(),
-			uringRing: o.finalIOURingRings.Load(),
+			faulted:    o.finalFaulted.Load(),
+			drops:      o.finalRingbufDrops.Load(),
+			untracked:  o.finalUntracked.Load(),
+			stateFull:  o.finalStateFull.Load(),
+			uringNet:   o.finalIOURingNet.Load(),
+			uringOps:   o.finalIOURingOps.Load(),
+			uringRing:  o.finalIOURingRings.Load(),
+			helloFault: o.finalHelloFaults.Load(),
 		}
 	}
 	var k kernelCounts
@@ -579,6 +581,7 @@ func (o *Observer) Coverage() Coverage {
 	cov.IOURingNetOps += k.uringNet
 	cov.IOURingOps += k.uringOps
 	cov.IOURingRings += k.uringRing
+	cov.HelloFaults += k.helloFault
 	if o.iouringSubmitUnseen {
 		cov.IOURingNetOps += k.uringRing
 	}
@@ -587,13 +590,14 @@ func (o *Observer) Coverage() Coverage {
 
 // kernelCounts are the percpu counters the eBPF programs maintain, summed.
 type kernelCounts struct {
-	faulted   uint64 // SSL reads that faulted
-	drops     uint64 // records the net and TLS ring buffers discarded because they were full
-	untracked uint64 // descendants that could not be added to a tracked_pids map
-	stateFull uint64 // connections lost because the conns map was full
-	uringNet  uint64 // io_uring operations on sockets by tracked processes (N-25)
-	uringOps  uint64 // io_uring operations of any kind by tracked processes
-	uringRing uint64 // io_uring rings set up by tracked processes
+	faulted    uint64 // SSL reads that faulted
+	drops      uint64 // records the net and TLS ring buffers discarded because they were full
+	untracked  uint64 // descendants that could not be added to a tracked_pids map
+	stateFull  uint64 // connections lost because the conns map was full
+	uringNet   uint64 // io_uring operations on sockets by tracked processes (N-25)
+	uringOps   uint64 // io_uring operations of any kind by tracked processes
+	uringRing  uint64 // io_uring rings set up by tracked processes
+	helloFault uint64 // hello reads that faulted on a connection still waiting for its hello
 }
 
 // kernelCounters sums the counters above. An error means a map could not be
@@ -615,6 +619,7 @@ func (o *Observer) kernelCounters() (k kernelCounts, err error) {
 	add(&k.uringNet, o.objs.IouringNetCount)
 	add(&k.uringOps, o.objs.IouringOpsCount)
 	add(&k.uringRing, o.objs.IouringSetupCount)
+	add(&k.helloFault, o.objs.HelloFaultCount)
 	add(&k.faulted, o.tlsObjs.FaultedReads)
 	add(&k.drops, o.tlsObjs.DropCount)
 	add(&k.untracked, o.tlsObjs.UntrackedCount)
@@ -660,6 +665,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		FaultedReads:      cov.FaultedReads,
 		IOURingNetOps:     cov.IOURingNetOps,
 		Content:           content,
+		HelloFaults:       cov.HelloFaults,
 	}
 }
 
@@ -722,6 +728,7 @@ func (o *Observer) Stop() error {
 		o.finalIOURingNet.Store(k.uringNet)
 		o.finalIOURingOps.Store(k.uringOps)
 		o.finalIOURingRings.Store(k.uringRing)
+		o.finalHelloFaults.Store(k.helloFault)
 		o.kernelCountersFinal.Store(true)
 		if o.sslWriteLink != nil {
 			_ = o.sslWriteLink.Close()
@@ -944,7 +951,8 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 
 	case netSend:
 		// A send whose bytes were not read (sendfile, splice, a faulted
-		// read): the connection carried data, with no hello to parse.
+		// read, which the kernel also counts in hello_fault_count): the
+		// connection carried data, with no hello to parse.
 		if conn, ok := o.conns[key]; ok {
 			conn.wrote = true
 		}

@@ -34,6 +34,7 @@ type Coverage struct {
 	IOURingNetOps      uint64 // io_uring operations on sockets by tracked processes, which no hook records (N-25); event loss
 	IOURingOps         uint64 // io_uring operations of any kind by tracked processes; diagnostic
 	IOURingRings       uint64 // io_uring rings set up by tracked processes; diagnostic
+	HelloFaults        uint64 // hello reads that faulted on a connection still waiting for its hello; content gap (no hostname), not event loss
 }
 
 // sslKey identifies the (tgid, tid) pair a run of ssl_frames belongs to.

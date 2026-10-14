@@ -60,6 +60,12 @@ type ProbeCoverage struct {
 	QueueOverflow bool `json:"queue_overflow,omitempty"`
 	// Content is one of the Content* constants. Net probe only.
 	Content string `json:"content,omitempty"`
+	// HelloFaults counts reads of a connection's first bytes (the TLS
+	// ClientHello) that faulted. The connection is still recorded and
+	// counts as having sent data; its hostname may be missing, so it is
+	// reported by address. A content gap, not an event loss. An upper bound
+	// on the connections affected. Net probe only.
+	HelloFaults uint64 `json:"hello_faults,omitempty"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.

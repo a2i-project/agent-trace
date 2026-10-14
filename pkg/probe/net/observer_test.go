@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	stdnet "net"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 func skipUnprivileged(t *testing.T) {
@@ -217,16 +219,20 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	o.finalIOURingNet.Store(8)
 	o.finalIOURingOps.Store(9)
 	o.finalIOURingRings.Store(1)
+	o.finalHelloFaults.Store(2)
 	o.kernelCountersFinal.Store(true)
 
 	got := o.Coverage()
 	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, UntrackedChildren: 5, StateMapFull: 6,
-		IOURingNetOps: 8, IOURingOps: 9, IOURingRings: 1}
+		IOURingNetOps: 8, IOURingOps: 9, IOURingRings: 1, HelloFaults: 2}
 	if got != want {
 		t.Errorf("Coverage() = %+v, want %+v", got, want)
 	}
 	if got := o.CaptureCoverage().IOURingNetOps; got != 8 {
 		t.Errorf("CaptureCoverage().IOURingNetOps = %d, want 8", got)
+	}
+	if got := o.CaptureCoverage().HelloFaults; got != 2 {
+		t.Errorf("CaptureCoverage().HelloFaults = %d, want 2", got)
 	}
 
 	// Without io_uring_submit_req every ring counts as network activity.
@@ -990,6 +996,52 @@ func TestHandleNetRecord_IdleConnectionsAreDials(t *testing.T) {
 	}
 	if o.coverage.Dials != 2 {
 		t.Errorf("Dials = %d, want 2", o.coverage.Dials)
+	}
+}
+
+// A hello read that faulted reaches userspace as NET_SEND, and the kernel
+// counts it in hello_fault_count. A connection whose only write faulted is
+// therefore net_connect by address, not net_dial, and Assess reads the count
+// as a content gap (a Note), not as event loss.
+func TestFaultedHello_IsConnectionAndContentGap(t *testing.T) {
+	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[uint64]*connection{}}
+	v4 := [16]byte{192, 0, 2, 9}
+	rec := func(typ uint8, sock uint64) netRecord {
+		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: 3, Sock: sock, Family: afInet, Addr: v4, Port: 443, TsNs: 1}}
+	}
+	o.handleNetRecord(rec(netConnect, 1))
+	o.handleNetRecord(rec(netSend, 1)) // the faulted hello read
+	o.handleNetRecord(rec(netClose, 1))
+	close(o.events)
+	var got []string
+	for e := range o.events {
+		got = append(got, string(e.ActionType)+" "+e.Target)
+	}
+	if want := []string{"net_connect 192.0.2.9:443"}; !slices.Equal(got, want) {
+		t.Errorf("emitted %v, want %v", got, want)
+	}
+
+	o.finalHelloFaults.Store(1)
+	o.kernelCountersFinal.Store(true)
+	pc := o.CaptureCoverage()
+	if pc.HelloFaults != 1 {
+		t.Fatalf("HelloFaults = %d, want 1", pc.HelloFaults)
+	}
+	c := verification.Assess(&models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"net": pc}})
+	if !c.Complete || len(c.Reasons) != 0 {
+		t.Errorf("Assess = %+v, want complete: a hello fault loses no event", c)
+	}
+	if len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "ClientHello read(s) faulted") {
+		t.Errorf("Notes = %q, want one hello fault note", c.Notes)
+	}
+
+	// An old capture has no hello_faults field and reads as zero: no note.
+	var old models.ProbeCoverage
+	if err := json.Unmarshal([]byte(`{"ran":true,"ringbuf_drops":0}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if c := verification.Assess(&models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"net": old}}); len(c.Notes) != 0 || !c.Complete {
+		t.Errorf("Assess(old capture) = %+v, want complete with no notes", c)
 	}
 }
 
