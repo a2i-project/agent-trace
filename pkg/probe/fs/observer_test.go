@@ -13,6 +13,7 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 	"golang.org/x/sys/unix"
 )
 
@@ -1536,5 +1537,64 @@ func TestObserver_DeleteInARemovedDirectoryIsCounted(t *testing.T) {
 	}
 	if got := obs.CaptureCoverage().UnresolvedPaths; got == 0 {
 		t.Error("UnresolvedPaths = 0 after a delete inside a removed directory")
+	}
+}
+
+// A consumer that falls behind blocks the read loop (the probe never drops on
+// its channel), the kernel queue fills, and the loss surfaces as
+// QueueOverflow, so Assess judges the capture incomplete instead of letting it
+// read as complete but short. The consumer here reads nothing during a burst
+// of 20000 file creations, at least two records each, against the default
+// queue of 16384 records.
+func TestObserver_SlowConsumerMakesTheCaptureIncomplete(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	obs, err := New(Config{Path: dir, PathFilter: dir, EventBufSize: 1})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+
+	const files = 20000
+	start := time.Now()
+	for i := 0; i < files; i++ {
+		f, err := os.Create(filepath.Join(dir, fmt.Sprintf("f%05d", i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+	}
+	burst := time.Since(start)
+
+	// The consumer catches up only now, and keeps reading through Stop.
+	done := make(chan int)
+	go func() {
+		closes := 0
+		for e := range obs.Events() {
+			if e.ActionType == models.FileClose {
+				closes++
+			}
+		}
+		done <- closes
+	}()
+	time.Sleep(time.Second)
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	closes := <-done
+
+	c := obs.CaptureCoverage()
+	var uts unix.Utsname
+	_ = unix.Uname(&uts)
+	t.Logf("kernel %s: %d creations in %v, %d file_close events, queueOverflow=%v undrainedRecords=%d",
+		unix.ByteSliceToString(uts.Release[:]), files, burst, closes, c.QueueOverflow, c.UndrainedRecords)
+	if closes == files {
+		t.Skip("the read loop kept up with the burst; no back-pressure to observe on this host")
+	}
+	if !c.QueueOverflow && c.UndrainedRecords == 0 {
+		t.Fatalf("%d of %d closes captured and no loss recorded: the capture is silently short", closes, files)
+	}
+	if got := verification.Assess(&models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": c}}); got.Complete {
+		t.Errorf("Assess judged a capture with lost events complete: %+v", got)
 	}
 }

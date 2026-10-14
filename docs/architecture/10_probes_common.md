@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit f447bc8 on 2026-10-14.
+Checked against commit bd4cd8d on 2026-10-14.
 
 ## Objective
 
@@ -88,7 +88,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `RingbufDrops` | `ringbuf_drops` | proc, net (net and TLS rings summed) | kernel ring buffer full, record discarded | Reason (event loss) |
 | `UntrackedChildren` | `untracked_children` | proc, net (net and TLS maps summed) | `tracked_pids` full; a lower bound, one increment can be a whole subtree | Reason |
 | `StateMapFull` | `state_map_full` | proc (`execs`), net (`conns`) | per-process or per-connection state map full; net also counts a connect whose descriptor could not be resolved to its socket | Reason |
-| `ChannelDrops` | `channel_drops` | proc, net | Go events channel full; fs never drops (it blocks) | Reason |
+| `ChannelDrops` | `channel_drops` | proc, net | Go events channel full; fs never drops: a slow consumer blocks its read loop and the kernel queue overflows instead (`QueueOverflow`) | Reason |
 | `IOURingNetOps` | `io_uring_net_ops` | net | tracked processes submitted socket operations through io_uring, which no hook records (N-25; the classification is in [13_probe_net.md](13_probe_net.md)) | Reason |
 | `QueueOverflow` | `queue_overflow` | fs | fanotify `FAN_Q_OVERFLOW` seen | Reason |
 | `UndrainedRecords` | `undrained_records` | fs | records still queued when the stop drain's time budget ran out, never read (P-24); a lower bound | Reason |
