@@ -200,11 +200,17 @@ func report(w io.Writer, r reportInput) {
 	}
 	if r.baseline != nil {
 		p("baseline:     %s %s, %d rule(s) from %d control run(s)\n", r.baseline.Agent, r.baseline.AgentVersion, len(r.baseline.Rules), r.baseline.Runs)
+		if n := restingReads(*r.baseline, r.gt.Workspace); n > 0 {
+			p("  limitation: the harness itself opens %d path(s) at rest by this baseline (file_open rules); an unclaimed in-process read of one of them is explained by the baseline and not detectable (V-36)\n", n)
+		}
 	}
 	printParse(w, r.parse)
 
 	p("\nAlignment (what the agent said against what it did at the top level):\n")
 	p("  Corroborated: %d\n", len(v.Corroborated))
+	if len(v.CorroboratedHarnessShared) > 0 {
+		p("  Corroborated, shared with the harness: %d of them  (reads of files the harness itself opens at rest: not told apart from the harness's own read)\n", len(v.CorroboratedHarnessShared))
+	}
 	p("  Mismatched:   %d  (claimed and observed at the same position, details disagree)\n", len(v.Mismatched))
 	p("  Unwitnessed:  %d  (claimed by the agent, never observed)\n", len(v.Unwitnessed))
 	p("  Unrecorded:   %d  (observed at the top level, never claimed)\n", len(v.Unrecorded))
@@ -241,6 +247,7 @@ func report(w io.Writer, r reportInput) {
 	printEvents(w, "Unrecorded", v.Unrecorded)
 	printSubtrees(w, c.UnexplainedSubtrees)
 	printPairs(w, "Mismatched", v.Mismatched)
+	printShared(w, v.CorroboratedHarnessShared)
 	printPairs(w, "Outside interval", v.OutsideInterval)
 	printPairs(w, "Unverified", v.Unverified)
 	printEntries(w, "Out of scope", v.OutOfScope)
@@ -377,6 +384,43 @@ func printImplied(w io.Writer, pairs []verification.MatchedPair) {
 	for _, p := range pairs {
 		_, _ = fmt.Fprintf(w, "  %s %-14s %s  (after %q)\n", p.Event.Timestamp.Format(time.RFC3339Nano), p.Event.ActionType, p.Event.Target, p.Entry.ImpliedBy)
 	}
+}
+
+// sharedNote is what a corroborated read on a file the harness opens at rest
+// leaves undecided (V-36).
+const sharedNote = "the harness itself opens this file at rest; this read cannot be told apart from the harness's own, and an unclaimed read of it would be hidden"
+
+// printShared lists the corroborated reads whose open the baseline also
+// explains, each with the note on what it leaves undecided (V-36).
+func printShared(w io.Writer, pairs []verification.MatchedPair) {
+	if len(pairs) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "\nCorroborated, shared with the harness:")
+	for _, p := range pairs {
+		_, _ = fmt.Fprintf(w, "  %s %-14s %s\n", p.Event.Timestamp.Format(time.RFC3339Nano), p.Event.ActionType, p.Event.Target)
+		_, _ = fmt.Fprintf(w, "    note: %s\n", sharedNote)
+	}
+}
+
+// restingReads counts the baseline's file_open rules that apply to a run in
+// workspace: the files the harness opens at rest. Every file rule is a level-0
+// event, since Capture takes rules from the aligned sequence, where a
+// command's own events are not. A rule holds one canonical path, so a family
+// of per-run paths (I-41) counts once. A rule naming the workspace placeholder
+// applies only when the run has a workspace, as in Baseline.Predicate.
+func restingReads(b agent.Baseline, workspace string) int {
+	n := 0
+	for _, r := range b.Rules {
+		if r.ActionType != models.FileOpen {
+			continue
+		}
+		if len(workspace) < 2 && (strings.Contains(r.Target, agent.WorkspacePlaceholder) || strings.Contains(r.Target, agent.MangledWorkspacePlaceholder)) {
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func derefStr(s *string) string {
@@ -566,6 +610,9 @@ type jsonAlignment struct {
 	// adapter derived harness-implied claims (V-33).
 	HarnessImplied         []jsonImplied `json:"harness_implied,omitempty"`
 	HarnessImpliedUnpaired []jsonImplied `json:"harness_implied_unpaired,omitempty"`
+	// CorroboratedHarnessShared is present only when a corroborated read
+	// paired with an open the baseline also explains (V-36).
+	CorroboratedHarnessShared []verification.MatchedPair `json:"corroborated_harness_shared,omitempty"`
 }
 
 // jsonImplied is a harness-implied claim with the call that implied it, which
@@ -608,6 +655,7 @@ func writeJSONReport(path string, r reportInput) error {
 		},
 		Capability: nonNilEvents(v.Capability), Commands: []jsonCommand{}, Complete: v.Completeness,
 	}
+	rep.Alignment.CorroboratedHarnessShared = v.CorroboratedHarnessShared
 	for _, p := range v.HarnessImplied {
 		rep.Alignment.HarnessImplied = append(rep.Alignment.HarnessImplied, jsonImplied{ImpliedBy: p.Entry.ImpliedBy, Claim: p.Entry, Event: &p.Event})
 	}

@@ -55,6 +55,15 @@ type Verdict struct {
 
 	// Corroborated: a claim aligned with an observed action that agrees.
 	Corroborated []MatchedPair
+	// CorroboratedHarnessShared: the corroborated read claims (file_open)
+	// whose observed open is a level-0 event a baseline rule matches, kept
+	// for the claim on its path (V-30). Each pair is also in Corroborated.
+	// The harness and its in-process tools are one process, so the open
+	// cannot be told apart from the harness's own read of the same file at
+	// rest, and an unclaimed read of that file would be explained by the
+	// baseline (V-36). Not a finding, no effect on the outcome: it makes the
+	// limit visible per pair.
+	CorroboratedHarnessShared []MatchedPair
 	// Mismatched: a claim aligned with an observed action that disagrees,
 	// which is what target substitution and content tampering look like.
 	Mismatched []MatchedPair
@@ -399,6 +408,11 @@ func Verify(in Input) Verdict {
 				}
 				if e.Kind == EditMatch {
 					v.Corroborated = append(v.Corroborated, pair)
+					// A read paired with an open the baseline also explains:
+					// indistinguishable from the harness's own (V-36).
+					if e.Event.ActionType == models.FileOpen && keptBaseline(part, e.EventIndex, in.Baseline) {
+						v.CorroboratedHarnessShared = append(v.CorroboratedHarnessShared, pair)
+					}
 				} else {
 					v.Mismatched = append(v.Mismatched, pair)
 				}

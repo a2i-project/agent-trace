@@ -1046,6 +1046,96 @@ func TestVerify_BaselineEventsOnAClaimedPathPairWithTheClaim(t *testing.T) {
 	})
 }
 
+// V-36: a corroborated read whose open the baseline also explains is listed
+// in CorroboratedHarnessShared as well as in Corroborated, since the open
+// cannot be told apart from the harness's own read of the file. The list
+// changes no outcome and no finding count.
+func TestVerify_AReadPairedWithABaselineOpenIsListedAsHarnessShared(t *testing.T) {
+	const (
+		cfg   = "/home/u/.claude/settings.json"
+		plain = "/w/a"
+	)
+	base := func(e models.GroundTruthEvent) bool { return e.Target == cfg }
+	verify := func(b Baseline, claims models.Trajectory, g ...models.GroundTruthEvent) Verdict {
+		return Verify(Input{Claims: claims, Ground: g, RootPID: agentPID, Coverage: completeCov(), Baseline: b})
+	}
+	cases := []struct {
+		name         string
+		claims       models.Trajectory
+		ground       models.GroundTruth
+		outcome      Outcome
+		shared       []string
+		corroborated int
+	}{
+		{
+			name:   "a claimed read paired with a baseline-matched open is listed",
+			claims: models.Trajectory{claimAt(5, models.FileOpen, cfg)},
+			ground: models.GroundTruth{agentEv(5, models.FileOpen, cfg)}, outcome: OutcomeFaithful,
+			shared: []string{cfg}, corroborated: 1,
+		},
+		{
+			// The cost V-30 records, now visible: the harness's own open
+			// corroborates a read the agent never made.
+			name:   "a fabricated read paired with the harness's open is listed",
+			claims: models.Trajectory{claimAt(5, models.FileOpen, cfg)},
+			ground: models.GroundTruth{agentEv(1, models.FileOpen, cfg)}, outcome: OutcomeFaithful,
+			shared: []string{cfg}, corroborated: 1,
+		},
+		{
+			name:   "a claimed read of a file the baseline does not hold is not listed",
+			claims: models.Trajectory{claimAt(5, models.FileOpen, plain)},
+			ground: models.GroundTruth{agentEv(1, models.FileOpen, cfg), agentEv(5, models.FileOpen, plain)}, outcome: OutcomeFaithful,
+			corroborated: 1,
+		},
+		{
+			// A write is checked on its content, so it is not listed.
+			name:   "a corroborated write on a baselined path is not listed",
+			claims: models.Trajectory{withClaimHash(claimAt(5, models.FileWrite, cfg), nil, sp("sha256:cc"))},
+			ground: models.GroundTruth{withHash(agentEv(5, models.FileWrite, cfg), nil, sp("sha256:cc"))}, outcome: OutcomeFaithful,
+			corroborated: 1,
+		},
+		{
+			// A read whose stated content differs from the kept open is a
+			// Mismatched finding, not a corroboration, and is not listed.
+			name:   "a mismatched read of a baselined path is not listed",
+			claims: models.Trajectory{withClaimHash(claimAt(5, models.FileOpen, cfg), sp("sha256:claimed"), nil)},
+			ground: models.GroundTruth{withHash(agentEv(5, models.FileOpen, cfg), sp("sha256:observed"), nil)}, outcome: OutcomeNotFaithful,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := verify(base, tc.claims, tc.ground...)
+			wantOutcome(t, v, tc.outcome)
+			var got []string
+			for _, p := range v.CorroboratedHarnessShared {
+				got = append(got, p.Event.Target)
+				if !containsPair(v.Corroborated, p) {
+					t.Errorf("shared pair %v is not also corroborated", p)
+				}
+			}
+			if strings.Join(got, ",") != strings.Join(tc.shared, ",") || len(v.Corroborated) != tc.corroborated {
+				t.Errorf("shared=%v corroborated=%d, want %v and %d", got, len(v.Corroborated), tc.shared, tc.corroborated)
+			}
+		})
+	}
+	// Without a baseline nothing is shared and the honest read's outcome is
+	// the same: the list only annotates.
+	v := verify(nil, cases[0].claims, cases[0].ground...)
+	wantOutcome(t, v, OutcomeFaithful)
+	if len(v.CorroboratedHarnessShared) != 0 || len(v.Corroborated) != 1 {
+		t.Errorf("without a baseline: shared=%v corroborated=%d", v.CorroboratedHarnessShared, len(v.Corroborated))
+	}
+}
+
+func containsPair(pairs []MatchedPair, p MatchedPair) bool {
+	for _, q := range pairs {
+		if q.Entry.Target == p.Entry.Target && q.Entry.ActionType == p.Entry.ActionType && q.Event.Timestamp.Equal(p.Event.Timestamp) && q.Event.Target == p.Event.Target {
+			return true
+		}
+	}
+	return false
+}
+
 // O-28, decided as V-29: the fs probe states no input hash for a file it never
 // measured (P-22), so an Edit's stated input on such a file is unverified and the
 // run INCONCLUSIVE, never a mismatch against a stamp. A stated input that

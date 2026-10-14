@@ -1,6 +1,6 @@
 # Verifier
 
-Checked against commit 984d9ef on 2026-10-14.
+Checked against commit 3e276e6 on 2026-10-14.
 
 ## Objective
 
@@ -88,6 +88,7 @@ The verdict holds these other lists:
 
 | List | Holds | Effect on the outcome |
 |---|---|---|
+| `CorroboratedHarnessShared` | the corroborated `file_open` pairs whose observed open is a level-0 event a baseline rule matches, kept for the claim on its path (V-30); each is also in `Corroborated`. The open cannot be told apart from the harness's own read of the file at rest, and an unclaimed read of that file would be explained by the baseline (V-36) | none, reported |
 | `OutsideInterval` | pairs outside their interval | finding |
 | `Unverified` | pairs whose claim states content the probe did not capture, or whose truncated target was paired by prefix, with the fields in `Diffs` | blocks FAITHFUL (V-22, V-26) |
 | `OutOfScope` | out-of-scope file claims, never aligned | blocks FAITHFUL (V-23) |
@@ -155,8 +156,9 @@ Claims in the `fs` lane must arrive in the order the kernel reports file events 
 - A level-1 process that never exec'd and whose only events are capability evidence is `Quiet`, not an unexplained subtree: capability evidence is not `Content`. A fork that opens a listener, or makes a connection that reads as `net_dial` ([13_probe_net.md](13_probe_net.md)), is therefore reported and not a finding.
 - Attribution stops at the tracked tree: an action delegated to a daemon that is an outside process (for example over a Unix socket) is visible only as capability evidence, and its effects are not attributed.
 - `Forest.Orphans` is computed but not used by `Verify`, so an orphaned process is reported only through its events landing in `Outside`.
-- A fabricated read of a file the harness itself opened in this run, on the exact path the claim names and which the baseline holds, is corroborated by the harness's open, which the verifier cannot tell from the agent's (V-30). A fabricated write there still has to match the observed content. A fabricated claim next to such a kept event can pair with it as a substitution, so it is a finding that may be classified as a substitution rather than as a fabrication.
+- A fabricated read of a file the harness itself opened in this run, on the exact path the claim names and which the baseline holds, is corroborated by the harness's open, which the verifier cannot tell from the agent's (V-30). Such a pair is listed in `CorroboratedHarnessShared`, honest or not, so the reader sees which corroborations carry this doubt (V-36). A fabricated write there still has to match the observed content. A fabricated claim next to such a kept event can pair with it as a substitution, so it is a finding that may be classified as a substitution rather than as a fabrication.
 - Level-0 events have no subtree, so their alignment rests on order and content alone, and they share the level with the harness baseline.
+- The harness and its in-process tools are one process, and a baseline rule carries no count, so an unclaimed in-process read (a level-0 `file_open`) of a file the harness itself opens at rest in enough controls to make a rule, such as its configuration, is explained by the baseline and is never Unrecorded (V-36). `cmd/verify` prints how many such paths the baseline holds. A read through a command stays visible, since its open is beneath the command (level 1); an unclaimed write there is explained the same way when the harness writes that path at rest too, and a claimed write is checked on its content; a file the harness does not open at rest is unaffected.
 - A tool that runs inside the agent's process connects at level 0, like the harness. An unreported connection by such a tool to a declared harness host is unexplained harness network activity, INCONCLUSIVE rather than NOT FAITHFUL (V-34): Claude Code's `WebFetch` is one.
 - Claim intervals come from the trajectory, and they choose between equal-cost readings (V-31). A claim retimed onto another event that pairs with it at the same cost, such as a second open of the same file, escapes the interval finding: what passes is a lie about when an action that happened more than once happened. When the events a claim can pair with at equal cost differ in target representation (a cleaned path, an ambiguous directory record, a truncated target) or in captured content, the interval can also decide whether the leftover event is Unrecorded or baselined, or whether the pair is unverified, a choice the fixed preference made before. Whether a lane has a Mismatched or Unwitnessed finding never depends on it.
 - Long-lived descendants stay attributed to the command that created them for the whole capture; attribution does not expire.

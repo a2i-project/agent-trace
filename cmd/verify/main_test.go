@@ -624,3 +624,74 @@ func TestHarnessNetworkActivityAndLevelZeroBaselineAreReported(t *testing.T) {
 		t.Errorf("a run without harness network activity:\n%s", out)
 	}
 }
+
+// V-36: a corroborated read paired with an open the baseline also explains is
+// counted and listed with its note, in the text and the JSON, and the report
+// states how many paths the harness opens at rest by the baseline. A run with
+// no such pair prints no count and no list and its JSON has no key; a run
+// without a baseline prints no limitation.
+func TestReadsSharedWithTheHarnessAreReported(t *testing.T) {
+	const cfg = "/home/u/.harness/settings.json"
+	dir := t.TempDir()
+	ground := writeJSON(t, dir, "g.json", models.GroundTruthFile{RootPID: 100, Coverage: completeCov(), Events: models.GroundTruth{
+		event(models.FileOpen, cfg), event(models.FileOpen, "/w/a"),
+	}})
+	base := filepath.Join(dir, "b.json")
+	if err := agent.SaveBaseline(base, agent.Baseline{Schema: agent.BaselineSchema, Agent: agent.GenericName, Runs: 1, MinAgreement: 1, Rules: []agent.Rule{
+		{ActionType: models.FileOpen, Target: cfg}, {ActionType: models.FileOpen, Target: "/home/u/.harness/other"},
+		{ActionType: models.FileOpen, Target: agent.WorkspacePlaceholder + "/.git"}, {ActionType: models.ProcessExec, Target: "git status"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	const (
+		limit = "  limitation: the harness itself opens 2 path(s) at rest by this baseline (file_open rules); an unclaimed in-process read of one of them is explained by the baseline and not detectable (V-36)\n"
+		count = "  Corroborated, shared with the harness: 1 of them  ("
+		list  = "\nCorroborated, shared with the harness:\n  2026-10-06T12:00:00Z file_open      " + cfg + "\n    note: the harness itself opens this file at rest; this read cannot be told apart from the harness's own, and an unclaimed read of it would be hidden\n"
+	)
+	report := func(t *testing.T, claims models.Trajectory, args ...string) (int, string, map[string]json.RawMessage) {
+		t.Helper()
+		trajectory := writeJSON(t, t.TempDir(), "t.json", claims)
+		jsonPath := filepath.Join(t.TempDir(), "v.json")
+		code, out, errOut := verify(t, append([]string{"--trajectory", trajectory, "--ground-truth", ground, "--json", jsonPath}, args...)...)
+		if errOut != "" {
+			t.Fatalf("stderr: %s", errOut)
+		}
+		data, _ := os.ReadFile(jsonPath)
+		var rep struct {
+			Alignment map[string]json.RawMessage `json:"alignment"`
+		}
+		if err := json.Unmarshal(data, &rep); err != nil {
+			t.Fatal(err)
+		}
+		return code, out, rep.Alignment
+	}
+
+	t.Run("a read of a file the harness opens at rest", func(t *testing.T) {
+		code, out, al := report(t, models.Trajectory{claim(models.FileOpen, cfg), claim(models.FileOpen, "/w/a")}, "--baseline", base)
+		if code != 0 || !strings.Contains(out, "Corroborated: 2\n"+count) || !strings.Contains(out, list) || !strings.Contains(out, limit) {
+			t.Errorf("exit %d\n%s", code, out)
+		}
+		var shared []verification.MatchedPair
+		if err := json.Unmarshal(al["corroborated_harness_shared"], &shared); err != nil || len(shared) != 1 || shared[0].Event.Target != cfg {
+			t.Errorf("JSON corroborated_harness_shared = %+v, %v", shared, err)
+		}
+	})
+	t.Run("no read of such a file", func(t *testing.T) {
+		code, out, al := report(t, models.Trajectory{claim(models.FileOpen, "/w/a")}, "--baseline", base)
+		if code != 0 || strings.Contains(out, "shared with the harness") || !strings.Contains(out, limit) {
+			t.Errorf("exit %d\n%s", code, out)
+		}
+		if _, ok := al["corroborated_harness_shared"]; ok {
+			t.Errorf("JSON carries corroborated_harness_shared with no such pair")
+		}
+	})
+	t.Run("no baseline", func(t *testing.T) {
+		_, out, al := report(t, models.Trajectory{claim(models.FileOpen, cfg), claim(models.FileOpen, "/w/a")})
+		if strings.Contains(out, "shared with the harness") || strings.Contains(out, "(V-36)") {
+			t.Errorf("without a baseline:\n%s", out)
+		}
+		if _, ok := al["corroborated_harness_shared"]; ok {
+			t.Errorf("JSON carries corroborated_harness_shared without a baseline")
+		}
+	})
+}
