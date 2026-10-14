@@ -437,8 +437,11 @@ func parseDfidName(record []byte, resolve handleResolver) string {
 
 	dirPath := resolve(recordFSID(record), handleType, handleData)
 
+	// An unresolved directory yields no path, not the bare entry name: a
+	// relative name would read as a path and escape the unresolved count.
+	// resolveEventPath then falls back to the other records.
 	if dirPath == "" {
-		return name
+		return ""
 	}
 	if name == "" {
 		return dirPath

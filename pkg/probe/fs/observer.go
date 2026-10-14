@@ -208,6 +208,19 @@ func New(cfg Config) (*Observer, error) {
 	if cfg.EventBufSize <= 0 {
 		cfg.EventBufSize = 4096
 	}
+	// Events carry absolute paths, so the walked directory and the filter
+	// must be absolute too, or a relative one keys the shadow hashes by
+	// paths no event has and matches no event.
+	abs, err := filepath.Abs(cfg.Path)
+	if err != nil {
+		return nil, fmt.Errorf("Config.Path: %w", err)
+	}
+	cfg.Path = abs
+	if cfg.PathFilter != "" {
+		if cfg.PathFilter, err = filepath.Abs(cfg.PathFilter); err != nil {
+			return nil, fmt.Errorf("Config.PathFilter: %w", err)
+		}
+	}
 
 	fd, err := initFanotify()
 	if err != nil {
@@ -330,9 +343,15 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 	}
 }
 
-// Start begins reading fanotify events in a background goroutine.
+// Start begins reading fanotify events in a background goroutine, then hashes
+// the walked directory. The read loop runs during the walk because every file
+// the walk opens queues a record while the mark is active: with nothing
+// reading, a directory of more files than the kernel queue holds (16384 by
+// default) would overflow it before the run began. An open the read loop
+// processes before the walk has hashed its file carries no input hash.
 func (o *Observer) Start() {
 	o.startedAt = time.Now()
+	go o.readLoop()
 	walk := o.cfg.PathFilter
 	if walk == "" {
 		walk = o.cfg.Path
@@ -341,16 +360,24 @@ func (o *Observer) Start() {
 		_ = filepath.Walk(walk, func(path string, info os.FileInfo, err error) error {
 			if err == nil && info.Mode().IsRegular() {
 				if h, err := content.SHA256File(path); err == nil {
-					o.shadowHashes[path] = h
-					if st, ok := info.Sys().(*syscall.Stat_t); ok {
-						o.shadowHashesByInode[inodeKey{dev: uint64(st.Dev), ino: st.Ino}] = h
+					// A hash the read loop settled meanwhile is newer than
+					// this read and is kept.
+					o.mu.Lock()
+					if _, ok := o.shadowHashes[path]; !ok {
+						o.shadowHashes[path] = h
 					}
+					if st, ok := info.Sys().(*syscall.Stat_t); ok {
+						key := inodeKey{dev: uint64(st.Dev), ino: st.Ino}
+						if _, ok := o.shadowHashesByInode[key]; !ok {
+							o.shadowHashesByInode[key] = h
+						}
+					}
+					o.mu.Unlock()
 				}
 			}
 			return nil
 		})
 	}
-	go o.readLoop()
 }
 
 // Stop signals the read loop to exit, waits for it, and releases all

@@ -1598,3 +1598,71 @@ func TestObserver_SlowConsumerMakesTheCaptureIncomplete(t *testing.T) {
 		t.Errorf("Assess judged a capture with lost events complete: %+v", got)
 	}
 }
+
+// Start's walk opens every file under the walked directory while the mark is
+// active. The read loop runs during the walk, so a directory with more files
+// than the default kernel queue (16384 records) does not overflow it.
+func TestObserver_StartWalkOfALargeDirectoryDoesNotOverflow(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	const files = 17000
+	for i := 0; i < files; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%05d", i)), nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	obs, err := New(Config{Path: dir, PathFilter: dir, EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		for range obs.Events() {
+		}
+		close(done)
+	}()
+	obs.Start()
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	<-done
+	if c := obs.CaptureCoverage(); c.QueueOverflow || c.UndrainedRecords > 0 {
+		t.Errorf("walk of %d files lost records: %+v", files, c)
+	}
+	obs.mu.Lock()
+	hashed := len(obs.shadowHashes)
+	obs.mu.Unlock()
+	if hashed != files {
+		t.Errorf("walk hashed %d files, want %d", hashed, files)
+	}
+}
+
+// A relative Config.Path is made absolute, so the walk keys the shadow hashes
+// by the absolute paths events carry.
+func TestObserver_RelativePathKeysShadowHashesAbsolutely(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pre.txt"), []byte("pre"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	obs, err := New(Config{Path: ".", PathFilter: "."})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	for range obs.Events() {
+	}
+	abs, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := obs.shadowHashes[filepath.Join(dir, "pre.txt")]; !ok {
+		if _, ok := obs.shadowHashes[filepath.Join(abs, "pre.txt")]; !ok {
+			t.Errorf("shadow hashes %v have no absolute key for pre.txt", obs.shadowHashes)
+		}
+	}
+}

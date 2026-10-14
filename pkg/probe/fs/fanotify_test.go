@@ -283,3 +283,60 @@ func TestProcessRawEvent_CountsUnresolvedPaths(t *testing.T) {
 		t.Errorf("UnresolvedPaths = %d, want 3", got)
 	}
 }
+
+// A DFID_NAME record whose directory does not resolve yields no path, not the
+// bare entry name: the event then resolves through its FID record when there
+// is one, and otherwise has no path and is counted as unresolved.
+func TestParseEvents_DfidNameWithUnresolvedDirectory(t *testing.T) {
+	tests := []struct {
+		name string
+		info [][]byte
+		want string
+	}{
+		{name: "no other record", info: [][]byte{buildDfidNameInfo(1, []byte("gone"), "leaf.txt")}, want: ""},
+		{name: "a FID record resolves", info: [][]byte{buildDfidNameInfo(1, []byte("gone"), "leaf.txt"), buildFidInfo(1, []byte("file123"))}, want: "/mock/file.txt"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var info []byte
+			for _, r := range tc.info {
+				info = append(info, r...)
+			}
+			buf := append(buildMetadata(unix.FAN_DELETE, 1, uint16(len(info))), info...)
+			events := parseEvents(buf, len(buf), mockResolver)
+			if len(events) != 1 || events[0].Path != tc.want {
+				t.Fatalf("events = %+v, want one with path %q", events, tc.want)
+			}
+		})
+	}
+}
+
+// The timestamps the real read path gives a batch: one clock reading for the
+// batch and one nanosecond per record on top, so the records keep the kernel's
+// order under a stable sort by time (P-18). The records go through
+// drainNonBlocking from a pipe, not through processRawEvent directly.
+func TestDrainNonBlocking_StampsRecordsByBatchPosition(t *testing.T) {
+	obs, records, _ := pipeObserver(t)
+	queueRecords(t, records, unix.FAN_MODIFY, 101, 102, 103, 104)
+	before := time.Now()
+	obs.drainNonBlocking(make([]byte, 4096))
+	close(obs.events)
+	var got []models.GroundTruthEvent
+	for e := range obs.events {
+		got = append(got, e)
+	}
+	if len(got) != 4 {
+		t.Fatalf("emitted %d events, want 4", len(got))
+	}
+	if got[0].Timestamp.Before(before) {
+		t.Errorf("first stamp %v precedes the read", got[0].Timestamp)
+	}
+	for i := 1; i < len(got); i++ {
+		if d := got[i].Timestamp.Sub(got[i-1].Timestamp); d != time.Nanosecond {
+			t.Errorf("record %d is %v after record %d, want 1ns", i, d, i-1)
+		}
+		if got[i].PID != uint32(101+i) {
+			t.Errorf("record %d has pid %d, want %d: kernel order lost", i, got[i].PID, 101+i)
+		}
+	}
+}
