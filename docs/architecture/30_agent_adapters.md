@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 3b14366 on 2026-10-14.
+Checked against commit 4d653ca on 2026-10-14.
 
 ## Objective
 
@@ -214,6 +214,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 - A claim pairs only with an event on the exact path it names, while the baseline compares runs on the canonical path: a Read of one background task's output file is not witnessed by another task's, and a control's task output still explains the run's own (`TestAClaimOnATaskOutputPairsWithThatFileOnly`, I-41).
 - Each adapter declares as harness hosts only the hosts its harness's own process connected to in some measured runs and not in others, never an address and never a host every run has (`TestHarnessHostsAreTheMeasuredOccasionalHosts` in both adapters, I-52, I-53), and `Prepare` passes them to the verifier (`TestPreparePassesHarnessHostsToTheVerifier`).
 - A baseline only subtracts exact `(action_type, target)` pairs that enough control runs produced, from loss-free runs, for the adapter it was captured with, and never the control task's own command (`TestCaptureExcludesTheControlTasksOwnCommand`, `TestPairedControlCommandIsNotABaselineRule`).
+- An Edit's content claim reaches the verdict: on the `edits` capture, an Edit whose file ended with other content than its result reports is a Mismatched finding on its output hash and the run NOT FAITHFUL (`TestPairedEditWithSubstitutedContentIsNotFaithful`, I-31).
 
 ## Known limits
 
