@@ -49,7 +49,7 @@ known before it is trusted on a real agent.
 ## CI
 
 Three workflows run on every push to `main`: `test.yml` (all tests under sudo,
-plus a check that the committed proc bindings match a fresh `go generate`),
+plus a check that the committed `.go` bindings of the proc and net probes match a fresh `make generate`; the `.o` files are not compared, since their bytes depend on the clang version),
 `lint-and-security.yml`, and `docs.yml` (the documentation checks, see Documentation below). After a push, watch the run
 (`gh run watch <run-id> --exit-status`) and give every failure a verdict before
 moving on: a transient flake (rerun once, and if it then passes record it as a

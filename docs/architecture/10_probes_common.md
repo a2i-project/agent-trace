@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 4170b94 on 2026-10-14.
+Checked against commit 5efe69b on 2026-10-14.
 
 ## Objective
 
@@ -33,7 +33,7 @@ Each eBPF object also keeps its loss counters in one-slot `BPF_MAP_TYPE_PERCPU_A
 
 The eBPF probes use `github.com/cilium/ebpf` for loading, tracepoint and uprobe links and ring buffer readers. Each program is CO-RE C compiled against a committed `vmlinux.h`. `bpf2go` generates the Go bindings (`bpf_bpfel.go`, `bpf_bpfeb.go`, `tlsbpf_*.go`) and the matching `.o` objects, and both are committed, because the CI test job has no clang. The `//go:generate` lines sit in `pkg/probe/proc/observer.go` and `pkg/probe/net/generate.go`; after editing a `.bpf.c` file, run `go generate ./pkg/probe/proc/...` or `go generate ./pkg/probe/net/...` and commit the regenerated `.go` and `.o` files. The `-I/usr/include/x86_64-linux-gnu` flag ties generation to an x86_64 host, and `tls.bpf.c` is also built with `-D__TARGET_ARCH_x86`.
 
-The CI job `bpf-freshness` in `.github/workflows/test.yml` regenerates `pkg/probe/proc` only and fails when a regenerated file other than a `.o` differs from the committed one. The net and TLS bindings have no such check.
+The CI job `bpf-freshness` in `.github/workflows/test.yml` regenerates `pkg/probe/proc` and `pkg/probe/net` and fails when a regenerated file other than a `.o` differs from the committed one. The `.o` files are not compared: their bytes depend on the clang version and on the directory they were built in, while the generated `.go` files (maps, programs and the types they use) do not.
 
 The BPF verifier sets one invariant every program follows: a helper's size argument is a compile-time constant or is clamped against one immediately before the call. `net.bpf.c trace_connect` reads the address family with `sizeof(__u16)` and then the whole sockaddr with a per-family constant (16 or 28 bytes) rather than with `addrlen`, because stricter kernels reject a dynamic size even after masking. `proc.bpf.c record_exec` (shared by `handle_execve` and `handle_execveat`) masks the argv write offset with `MAX_ARGS_BYTES - 1` and pads the scratch buffer to twice that size, and `tls.bpf.c probe_ssl_write` clamps its length to `SSL_CAP_LEN`. A new program must keep to this, or it fails to load on some kernels.
 
@@ -141,5 +141,5 @@ Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, Probe
 - In host-wide mode (no agent command and no `--root-pid`) the net probe tracks no pid and records nothing; it reports `Ran=false`, so `watch` prints it as not run although it was selected.
 - The boot offset is computed once per probe, so wall-clock steps during a run shift kernel timestamps relative to fs timestamps.
 - `IsTopLevel` is a legacy field still written by proc and net.
-- CI checks the freshness of the proc bindings only; the net and TLS bindings can go stale without a failing job.
+- The CI freshness check compares the generated `.go` files only, so a `.bpf.c` edit that changes program logic but no map, program or type, committed without regenerating, leaves a stale `.o` that no job detects.
 - Code generation assumes an x86_64 host.

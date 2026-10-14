@@ -45,17 +45,22 @@ jobs:
         sudo apt-get install -y clang llvm libbpf-dev
 
     - name: Regenerate BPF objects
-      run: go generate ./pkg/probe/proc/...
+      run: make generate
 
     - name: Fail if regeneration changed committed files
-      # proc.bpf.c is compiled locally and its .o/.go bindings are committed
-      # (CI has no clang in the test job, so it can't build them at test
-      # time). If this step fails, someone edited proc.bpf.c without running
-      # `go generate ./pkg/probe/proc/...` and committing the result.
+      # The .bpf.c programs (proc.bpf.c, net.bpf.c, tls.bpf.c) are compiled
+      # locally and their .o/.go bindings are committed (CI has no clang in
+      # the test job, so it can't build them at test time). Only the
+      # generated .go files are compared: the .o bytes depend on the clang
+      # version, while the .go files hold the map, program and type
+      # definitions, which do not. If this step fails, someone edited a
+      # .bpf.c file without running `make generate` and committing the
+      # result.
       run: |
-        if [ -n "$(git status --porcelain -- pkg/probe/proc | grep -v '\.o$')" ]; then
-          echo "::error::Committed BPF bindings in pkg/probe/proc are stale. Run 'go generate ./pkg/probe/proc/...' and commit the result."
-          git diff -- pkg/probe/proc
-          git status --porcelain -- pkg/probe/proc
+        dirs="pkg/probe/proc pkg/probe/net"
+        if [ -n "$(git status --porcelain -- $dirs | grep -v '\.o$')" ]; then
+          echo "::error::Committed BPF bindings are stale. Run 'make generate' and commit the result."
+          git diff -- $dirs ':(exclude)*.o'
+          git status --porcelain -- $dirs
           exit 1
         fi
