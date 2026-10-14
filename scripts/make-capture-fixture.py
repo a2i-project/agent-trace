@@ -72,8 +72,15 @@ type (1), field 4, and of field 5 the created (5.1), started (5.6) and
 completed (5.8) timestamps and the tool calls (5.4), each cut to its id (1),
 name (2) and JSON arguments (3), rewritten like every other path. A call
 whose CodeContent the rewriting would change is refused rather than altered,
-since the adapter claims the hash of that content. The private-string check
-reads the written database's bytes.
+since the adapter claims the hash of that content. A step with an
+invoke_subagent call also keeps, of its result (140), only the subagent
+conversation ids (140.2.6.2.143.10.1) that have the form of a conversation id
+(I-55). Each subagent database the capture holds in
+<TASK_LABEL>.conversation/subagents/<id>.db and the conversation names is
+reduced the same way into the same place in OUTPUT_DIR, and so are the
+subagents it names, down to four levels, as the adapter follows them; one the
+conversation names but the capture lacks is reported and left out. The
+private-string check reads the written databases' bytes.
 """
 import json
 import os
@@ -106,8 +113,17 @@ for root, _, files in os.walk(capture):
 # A Gemini conversation database states the account nowhere the adapter
 # reads, but its bytes are checked for addresses all the same.
 gemini_db = os.path.join(capture, task + ".conversation.db")
+def is_conversation_file(root, name):
+    """A conversation database or its log: a run's, or a subagent's copied
+    into <label>.conversation/subagents (I-55)."""
+    if name.endswith((".conversation.db", ".conversation.db-wal")):
+        return True
+    return name.endswith((".db", ".db-wal")) and os.path.basename(root) == "subagents" \
+        and os.path.dirname(root).endswith(".conversation")
+
+
 for root, _, files in os.walk(capture):
-    for name in (n for n in files if n.endswith((".conversation.db", ".conversation.db-wal"))):
+    for name in (n for n in files if is_conversation_file(root, n)):
         with open(os.path.join(root, name), "rb") as f:
             emails.update(m.decode() for m in re.findall(rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", f.read()))
 # Addresses that are part of the harness's own text, not the account.
@@ -366,6 +382,45 @@ def reduce_call(call):
     return kept
 
 
+CONVERSATION_ID = re.compile(rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+# Where an invoke_subagent step's result names the subagents' conversations:
+# 140.2.6.2.143.10 is repeated, one per subagent, the id in its field 1 (I-55).
+SUBAGENT_PATH = (140, 2, 6, 2, 143, 10)
+SUBAGENT_DEPTH = 4  # maxSubagentDepth in pkg/agent/gemini
+
+
+def pb_sub(b, *path):
+    """Every length-delimited field at path, descending through each level."""
+    cur = [b]
+    for num in path:
+        cur = [v for m in cur for n, wt, v in pb_fields(m) if n == num and wt == 2]
+    return cur
+
+
+def subagent_ids(payload):
+    """The subagent conversation ids an invoke_subagent step's result names,
+    in order, as the adapter reads them; none for any other step."""
+    names = [v for c in pb_sub(payload, 5, 4) for n, wt, v in pb_fields(c) if n == 2 and wt == 2]
+    if b"invoke_subagent" not in names:
+        return []
+    ids = []
+    for m in pb_sub(payload, *SUBAGENT_PATH):
+        for n, wt, v in pb_fields(m):
+            if n == 1 and wt == 2:
+                if CONVERSATION_ID.fullmatch(v):
+                    ids.append(v.decode())
+                break
+    return ids
+
+
+def subagent_result(ids):
+    """A result holding only the ids, nested as SUBAGENT_PATH."""
+    m = b"".join(pb_field(10, 2, pb_field(1, 2, i.encode())) for i in ids)
+    for num in reversed(SUBAGENT_PATH[:-1]):
+        m = pb_field(num, 2, m)
+    return m
+
+
 def reduce_payload(payload):
     kept = b""
     for num, wt, v in pb_fields(payload):
@@ -379,6 +434,9 @@ def reduce_payload(payload):
                 elif n5 == 4 and w5 == 2:
                     inner += pb_field(4, 2, reduce_call(v5))
             kept += pb_field(5, 2, inner)
+    ids = subagent_ids(payload)
+    if ids:
+        kept += subagent_result(ids)
     return kept
 
 
@@ -395,19 +453,46 @@ def reduce_conversation(src, dst):
         con.close()
     if os.path.exists(dst):
         os.remove(dst)
+    os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
     new = sqlite3.connect(dst)
     new.execute("create table steps (idx integer, step_type integer not null default 0, status integer not null default 0, "
                 "has_subtrajectory numeric not null default false, step_payload blob, primary key (idx))")
+    ids = []
     for idx, typ, status, sub, payload in rows:
         new.execute("insert into steps values (?,?,?,?,?)", (idx, typ, status, sub, reduce_payload(payload or b"")))
+        ids += subagent_ids(payload or b"")
     new.commit()
     new.execute("vacuum")
     new.close()
-    return len(rows)
+    return len(rows), ids
+
+
+def reduce_subagents(ids):
+    """Reduce the subagent databases the conversation names, breadth first,
+    each once, down to SUBAGENT_DEPTH levels, as the adapter follows them."""
+    n, seen = 0, set()
+    queue = [(i, 1) for i in ids]
+    while queue:
+        sid, depth = queue.pop(0)
+        if sid in seen:
+            continue
+        seen.add(sid)
+        if depth > SUBAGENT_DEPTH:
+            print("subagent", sid, "is nested deeper than", SUBAGENT_DEPTH, "levels and is left out")
+            continue
+        src = os.path.join(capture, task + ".conversation", "subagents", sid + ".db")
+        if not os.path.isfile(src):
+            print("subagent", sid, "is named by the conversation but not in the capture; left out")
+            continue
+        k, more = reduce_conversation(src, os.path.join(out, task + ".conversation", "subagents", sid + ".db"))
+        n += k
+        queue += [(i, depth + 1) for i in more]
+    return n
 
 
 if os.path.exists(gemini_db):
-    n = reduce_conversation(gemini_db, os.path.join(out, task + ".conversation.db"))
+    n, ids = reduce_conversation(gemini_db, os.path.join(out, task + ".conversation.db"))
+    n += reduce_subagents(ids)
     record_kind = "conversation steps"
 else:
     n = reduce_transcript(os.path.join(capture, task + ".session.jsonl"), os.path.join(out, task + ".session.jsonl"))

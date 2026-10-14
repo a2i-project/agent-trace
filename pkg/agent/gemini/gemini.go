@@ -225,101 +225,21 @@ func copyFile(src, dst string) error {
 // Parse decodes every step and returns the tool calls of the completed ones in
 // step order. It fails, naming the field, when a payload does not decode or a
 // tool call lacks the fields the adapter depends on: a version that moves a
-// field number must produce an error, never an empty trajectory.
+// field number must produce an error, never an empty trajectory. It then
+// follows the subagents the conversation's invoke_subagent results name and
+// merges their claims, each carrying its subagent's conversation id as its
+// thread (I-55, followSubagents).
 func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
-	var rep agent.Report
-	db, done, err := openSnapshot(path)
+	c, err := readConversation(path, "")
 	if err != nil {
-		return nil, rep, err
+		return nil, c.rep, err
 	}
-	defer done()
-	rows, err := db.Query(`select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx`)
-	if err != nil {
-		return nil, rep, fmt.Errorf("read steps: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var tr models.Trajectory
-	unknown := map[string]bool{}
-	var steps, sub, persistent, subagents, multi int
-	var fallbackTime bool
-	statuses := map[int]int{}
-
-	for rows.Next() {
-		var idx, stepType, status int
-		var hasSub sql.NullBool
-		var payload []byte
-		if err := rows.Scan(&idx, &stepType, &status, &hasSub, &payload); err != nil {
-			return nil, rep, fmt.Errorf("scan step: %w", err)
-		}
-		steps++
-		if hasSub.Valid && hasSub.Bool {
-			sub++
-		}
-		if len(payload) == 0 {
-			continue
-		}
-		calls, err := submessages(payload, 5, 4)
-		if err != nil {
-			return nil, rep, fmt.Errorf("step %d: payload does not decode: %w", idx, err)
-		}
-		for _, call := range calls {
-			rep.ToolCalls++
-			c, err := decodeCall(call)
-			if err != nil {
-				return nil, rep, fmt.Errorf("step %d: tool call: %w", idx, err)
-			}
-			switch c.name {
-			case toolSubagent:
-				subagents++
-			case toolMultiRepl:
-				multi++
-			}
-			if status != statusCompleted {
-				rep.Count(fmt.Sprintf("%s (status %d)", c.name, status))
-				statuses[status]++
-				continue
-			}
-			start, end, usedCreated, err := stepTimes(payload)
-			if err != nil {
-				return nil, rep, fmt.Errorf("step %d: %w", idx, err)
-			}
-			fallbackTime = fallbackTime || usedCreated
-			base := models.TrajectoryEntry{Timestamp: start, Tool: c.name}
-			if !end.IsZero() && !end.Before(start) {
-				e := end
-				base.End = &e
-			}
-			if len(calls) > 1 {
-				base.BlockID = fmt.Sprintf("step-%d", idx)
-			}
-			entries, why := claimsFor(c, base)
-			switch why {
-			case "":
-				tr = append(tr, entries...)
-			case reasonNonEffectful:
-				rep.Count(c.name)
-			case reasonUnknown:
-				rep.Count(c.name)
-				unknown[c.name] = true
-			case reasonPersistent:
-				rep.Count(c.name + " (persistent shell)")
-				persistent++
-			default:
-				rep.Count(c.name)
-				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("step %d %s: %s", idx, c.name, why))
-			}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, rep, fmt.Errorf("read steps: %w", err)
-	}
-	if steps == 0 {
-		return nil, rep, fmt.Errorf("%s has no steps", path)
-	}
+	rep, tl, tr := c.rep, c.tl, c.tr
+	fol := followSubagents(path, c, &rep, &tl)
+	tr = append(tr, fol.tr...)
 
 	sort.SliceStable(tr, func(i, j int) bool { return tr[i].Timestamp.Before(tr[j].Timestamp) })
-	for n := range unknown {
+	for n := range tl.unknown {
 		rep.UnknownTools = append(rep.UnknownTools, n)
 	}
 	sort.Strings(rep.UnknownTools)
@@ -328,28 +248,173 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		"the format records no process exit code, so exits are not aligned",
 		"calls the model issues together are separate steps with no block id, ordered by their started time; whether the harness always executes them in that order is unmeasured",
 	}
-	if multi > 0 {
-		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d multi_replace_file_content call(s): its kernel events are unmeasured and it is claimed like replace_file_content (I-50)", multi))
+	if tl.multi > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d multi_replace_file_content call(s): its kernel events are unmeasured and it is claimed like replace_file_content (I-50)", tl.multi))
 	}
-	if subagents > 0 {
-		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d invoke_subagent call(s): a subagent's steps are in a conversation database of its own, which is not read, so what it did appears unexplained", subagents))
+	if tl.subagents > 0 {
+		rep.Degradations = append(rep.Degradations, fol.degradations()...)
 	}
-	if sub > 0 {
-		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d step(s) have a subtrajectory, which is not followed", sub))
+	if tl.sub > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d step(s) have a subtrajectory, which is not followed", tl.sub))
 	}
-	if persistent > 0 {
-		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d command(s) ran in a persistent shell and produce no level-1 process, so they are not claimed (D7)", persistent))
+	if tl.persistent > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d command(s) ran in a persistent shell and produce no level-1 process, so they are not claimed (D7)", tl.persistent))
 	}
-	if len(statuses) > 0 {
-		rep.Degradations = append(rep.Degradations, fmt.Sprintf("steps with a status other than completed (%d) were not claimed, whether they executed is unknown", sum(statuses)))
+	if len(tl.statuses) > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("steps with a status other than completed (%d) were not claimed, whether they executed is unknown", sum(tl.statuses)))
 	}
-	if fallbackTime {
+	if tl.fallbackTime {
 		rep.Degradations = append(rep.Degradations, "some steps lack a started timestamp, so the created time is used as the claim start")
 	}
-	if len(unknown) > 0 {
+	if len(tl.unknown) > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("tools with no mapping and not declared non-effectful: %s; their effects, if any, will appear unexplained", strings.Join(rep.UnknownTools, ", ")))
 	}
 	return tr, rep, nil
+}
+
+// tally is what Parse counts across the conversations it reads, for the
+// report's degradations.
+type tally struct {
+	unknown                           map[string]bool
+	sub, persistent, subagents, multi int
+	fallbackTime                      bool
+	statuses                          map[int]int
+}
+
+func (t *tally) add(o tally) {
+	for n := range o.unknown {
+		t.unknown[n] = true
+	}
+	for s, n := range o.statuses {
+		t.statuses[s] += n
+	}
+	t.sub += o.sub
+	t.persistent += o.persistent
+	t.subagents += o.subagents
+	t.multi += o.multi
+	t.fallbackTime = t.fallbackTime || o.fallbackTime
+}
+
+// conversation is what one database holds: its claims in step order, what
+// it did not claim, and the subagents its invoke_subagent results name.
+type conversation struct {
+	tr  models.Trajectory
+	rep agent.Report
+	tl  tally
+	// links are the subagent conversation ids the invoke_subagent results
+	// name, in step order; unlinked counts the invoke_subagent steps whose
+	// result names none.
+	links    []string
+	unlinked int
+}
+
+// readConversation reads one conversation database. thread is empty for the
+// main conversation and the subagent's conversation id otherwise: it becomes
+// each claim's ThreadID and prefixes its BlockID, so the blocks of two
+// threads never share an id.
+func readConversation(path, thread string) (*conversation, error) {
+	c := &conversation{tl: tally{unknown: map[string]bool{}, statuses: map[int]int{}}}
+	rep := &c.rep
+	db, done, err := openSnapshot(path)
+	if err != nil {
+		return c, err
+	}
+	defer done()
+	rows, err := db.Query(`select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx`)
+	if err != nil {
+		return c, fmt.Errorf("read steps: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	steps := 0
+	for rows.Next() {
+		var idx, stepType, status int
+		var hasSub sql.NullBool
+		var payload []byte
+		if err := rows.Scan(&idx, &stepType, &status, &hasSub, &payload); err != nil {
+			return c, fmt.Errorf("scan step: %w", err)
+		}
+		steps++
+		if hasSub.Valid && hasSub.Bool {
+			c.tl.sub++
+		}
+		if len(payload) == 0 {
+			continue
+		}
+		calls, err := submessages(payload, 5, 4)
+		if err != nil {
+			return c, fmt.Errorf("step %d: payload does not decode: %w", idx, err)
+		}
+		invokes := false
+		for _, call := range calls {
+			rep.ToolCalls++
+			cl, err := decodeCall(call)
+			if err != nil {
+				return c, fmt.Errorf("step %d: tool call: %w", idx, err)
+			}
+			switch cl.name {
+			case toolSubagent:
+				c.tl.subagents++
+				invokes = true
+			case toolMultiRepl:
+				c.tl.multi++
+			}
+			if status != statusCompleted {
+				rep.Count(fmt.Sprintf("%s (status %d)", cl.name, status))
+				c.tl.statuses[status]++
+				continue
+			}
+			start, end, usedCreated, err := stepTimes(payload)
+			if err != nil {
+				return c, fmt.Errorf("step %d: %w", idx, err)
+			}
+			c.tl.fallbackTime = c.tl.fallbackTime || usedCreated
+			base := models.TrajectoryEntry{Timestamp: start, Tool: cl.name, ThreadID: thread}
+			if !end.IsZero() && !end.Before(start) {
+				e := end
+				base.End = &e
+			}
+			if len(calls) > 1 {
+				base.BlockID = fmt.Sprintf("step-%d", idx)
+				if thread != "" {
+					base.BlockID = thread + "/" + base.BlockID
+				}
+			}
+			entries, why := claimsFor(cl, base)
+			switch why {
+			case "":
+				c.tr = append(c.tr, entries...)
+			case reasonNonEffectful:
+				rep.Count(cl.name)
+			case reasonUnknown:
+				rep.Count(cl.name)
+				c.tl.unknown[cl.name] = true
+			case reasonPersistent:
+				rep.Count(cl.name + " (persistent shell)")
+				c.tl.persistent++
+			default:
+				rep.Count(cl.name)
+				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("step %d %s: %s", idx, cl.name, why))
+			}
+		}
+		if invokes {
+			ids, err := subagentLinks(payload)
+			if err != nil {
+				return c, fmt.Errorf("step %d: invoke_subagent result: %w", idx, err)
+			}
+			if len(ids) == 0 {
+				c.unlinked++
+			}
+			c.links = append(c.links, ids...)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return c, fmt.Errorf("read steps: %w", err)
+	}
+	if steps == 0 {
+		return c, fmt.Errorf("%s has no steps", path)
+	}
+	return c, nil
 }
 
 func sum(m map[int]int) int {

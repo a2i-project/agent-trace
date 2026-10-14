@@ -10,7 +10,9 @@ import (
 )
 
 // testdata/agy-1.3.4-strace holds two conversations of agy 1.3.4 recorded in
-// print mode under strace on 2026-10-13 (I-47), reduced by
+// print mode under strace on 2026-10-13 (I-47), and the database of the
+// subagent the parallel one started, in the capture layout
+// (parallel.conversation/subagents/<id>.db, I-55), reduced by
 // the Gemini reduction of scripts/make-capture-fixture.py: workspaces rewritten to /ws/1 and /ws/3,
 // payloads cut to the fields the adapter reads. They have no ground truth; the
 // observed side below is what strace recorded, in the form the process probe
@@ -73,6 +75,7 @@ func TestTheObservedWrapperRecoversEveryRealCommand(t *testing.T) {
 		"sleep 2; echo slow": "/usr/bin/bash -c sleep 2; echo slow",
 		"echo fast":          "/usr/bin/bash -c echo fast",
 		"cat two.txt":        "/usr/bin/bash -c cat two.txt",
+		"echo from-subagent": "/usr/bin/bash -c echo from-subagent",
 	}
 	n := 0
 	for _, name := range []string{"tools.conversation.db", "parallel.conversation.db"} {
@@ -92,8 +95,8 @@ func TestTheObservedWrapperRecoversEveryRealCommand(t *testing.T) {
 			n++
 		}
 	}
-	if n != 5 {
-		t.Errorf("%d commands checked, want 5", n)
+	if n != 6 {
+		t.Errorf("%d commands checked, want 6", n)
 	}
 	got, _ := Adapter{}.Normalize(models.GroundTruthEvent{ActionType: models.ProcessExec, Target: "/bin/bash -c : agent-trace-control-marker"})
 	if got.Target != ": agent-trace-control-marker" {
@@ -102,8 +105,8 @@ func TestTheObservedWrapperRecoversEveryRealCommand(t *testing.T) {
 }
 
 // Two run_command calls the model issued together are two steps with
-// overlapping intervals and no block id; the subagent's own steps are not in
-// this database, which the report says.
+// overlapping intervals and no block id; the subagent's command, from its own
+// database, comes last, on its thread (I-55).
 func TestARealParallelConversation(t *testing.T) {
 	got, tr := realClaims(t, "parallel.conversation.db")
 	want := []string{
@@ -111,6 +114,7 @@ func TestARealParallelConversation(t *testing.T) {
 		"run_command:process_exec:echo fast",
 		"write_to_file:file_open:/ws/3/two.txt", "write_to_file:file_write:/ws/3/two.txt", "write_to_file:file_close:/ws/3/two.txt",
 		"run_command:process_exec:cat two.txt",
+		"run_command:process_exec:echo from-subagent",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("claims =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -123,7 +127,8 @@ func TestARealParallelConversation(t *testing.T) {
 		t.Errorf("two.txt close hash = %v", tr[4].OutputHash)
 	}
 	_, rep, _ := Adapter{}.Parse(filepath.Join(realDir, "parallel.conversation.db"))
-	if rep.UnmappedByTool["invoke_subagent"] != 1 || !strings.Contains(strings.Join(rep.Degradations, "|"), "invoke_subagent") {
+	if rep.UnmappedByTool["invoke_subagent"] != 1 || rep.UnmappedByTool["send_message"] != 1 ||
+		!strings.Contains(strings.Join(rep.Degradations, "|"), "1 subagent conversation(s) followed") {
 		t.Errorf("report: %v %v", rep.UnmappedByTool, rep.Degradations)
 	}
 }

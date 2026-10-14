@@ -82,6 +82,16 @@ type step struct {
 func writeDB(t *testing.T, steps []step) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "conv.db")
+	writeDBAt(t, path, steps)
+	return path
+}
+
+// writeDBAt writes a conversation database at path, creating its directory.
+func writeDBAt(t *testing.T, path string, steps []step) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +105,6 @@ func writeDB(t *testing.T, steps []step) string {
 			t.Fatal(err)
 		}
 	}
-	return path
 }
 
 func at(sec int) *time.Time { x := base.Add(time.Duration(sec) * time.Second); return &x }

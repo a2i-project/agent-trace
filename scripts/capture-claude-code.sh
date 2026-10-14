@@ -101,7 +101,13 @@
 #     value 1 does not, measured on 1.3.4);
 #   * agy prints the conversation id (--output-format json), and the
 #     conversation database ~/.gemini/antigravity-cli/conversations/<id>.db is
-#     copied to <label>.conversation.db, which is the transcript verify reads.
+#     copied to <label>.conversation.db, which is the transcript verify reads;
+#   * a subagent keeps its steps in a database of its own in the same
+#     directory (I-55), so every other database that appeared there during
+#     the run is copied to <label>.conversation/subagents/<id>.db, where the
+#     adapter looks for the subagents the conversation names. Do not use agy
+#     elsewhere during a capture: its conversations would be copied too
+#     (they are never read unless the run names them).
 # If agy is not logged in, run it once interactively and log in first.
 #
 # Gemini tasks:
@@ -359,10 +365,13 @@ agent_md() { # tools
 }
 
 capture_gemini() { # label prompt tools workspace
-  local label=$1 prompt=$2 tools=$3 ws=$4 id
+  local label=$1 prompt=$2 tools=$3 ws=$4 id before f sid n=0
   mkdir -p "$ws/.agents/agents/agent-trace"
   agent_md "$tools" >"$ws/.agents/agents/agent-trace/agent.md"
   echo "== $label"
+  # The databases that exist before the run: any other one after it is the
+  # run's own or a subagent's (I-55).
+  before=$(ls "$agy_conversations" 2>/dev/null | grep '\.db$' || true)
   (
     cd "$ws"
     sudo "$root/watch" --probes fs,proc,net --workspace "$ws" \
@@ -384,6 +393,16 @@ capture_gemini() { # label prompt tools workspace
   cp "$agy_conversations/$id.db" "$out/$label.conversation.db"
   # A write-ahead log that agy left unmerged holds steps too.
   [ ! -s "$agy_conversations/$id.db-wal" ] || cp "$agy_conversations/$id.db-wal" "$out/$label.conversation.db-wal"
+  for f in "$agy_conversations"/*.db; do
+    sid=$(basename "$f" .db)
+    [ -f "$f" ] && [ "$sid" != "$id" ] || continue
+    ! grep -qxF "$sid.db" <<<"$before" || continue
+    mkdir -p "$out/$label.conversation/subagents"
+    cp "$f" "$out/$label.conversation/subagents/$sid.db"
+    [ ! -s "$f-wal" ] || cp "$f-wal" "$out/$label.conversation/subagents/$sid.db-wal"
+    n=$((n + 1))
+  done
+  [ "$n" -eq 0 ] || echo "   $n subagent conversation database(s) copied"
 }
 
 capture "$task" "$task_prompt" "$task_tools"
