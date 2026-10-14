@@ -59,6 +59,9 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.QueueOverflow {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: kernel fanotify queue overflowed", name))
 		}
+		if p.UndrainedRecords > 0 {
+			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: %d record(s) were still queued when the capture stopped and were never read", name, p.UndrainedRecords))
+		}
 		if p.HashlessCloses > 0 {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d file close(s) were published without a content hash, so a claimed content for those is neither confirmed nor refuted", name, p.HashlessCloses))
 		}

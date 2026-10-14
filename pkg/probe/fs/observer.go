@@ -75,15 +75,22 @@ type Observer struct {
 	mounts map[fsID]int
 	// marked and unmarked are the mount points the all-filesystems mark
 	// covered and those it could not, for Scope.
-	marked           []string
-	unmarked         map[string]string
-	stopR            int // read end of stop-signal pipe
-	stopW            int // write end of stop-signal pipe
-	events           chan models.GroundTruthEvent
-	stopped          chan struct{}
-	cfg              Config
-	overflow         bool // true if FAN_Q_OVERFLOW was seen
-	hashlessCloses   atomic.Uint64
+	marked         []string
+	unmarked       map[string]string
+	stopR          int // read end of stop-signal pipe
+	stopW          int // write end of stop-signal pipe
+	events         chan models.GroundTruthEvent
+	stopped        chan struct{}
+	cfg            Config
+	overflow       bool // true if FAN_Q_OVERFLOW was seen
+	hashlessCloses atomic.Uint64
+	// undrained counts the records still queued when the stop drain ran out
+	// of time (drainAtStop): event loss, a lower bound.
+	undrained atomic.Uint64
+	// stopDrain is how long the read loop keeps reading records after the
+	// stop signal before it counts the rest instead. Defaults to
+	// stopDrainBudget; tests lower it to provoke the count.
+	stopDrain        time.Duration
 	pendingHashOpens map[string]int
 	shadowHashes     map[string]string
 
@@ -250,6 +257,7 @@ func New(cfg Config) (*Observer, error) {
 		lastWriteAt:         make(map[string]time.Time),
 		lastEmitted:         make(map[string]emitted),
 		settleDelay:         settleQuietWindow,
+		stopDrain:           stopDrainBudget,
 		hashFD:              content.SHA256FD,
 	}, nil
 }
@@ -307,9 +315,15 @@ func (o *Observer) Overflow() bool {
 // CaptureCoverage reports the loss indicators for this capture. Call after
 // Stop. The fs probe sends on its events channel without dropping, so a slow
 // consumer shows up as backpressure and then as a kernel queue overflow, which
-// is what QueueOverflow reports.
+// is what QueueOverflow reports. UndrainedRecords counts the records the stop
+// drain could not read in its time budget.
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
-	return models.ProbeCoverage{Ran: true, QueueOverflow: o.Overflow(), HashlessCloses: o.hashlessCloses.Load()}
+	return models.ProbeCoverage{
+		Ran:              true,
+		QueueOverflow:    o.Overflow(),
+		HashlessCloses:   o.hashlessCloses.Load(),
+		UndrainedRecords: o.undrained.Load(),
+	}
 }
 
 // Start begins reading fanotify events in a background goroutine.
@@ -408,10 +422,13 @@ func (o *Observer) readLoop() {
 			return
 		}
 
-		// Stop signal received. Once stopping, no more writes will ever be
-		// observed, so it is always safe to resolve whatever is still
-		// pending rather than silently dropping it.
+		// Stop signal received. The records the kernel queued before it
+		// are part of the capture, so they are read first (drainAtStop).
+		// Then no more writes will ever be observed, so it is always safe
+		// to resolve whatever is still pending rather than silently
+		// dropping it.
 		if pollFDs[1].Revents&unix.POLLIN != 0 {
+			o.drainAtStop(buf)
 			o.flushPendingCloses(buf)
 			return
 		}
@@ -433,6 +450,95 @@ func (o *Observer) readLoop() {
 		}
 		o.resolveSettled(before, buf, false)
 	}
+}
+
+// stopDrainBudget is how long the read loop keeps reading after the stop
+// signal (Observer.stopDrain). It is meant to cover a full default queue
+// (16384 records, each a handle resolution and a statx), which is not
+// measured; a process that keeps writing after the stop can keep the queue
+// from emptying, and the budget ends the read.
+const stopDrainBudget = 2 * time.Second
+
+// stopCountBudget bounds the count of the records left once stopDrain is
+// spent, against a writer that never lets the queue empty.
+const stopCountBudget = 250 * time.Millisecond
+
+// drainAtStop reads the records still queued when Stop was signalled and
+// processes them like any other batch, for at most stopDrain. Records that
+// remain after that are read without being processed and counted in
+// undrained, so the capture says it is short instead of being silently so.
+// The count skips the observer's own records and those PIDFilter excludes,
+// which would never have been emitted; it does not apply PathFilter, which
+// needs the path resolved, so it can count a record the filter would have
+// dropped. It is a lower bound: the count stops at stopCountBudget.
+func (o *Observer) drainAtStop(buf []byte) {
+	resolve := newKernelResolver(o.mounts)
+	deadline := time.Now().Add(o.stopDrain)
+	for time.Now().Before(deadline) {
+		n := o.readReady(buf)
+		if n == 0 {
+			return
+		}
+		now := time.Now()
+		raw := parseEvents(buf, n, resolve)
+		for i := range raw {
+			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
+		}
+	}
+	deadline = time.Now().Add(stopCountBudget)
+	for time.Now().Before(deadline) {
+		n := o.readReady(buf)
+		if n == 0 {
+			return
+		}
+		o.undrained.Add(o.countRecords(buf, n))
+	}
+}
+
+// readReady reads one buffer of fanotify records if any are queued, without
+// blocking, and returns its length, or zero when the queue is empty or the
+// read fails.
+func (o *Observer) readReady(buf []byte) int {
+	pollFDs := []unix.PollFd{{Fd: int32(o.fanotifyFD), Events: unix.POLLIN}}
+	for {
+		_, err := unix.Poll(pollFDs, 0)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil || pollFDs[0].Revents&unix.POLLIN == 0 {
+			return 0
+		}
+		break
+	}
+	n, err := unix.Read(o.fanotifyFD, buf)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// countRecords counts the records in buf[:n] that the observer would have
+// considered, without resolving their handles: not its own, and not excluded
+// by PIDFilter. An overflow record sets overflow and is not counted.
+func (o *Observer) countRecords(buf []byte, n int) uint64 {
+	self := int32(os.Getpid())
+	var count uint64
+	for offset := 0; offset+metadataSize <= n; {
+		meta := readMetadata(buf[offset:])
+		if meta.EventLen < metadataSize || offset+int(meta.EventLen) > n {
+			break
+		}
+		offset += int(meta.EventLen)
+		switch {
+		case meta.Mask&unix.FAN_Q_OVERFLOW != 0:
+			o.overflow = true
+		case meta.PID == self:
+		case o.cfg.PIDFilter > 0 && meta.PID != o.cfg.PIDFilter:
+		default:
+			count++
+		}
+	}
+	return count
 }
 
 // drainNonBlocking processes every fanotify record currently available

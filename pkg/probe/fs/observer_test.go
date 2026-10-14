@@ -1341,3 +1341,167 @@ func TestInputHashIsStatedOnlyWhenMeasured(t *testing.T) {
 		t.Error("a file that cannot be identified carries an input hash")
 	}
 }
+
+// pipeObserver is an Observer whose fanotify fd is the read end of a pipe, so
+// a test can queue synthetic records for the real read path, and whose stop
+// pipe is separate. It has no mounts, so every handle resolves to no path.
+func pipeObserver(t *testing.T) (obs *Observer, records, stop int) {
+	t.Helper()
+	var rec, st [2]int
+	if err := unix.Pipe2(rec[:], unix.O_CLOEXEC); err != nil {
+		t.Fatalf("pipe2: %v", err)
+	}
+	if err := unix.Pipe2(st[:], unix.O_CLOEXEC); err != nil {
+		t.Fatalf("pipe2: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, fd := range []int{rec[0], rec[1], st[0], st[1]} {
+			_ = unix.Close(fd)
+		}
+	})
+	obs = &Observer{
+		fanotifyFD: rec[0],
+		mountFD:    -1,
+		stopR:      st[0],
+		stopW:      st[1],
+		events:     make(chan models.GroundTruthEvent, 64),
+		stopped:    make(chan struct{}),
+		stopDrain:  stopDrainBudget,
+	}
+	return obs, rec[1], st[1]
+}
+
+// queueRecords writes one bare metadata record per pid, with the given mask,
+// to the records pipe in a single write.
+func queueRecords(t *testing.T, fd int, mask uint64, pids ...int32) {
+	t.Helper()
+	var b []byte
+	for _, pid := range pids {
+		b = append(b, buildMetadata(mask, pid, 0)...)
+	}
+	if _, err := unix.Write(fd, b); err != nil {
+		t.Fatalf("write records: %v", err)
+	}
+}
+
+// runToStop signals stop before the read loop starts, so every queued record
+// is one the kernel had queued when Stop was called, and returns what the
+// loop emitted.
+func runToStop(t *testing.T, obs *Observer, stop int) []models.GroundTruthEvent {
+	t.Helper()
+	if _, err := unix.Write(stop, []byte{0}); err != nil {
+		t.Fatalf("signal stop: %v", err)
+	}
+	obs.readLoop()
+	close(obs.events)
+	var out []models.GroundTruthEvent
+	for e := range obs.events {
+		out = append(out, e)
+	}
+	return out
+}
+
+// Records queued when Stop is signalled are read and emitted, not discarded.
+func TestReadLoop_DrainsRecordsQueuedAtStop(t *testing.T) {
+	obs, records, stop := pipeObserver(t)
+	queueRecords(t, records, unix.FAN_MODIFY, 101, 102, 103)
+	got := runToStop(t, obs, stop)
+	if len(got) != 3 {
+		t.Fatalf("emitted %d events, want the 3 queued at stop: %+v", len(got), got)
+	}
+	for i, e := range got {
+		if e.ActionType != models.FileWrite || e.PID != uint32(101+i) {
+			t.Errorf("event %d = %s by %d, want file_write by %d", i, e.ActionType, e.PID, 101+i)
+		}
+	}
+	if c := obs.CaptureCoverage(); c.UndrainedRecords != 0 {
+		t.Errorf("UndrainedRecords = %d, want 0 when the drain read everything", c.UndrainedRecords)
+	}
+}
+
+// Records the drain has no time left to read are counted, except the
+// observer's own; an overflow record among them still sets QueueOverflow.
+func TestReadLoop_CountsRecordsLeftWhenTheStopDrainRunsOut(t *testing.T) {
+	obs, records, stop := pipeObserver(t)
+	obs.stopDrain = 0
+	queueRecords(t, records, unix.FAN_MODIFY, 101, 102, int32(os.Getpid()), 103)
+	queueRecords(t, records, unix.FAN_Q_OVERFLOW, 0)
+	got := runToStop(t, obs, stop)
+	if len(got) != 0 {
+		t.Errorf("emitted %d events with no drain time, want 0", len(got))
+	}
+	c := obs.CaptureCoverage()
+	if c.UndrainedRecords != 3 {
+		t.Errorf("UndrainedRecords = %d, want 3 (the observer's own record is not counted)", c.UndrainedRecords)
+	}
+	if !c.QueueOverflow {
+		t.Error("an overflow record left in the queue did not set QueueOverflow")
+	}
+}
+
+// PIDFilter applies to the count as it would have to the events.
+func TestReadLoop_UndrainedCountHonoursPIDFilter(t *testing.T) {
+	obs, records, stop := pipeObserver(t)
+	obs.stopDrain = 0
+	obs.cfg.PIDFilter = 102
+	queueRecords(t, records, unix.FAN_MODIFY, 101, 102, 103)
+	runToStop(t, obs, stop)
+	if c := obs.CaptureCoverage(); c.UndrainedRecords != 1 {
+		t.Errorf("UndrainedRecords = %d, want 1", c.UndrainedRecords)
+	}
+}
+
+// A write made just before Stop, with nothing reading in between, is in the
+// capture: Stop drains what the kernel had queued.
+func TestObserver_WriteJustBeforeStopIsCaptured(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	obs := startObserver(t, dir)
+	target := filepath.Join(dir, "last.txt")
+	if err := os.WriteFile(target, []byte("last"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	var events []models.GroundTruthEvent
+	for e := range obs.Events() {
+		events = append(events, e)
+	}
+	if c := obs.CaptureCoverage(); c.UndrainedRecords > 0 {
+		t.Fatalf("drain counted %d record(s) instead of reading them", c.UndrainedRecords)
+	}
+	assertHasEvent(t, events, models.FileClose, target)
+}
+
+// With no drain time, the same write is counted instead: the capture says it
+// is short.
+func TestObserver_WriteJustBeforeStopIsCountedWithoutDrainTime(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	obs, err := New(Config{Path: dir, PathFilter: dir, EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.stopDrain = 0
+	obs.Start()
+	// Writes by a child process: the observer does not count its own records.
+	cmd := exec.Command("sh", "-c", "echo last > "+filepath.Join(dir, "last.txt"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("child write: %v\n%s", err, out)
+	}
+	// Signal stop at once, so the child's records are still queued.
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	var events []models.GroundTruthEvent
+	for e := range obs.Events() {
+		events = append(events, e)
+	}
+	c := obs.CaptureCoverage()
+	if c.UndrainedRecords == 0 {
+		// The read loop may have read the records before the stop signal;
+		// then they are emitted, which is also not a silent loss.
+		assertHasEvent(t, events, models.FileClose, filepath.Join(dir, "last.txt"))
+	}
+}

@@ -30,6 +30,8 @@ func TestAssess(t *testing.T) {
 		{name: "io_uring socket operations are event loss (N-25)", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, IOURingNetOps: 2}}), wantReason: "net probe: tracked processes submitted 2 socket operation(s) through io_uring"},
 		{name: "io_uring operations on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, IOURingNetOps: 2}}), wantComplete: true},
 		{name: "fanotify overflow", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, QueueOverflow: true}}), wantReason: "fs probe: kernel fanotify queue overflowed"},
+		{name: "records left in the fanotify queue at stop are event loss", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, UndrainedRecords: 5}}), wantReason: "fs probe: 5 record(s) were still queued when the capture stopped"},
+		{name: "undrained records on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: false, UndrainedRecords: 5}}), wantComplete: true},
 		{name: "counters on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, RingbufDrops: 9}}), wantComplete: true},
 		{name: "faulted reads are a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, FaultedReads: 4}}), wantComplete: true, wantNotes: 1},
 		{name: "attach failure is a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},

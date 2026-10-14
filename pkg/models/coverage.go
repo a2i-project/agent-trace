@@ -66,6 +66,10 @@ type ProbeCoverage struct {
 	// reported by address. A content gap, not an event loss. An upper bound
 	// on the connections affected. Net probe only.
 	HelloFaults uint64 `json:"hello_faults,omitempty"`
+	// UndrainedRecords counts the fanotify records still queued when the fs
+	// probe's stop drain ran out of time: events of the run that were never
+	// read. Event loss, a lower bound. Filesystem probe only.
+	UndrainedRecords uint64 `json:"undrained_records,omitempty"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.
