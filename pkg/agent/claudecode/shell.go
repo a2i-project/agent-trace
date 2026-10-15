@@ -203,6 +203,11 @@ var (
 	deletedSuffix = regexp.MustCompile(` \(deleted\)$`)
 )
 
+// snapshotFileID is the shell snapshot the harness's snapshot command writes
+// beneath it, named by the same id as in the command (I-23). It is compared
+// across runs since a baseline records what a command did beneath it (V-38).
+var snapshotFileID = regexp.MustCompile(`(/\.claude/shell-snapshots/snapshot-bash-)\d+-[0-9a-z]+(\.sh)$`)
+
 // withoutDeletedSuffix drops the " (deleted)" the kernel appends to the path
 // of a file unlinked before the event was read. It is not an id: the path
 // names the same file, so Normalize drops it within a run.
@@ -224,6 +229,7 @@ func canonicalFileIDs(s string) string {
 	s = taskOutputID.ReplaceAllString(s, "${1}N${2}")
 	s = fswatchID.ReplaceAllString(s, "${1}N")
 	s = cwdFileID.ReplaceAllString(s, "/tmp/claude-N-cwd")
+	s = snapshotFileID.ReplaceAllString(s, "${1}N${2}")
 	return lockTmpID.ReplaceAllString(s, "${1}N")
 }
 

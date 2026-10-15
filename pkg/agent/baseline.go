@@ -63,7 +63,35 @@ type Baseline struct {
 	// that target and its whole subtree without a claim (I-28). Recorded so the
 	// reader can see what was left out.
 	Excluded []string `json:"excluded,omitempty"`
+	// Subtrees records, for every command rule (a process_exec rule), what
+	// the command did beneath it in the control runs: the programs run, files
+	// written, renamed or deleted, connections and requests
+	// (verification.SubtreeChecked), as rules of the same form, kept at the
+	// same agreement threshold. In a run, a baselined command explains only
+	// the events beneath it that its record holds (V-38). Nil, as in a
+	// baseline written before V-38, records nothing and leaves every
+	// baselined command explaining its whole subtree (V7); Capture always
+	// sets it, empty when there is no command rule.
+	Subtrees []Subtree `json:"subtrees"`
 }
+
+// Subtree is what one command rule's command did beneath it in the control
+// runs (V-38).
+type Subtree struct {
+	// Command is the target of the process_exec rule.
+	Command string `json:"command"`
+	// Events are the actions enough control runs' same command performed
+	// beneath it; they are explained beneath it in a run.
+	Events []Rule `json:"events"`
+	// Unstable lists the actions seen beneath the command in at least one
+	// control run but too few of them. Recorded for the reader; they explain
+	// nothing.
+	Unstable []Rule `json:"unstable,omitempty"`
+}
+
+// RecordsSubtrees reports whether the baseline holds the subtrees of its
+// commands (V-38). A baseline written before V-38 does not.
+func (b Baseline) RecordsSubtrees() bool { return b.Subtrees != nil }
 
 // CaptureOptions tunes Capture.
 type CaptureOptions struct {
@@ -80,8 +108,9 @@ type CaptureOptions struct {
 // normalized by the adapter, attributed with the process forest, and reduced to
 // the agent's own top-level actions and the commands it started: the
 // activity a trajectory would otherwise have to claim. Descendants of a command
-// are not rules, since a command's whole subtree is explained once the command
-// is. A run with no root pid cannot be attributed and is an error.
+// are not rules; what they did is recorded per command rule in Subtrees, so a
+// baselined command explains only what its controls did beneath it (V-38). A
+// run with no root pid cannot be attributed and is an error.
 //
 // A harness does some things only some of the time (probing for a package
 // manager, say), so the agreement threshold decides how often an action must
@@ -108,13 +137,17 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		excluded[t] = true
 	}
 	counts := map[Rule]int{}
+	// subCounts[command][rule] counts the runs in which some instance of the
+	// command did rule beneath it.
+	subCounts := map[string]map[Rule]int{}
 	for i, r := range runs {
 		if r.RootPID == 0 {
 			return Baseline{}, fmt.Errorf("control run %d has no root pid, so its events cannot be attributed", i+1)
 		}
 		g := NormalizeGround(a, r.Events)
+		part := verification.BuildForest(g, r.RootPID).Partition(g)
 		seen := map[Rule]bool{}
-		for _, e := range verification.BuildForest(g, r.RootPID).Partition(g).Observed {
+		for _, e := range part.Observed {
 			// A rule is compared with other runs, so it names the event in
 			// its canonical form (I-41).
 			e = canonical(a, e)
@@ -125,6 +158,36 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		}
 		for rule := range seen {
 			counts[rule]++
+		}
+		// What each command did beneath it, in the same canonical form.
+		seenSub := map[string]map[Rule]bool{}
+		for _, c := range part.Commands {
+			if c.Exec == nil {
+				continue
+			}
+			ce := canonical(a, *c.Exec)
+			if excluded[ce.Target] {
+				continue
+			}
+			cmd := templateWorkspace(ce.Target, r.Workspace)
+			if seenSub[cmd] == nil {
+				seenSub[cmd] = map[Rule]bool{}
+			}
+			for _, e := range c.Content {
+				if !verification.SubtreeChecked(e.ActionType) {
+					continue
+				}
+				e = canonical(a, e)
+				seenSub[cmd][Rule{ActionType: e.ActionType, Target: templateWorkspace(e.Target, r.Workspace)}] = true
+			}
+		}
+		for cmd, rules := range seenSub {
+			if subCounts[cmd] == nil {
+				subCounts[cmd] = map[Rule]int{}
+			}
+			for rule := range rules {
+				subCounts[cmd][rule]++
+			}
 		}
 	}
 	b := Baseline{Schema: BaselineSchema, Agent: a.Name(), AgentVersion: version, Captured: now.UTC(), Runs: len(runs), MinAgreement: agreement}
@@ -139,6 +202,23 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 	}
 	sortRules(b.Rules)
 	sortRules(b.Unstable)
+	b.Subtrees = []Subtree{}
+	for _, rule := range b.Rules {
+		if rule.ActionType != models.ProcessExec {
+			continue
+		}
+		st := Subtree{Command: rule.Target, Events: []Rule{}}
+		for sub, n := range subCounts[rule.Target] {
+			if n >= need {
+				st.Events = append(st.Events, sub)
+			} else {
+				st.Unstable = append(st.Unstable, sub)
+			}
+		}
+		sortRules(st.Events)
+		sortRules(st.Unstable)
+		b.Subtrees = append(b.Subtrees, st)
+	}
 	return b, nil
 }
 
@@ -173,17 +253,60 @@ func sortRules(r []Rule) {
 func (b Baseline) Predicate(workspace string) verification.Baseline {
 	set := make(map[Rule]bool, len(b.Rules))
 	for _, r := range b.Rules {
-		if strings.Contains(r.Target, WorkspacePlaceholder) || strings.Contains(r.Target, MangledWorkspacePlaceholder) {
-			if len(workspace) < 2 {
-				continue
-			}
-			r.Target = strings.ReplaceAll(r.Target, WorkspacePlaceholder, workspace)
-			r.Target = strings.ReplaceAll(r.Target, MangledWorkspacePlaceholder, mangle(workspace))
+		var ok bool
+		if r.Target, ok = expandWorkspace(r.Target, workspace); ok {
+			set[r] = true
 		}
-		set[r] = true
 	}
 	return func(e models.GroundTruthEvent) bool {
 		return set[Rule{ActionType: e.ActionType, Target: e.Target}]
+	}
+}
+
+// expandWorkspace puts the workspace in place of the placeholders of a
+// target. It reports false for a target that names a placeholder when the run
+// has no workspace: such a rule matches nothing.
+func expandWorkspace(target, workspace string) (string, bool) {
+	if !strings.Contains(target, WorkspacePlaceholder) && !strings.Contains(target, MangledWorkspacePlaceholder) {
+		return target, true
+	}
+	if len(workspace) < 2 {
+		return "", false
+	}
+	target = strings.ReplaceAll(target, WorkspacePlaceholder, workspace)
+	return strings.ReplaceAll(target, MangledWorkspacePlaceholder, mangle(workspace)), true
+}
+
+// Subtree returns what the baseline's commands did beneath them in the
+// controls, for a run that watched workspace, as the verifier asks it: does
+// the command whose exec has this target hold this event in its record. The
+// events are compared exactly, placeholders expanded, as in Predicate. A
+// command with no record explains nothing beneath it. Nil when the baseline
+// records no subtrees, which keeps the V7 reading (V-38). The events it is
+// asked about must be in their canonical form; BaselineSubtree does that.
+func (b Baseline) Subtree(workspace string) verification.SubtreeBaseline {
+	if !b.RecordsSubtrees() {
+		return nil
+	}
+	records := map[string]map[Rule]bool{}
+	for _, st := range b.Subtrees {
+		cmd, ok := expandWorkspace(st.Command, workspace)
+		if !ok {
+			continue
+		}
+		set := records[cmd]
+		if set == nil {
+			set = map[Rule]bool{}
+			records[cmd] = set
+		}
+		for _, r := range st.Events {
+			if r.Target, ok = expandWorkspace(r.Target, workspace); ok {
+				set[r] = true
+			}
+		}
+	}
+	return func(command, e models.GroundTruthEvent) bool {
+		return records[command.Target][Rule{ActionType: e.ActionType, Target: e.Target}]
 	}
 }
 

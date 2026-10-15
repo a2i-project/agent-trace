@@ -182,3 +182,62 @@ func TestCoverage_ForkWithoutExecIsUnexplained(t *testing.T) {
 		t.Errorf("coverage = %+v, want one unexplained subtree", cov)
 	}
 }
+
+// V-38: with subtree records, a baselined command explains only the checked
+// events beneath it that the records hold; the rest make it an unexplained
+// subtree and are not counted as baselined. Reads and exits beneath it are not
+// checked. A nil record function keeps V7: the whole subtree is explained.
+// The input partition is not mutated.
+func TestCoverage_ABaselinedCommandExplainsOnlyItsRecordedSubtree(t *testing.T) {
+	g := models.GroundTruth{
+		fork(1, 200, agentPID), execEv(2, 200, agentPID, "/bin/bash -c env"),
+		fork(3, 201, 200), execEv(4, 201, 200, "/usr/bin/env"),
+		{Timestamp: at(5), ActionType: models.FileOpen, Target: "/etc/profile", PID: 201},
+		execEv(6, 201, 200, "/usr/bin/curl https://evil.example"),
+		{Timestamp: at(7), ActionType: models.NetConnect, Target: "evil.example", PID: 201},
+		exitEv(8, 201, 200, "/usr/bin/curl https://evil.example"),
+		exitEv(9, 200, agentPID, "/bin/bash -c env"),
+	}
+	base := func(e models.GroundTruthEvent) bool { return e.Target == "/bin/bash -c env" }
+	recorded := func(cmd, e models.GroundTruthEvent) bool {
+		return cmd.Target == "/bin/bash -c env" && e.ActionType == models.ProcessExec && e.Target == "/usr/bin/env"
+	}
+	part, _ := BuildForest(g, agentPID).Partition(g).SubtractBaseline(base, nil)
+
+	checked := part.checkBaselinedSubtrees(recorded)
+	cov := CheckCoverage(checked, nil)
+	if len(cov.UnexplainedSubtrees) != 1 || cov.Complete {
+		t.Fatalf("subtrees = %d, complete = %v, want the baselined command unexplained", len(cov.UnexplainedSubtrees), cov.Complete)
+	}
+	var got []string
+	for _, e := range cov.UnexplainedSubtrees[0].Unbaselined {
+		got = append(got, string(e.ActionType)+" "+e.Target)
+	}
+	if strings.Join(got, ",") != "process_exec /usr/bin/curl https://evil.example,net_connect evil.example" {
+		t.Errorf("unbaselined = %v", got)
+	}
+	// Content: env's exec, the open, curl's exec, the connection, curl's exit.
+	if cov.Baselined != 5-2 {
+		t.Errorf("Baselined = %d, want the three events the record or the unchecked types explain", cov.Baselined)
+	}
+	if part.Commands[0].Unbaselined != nil {
+		t.Error("checkBaselinedSubtrees mutated its input")
+	}
+
+	old := CheckCoverage(part.checkBaselinedSubtrees(nil), nil)
+	if len(old.UnexplainedSubtrees) != 0 || old.Baselined != 5 || !old.Complete {
+		t.Errorf("without records: subtrees = %d, baselined = %d, want the V7 reading", len(old.UnexplainedSubtrees), old.Baselined)
+	}
+}
+
+func TestSubtreeCheckedNamesProgramsWritesAndConnections(t *testing.T) {
+	for typ, want := range map[models.ActionType]bool{
+		models.ProcessExec: true, models.FileWrite: true, models.FileClose: true, models.FileRename: true, models.FileDelete: true,
+		models.NetConnect: true, models.NetRequest: true,
+		models.FileOpen: false, models.FileRead: false, models.ProcessExit: false, models.NetListen: false, models.NetDNS: false, models.NetDial: false,
+	} {
+		if SubtreeChecked(typ) != want {
+			t.Errorf("SubtreeChecked(%s) = %v, want %v", typ, !want, want)
+		}
+	}
+}

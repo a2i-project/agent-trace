@@ -7,6 +7,58 @@ import "github.com/agent-trace/agent-trace/pkg/models"
 // control run, not declared (V7). A nil Baseline explains nothing.
 type Baseline func(models.GroundTruthEvent) bool
 
+// SubtreeBaseline reports whether event, beneath a command whose exec the
+// Baseline recognised, is something the same command also did beneath it in
+// the control runs (V-38). It is asked only about the action types
+// SubtreeChecked names. A nil SubtreeBaseline is a baseline that recorded no
+// subtrees: a baselined command then explains its whole subtree, as V7 had it.
+type SubtreeBaseline func(command, event models.GroundTruthEvent) bool
+
+// SubtreeChecked reports whether an event of this type beneath a baselined
+// command must be one the controls' same command also produced (V-38): a
+// program run, a file written, closed after writing, renamed or deleted, a
+// connection or a request. Reads, exits and capability evidence beneath a
+// baselined command stay explained by the command, as before.
+func SubtreeChecked(t models.ActionType) bool {
+	switch t {
+	case models.ProcessExec, models.NetConnect, models.NetRequest:
+		return true
+	}
+	return writeClass(t)
+}
+
+// checkBaselinedSubtrees sets, on every baselined command with an exec, the
+// events beneath it of a checked type that sub does not recognise
+// (Command.Unbaselined, V-38). It copies the commands it changes. A nil sub
+// leaves every subtree explained.
+func (p Partition) checkBaselinedSubtrees(sub SubtreeBaseline) Partition {
+	if sub == nil {
+		return p
+	}
+	out := p
+	out.Commands = make([]*Command, len(p.Commands))
+	copy(out.Commands, p.Commands)
+	for i, c := range out.Commands {
+		if !c.Baseline || c.Exec == nil {
+			continue
+		}
+		var unbaselined models.GroundTruth
+		for _, e := range c.Content {
+			if SubtreeChecked(e.ActionType) && !sub(*c.Exec, e) {
+				unbaselined = append(unbaselined, e)
+			}
+		}
+		if len(unbaselined) > 0 {
+			cc := *c
+			cc.Unbaselined = unbaselined
+			out.Commands[i] = &cc
+		}
+	}
+	// Owner points at the commands of the aligned sequence; a baselined
+	// command's exec and exit have left it, so no owner needs remapping.
+	return out
+}
+
 // SubtractBaseline removes the harness's own activity from the aligned
 // sequence. A level-0 event the baseline recognises is dropped, unless it is a
 // file event on a path in claimed: that one stays, so a claim on a path the
@@ -74,7 +126,9 @@ type Coverage struct {
 	UnexplainedActions []UnexplainedAction
 	// UnexplainedSubtrees are the commands whose own exec no claim aligned to,
 	// or that never exec'd and did something observable: whole subtrees nothing
-	// the agent said accounts for.
+	// the agent said accounts for. A baselined command is here too when events
+	// beneath it are not what the controls' same command did
+	// (Command.Unbaselined, V-38).
 	UnexplainedSubtrees []*Command
 	// Quiet holds the level-1 processes that never exec'd and caused no
 	// observed event. There is nothing in them to explain. Go's os/exec
@@ -85,7 +139,9 @@ type Coverage struct {
 	Quiet []*Command
 	// Explained counts the events inside subtrees of commands a claim explains.
 	Explained int
-	// Baselined counts the events inside subtrees the baseline explains.
+	// Baselined counts the events inside subtrees the baseline explains. A
+	// baselined command's Unbaselined events are not counted: the command is
+	// in UnexplainedSubtrees instead (V-38).
 	Baselined int
 	// BaselinedLevelZero counts the agent process's own (level-0) events the
 	// baseline explains: those subtracted before alignment and those kept for
@@ -131,6 +187,9 @@ func CheckCoverage(p Partition, alignments []LaneAlignment) Coverage {
 
 	for _, c := range p.Commands {
 		switch {
+		case c.Baseline && len(c.Unbaselined) > 0:
+			cov.Baselined += len(c.Content) - len(c.Unbaselined)
+			cov.UnexplainedSubtrees = append(cov.UnexplainedSubtrees, c)
 		case c.Baseline:
 			cov.Baselined += len(c.Content)
 		case execPaired[c]:

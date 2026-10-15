@@ -34,6 +34,11 @@ type Input struct {
 	// Baseline is the harness's own activity, measured by a null-task run
 	// (V7). Nil explains nothing.
 	Baseline Baseline
+	// BaselineSubtree says which events beneath a baselined command the
+	// controls' same command also produced (V-38). Nil means the baseline
+	// recorded no subtrees, and a baselined command explains its whole
+	// subtree (V7).
+	BaselineSubtree SubtreeBaseline
 	// FSScope is the capture's record of where the fs probe was looking
 	// (GroundTruthFile.FSScope), and Workspace the directory it watched. A
 	// file claim the capture could not have witnessed is set aside rather
@@ -377,6 +382,9 @@ func Verify(in Input) Verdict {
 	// for a claim joins the list only if it stays unpaired, below.
 	v.BaselinedWritesOutsideHarness = baselinedWritesOutside(part, in.Baseline, in.Options.HarnessOwned, claimed)
 	part, _ = part.SubtractBaseline(in.Baseline, claimed)
+	// A baselined command explains only what the controls' same command did
+	// beneath it (V-38).
+	part = part.checkBaselinedSubtrees(in.BaselineSubtree)
 	baselinedLevelZero := levelZero - countLevelZero(part)
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in

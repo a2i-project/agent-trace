@@ -98,6 +98,11 @@ func run(args []string, out, errOut io.Writer) int {
 		return 3
 	}
 	_, _ = fmt.Fprintf(out, "wrote %s: %d rule(s) from %d run(s) at %.0f%% agreement, %d unstable action(s) left out\n", outPath, len(b.Rules), b.Runs, b.MinAgreement*100, len(b.Unstable))
+	beneath := 0
+	for _, st := range b.Subtrees {
+		beneath += len(st.Events)
+	}
+	_, _ = fmt.Fprintf(out, "recorded the subtrees of %d command rule(s): %d action(s) beneath them that a baselined command explains (V-38)\n", len(b.Subtrees), beneath)
 	if b.Runs == 1 {
 		_, _ = fmt.Fprintln(out, "note: one control run cannot tell stable activity from incidental activity; capture at least three")
 	}

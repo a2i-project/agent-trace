@@ -491,6 +491,7 @@ func TestCanonicalReplacesThePerRunIdsOfTheHarnessOwnFilePaths(t *testing.T) {
 		"/tmp/claude-1000/fswatch-probe-S6iX0K/probe":                                               "/tmp/claude-1000/fswatch-probe-N/probe",
 		"/tmp/claude-1000/fswatch-probe-Y4aXfI (deleted)":                                           "/tmp/claude-1000/fswatch-probe-N",
 		"/home/u/.local/state/claude/locks/2.1.286.lock.tmp.68f796c1":                               "/home/u/.local/state/claude/locks/2.1.286.lock.tmp.N",
+		"/home/u/.claude/shell-snapshots/snapshot-bash-1791537194087-a2ifir.sh":                     "/home/u/.claude/shell-snapshots/snapshot-bash-N.sh", // V-38
 		"/ws/a.txt":            "/ws/a.txt",
 		"/ws/sessions/12.json": "/ws/sessions/12.json", // not under .claude
 		// A subagent's transcript, its metadata and their directory, named by

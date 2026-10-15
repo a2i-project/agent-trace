@@ -131,6 +131,7 @@ func run(args []string, out, errOut io.Writer) int {
 
 	opts := verification.Options{IntervalSlack: slack}
 	in := agent.Prepare(adapter, tr, gt, measured, opts)
+	in.BaselineSubtree = agent.BaselineSubtree(adapter, baseline, gt.Workspace) // V-38
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)
@@ -215,6 +216,9 @@ func report(w io.Writer, r reportInput) {
 		}
 		if n := len(restingWrites(*r.baseline, r.gt.Workspace)); n > 0 {
 			p("  limitation: the harness itself writes %d path(s) at rest by this baseline (file_write, file_close, file_rename or file_delete rules); an unclaimed in-process write to one of them is explained by the baseline and not detectable (V-37)\n", n)
+		}
+		if n := commandRules(*r.baseline); n > 0 && !r.baseline.RecordsSubtrees() {
+			p("  limitation: this baseline records no subtrees (written before V-38), so each of its %d command(s) explains every event beneath it whatever the controls did; rebuild it with baseline to check them (V-38)\n", n)
 		}
 	}
 	printParse(w, r.parse)
@@ -367,8 +371,29 @@ func printSubtrees(w io.Writer, cmds []*verification.Command) {
 		if c.Exec != nil {
 			target = c.Exec.Target
 		}
+		if c.Baseline {
+			// A baselined command whose subtree did what no control's same
+			// command did (V-38): the events that are not explained.
+			_, _ = fmt.Fprintf(w, "  pid %d %s  (baselined command; %d of the %d events beneath it are not what the controls' same command did)\n", c.Process.PID, target, len(c.Unbaselined), len(c.Content))
+			for _, e := range c.Unbaselined {
+				_, _ = fmt.Fprintf(w, "    %s %-14s %s\n", e.Timestamp.Format(time.RFC3339Nano), e.ActionType, e.Target)
+			}
+			continue
+		}
 		_, _ = fmt.Fprintf(w, "  pid %d %s  (%d events beneath it)\n", c.Process.PID, target, len(c.Content))
 	}
+}
+
+// commandRules counts the baseline's command rules (process_exec), each of
+// which explains a command and, without subtree records, its whole subtree.
+func commandRules(b agent.Baseline) int {
+	n := 0
+	for _, r := range b.Rules {
+		if r.ActionType == models.ProcessExec {
+			n++
+		}
+	}
+	return n
 }
 
 // printPairs shows both sides of every pair with the fields that disagree, so
@@ -518,6 +543,9 @@ func printCommands(w io.Writer, cmds []*verification.Command) {
 		status := "claimed"
 		if c.Baseline {
 			status = "baseline"
+			if len(c.Unbaselined) > 0 {
+				status = fmt.Sprintf("baseline, %d beneath it not in the controls", len(c.Unbaselined))
+			}
 		}
 		if c.Exec == nil && c.Exit == nil && len(c.Content) == 0 && len(c.Capability) == 0 {
 			status = "quiet"
@@ -612,6 +640,9 @@ type jsonCommand struct {
 	Exit       *models.GroundTruthEvent `json:"exit,omitempty"`
 	Events     models.GroundTruth       `json:"events"`
 	Capability models.GroundTruth       `json:"capability,omitempty"`
+	// Unbaselined is present only for a baselined command with events
+	// beneath it that no control's same command produced (V-38).
+	Unbaselined models.GroundTruth `json:"unbaselined,omitempty"`
 }
 
 // jsonReport is the machine-readable verdict.
@@ -731,7 +762,7 @@ func writeJSONReport(path string, r reportInput) error {
 	for _, c := range v.Commands {
 		rep.Commands = append(rep.Commands, jsonCommand{
 			PID: c.Process.PID, Status: commandStatus(c, v), Exec: c.Exec, Exit: c.Exit,
-			Events: nonNilEvents(c.Content), Capability: c.Capability,
+			Events: nonNilEvents(c.Content), Capability: c.Capability, Unbaselined: c.Unbaselined,
 		})
 	}
 	data, err := json.MarshalIndent(rep, "", "  ")

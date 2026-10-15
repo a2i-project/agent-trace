@@ -105,7 +105,7 @@ func loadSession(t *testing.T, c capture) session {
 }
 
 func (s session) input(claims models.Trajectory) verification.Input {
-	in := agent.Prepare(claudecode.Adapter{}, claims, s.g, s.base.Predicate(s.g.Workspace), verification.Options{IntervalSlack: 500 * time.Millisecond})
+	in := agent.PrepareWithBaseline(claudecode.Adapter{}, claims, s.g, &s.base, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	return in
 }
 

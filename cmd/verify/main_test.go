@@ -783,3 +783,59 @@ func TestWritesTheHarnessMakesAtRestAreReported(t *testing.T) {
 		}
 	})
 }
+
+// V-38: a baselined command with an event beneath it that its controls never
+// produced is an unexplained subtree, printed with that event and carried in
+// the JSON; a baseline written before V-38 that holds command rules prints a
+// limitation line and keeps the old reading; a baseline with records does not
+// print it.
+func TestABaselinedCommandsSubtreeIsCheckedAgainstItsRecord(t *testing.T) {
+	dir := t.TempDir()
+	ground := writeJSON(t, dir, "g.json", models.GroundTruthFile{RootPID: 100, Coverage: completeCov(), Events: models.GroundTruth{
+		{Timestamp: time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC), ActionType: models.ProcessFork, Target: "200", PID: 200, PPID: 100},
+		{Timestamp: time.Date(2026, 10, 6, 12, 0, 1, 0, time.UTC), ActionType: models.ProcessExec, Target: "/bin/bash -c env", PID: 200, PPID: 100},
+		{Timestamp: time.Date(2026, 10, 6, 12, 0, 2, 0, time.UTC), ActionType: models.ProcessExec, Target: "/usr/bin/env", PID: 200, PPID: 100},
+		{Timestamp: time.Date(2026, 10, 6, 12, 0, 3, 0, time.UTC), ActionType: models.NetConnect, Target: "evil.example", PID: 200},
+	}})
+	rules := []agent.Rule{{ActionType: models.ProcessExec, Target: "/bin/bash -c env"}}
+	save := func(name string, subtrees []agent.Subtree) string {
+		p := filepath.Join(dir, name)
+		if err := agent.SaveBaseline(p, agent.Baseline{Schema: agent.BaselineSchema, Agent: agent.GenericName, Runs: 1, MinAgreement: 1, Rules: rules, Subtrees: subtrees}); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	recorded := save("new.json", []agent.Subtree{{Command: "/bin/bash -c env", Events: []agent.Rule{{ActionType: models.ProcessExec, Target: "/usr/bin/env"}}}})
+	old := save("old.json", nil)
+	const limit = "  limitation: this baseline records no subtrees (written before V-38), so each of its 1 command(s) explains every event beneath it whatever the controls did; rebuild it with baseline to check them (V-38)\n"
+	trajectory := writeJSON(t, dir, "t.json", models.Trajectory{})
+
+	jsonPath := filepath.Join(dir, "v.json")
+	code, out, errOut := verify(t, "--trajectory", trajectory, "--ground-truth", ground, "--baseline", recorded, "--json", jsonPath)
+	if errOut != "" {
+		t.Fatalf("stderr: %s", errOut)
+	}
+	want := "  pid 200 /bin/bash -c env  (baselined command; 1 of the 2 events beneath it are not what the controls' same command did)\n    2026-10-06T12:00:03Z net_connect    evil.example\n"
+	if code != 1 || !strings.Contains(out, "Unexplained subtrees: 1") || !strings.Contains(out, want) || strings.Contains(out, limit) ||
+		!strings.Contains(out, "[baseline, 1 beneath it not in the controls]") || !strings.Contains(out, "Explained by the baseline:      1 events") {
+		t.Errorf("exit %d\n%s", code, out)
+	}
+	data, _ := os.ReadFile(jsonPath)
+	var rep struct {
+		Commands []struct {
+			Status      string             `json:"status"`
+			Unbaselined models.GroundTruth `json:"unbaselined"`
+		} `json:"commands"`
+		Coverage struct {
+			UnexplainedSubtrees []uint32 `json:"unexplained_subtrees"`
+		} `json:"coverage"`
+	}
+	if err := json.Unmarshal(data, &rep); err != nil || len(rep.Commands) != 1 || len(rep.Commands[0].Unbaselined) != 1 || rep.Commands[0].Unbaselined[0].Target != "evil.example" || len(rep.Coverage.UnexplainedSubtrees) != 1 {
+		t.Errorf("JSON = %+v, %v", rep, err)
+	}
+
+	code, out, _ = verify(t, "--trajectory", trajectory, "--ground-truth", ground, "--baseline", old)
+	if code != 0 || !strings.Contains(out, limit) || !strings.Contains(out, "Unexplained subtrees: 0") {
+		t.Errorf("an old baseline: exit %d\n%s", code, out)
+	}
+}

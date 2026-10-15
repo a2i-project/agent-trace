@@ -165,3 +165,28 @@ func TestMinAgreementFlag(t *testing.T) {
 		t.Errorf("an agreement above 1: exit %d, want 3", code)
 	}
 }
+
+// V-38: the baseline records what each command rule's command did beneath it,
+// and the tool says how many commands and actions it recorded.
+func TestRecordsWhatEachCommandDidBeneathIt(t *testing.T) {
+	dir := t.TempDir()
+	run := func(name string) string {
+		return write(t, dir, name, models.GroundTruthFile{RootPID: 100, Coverage: cov(models.ProbeCoverage{Ran: true}), Events: models.GroundTruth{
+			{Timestamp: t0, ActionType: models.ProcessFork, Target: "200", PID: 200, PPID: 100},
+			{Timestamp: t0, ActionType: models.ProcessExec, Target: "/bin/bash -c env", PID: 200, PPID: 100},
+			{Timestamp: t0, ActionType: models.ProcessExec, Target: "/usr/bin/env", PID: 200, PPID: 100},
+		}})
+	}
+	outPath := filepath.Join(dir, "b.json")
+	code, out, errOut := baseline(t, "--agent", "generic", "--agent-version", "9.9", "--out", outPath, run("r1.json"), run("r2.json"))
+	if code != 0 {
+		t.Fatalf("exit %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(out, "recorded the subtrees of 1 command rule(s): 1 action(s) beneath them that a baselined command explains (V-38)\n") {
+		t.Errorf("output:\n%s", out)
+	}
+	b, err := agent.LoadBaseline(outPath)
+	if err != nil || len(b.Subtrees) != 1 || b.Subtrees[0].Command != "/bin/bash -c env" || len(b.Subtrees[0].Events) != 1 || b.Subtrees[0].Events[0].Target != "/usr/bin/env" {
+		t.Errorf("subtrees = %+v, %v", b.Subtrees, err)
+	}
+}

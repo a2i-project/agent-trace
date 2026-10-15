@@ -240,3 +240,36 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 		Options:   opts,
 	}
 }
+
+// BaselineSubtree is the baseline's subtree records for a run, in the form
+// the verifier asks about them (verification.Input.BaselineSubtree, V-38):
+// the command and the event beneath it are compared in their canonical form,
+// as rules are. A command the adapter declares harness noise explains its
+// whole subtree, as before. Nil when there is no baseline or it records no
+// subtrees, which keeps the V7 reading.
+func BaselineSubtree(a Adapter, b *Baseline, workspace string) verification.SubtreeBaseline {
+	if b == nil {
+		return nil
+	}
+	sub := b.Subtree(workspace)
+	if sub == nil {
+		return nil
+	}
+	return func(command, e models.GroundTruthEvent) bool {
+		return a.IsHarnessNoise(command) || sub(canonical(a, command), canonical(a, e))
+	}
+}
+
+// PrepareWithBaseline is Prepare with a measured baseline: its rules as the
+// predicate and its subtree records as Input.BaselineSubtree (V-38). b may be
+// nil. Prepare given only b.Predicate leaves every baselined command
+// explaining its whole subtree, so a caller that holds a Baseline uses this.
+func PrepareWithBaseline(a Adapter, claims models.Trajectory, g models.GroundTruthFile, b *Baseline, opts verification.Options) verification.Input {
+	var measured verification.Baseline
+	if b != nil {
+		measured = b.Predicate(g.Workspace)
+	}
+	in := Prepare(a, claims, g, measured, opts)
+	in.BaselineSubtree = BaselineSubtree(a, b, g.Workspace)
+	return in
+}
