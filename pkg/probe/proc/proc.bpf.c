@@ -428,7 +428,10 @@ int handle_exit_group(struct sys_enter_exit_group_ctx *ctx)
 	if (!cached)
 		return 0;
 
-	cached->exit_code = (__s32)ctx->error_code;
+	// The parent's wait sees only the low 8 bits: _exit(256) is status 0
+	// and _exit(-1) is 255. Record that status, which is what a shell or a
+	// harness reports, not the raw argument.
+	cached->exit_code = (__s32)(ctx->error_code & 0xff);
 	cached->has_exit_code = 1;
 	return 0;
 }

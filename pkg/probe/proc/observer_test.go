@@ -1169,3 +1169,37 @@ func TestObserver_ProgramPathOf255BytesIsWhole(t *testing.T) {
 		}
 	}
 }
+
+// The exit code is the status the parent reads from wait, the low 8 bits of
+// the exit_group argument, not the argument itself: _exit(263) is status 7
+// and _exit(-1) is 255, which is what a shell or a harness reports.
+func TestObserver_ExitCodeIsTheWaitStatus(t *testing.T) {
+	skipUnprivileged(t)
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not installed")
+	}
+	args := []int{263, -1, 256}
+	cmds := make([]*exec.Cmd, len(args))
+	for i, a := range args {
+		cmds[i] = exec.Command(python, "-c", fmt.Sprintf("import os; os._exit(%d)", a))
+	}
+	byPID := runTracked(t, cmds)
+	for i, c := range cmds {
+		want := int32(c.ProcessState.ExitCode())
+		var exit *models.GroundTruthEvent
+		for j, e := range byPID[uint32(c.Process.Pid)] {
+			if e.ActionType == models.ProcessExit {
+				exit = &byPID[uint32(c.Process.Pid)][j]
+			}
+		}
+		switch {
+		case exit == nil:
+			t.Errorf("_exit(%d): no exit event", args[i])
+		case exit.ExitCode == nil:
+			t.Errorf("_exit(%d): exit event has no exit code", args[i])
+		case *exit.ExitCode != want:
+			t.Errorf("_exit(%d): ExitCode = %d, want the wait status %d", args[i], *exit.ExitCode, want)
+		}
+	}
+}
