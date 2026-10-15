@@ -213,6 +213,9 @@ func report(w io.Writer, r reportInput) {
 		if n := restingReads(*r.baseline, r.gt.Workspace); n > 0 {
 			p("  limitation: the harness itself opens %d path(s) at rest by this baseline (file_open rules); an unclaimed in-process read of one of them is explained by the baseline and not detectable (V-36)\n", n)
 		}
+		if n := len(restingWrites(*r.baseline, r.gt.Workspace)); n > 0 {
+			p("  limitation: the harness itself writes %d path(s) at rest by this baseline (file_write, file_close, file_rename or file_delete rules); an unclaimed in-process write to one of them is explained by the baseline and not detectable (V-37)\n", n)
+		}
 	}
 	printParse(w, r.parse)
 
@@ -232,6 +235,9 @@ func report(w io.Writer, r reportInput) {
 		p("  Unexplained harness network activity: %d  (level-0 connections to the harness's declared service hosts that nothing explains)\n", len(v.UnexplainedHarnessNet))
 	}
 	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
+	if len(v.BaselinedWritesOutsideHarness) > 0 {
+		p("  Baselined writes outside the harness's directories: %d  (level-0 writes a baseline rule explains on paths the adapter does not declare as the harness's own: an unclaimed write there would be hidden)\n", len(v.BaselinedWritesOutsideHarness))
+	}
 	if n := len(v.HarnessImplied) + len(v.HarnessImpliedUnpaired); n > 0 {
 		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", len(v.HarnessImplied), n)
 	}
@@ -264,6 +270,7 @@ func report(w io.Writer, r reportInput) {
 	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
 	printEvents(w, "Unexplained harness network activity", v.UnexplainedHarnessNet)
 	printEvents(w, "Outside writes", v.OutsideWrites)
+	printEvents(w, "Baselined writes outside the harness's directories", v.BaselinedWritesOutsideHarness)
 	printImplied(w, v.HarnessImplied)
 	printEvents(w, "Capability", v.Capability)
 	printCommands(w, v.Commands)
@@ -431,6 +438,34 @@ func restingReads(b agent.Baseline, workspace string) int {
 		n++
 	}
 	return n
+}
+
+// restingWrites lists, sorted and distinct, the paths of the baseline's
+// write-class rules (file_write, file_close, file_rename, file_delete) that
+// apply to a run in workspace: the paths the harness writes at rest, where an
+// unclaimed in-process write is explained by the baseline (V-37). Like
+// restingReads, every such rule is a level-0 event, a rule naming the
+// workspace placeholder applies only when the run has a workspace, and a
+// canonical rule standing for a family of per-run paths (I-41) counts once.
+func restingWrites(b agent.Baseline, workspace string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range b.Rules {
+		switch r.ActionType {
+		case models.FileWrite, models.FileClose, models.FileRename, models.FileDelete:
+		default:
+			continue
+		}
+		if len(workspace) < 2 && (strings.Contains(r.Target, agent.WorkspacePlaceholder) || strings.Contains(r.Target, agent.MangledWorkspacePlaceholder)) {
+			continue
+		}
+		if !seen[r.Target] {
+			seen[r.Target] = true
+			out = append(out, r.Target)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func derefStr(s *string) string {
@@ -602,6 +637,11 @@ type jsonReport struct {
 	Commands     []jsonCommand             `json:"commands"`
 	Complete     verification.Completeness `json:"completeness"`
 	versionJSON
+
+	// RestingWrites is present only when the baseline holds write-class
+	// rules that apply to the run: the paths where an unclaimed in-process
+	// write is not detectable (V-37).
+	RestingWrites []string `json:"resting_writes,omitempty"`
 }
 
 type jsonAlignment struct {
@@ -624,6 +664,10 @@ type jsonAlignment struct {
 	// CorroboratedHarnessShared is present only when a corroborated read
 	// paired with an open the baseline also explains (V-36).
 	CorroboratedHarnessShared []verification.MatchedPair `json:"corroborated_harness_shared,omitempty"`
+	// BaselinedWritesOutsideHarness is present only when a level-0 write a
+	// baseline rule explains lies outside the harness's declared directories
+	// (V-37).
+	BaselinedWritesOutsideHarness models.GroundTruth `json:"baselined_writes_outside_harness,omitempty"`
 }
 
 // jsonImplied is a harness-implied claim with the call that implied it, which
@@ -668,6 +712,10 @@ func writeJSONReport(path string, r reportInput) error {
 	}
 	rep.Alignment.CorroboratedHarnessShared = v.CorroboratedHarnessShared
 	rep.versionJSON = r.version.json()
+	rep.Alignment.BaselinedWritesOutsideHarness = v.BaselinedWritesOutsideHarness
+	if r.baseline != nil {
+		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)
+	}
 	for _, p := range v.HarnessImplied {
 		rep.Alignment.HarnessImplied = append(rep.Alignment.HarnessImplied, jsonImplied{ImpliedBy: p.Entry.ImpliedBy, Claim: p.Entry, Event: &p.Event})
 	}

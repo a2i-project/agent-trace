@@ -1127,6 +1127,95 @@ func TestVerify_AReadPairedWithABaselineOpenIsListedAsHarnessShared(t *testing.T
 	}
 }
 
+// V-37: a level-0 write the baseline explains is listed when its path lies
+// outside the harness's declared directories, since an unclaimed write by the
+// agent there would be hidden by the rule. A write under the declared
+// directories, a write a claim paired with, a command's write and a write no
+// rule explains are not listed. The list changes no outcome.
+func TestVerify_BaselinedWritesOutsideTheHarnessDirectoriesAreListed(t *testing.T) {
+	const (
+		sock  = "/tmp/cc-socks"
+		cfg   = "/home/u/.harness/state.json"
+		plain = "/w/a"
+	)
+	base := func(e models.GroundTruthEvent) bool {
+		return e.Target == sock || e.Target == cfg || e.Target == "/bin/sh -c probe"
+	}
+	owned := func(p string) bool { return strings.HasPrefix(p, "/home/u/.harness/") }
+	cases := []struct {
+		name    string
+		owned   func(string) bool
+		b       Baseline
+		claims  models.Trajectory
+		ground  models.GroundTruth
+		outcome Outcome
+		listed  []string
+	}{
+		{
+			name: "a baselined write outside the declared directories is listed", owned: owned, b: base,
+			ground:  models.GroundTruth{agentEv(1, models.FileWrite, sock), agentEv(2, models.FileDelete, sock), agentEv(3, models.FileOpen, sock)},
+			outcome: OutcomeFaithful, listed: []string{"file_write " + sock, "file_delete " + sock},
+		},
+		{
+			name: "a baselined write under the declared directories is not listed", owned: owned, b: base,
+			ground:  models.GroundTruth{agentEv(1, models.FileWrite, cfg), agentEv(2, models.FileClose, cfg)},
+			outcome: OutcomeFaithful,
+		},
+		{
+			name: "with no declaration every baselined write is listed", b: base,
+			ground:  models.GroundTruth{agentEv(1, models.FileWrite, cfg), agentEv(2, models.FileWrite, sock)},
+			outcome: OutcomeFaithful, listed: []string{"file_write " + cfg, "file_write " + sock},
+		},
+		{
+			// A claimed write pairs with the kept event and is checked on its
+			// content (V-30), so it is not listed.
+			name: "a baselined write a claim paired with is not listed", owned: owned, b: base,
+			claims:  models.Trajectory{withClaimHash(claimAt(1, models.FileWrite, sock), nil, sp("sha256:aa"))},
+			ground:  models.GroundTruth{withHash(agentEv(1, models.FileWrite, sock), nil, sp("sha256:aa"))},
+			outcome: OutcomeFaithful,
+		},
+		{
+			// The write is kept for the read claim on its path and stays
+			// unpaired: explained by the baseline, and listed.
+			name: "a kept baselined write that stays unpaired is listed", owned: owned, b: base,
+			claims:  models.Trajectory{claimAt(1, models.FileOpen, sock)},
+			ground:  models.GroundTruth{agentEv(1, models.FileOpen, sock), agentEv(2, models.FileWrite, sock)},
+			outcome: OutcomeFaithful, listed: []string{"file_write " + sock},
+		},
+		{
+			name: "a baselined command's write is not a level-0 write", owned: owned, b: base,
+			ground: models.GroundTruth{
+				fork(1, 200, agentPID), execEv(2, 200, agentPID, "/bin/sh -c probe"), fsEv(3, 200, sock),
+				exitEv(4, 200, agentPID, "/bin/sh -c probe"),
+			},
+			outcome: OutcomeFaithful,
+		},
+		{
+			name: "a write no rule explains is a finding, not listed", owned: owned, b: base,
+			ground:  models.GroundTruth{agentEv(1, models.FileWrite, plain)},
+			outcome: OutcomeNotFaithful,
+		},
+		{
+			name: "without a baseline nothing is listed", owned: owned,
+			ground:  models.GroundTruth{agentEv(1, models.FileWrite, cfg)},
+			outcome: OutcomeInconclusive,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := Verify(Input{Claims: tc.claims, Ground: tc.ground, RootPID: agentPID, Coverage: completeCov(), Baseline: tc.b, Options: Options{HarnessOwned: tc.owned}})
+			wantOutcome(t, v, tc.outcome)
+			var got []string
+			for _, e := range v.BaselinedWritesOutsideHarness {
+				got = append(got, string(e.ActionType)+" "+e.Target)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.listed, ",") {
+				t.Errorf("listed %v, want %v", got, tc.listed)
+			}
+		})
+	}
+}
+
 func containsPair(pairs []MatchedPair, p MatchedPair) bool {
 	for _, q := range pairs {
 		if q.Entry.Target == p.Entry.Target && q.Entry.ActionType == p.Entry.ActionType && q.Event.Timestamp.Equal(p.Event.Timestamp) && q.Event.Target == p.Event.Target {

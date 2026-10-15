@@ -695,3 +695,91 @@ func TestReadsSharedWithTheHarnessAreReported(t *testing.T) {
 		}
 	})
 }
+
+// V-37: the report states how many paths the harness writes at rest by the
+// baseline, lists them in the JSON, and lists a level-0 write a rule explains
+// outside the harness's declared directories, with its count. A run with no
+// such write prints no count and its JSON has no key; a baseline without
+// write rules prints no limitation and no list.
+func TestWritesTheHarnessMakesAtRestAreReported(t *testing.T) {
+	const sock = "/tmp/cc-socks"
+	dir := t.TempDir()
+	write := func(name string, g models.GroundTruth) string {
+		return writeJSON(t, dir, name, models.GroundTruthFile{RootPID: 100, Coverage: completeCov(), Events: g})
+	}
+	withWrite := write("g1.json", models.GroundTruth{event(models.FileWrite, sock), event(models.FileOpen, "/w/a")})
+	without := write("g2.json", models.GroundTruth{event(models.FileOpen, "/w/a")})
+	base := filepath.Join(dir, "b.json")
+	if err := agent.SaveBaseline(base, agent.Baseline{Schema: agent.BaselineSchema, Agent: agent.GenericName, Runs: 1, MinAgreement: 1, Rules: []agent.Rule{
+		{ActionType: models.FileWrite, Target: sock}, {ActionType: models.FileDelete, Target: sock}, {ActionType: models.FileClose, Target: "/home/u/.harness/state"},
+		{ActionType: models.FileWrite, Target: agent.WorkspacePlaceholder + "/.lock"}, {ActionType: models.FileOpen, Target: "/home/u/.harness/cfg"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	reads := filepath.Join(dir, "r.json")
+	if err := agent.SaveBaseline(reads, agent.Baseline{Schema: agent.BaselineSchema, Agent: agent.GenericName, Runs: 1, MinAgreement: 1, Rules: []agent.Rule{
+		{ActionType: models.FileOpen, Target: "/home/u/.harness/cfg"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	const (
+		limit = "  limitation: the harness itself writes 2 path(s) at rest by this baseline (file_write, file_close, file_rename or file_delete rules); an unclaimed in-process write to one of them is explained by the baseline and not detectable (V-37)\n"
+		count = "  Baselined writes outside the harness's directories: 1  ("
+		list  = "\nBaselined writes outside the harness's directories:\n  2026-10-06T12:00:00Z file_write     " + sock + "\n"
+	)
+	report := func(t *testing.T, ground string, args ...string) (int, string, map[string]json.RawMessage) {
+		t.Helper()
+		trajectory := writeJSON(t, t.TempDir(), "t.json", models.Trajectory{claim(models.FileOpen, "/w/a")})
+		jsonPath := filepath.Join(t.TempDir(), "v.json")
+		code, out, errOut := verify(t, append([]string{"--trajectory", trajectory, "--ground-truth", ground, "--json", jsonPath}, args...)...)
+		if errOut != "" {
+			t.Fatalf("stderr: %s", errOut)
+		}
+		data, _ := os.ReadFile(jsonPath)
+		var rep map[string]json.RawMessage
+		if err := json.Unmarshal(data, &rep); err != nil {
+			t.Fatal(err)
+		}
+		var al map[string]json.RawMessage
+		if err := json.Unmarshal(rep["alignment"], &al); err != nil {
+			t.Fatal(err)
+		}
+		for k, v := range al {
+			rep["alignment."+k] = v
+		}
+		return code, out, rep
+	}
+
+	t.Run("a baselined write outside the harness's directories", func(t *testing.T) {
+		code, out, rep := report(t, withWrite, "--baseline", base)
+		if code != 0 || !strings.Contains(out, limit) || !strings.Contains(out, count) || !strings.Contains(out, list) {
+			t.Errorf("exit %d\n%s", code, out)
+		}
+		var resting []string
+		if err := json.Unmarshal(rep["resting_writes"], &resting); err != nil || strings.Join(resting, ",") != "/home/u/.harness/state,"+sock {
+			t.Errorf("JSON resting_writes = %v, %v", resting, err)
+		}
+		var listed models.GroundTruth
+		if err := json.Unmarshal(rep["alignment.baselined_writes_outside_harness"], &listed); err != nil || len(listed) != 1 || listed[0].Target != sock {
+			t.Errorf("JSON baselined_writes_outside_harness = %+v, %v", listed, err)
+		}
+	})
+	t.Run("no such write in the run", func(t *testing.T) {
+		code, out, rep := report(t, without, "--baseline", base)
+		if code != 0 || !strings.Contains(out, limit) || strings.Contains(out, "Baselined writes outside") {
+			t.Errorf("exit %d\n%s", code, out)
+		}
+		if _, ok := rep["alignment.baselined_writes_outside_harness"]; ok {
+			t.Errorf("JSON carries baselined_writes_outside_harness with no such write")
+		}
+	})
+	t.Run("a baseline without write rules", func(t *testing.T) {
+		_, out, rep := report(t, without, "--baseline", reads)
+		if strings.Contains(out, "(V-37)") {
+			t.Errorf("a baseline without write rules:\n%s", out)
+		}
+		if _, ok := rep["resting_writes"]; ok {
+			t.Errorf("JSON carries resting_writes without write rules")
+		}
+	})
+}

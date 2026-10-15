@@ -64,6 +64,17 @@ type Verdict struct {
 	// baseline (V-36). Not a finding, no effect on the outcome: it makes the
 	// limit visible per pair.
 	CorroboratedHarnessShared []MatchedPair
+	// BaselinedWritesOutsideHarness: the level-0 write-class file events
+	// (writes, closes, renames, deletes) a baseline rule explained whose path
+	// lies outside the harness's own directories as the adapter declares them
+	// (Options.HarnessOwned; with no declaration, every such event). The
+	// harness and its in-process tools are one process, so an unclaimed write
+	// by the agent to a path the harness writes at rest is explained by the
+	// rule and hidden (V-37); one under the declared directories is the
+	// harness's own state, one elsewhere is listed so a reader can judge it.
+	// A write a claim paired with is checked on its content and is not
+	// listed. Not a finding, no effect on the outcome.
+	BaselinedWritesOutsideHarness []models.GroundTruthEvent
 	// Mismatched: a claim aligned with an observed action that disagrees,
 	// which is what target substitution and content tampering look like.
 	Mismatched []MatchedPair
@@ -361,6 +372,10 @@ func Verify(in Input) Verdict {
 	// the claim can pair with it; one left unpaired is counted as baselined
 	// after alignment, as if it had been subtracted (V-30).
 	levelZero := countLevelZero(part)
+	// A level-0 write the baseline explains outside the harness's declared
+	// directories, listed before the subtraction removes it (V-37); one kept
+	// for a claim joins the list only if it stays unpaired, below.
+	v.BaselinedWritesOutsideHarness = baselinedWritesOutside(part, in.Baseline, in.Options.HarnessOwned, claimed)
 	part, _ = part.SubtractBaseline(in.Baseline, claimed)
 	baselinedLevelZero := levelZero - countLevelZero(part)
 	// A level-0 file event in the harness's own directories that no claim
@@ -433,6 +448,9 @@ func Verify(in Input) Verdict {
 				// pair: explained by the baseline, as if subtracted (V-30).
 				if keptBaseline(part, e.EventIndex, in.Baseline) {
 					baselinedLevelZero++
+					if writeClass(e.Event.ActionType) && !isHarnessOwned(*e.Event, in.Options.HarnessOwned) {
+						v.BaselinedWritesOutsideHarness = append(v.BaselinedWritesOutsideHarness, *e.Event)
+					}
 					continue
 				}
 				// A harness-owned event on a claimed path that still found no pair.
@@ -450,6 +468,9 @@ func Verify(in Input) Verdict {
 			}
 		}
 	}
+	sort.SliceStable(v.BaselinedWritesOutsideHarness, func(i, j int) bool {
+		return v.BaselinedWritesOutsideHarness[i].Timestamp.Before(v.BaselinedWritesOutsideHarness[j].Timestamp)
+	})
 	v.Coverage = CheckCoverage(part, alignments)
 	v.Coverage.UnexplainedActions = withoutExplainedLevelZero(v.Coverage.UnexplainedActions, in.Baseline, in.Options.HarnessOwned, hosts)
 	v.Coverage.BaselinedLevelZero = baselinedLevelZero
@@ -695,6 +716,34 @@ func withoutExplainedLevelZero(actions []UnexplainedAction, b Baseline, owned fu
 	return out
 }
 
+// writeClass reports whether an action type changes a file: a write, a close
+// after writing, a rename or a delete.
+func writeClass(t models.ActionType) bool {
+	switch t {
+	case models.FileWrite, models.FileClose, models.FileRename, models.FileDelete:
+		return true
+	}
+	return false
+}
+
+// baselinedWritesOutside returns the level-0 write-class events of the aligned
+// sequence that the baseline recognises, on a path no claim names, and that
+// lie outside the harness's declared directories: the ones SubtractBaseline
+// is about to remove (V-37). With no declaration, every such event counts.
+func baselinedWritesOutside(p Partition, b Baseline, owned func(string) bool, claimed map[string]bool) []models.GroundTruthEvent {
+	if b == nil {
+		return nil
+	}
+	var out []models.GroundTruthEvent
+	for i, e := range p.Observed {
+		if p.Owner[i] != nil || !writeClass(e.ActionType) || !b(e) || onClaimedPath(e, claimed) || isHarnessOwned(e, owned) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // outsideWrites returns the write-class file events among the outside events
 // that lie under the workspace. With no workspace known, every outside
 // write-class event counts: a capture that records no workspace kept only
@@ -702,9 +751,7 @@ func withoutExplainedLevelZero(actions []UnexplainedAction, b Baseline, owned fu
 func outsideWrites(outside models.GroundTruth, workspace string) []models.GroundTruthEvent {
 	var out []models.GroundTruthEvent
 	for _, e := range outside {
-		switch e.ActionType {
-		case models.FileWrite, models.FileClose, models.FileRename, models.FileDelete:
-		default:
+		if !writeClass(e.ActionType) {
 			continue
 		}
 		if workspace == "" || underDir(e.Target, workspace) {
