@@ -1274,3 +1274,63 @@ func TestObserver_ProcessOutlivesItsLeaderThread(t *testing.T) {
 		t.Errorf("exit record at %v precedes the child's exec at %v", exit.Timestamp, child.Timestamp)
 	}
 }
+
+// execveatScript calls execveat(dirfd, path, ["true", nonce], [], flags),
+// with dirfd an opened directory or AT_FDCWD when none is given.
+const execveatScript = `
+import ctypes, os, sys
+nr, dirpath, path, flags, nonce = int(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5]
+dirfd = os.open(dirpath, os.O_RDONLY | os.O_DIRECTORY) if dirpath else -100
+argv = (ctypes.c_char_p * 3)(b"true", nonce.encode(), None)
+envp = (ctypes.c_char_p * 1)(None)
+libc = ctypes.CDLL(None, use_errno=True)
+libc.syscall(ctypes.c_long(nr), ctypes.c_long(dirfd), ctypes.c_char_p(path.encode()), argv, envp, ctypes.c_long(flags))
+os._exit(100 + ctypes.get_errno())
+`
+
+// AT_EMPTY_PATH makes execveat exec the descriptor only when the pathname
+// is empty; with a pathname the kernel looks the path up as usual, so the
+// record names it (P-21). An exec with AT_EMPTY_PATH and an absolute path
+// used to be recorded as "(fexecve)", which hid the program. A pathname
+// relative to a directory descriptor is recorded as given.
+func TestObserver_ExecveatWithAPathNamesIt(t *testing.T) {
+	skipUnprivileged(t)
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not installed")
+	}
+	cases := []struct {
+		name, dir, path string
+		flags           int
+		target          string
+	}{
+		{"AT_EMPTY_PATH with an absolute path", "", "/bin/true", unix.AT_EMPTY_PATH, "/bin/true"},
+		{"a path relative to a directory descriptor", "/bin", "true", 0, "true"},
+	}
+	nonce := fmt.Sprintf("agenttrace-execveat-%d", time.Now().UnixNano())
+	cmds := make([]*exec.Cmd, len(cases))
+	for i, c := range cases {
+		cmds[i] = exec.Command(python, "-c", execveatScript,
+			strconv.Itoa(unix.SYS_EXECVEAT), c.dir, c.path, strconv.Itoa(c.flags), fmt.Sprintf("%s-%d", nonce, i))
+	}
+	byPID := runTracked(t, cmds)
+	for i, c := range cases {
+		if code := cmds[i].ProcessState.ExitCode(); code != 0 {
+			t.Errorf("%s: exited %d, want 0 from /bin/true (100+errno: execveat failed)", c.name, code)
+			continue
+		}
+		want := fmt.Sprintf("%s %s-%d", c.target, nonce, i)
+		var seen bool
+		for _, e := range byPID[uint32(cmds[i].Process.Pid)] {
+			if e.ActionType == models.ProcessExec && strings.HasSuffix(e.Target, fmt.Sprintf("%s-%d", nonce, i)) {
+				seen = true
+				if e.Target != want {
+					t.Errorf("%s: target %q, want %q", c.name, e.Target, want)
+				}
+			}
+		}
+		if !seen {
+			t.Errorf("%s: no exec record with the nonce", c.name)
+		}
+	}
+}

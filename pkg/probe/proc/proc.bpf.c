@@ -199,9 +199,9 @@ struct sys_enter_execve_ctx {
 	const char *const *envp;
 };
 
-// execveat(2): fd, pathname, argv, envp, flags. With AT_EMPTY_PATH the
-// pathname is empty and fd is the file (glibc's fexecve); otherwise a
-// relative pathname is relative to fd, which this program cannot resolve.
+// execveat(2): fd, pathname, argv, envp, flags. With AT_EMPTY_PATH and an
+// empty pathname fd is the file (glibc's fexecve); otherwise a relative
+// pathname is relative to fd, which this program cannot resolve.
 struct sys_enter_execveat_ctx {
 	__u64 pad;
 	__s32 syscall_nr;
@@ -212,8 +212,6 @@ struct sys_enter_execveat_ctx {
 	const char *const *envp;
 	__s64 flags;
 };
-
-#define AT_EMPTY_PATH 0x1000
 
 struct sched_process_exit_ctx {
 	__u64 pad;
@@ -407,15 +405,14 @@ int handle_execve(struct sys_enter_execve_ctx *ctx)
 SEC("tracepoint/syscalls/sys_enter_execveat")
 int handle_execveat(struct sys_enter_execveat_ctx *ctx)
 {
-	// An empty pathname with AT_EMPTY_PATH execs the descriptor itself:
-	// there is no path to record. Otherwise the pathname is recorded as
-	// given; one relative to a directory descriptor is unresolved.
-	int via_fd = (ctx->flags & AT_EMPTY_PATH) != 0;
-	if (!via_fd) {
-		char first = 0;
-		if (bpf_probe_read_user(&first, 1, ctx->filename) || first == '\0')
-			via_fd = 1;
-	}
+	// AT_EMPTY_PATH execs the descriptor itself only when the pathname is
+	// empty: there is no path to record. With a pathname the kernel looks it
+	// up as usual whatever the flags, so it is recorded as given; one
+	// relative to a directory descriptor is unresolved. An empty pathname
+	// without the flag fails, and an unreadable one too; both are recorded
+	// as an exec through the descriptor, as before (P-21).
+	char first = 0;
+	int via_fd = bpf_probe_read_user(&first, 1, ctx->filename) || first == '\0';
 	return record_exec(ctx->filename, ctx->argv, via_fd);
 }
 
