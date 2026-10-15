@@ -57,13 +57,17 @@ func TestTier4_E2E_NotFaithful_ContentSubstitution(t *testing.T) {
 }
 
 // TestTier4_E2E_RacedRewriteDropsStaleHash is the supplementary, timing-driven
-// check for Fix 5 (the deterministic proof is TestObserver_RacedCloseDropsHash
-// in pkg/probe/fs). A tight write/close/rewrite loop keeps overwriting the file
-// while post-close hash goroutines are still in flight. The assertion is safe
-// regardless of scheduling: any OutputHash the observer does attach to a
-// FileClose for this path must be the hash of the file's final content -- never
-// a stale intermediate. Post-fix, a close whose file was written again reports
-// no hash instead.
+// check for the settle protocol (P-16, P-26; the deterministic proofs are
+// TestObserver_RacedCloseDropsHash and TestObserver_MergedTruncatingOpenDropsTheHash
+// in pkg/probe/fs). A tight write/close/rewrite loop keeps overwriting the
+// file while closes wait to settle. The assertion is safe regardless of
+// scheduling: any OutputHash the observer does attach to a FileClose for this
+// path must be the content of one revision, never an intermediate such as the
+// empty file between a truncating open and its write. A close whose file was
+// written again reports no hash instead. It failed once in 40 CI runs with
+// the empty file's hash at 40 iterations (P-26): the kernel had merged
+// the next rewrite's open and truncation into the close's unread record. The
+// loop is now 200 iterations, to give that window more chances.
 func TestTier4_E2E_RacedRewriteDropsStaleHash(t *testing.T) {
 	skipUnprivileged(t)
 
@@ -81,7 +85,7 @@ func TestTier4_E2E_RacedRewriteDropsStaleHash(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	target := filepath.Join(workspace, "raced.txt")
-	const iterations = 40
+	const iterations = 200
 	var finalContent []byte
 	for i := 0; i < iterations; i++ {
 		finalContent = []byte(fmt.Sprintf("content-revision-%03d\n", i))

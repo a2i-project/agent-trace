@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -130,6 +131,24 @@ type Observer struct {
 	// paths becomes a memory concern.
 	pathGeneration map[string]uint64
 
+	// handleGeneration counts the same write-class records per file, keyed by
+	// the file handle a content record carries (handleKey), so a write under
+	// another name reaches a close registered under the old one. Since P-25 a
+	// record names the entry as it was named when the event happened, so the
+	// close of a temporary renamed onto its target before an open of the
+	// target are two paths for one file (P-26). Grows like pathGeneration.
+	handleGeneration map[string]uint64
+
+	// writerHolds reports whether process pid still holds the file behind
+	// pathFD open for writing, or whether that cannot be told. The kernel
+	// merges an open, a truncation and a write by the closing process into
+	// that close's record while the record is unread, so the record can hide
+	// a rewrite that has begun; a process that still holds the file open for
+	// writing is the trace of one that has not finished (P-26). New sets it
+	// to openForWriteBy; nil, in tests that drive the settle code without a
+	// kernel, skips the check.
+	writerHolds func(pid uint32, pathFD int) bool
+
 	// pendingCloses holds, per path, the most recent FileClose still
 	// waiting to prove it won't be superseded before it is trusted enough
 	// to hash. See registerClose and resolveSettled for the full mechanism
@@ -196,6 +215,10 @@ type pendingClose struct {
 	// (an open that may have truncated it, a modify) changes the generation, and
 	// then the content this close described may be gone: see resolveSettled.
 	gen uint64
+	// handle is the file's handleKey, empty when the record carried no file
+	// handle, and hgen the file's handleGeneration at registration.
+	handle string
+	hgen   uint64
 }
 
 // New creates an Observer. The caller must call Start to begin receiving
@@ -268,6 +291,8 @@ func New(cfg Config) (*Observer, error) {
 		shadowHashes:        make(map[string]string),
 		shadowHashesByInode: make(map[inodeKey]string),
 		pathGeneration:      make(map[string]uint64),
+		handleGeneration:    make(map[string]uint64),
+		writerHolds:         openForWriteBy,
 		pendingCloses:       make(map[string]*pendingClose),
 		lastWriteAt:         make(map[string]time.Time),
 		lastEmitted:         make(map[string]emitted),
@@ -574,14 +599,15 @@ func (o *Observer) countRecords(buf []byte, n int) uint64 {
 // drainNonBlocking processes every fanotify record currently available
 // without blocking, returning once none remain (or the stop pipe becomes
 // readable -- the caller's own next check notices that, so this just needs
-// to not spin past it). Used both for readLoop's normal per-iteration
+// to not spin past it). It reports whether it emptied the queue: false when
+// it returned on the stop pipe with records still queued, or on an error. Used both for readLoop's normal per-iteration
 // pickup and, from hashSettled, as the synchronous catch-up that makes its
 // generation check authoritative: any write whose syscall has already
 // returned has its notification already enqueued here, whether or not this
 // observer has gotten to it yet, so a non-blocking drain right before
 // trusting a hash is not a best-effort peek, it is a real answer to "has
 // anything else happened yet".
-func (o *Observer) drainNonBlocking(buf []byte) {
+func (o *Observer) drainNonBlocking(buf []byte) bool {
 	pollFDs := []unix.PollFd{
 		{Fd: int32(o.fanotifyFD), Events: unix.POLLIN},
 		{Fd: int32(o.stopR), Events: unix.POLLIN},
@@ -593,15 +619,18 @@ func (o *Observer) drainNonBlocking(buf []byte) {
 			if err == unix.EINTR {
 				continue
 			}
-			return
+			return false
 		}
-		if pollFDs[1].Revents&unix.POLLIN != 0 || pollFDs[0].Revents&unix.POLLIN == 0 {
-			return
+		if pollFDs[0].Revents&unix.POLLIN == 0 {
+			return true
+		}
+		if pollFDs[1].Revents&unix.POLLIN != 0 {
+			return false
 		}
 
 		n, err := unix.Read(o.fanotifyFD, buf)
 		if err != nil || n == 0 {
-			return
+			return false
 		}
 
 		// One batch, one clock reading, and one nanosecond per record on top:
@@ -688,6 +717,12 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 		}
 		o.pathGeneration[e.Path]++
 		o.lastWriteAt[e.Path] = ts
+		if key := handleKey(e.FSID, e.HandleType, e.HandleData); key != "" {
+			if o.handleGeneration == nil {
+				o.handleGeneration = make(map[string]uint64)
+			}
+			o.handleGeneration[key]++
+		}
 		o.mu.Unlock()
 	}
 
@@ -696,7 +731,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 			continue
 		}
 		if actionType == models.FileClose {
-			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData)
+			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData, handleKey(e.FSID, e.HandleType, e.HandleData))
 		} else {
 			event := models.GroundTruthEvent{
 				Timestamp:       ts,
@@ -858,6 +893,70 @@ func inodeKeyFromFD(fd int) (inodeKey, bool) {
 	return inodeKey{dev: uint64(stat.Dev), ino: stat.Ino}, true
 }
 
+// handleKey identifies the file a content record's handle names, without a
+// system call: the filesystem id, the handle type and the handle's bytes.
+// The handle stays the same across renames, so it reaches a file that a
+// name no longer does. It is empty for a record that carries no handle (a
+// create, delete or rename record names only its directory and entry).
+func handleKey(fsid fsID, handleType int32, handleData []byte) string {
+	if len(handleData) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d:%d:%x", fsid[0], fsid[1], handleType, handleData)
+}
+
+// openForWriteBy reports whether process pid holds the file behind fd open
+// for writing, through any of its descriptors, or whether that cannot be
+// told: pid 0 (the kernel), a file that cannot be identified, or a descriptor
+// table the probe may not read. A process that no longer exists holds
+// nothing. It reads /proc/<pid>/fd, which is the table of every thread that
+// shares it, and the flags in /proc/<pid>/fdinfo of the descriptors that name
+// the file.
+func openForWriteBy(pid uint32, fd int) bool {
+	if pid == 0 {
+		return true
+	}
+	key, ok := inodeKeyFromFD(fd)
+	if !ok {
+		return true
+	}
+	dir := fmt.Sprintf("/proc/%d/fd", pid)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return !os.IsNotExist(err)
+	}
+	for _, entry := range entries {
+		var st unix.Stat_t
+		if unix.Stat(dir+"/"+entry.Name(), &st) != nil {
+			continue // closed since the listing
+		}
+		if uint64(st.Dev) != key.dev || st.Ino != key.ino {
+			continue
+		}
+		flags, ok := fdFlags(pid, entry.Name())
+		if !ok || flags&unix.O_ACCMODE != unix.O_RDONLY {
+			return true
+		}
+	}
+	return false
+}
+
+// fdFlags reads the open flags of descriptor fd of process pid from its
+// fdinfo, where the kernel writes them in octal.
+func fdFlags(pid uint32, fd string) (int, bool) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/fdinfo/%s", pid, fd))
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if rest, found := strings.CutPrefix(line, "flags:"); found {
+			flags, err := strconv.ParseInt(strings.TrimSpace(rest), 8, 64)
+			return int(flags), err == nil
+		}
+	}
+	return 0, false
+}
+
 // registerClose records a newly observed FileClose for path as the pending
 // one to judge on some future settle check (see resolveSettled). If a close
 // was already pending for this same path, that older one is immediately
@@ -868,7 +967,7 @@ func inodeKeyFromFD(fd int) (inodeKey, bool) {
 // This, not pathGeneration, is what actually guarantees a hash the observer
 // does attach reflects the eventual final content: a close is never hashed
 // until it has survived a full settle cycle with nothing superseding it.
-func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguous bool, mountFD int, handleType int32, handleData []byte) {
+func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguous bool, mountFD int, handleType int32, handleData []byte, handle string) {
 	o.mu.Lock()
 	if o.pendingCloses == nil {
 		o.pendingCloses = make(map[string]*pendingClose)
@@ -881,7 +980,7 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 	} else if o.mountFD == -1 {
 		pathFD, _ = unix.Open(path, unix.O_RDONLY|unix.O_PATH, 0)
 	}
-	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path]}
+	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle]}
 	o.mu.Unlock()
 
 	if existed {
@@ -941,7 +1040,9 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 			// which flags an open had. Quiet time does not help: a writer
 			// stalled between the truncate and its write leaves the path quiet
 			// while the file is empty, and a read then would be trusted.
-			changed = o.pathGeneration[path] != entry.gen
+			// The file may have been opened under another name since (P-26).
+			changed = o.pathGeneration[path] != entry.gen ||
+				(entry.handle != "" && o.handleGeneration[entry.handle] != entry.hgen)
 			delete(o.pendingCloses, path)
 		}
 		o.mu.Unlock()
@@ -953,7 +1054,7 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 		var digest string
 		hashed := false
 		if !changed {
-			digest, hashed = o.hashSettledFD(path, buf, pathFD)
+			digest, hashed = o.hashSettledFD(path, buf, pathFD, entry.pid, entry.handle)
 		}
 		if pathFD >= 0 {
 			_ = unix.Close(pathFD)
@@ -996,11 +1097,28 @@ func (o *Observer) flushPendingCloses(buf []byte) {
 // already completed, whether or not this observer has processed it yet --
 // before comparing the path's generation against the snapshot taken before
 // the read. If they differ, the file was touched again during the read and
-// it cannot be trusted.
-func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int) (digest string, ok bool) {
+// it cannot be trusted. The file's handleGeneration is compared the same
+// way, for a write under another name, and a drain that could not empty the
+// queue (the stop pipe is readable and records are still queued) cannot vouch
+// for the read either (P-26).
+//
+// Before the read it asks whether the closing process, pid, still holds the
+// file open for writing (writerHolds). The kernel merges that process's later
+// open and truncation into the close's record while it is unread, so no
+// later record shows them: a rewrite that has truncated the file and not yet
+// written leaves the path quiet, and the generation unchanged, with the file
+// empty (P-26). A rewrite that has finished is no hazard, since its content
+// is a real final state, and anything the process does after this check is a
+// record of its own, which the drain after the read sees.
+func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint32, handle string) (digest string, ok bool) {
 	o.mu.Lock()
 	gen := o.pathGeneration[target]
+	hgen := o.handleGeneration[handle]
 	o.mu.Unlock()
+
+	if pathFD >= 0 && o.writerHolds != nil && o.writerHolds(pid, pathFD) {
+		return "", false
+	}
 
 	var d string
 	var err error
@@ -1036,10 +1154,11 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int) (digest 
 		err = fmt.Errorf("no pathFD")
 	}
 
-	o.drainNonBlocking(buf)
+	emptied := o.drainNonBlocking(buf)
 
 	o.mu.Lock()
-	raced := o.pathGeneration[target] != gen
+	raced := !emptied || o.pathGeneration[target] != gen ||
+		(handle != "" && o.handleGeneration[handle] != hgen)
 	if err != nil && suppressPath != "" {
 		o.pendingHashOpens[suppressPath]--
 		if o.pendingHashOpens[suppressPath] == 0 {
