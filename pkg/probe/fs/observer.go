@@ -181,6 +181,26 @@ type Observer struct {
 	// one rename name two paths since P-25 and are two events.
 	lastEmitted map[string]emitted
 
+	// held are the removals (a file_rename of a moved-from, a file_delete)
+	// of merged creation records, waiting for the record that marks their
+	// place (P-27). The kernel merges a name's moved-from or delete into the
+	// unread record of its creation, ahead of the file's open, write and
+	// close; the removal happened after those. holdRemoval and placeHeld
+	// decide; releaseHeld emits what is left at the end of a drain.
+	held []models.GroundTruthEvent
+	// fromsInFlight counts, per pid, the moved-from records emitted in place
+	// whose moved-to record has not been read, so that moved-to is not taken
+	// for the place of a held one.
+	fromsInFlight map[uint32]int
+	// lastStamp is the timestamp of the last record processed, for a release
+	// at the end of a drain.
+	lastStamp time.Time
+	// fileNamed reports whether the file a content record's handle names is
+	// still named as the record names it; nil uses namedNow. A content record
+	// on a held delete's name floats ahead of the delete only when it is not,
+	// since a file still there was created again after the delete.
+	fileNamed func(e *rawEvent) bool
+
 	// settleDelay is how long a path must be quiet (no write-class event,
 	// see lastWriteAt) before a pending close for it is hashed. Defaults to
 	// settleQuietWindow; left zero by tests that drive
@@ -527,6 +547,7 @@ const stopCountBudget = 250 * time.Millisecond
 // needs the path resolved, so it can count a record the filter would have
 // dropped. It is a lower bound: the count stops at stopCountBudget.
 func (o *Observer) drainAtStop(buf []byte) {
+	defer o.releaseHeld()
 	resolve := newKernelResolver(o.mounts)
 	deadline := time.Now().Add(o.stopDrain)
 	for time.Now().Before(deadline) {
@@ -622,6 +643,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 			return false
 		}
 		if pollFDs[0].Revents&unix.POLLIN == 0 {
+			o.releaseHeld()
 			return true
 		}
 		if pollFDs[1].Revents&unix.POLLIN != 0 {
@@ -726,7 +748,19 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 		o.mu.Unlock()
 	}
 
+	o.placeHeld(e, ts)
+	o.lastStamp = ts
+	hold := holdRemoval(e.Mask)
 	for _, actionType := range maskToActionTypes(e.Mask) {
+		if actionType == hold {
+			o.held = append(o.held, models.GroundTruthEvent{
+				ActionType:      actionType,
+				Target:          e.Path,
+				PathIsAmbiguous: e.Ambiguous,
+				PID:             pidOf(e),
+			})
+			continue
+		}
 		if o.repeats(e.Path, actionType, pidOf(e)) {
 			continue
 		}
@@ -750,6 +784,117 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 			o.events <- event
 		}
 	}
+}
+
+// dirEntryBits are the bits of a directory-entry record. The kernel never
+// merges them with content bits, since a content record carries the file's
+// own handle and a directory-entry record does not (P-25).
+const dirEntryBits = unix.FAN_CREATE | unix.FAN_DELETE | unix.FAN_MOVED_FROM | unix.FAN_MOVED_TO
+
+// holdRemoval returns the removal a record's events must not emit in place,
+// or "" for none: the moved-from of a creation merged with a moved-from, the
+// delete of a creation merged with a delete. The kernel queues a record at
+// its first event and merges a later event of the same process on the same
+// name into it while it is unread, so the removal can have happened long
+// after the record's place, after the open, write and close of the file,
+// whose own record comes next (P-27).
+func holdRemoval(mask uint64) models.ActionType {
+	switch mask & dirEntryBits {
+	case unix.FAN_CREATE | unix.FAN_MOVED_FROM:
+		return models.FileRename
+	case unix.FAN_CREATE | unix.FAN_DELETE:
+		return models.FileDelete
+	}
+	return ""
+}
+
+// placeHeld emits, before record e, the held removals whose place e marks,
+// stamped with e's timestamp so they sort before e's own events. A held
+// moved-from goes before the next moved-to record of the same process,
+// which the kernel queued at the rename itself, unless a moved-from emitted
+// in place is still waiting for that moved-to. A held delete goes before any
+// record but a content record on its name whose file has left that name (a
+// write before the delete; a file still there was created again after it).
+// It then counts e's own moved-from and moved-to halves.
+func (o *Observer) placeHeld(e *rawEvent, ts time.Time) {
+	pid := pidOf(e)
+	entry := e.Mask & dirEntryBits
+	if len(o.held) > 0 {
+		var keep []models.GroundTruthEvent
+		placedRename := false
+		for _, h := range o.held {
+			release := false
+			switch h.ActionType {
+			case models.FileDelete:
+				release = entry != 0 || e.Path != h.Target || o.stillNamed(e)
+			case models.FileRename:
+				if !placedRename && entry == unix.FAN_MOVED_TO && h.PID == pid && o.fromsInFlight[pid] == 0 {
+					release, placedRename = true, true
+				}
+			}
+			if !release {
+				keep = append(keep, h)
+				continue
+			}
+			h.Timestamp = ts
+			if !o.repeats(h.Target, h.ActionType, h.PID) {
+				o.events <- h
+			}
+		}
+		o.held = keep
+	}
+	if o.fromsInFlight == nil {
+		o.fromsInFlight = make(map[uint32]int)
+	}
+	switch entry {
+	case unix.FAN_MOVED_FROM:
+		o.fromsInFlight[pid]++
+	case unix.FAN_MOVED_TO:
+		if o.fromsInFlight[pid] > 0 {
+			o.fromsInFlight[pid]--
+		}
+	}
+}
+
+// releaseHeld emits every held removal, in order, one nanosecond after the
+// last record processed: the end of a drain, where the record that would
+// have marked its place did not come (a moved-to merged into an earlier
+// record of its name, or a delete with nothing after it).
+func (o *Observer) releaseHeld() {
+	for _, h := range o.held {
+		h.Timestamp = o.lastStamp.Add(time.Nanosecond)
+		if !o.repeats(h.Target, h.ActionType, h.PID) {
+			o.events <- h
+		}
+	}
+	o.held = nil
+	o.fromsInFlight = nil
+}
+
+// stillNamed reports whether the file content record e names, by its handle,
+// is still at the path the record names (fileNamed, or namedNow).
+func (o *Observer) stillNamed(e *rawEvent) bool {
+	if o.fileNamed != nil {
+		return o.fileNamed(e)
+	}
+	return o.namedNow(e)
+}
+
+// namedNow resolves e's file handle and compares the file's current path with
+// the record's. A handle that does not resolve, a deleted file included, is
+// not named there.
+func (o *Observer) namedNow(e *rawEvent) bool {
+	mountFD := o.mountFor(e.FSID)
+	if len(e.HandleData) == 0 || mountFD < 0 {
+		return false
+	}
+	fd, err := unix.OpenByHandleAt(mountFD, unix.NewFileHandle(e.HandleType, e.HandleData), unix.O_RDONLY|unix.O_PATH)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = unix.Close(fd) }()
+	p, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
+	return err == nil && p == e.Path
 }
 
 // repeats records that actionType is being emitted for path by pid and
@@ -1084,6 +1229,7 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 // the observer is stopping, no more writes will ever be observed, so every
 // remaining entry is by definition settled.
 func (o *Observer) flushPendingCloses(buf []byte) {
+	o.releaseHeld()
 	o.resolveSettled(o.settleSnapshot(), buf, true)
 }
 

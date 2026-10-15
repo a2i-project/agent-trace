@@ -725,6 +725,12 @@ func TestObserver_AReplaceThroughATemporaryIsNamed(t *testing.T) {
 	if at["file_rename "+target] < at["file_close "+tmp] || at["file_rename "+target] < at["file_rename "+tmp] {
 		t.Errorf("the destination precedes the close or the source")
 	}
+	// The source follows the temporary's open, write and close however late
+	// the records are read: a moved-from merged into the creation's record is
+	// held until the moved-to (P-27).
+	if at["file_rename "+tmp] < at["file_close "+tmp] || at["file_rename "+tmp] < at["file_open "+tmp] {
+		t.Errorf("the source precedes the temporary's open or close")
+	}
 	want := content.SHA256Bytes([]byte("new\n"))
 	for _, e := range events {
 		if e.ActionType == models.FileClose && e.Target == tmp && (e.OutputHash == nil || *e.OutputHash != want) {
