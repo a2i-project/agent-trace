@@ -40,6 +40,8 @@ PAGE_OF = [
     ("pkg/verification/", "docs/architecture/20_verifier.md"),
     ("pkg/matching/", "docs/architecture/20_verifier.md"),
     ("pkg/agent/", "docs/architecture/30_agent_adapters.md"),
+    ("pkg/config/", "docs/architecture/30_agent_adapters.md"),
+    ("config/", "docs/architecture/30_agent_adapters.md"),
     ("pkg/attack/", "docs/architecture/50_attack_generators.md"),
     ("cmd/attack/", "docs/architecture/50_attack_generators.md"),
     ("cmd/", "docs/architecture/40_tools.md"),
