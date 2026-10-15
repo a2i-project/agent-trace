@@ -1030,3 +1030,22 @@ func TestObserver_ExecThroughADescriptorIsRecorded(t *testing.T) {
 		t.Errorf("exec=%v exit=%v, want both for the exec through a descriptor", sawExec, sawExit)
 	}
 }
+
+// The Config comments name the compiled-in capacities that the overrides
+// replace. The spec is parsed without loading it into the kernel, so this
+// runs unprivileged and keeps the comments and proc.bpf.c in step.
+func TestSpec_CompiledInCapacitiesMatchConfigComments(t *testing.T) {
+	spec, err := loadBpf()
+	if err != nil {
+		t.Fatalf("loadBpf: %v", err)
+	}
+	for name, want := range map[string]uint32{
+		"events":       8 << 20, // Config.RingbufBytes: 8 MiB
+		"tracked_pids": 16384,   // Config.TrackedPIDsMax
+		"execs":        4096,    // Config.ExecsMax
+	} {
+		if got := spec.Maps[name].MaxEntries; got != want {
+			t.Errorf("map %s has %d entries compiled in, the Config comment says %d", name, got, want)
+		}
+	}
+}

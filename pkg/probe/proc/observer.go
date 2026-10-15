@@ -64,7 +64,7 @@ type Config struct {
 	EventBufSize int
 
 	// RingbufBytes overrides the size of the kernel ring buffer that carries
-	// events to userspace. Zero keeps the compiled-in 1 MiB. It exists so
+	// events to userspace. Zero keeps the compiled-in 8 MiB. It exists so
 	// tests can force a full buffer and exercise RingbufDrops; production
 	// callers should leave it zero. Must be a power-of-two multiple of the
 	// page size.
