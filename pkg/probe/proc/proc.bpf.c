@@ -283,6 +283,16 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	return 0;
 }
 
+// nul_at reports whether the user string at s ends at index i. A
+// bpf_probe_read_user_str into a buffer of n bytes returns n both for a
+// string of n - 1 bytes, which fits with its NUL, and for a longer one it
+// cut; the byte at n - 1 tells them apart.
+static __always_inline int nul_at(const char *s, __u32 i)
+{
+	char c = 1;
+	return !bpf_probe_read_user(&c, 1, s + i) && c == '\0';
+}
+
 // record_exec records one exec attempt at syscall entry: the filename as
 // the kernel was asked for it (or "(fexecve)" for an exec through a
 // descriptor, which names no path), then argv. Shared by execve and execveat
@@ -320,7 +330,7 @@ static __always_inline int record_exec(const char *filename, const char *const *
 		fn_len = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), filename);
 	}
 	e->hdr.filename_len = (fn_len > 0) ? fn_len : 0;
-	if (fn_len >= FILENAME_LEN)
+	if (!via_fd && fn_len >= FILENAME_LEN && !nul_at(filename, FILENAME_LEN - 1))
 		e->hdr.args_truncated = 1;
 
 	if (get_use_pid_filter()) {
@@ -349,14 +359,19 @@ static __always_inline int record_exec(const char *filename, const char *const *
 		long n = bpf_probe_read_user_str(&e->args[offset], MAX_ARGS_BYTES, argp);
 		if (n <= 0)
 			break;
-		if (n >= MAX_ARGS_BYTES)
+		if (n >= MAX_ARGS_BYTES && !nul_at(argp, MAX_ARGS_BYTES - 1))
 			e->hdr.args_truncated = 1; // one string did not fit
 
 		args_size += n;
 		nargs++;
 
+		if (args_size > MAX_ARGS_BYTES)
+			e->hdr.args_truncated = 1; // the last string ran past the area
 		if (args_size >= MAX_ARGS_BYTES) {
-			e->hdr.args_truncated = 1;
+			// The area is full, which is no cut unless an argument follows.
+			const char *next = NULL;
+			if (!bpf_probe_read_user(&next, sizeof(next), &argv[i + 1]) && next)
+				e->hdr.args_truncated = 1;
 			break;
 		}
 	}

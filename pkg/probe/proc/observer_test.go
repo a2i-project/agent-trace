@@ -1049,3 +1049,123 @@ func TestSpec_CompiledInCapacitiesMatchConfigComments(t *testing.T) {
 		}
 	}
 }
+
+// runTracked starts an observer that tracks this test's descendants, runs
+// each command to completion, and returns the events by pid.
+func runTracked(t *testing.T, cmds []*exec.Cmd) map[uint32][]models.GroundTruthEvent {
+	t.Helper()
+	obs, err := New(Config{EventBufSize: 1024, DeferRootPID: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+	for _, c := range cmds {
+		if err := c.Run(); err != nil {
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				_ = obs.Stop()
+				t.Fatalf("run %s: %v", c.Path, err)
+			}
+		}
+	}
+	// CI sets this bound: the exit records must leave the ring buffer.
+	time.Sleep(300 * time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	byPID := map[uint32][]models.GroundTruthEvent{}
+	for _, e := range collect(obs) {
+		byPID[e.PID] = append(byPID[e.PID], e)
+	}
+	return byPID
+}
+
+// A command line that fills the 128 KiB args area exactly, NULs included,
+// is whole: only one that does not fit is cut. The same holds for a single
+// string that fills the area by itself (an argv[0] of 131071 bytes, the
+// most Linux accepts), whose read returns the buffer size whether it fit or
+// was cut (P-19, V-26).
+func TestObserver_CommandLineOfExactly128KiBIsWhole(t *testing.T) {
+	skipUnprivileged(t)
+	const area = 128 << 10
+	head := len("/bin/true") + 1 // argv[0] and its NUL share the area
+	fill := strings.Repeat("z", area-head-1)
+	cases := []struct {
+		name    string
+		cmd     *exec.Cmd
+		target  string
+		wantCut bool
+	}{
+		{"argv fills the area", exec.Command("/bin/true", fill), "/bin/true " + fill, false},
+		{"argv is one byte over", exec.Command("/bin/true", fill+"z"), "", true},
+		{"argv[0] alone fills the area", &exec.Cmd{Path: "/bin/true", Args: []string{strings.Repeat("a", area-1)}}, "/bin/true", false},
+	}
+	cmds := make([]*exec.Cmd, len(cases))
+	for i, c := range cases {
+		cmds[i] = c.cmd
+	}
+	byPID := runTracked(t, cmds)
+	for _, c := range cases {
+		evs := byPID[uint32(c.cmd.Process.Pid)]
+		var kinds []models.ActionType
+		for _, e := range evs {
+			if e.ActionType == models.ProcessFork {
+				continue
+			}
+			kinds = append(kinds, e.ActionType)
+			if e.TargetTruncated != c.wantCut {
+				t.Errorf("%s: %s TargetTruncated = %v, want %v", c.name, e.ActionType, e.TargetTruncated, c.wantCut)
+			}
+			if c.target != "" && e.Target != c.target {
+				t.Errorf("%s: %s target has %d bytes, want %d", c.name, e.ActionType, len(e.Target), len(c.target))
+			}
+		}
+		if len(kinds) != 2 {
+			t.Errorf("%s: saw %v, want the exec and the exit", c.name, kinds)
+		}
+	}
+}
+
+// A program path of FILENAME_LEN-1 (255) bytes fills the filename buffer
+// with its NUL and is whole; one of 256 bytes is cut and flagged.
+func TestObserver_ProgramPathOf255BytesIsWhole(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	link := func(n int) string {
+		p := dir + "/" + strings.Repeat("p", n-len(dir)-1)
+		if err := os.Symlink("/bin/true", p); err != nil {
+			t.Fatalf("symlink of %d bytes: %v", n, err)
+		}
+		return p
+	}
+	whole, cut := link(255), link(256)
+	cmdWhole, cmdCut := exec.Command(whole, "whole"), exec.Command(cut, "cut")
+	byPID := runTracked(t, []*exec.Cmd{cmdWhole, cmdCut})
+	for _, c := range []struct {
+		cmd     *exec.Cmd
+		target  string
+		wantCut bool
+	}{
+		{cmdWhole, whole + " whole", false},
+		{cmdCut, cut[:255] + " cut", true},
+	} {
+		n := 0
+		for _, e := range byPID[uint32(c.cmd.Process.Pid)] {
+			if e.ActionType == models.ProcessFork {
+				continue
+			}
+			n++
+			if e.Target != c.target || e.TargetTruncated != c.wantCut {
+				t.Errorf("%d-byte path: %s target %q truncated=%v, want %q truncated=%v",
+					len(c.cmd.Path), e.ActionType, e.Target, e.TargetTruncated, c.target, c.wantCut)
+			}
+		}
+		if n != 2 {
+			t.Errorf("%d-byte path: saw %d exec and exit events, want 2", len(c.cmd.Path), n)
+		}
+	}
+}
