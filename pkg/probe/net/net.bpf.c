@@ -13,7 +13,9 @@
 // it (N-24): every send and close hook resolves its fd through the calling
 // task's fd table to the socket inode, so a write by a forked child or by a
 // process that received the descriptor over SCM_RIGHTS reaches the same
-// conns entry (N-23).
+// conns entry (N-23). A datagram sent to an explicit address needs no
+// connect() and is recorded on its own (NET_DGRAM, N-28); a DNS query is
+// captured from every datagram to port 53 (N-27).
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
@@ -26,6 +28,11 @@ char LICENSE[] SEC("license") = "GPL";
 #define AF_INET6 10
 #define UNIX_PATH_LEN 108 // sizeof(((struct sockaddr_un *)0)->sun_path)
 #define HELLO_CAP_LEN 1024
+#define SOCK_STREAM 1
+#define SOCK_DGRAM  2
+#define SOCK_RAW    3
+#define MSG_FASTOPEN 0x20000000
+#define DNS_PORT 53
 
 enum net_event_type {
 	NET_CONNECT = 1,
@@ -46,6 +53,12 @@ enum net_event_type {
 	// read (sendfile, splice), or whose hello read faulted: header only. It
 	// marks the connection as having carried data (N-22, N-23).
 	NET_SEND = 8,
+	// A datagram sent with an explicit address (sendto, sendmsg, the first
+	// message of sendmmsg) on a datagram or raw socket (N-28). The address
+	// is the destination, not a connect()ed peer; the payload holds the
+	// first bytes of the datagram. Sent once per socket and destination,
+	// except to port 53, where every datagram is a DNS query (N-27).
+	NET_DGRAM = 9,
 };
 
 struct net_event_hdr {
@@ -58,10 +71,16 @@ struct net_event_hdr {
 	__u64 ts_ns;
 	__u8  addr[16];
 	// Socket inode number naming the connection on NET_CONNECT, NET_HELLO,
-	// NET_SEND and NET_CLOSE (N-24); 0 on the other records. tgid and fd
+	// NET_SEND and NET_CLOSE (N-24), and the sending socket on NET_DGRAM;
+	// 0 on the other records. tgid and fd
 	// are those of the caller, which need not be the process that connected.
 	__u64 sock;
-	__u32 payload_len; // NET_HELLO, and the AF_UNIX records' path
+	__u32 payload_len; // NET_HELLO, NET_DGRAM, and the AF_UNIX records' path
+	// The socket's type (SOCK_STREAM, SOCK_DGRAM, SOCK_RAW) on the records
+	// that carry sock; 0 when unknown. Userspace reads a DNS query with or
+	// without the TCP length prefix by it (N-27).
+	__u16 sotype;
+	__u16 _pad;
 };
 
 struct net_event {
@@ -84,6 +103,7 @@ struct conn_state {
 	__u16 port;
 	__u8  hello_captured;
 	__u8  sent; // a NET_HELLO or NET_SEND was emitted
+	__u8  sotype; // the socket's type, 0 when unknown
 	__u32 tgid; // the process that connected
 	__u64 open_ts_ns;
 };
@@ -280,6 +300,8 @@ static __always_inline void fill_common(struct net_event_hdr *hdr, __u8 type,
 	hdr->ts_ns = bpf_ktime_get_ns();
 	hdr->sock = 0;
 	hdr->payload_len = 0;
+	hdr->sotype = 0;
+	hdr->_pad = 0;
 }
 
 // --- socket resolution (N-24) ---------------------------------------------
@@ -341,6 +363,18 @@ static __always_inline int fd_socket(__u32 fd, struct file **filep, __u64 *ino)
 	return FD_SOCKET;
 }
 
+// sock_type returns the type of the socket behind f (SOCK_STREAM,
+// SOCK_DGRAM, SOCK_RAW, ...), or 0 when it cannot be read. A socket file's
+// private_data is its struct socket.
+static __always_inline __u8 sock_type(struct file *f)
+{
+	struct socket *s = BPF_CORE_READ(f, private_data);
+	if (!s)
+		return 0;
+	short t = BPF_CORE_READ(s, type);
+	return (t > 0 && t < 256) ? (__u8)t : 0;
+}
+
 // struct file before kernel 6.13 counted references in f_count; 6.13
 // replaced it with f_ref, a file_ref_t that stores the count minus one.
 struct file___pre613 {
@@ -388,6 +422,7 @@ static __always_inline void emit_conn(struct net_event *e, __u8 type, __u32 tgid
 	e->hdr.port = cs->port;
 	__builtin_memcpy(e->hdr.addr, cs->addr, sizeof(cs->addr));
 	e->hdr.sock = ino;
+	e->hdr.sotype = cs->sotype;
 	if (len > HELLO_CAP_LEN)
 		len = HELLO_CAP_LEN;
 	e->hdr.payload_len = len;
@@ -458,6 +493,50 @@ static __always_inline void emit_unix(struct net_event *e, __u8 type, __u32 tgid
 
 // --- sys_enter_connect: records peer identity before the handshake -------
 
+// peer is an IPv4 or IPv6 address and port in host byte order.
+struct peer {
+	__u8  addr[16];
+	__u16 port;
+	__u8  family;
+	__u8  _pad[5];
+};
+
+// dgram_key names one destination of one socket for the dgrams map (N-28).
+struct dgram_key {
+	__u64 sock;
+	struct peer peer;
+};
+
+// record_connect stores a new connection of socket ino to p in conns and
+// emits NET_CONNECT. A connect on a socket already in conns (a datagram
+// socket connected again) starts a new connection on the same key;
+// userspace emits the old one first (Coverage.Replaced).
+static __always_inline void record_connect(__u32 tgid, __u32 fd, __u64 ino, __u8 sotype,
+					   struct peer *p)
+{
+	struct conn_state state = {0};
+	state.family = p->family;
+	state.port = p->port;
+	state.tgid = tgid;
+	state.sotype = sotype;
+	state.open_ts_ns = bpf_ktime_get_ns();
+	__builtin_memcpy(state.addr, p->addr, sizeof(state.addr));
+	if (bpf_map_update_elem(&conns, &ino, &state, BPF_ANY))
+		count_state_lost();
+
+	struct net_event *e = reserve_event();
+	if (!e)
+		return;
+	fill_common(&e->hdr, NET_CONNECT, tgid, fd);
+	e->hdr.family = state.family;
+	e->hdr.port = state.port;
+	__builtin_memcpy(e->hdr.addr, state.addr, sizeof(state.addr));
+	e->hdr.sock = ino;
+	e->hdr.sotype = sotype;
+	if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
+		count_drop();
+}
+
 struct sys_enter_connect_ctx {
 	__u64 pad;
 	__s32 syscall_nr;
@@ -525,34 +604,17 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	if (res != FD_SOCKET)
 		return 0;
 
-	struct conn_state state = {0};
-	state.family = (__u8)family;
-	state.port = port;
-	state.tgid = tgid;
-	state.open_ts_ns = bpf_ktime_get_ns();
+	struct peer p = {0};
+	p.family = (__u8)family;
+	p.port = port;
 	if (family == AF_INET) {
-		__builtin_memcpy(state.addr, sa + 4, 4);
+		__builtin_memcpy(p.addr, sa + 4, 4);
 	} else {
 		// AF_INET6: sin6_addr starts at offset 8 in sockaddr_in6.
 		// We always read 28 bytes above, so offset 8+16=24 is in bounds.
-		__builtin_memcpy(state.addr, sa + 8, 16);
+		__builtin_memcpy(p.addr, sa + 8, 16);
 	}
-	// A connect on a socket already in conns (a datagram socket connected
-	// again) starts a new connection on the same key; userspace emits the old
-	// one first (Coverage.Replaced).
-	if (bpf_map_update_elem(&conns, &ino, &state, BPF_ANY))
-		count_state_lost();
-
-	struct net_event *e = reserve_event();
-	if (!e)
-		return 0;
-	fill_common(&e->hdr, NET_CONNECT, tgid, fd);
-	e->hdr.family = state.family;
-	e->hdr.port = state.port;
-	__builtin_memcpy(e->hdr.addr, state.addr, sizeof(state.addr));
-	e->hdr.sock = ino;
-	if (bpf_ringbuf_output(&net_events, &e->hdr, sizeof(e->hdr), 0))
-		count_drop();
+	record_connect(tgid, fd, ino, sock_type(f), &p);
 	return 0;
 }
 
@@ -703,12 +765,27 @@ int trace_listen(struct sys_enter_listen_ctx *ctx)
 // counted in hello_fault_count. Either marks the
 // connection as having carried data. All hooks fire at syscall entry, so a
 // send that then fails still counts, like a failed connect. A zero-length
-// send carries nothing and is ignored.
+// send carries nothing and is ignored. On a connected datagram socket to
+// port 53 every send is captured, one DNS query each (N-27).
 
 // HELLO_MAX_IOV bounds how many iovecs of a writev or sendmsg are copied
 // into the hello buffer. The loop is unrolled, so the verifier sees straight
 // code. A hello split over more iovecs is captured from the first eight.
 #define HELLO_MAX_IOV 8
+
+// dns_per_datagram reports whether every send on cs is captured, not only
+// the first: a connected datagram socket to port 53 carries one DNS query
+// per datagram, and each is recorded (N-27). A stream socket to port 53
+// gets its first send only, like any connection.
+static __always_inline int dns_per_datagram(struct conn_state *cs)
+{
+	return cs->port == DNS_PORT && cs->sotype == SOCK_DGRAM;
+}
+
+static __always_inline int wants_hello(struct conn_state *cs)
+{
+	return !cs->hello_captured || dns_per_datagram(cs);
+}
 
 static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, __u64 len)
 {
@@ -716,7 +793,7 @@ static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, 
 		return 0;
 	__u64 ino = 0;
 	struct conn_state *cs = lookup_conn(fd, &ino);
-	if (!cs || cs->hello_captured)
+	if (!cs || !wants_hello(cs))
 		return 0;
 
 	if (len > HELLO_CAP_LEN)
@@ -747,32 +824,20 @@ struct iovec_bpf {
 	__u64 iov_len;
 };
 
-// capture_hello_iov is capture_hello for an iovec array in user memory: it
-// concatenates the first HELLO_MAX_IOV entries, up to HELLO_CAP_LEN bytes.
-// When nothing could be copied (every copied entry empty, or a read
-// faulted), the connection is marked sent instead.
-static __always_inline int capture_hello_iov(__u32 tgid, __u32 fd, __u64 iov_ptr, __u64 iovcnt)
+// copy_iov concatenates the first HELLO_MAX_IOV entries of an iovec array in
+// user memory into e->payload, up to HELLO_CAP_LEN bytes, and returns how
+// many bytes it copied. *fault is set when a read faulted; the bytes before
+// it are kept.
+static __always_inline __u32 copy_iov(struct net_event *e, __u64 iov_ptr, __u64 iovcnt, int *fault)
 {
-	if (iovcnt == 0)
-		return 0;
-	__u64 ino = 0;
-	struct conn_state *cs = lookup_conn(fd, &ino);
-	if (!cs || cs->hello_captured)
-		return 0;
-
-	struct net_event *e = reserve_event();
-	if (!e)
-		return 0;
-
 	__u32 off = 0;
-	int fault = 0;
 #pragma unroll
 	for (int i = 0; i < HELLO_MAX_IOV; i++) {
 		if (i >= iovcnt || off >= HELLO_CAP_LEN)
 			break;
 		struct iovec_bpf iov = {0};
 		if (bpf_probe_read_user(&iov, sizeof(iov), (void *)(iov_ptr + i * sizeof(iov)))) {
-			fault = 1;
+			*fault = 1;
 			break;
 		}
 		__u64 n = iov.iov_len;
@@ -791,25 +856,156 @@ static __always_inline int capture_hello_iov(__u32 tgid, __u32 fd, __u64 iov_ptr
 		if (n == 0)
 			continue;
 		if (bpf_probe_read_user(&e->payload[at], n, (void *)iov.iov_base)) {
-			fault = 1;
+			*fault = 1;
 			break;
 		}
 		off += n;
 	}
+	barrier_var(off);
+	if (off > HELLO_CAP_LEN)
+		off = HELLO_CAP_LEN;
+	return off;
+}
 
+// capture_hello_iov is capture_hello for an iovec array in user memory.
+// When nothing could be copied (every copied entry empty, or a read
+// faulted), the connection is marked sent instead.
+static __always_inline int capture_hello_iov(__u32 tgid, __u32 fd, __u64 iov_ptr, __u64 iovcnt)
+{
+	if (iovcnt == 0)
+		return 0;
+	__u64 ino = 0;
+	struct conn_state *cs = lookup_conn(fd, &ino);
+	if (!cs || !wants_hello(cs))
+		return 0;
+
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 0;
+
+	int fault = 0;
+	__u32 off = copy_iov(e, iov_ptr, iovcnt, &fault);
 	if (fault)
 		count_in(&hello_fault_count);
 	if (fault || off == 0) {
 		mark_sent(e, tgid, fd, ino, cs);
 		return 0;
 	}
-	barrier_var(off);
-	if (off > HELLO_CAP_LEN)
-		off = HELLO_CAP_LEN;
 	emit_conn(e, NET_HELLO, tgid, fd, ino, cs, off);
 	cs->hello_captured = 1;
 	cs->sent = 1;
 	return 0;
+}
+
+// --- addressed sends (N-28) -------------------------------------------------
+//
+// A send that names its destination (sendto with an address, sendmsg with
+// msg_name) on a datagram or raw socket sends to that address whether or
+// not the socket is connected, and no connect() announces it. It is
+// recorded as NET_DGRAM, once per socket and destination (dgrams, an LRU
+// map: an evicted entry only repeats a record, which userspace drops),
+// except that every datagram to port 53 is recorded, since each is a DNS
+// query (N-27). On a stream socket an address is ignored by the kernel,
+// unless MSG_FASTOPEN asks it to connect (TCP Fast Open): that is recorded
+// as the connect it is, and the send's bytes as its hello.
+
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 8192);
+	__type(key, struct dgram_key);
+	__type(value, __u8);
+} dgrams SEC(".maps");
+
+// read_peer reads an AF_INET or AF_INET6 address from user memory into p.
+// It returns 0 for any other family, an address shorter than the kernel
+// accepts (16 bytes for IPv4, 24 for IPv6, SIN6_LEN_RFC2133), or a read
+// that faults.
+static __always_inline int read_peer(__u64 uaddr, __u64 addrlen, struct peer *p)
+{
+	if (!uaddr)
+		return 0;
+	__u16 family = 0;
+	if (bpf_probe_read_user(&family, sizeof(family), (void *)uaddr))
+		return 0;
+	__u8 sa[24] = {};
+	if (family == AF_INET) {
+		if (addrlen < 16 || bpf_probe_read_user(sa, 16, (void *)uaddr))
+			return 0;
+		__builtin_memcpy(p->addr, sa + 4, 4);
+	} else if (family == AF_INET6) {
+		if (addrlen < 24 || bpf_probe_read_user(sa, 24, (void *)uaddr))
+			return 0;
+		__builtin_memcpy(p->addr, sa + 8, 16);
+	} else {
+		return 0;
+	}
+	__u16 port_be = *(__u16 *)(sa + 2);
+	p->port = ((port_be & 0xff) << 8) | (port_be >> 8);
+	p->family = (__u8)family;
+	return 1;
+}
+
+// addressed_send handles a send to an explicit address. The bytes are buf
+// and len, or, when iov_ptr is set, an iovec array. It returns 1 when the
+// send was recorded as a datagram, so the caller skips the connection path;
+// 0 otherwise (no usable address, a stream socket, an unreadable socket).
+static __always_inline int addressed_send(__u32 tgid, __u32 fd, __u64 uaddr, __u64 addrlen,
+					  __u64 flags, __u64 buf, __u64 len,
+					  __u64 iov_ptr, __u64 iovcnt)
+{
+	struct dgram_key key = {0};
+	if (!read_peer(uaddr, addrlen, &key.peer))
+		return 0;
+	struct file *f = NULL;
+	__u64 ino = 0;
+	if (fd_socket(fd, &f, &ino) != FD_SOCKET)
+		return 0;
+	__u8 st = sock_type(f);
+	if (st == SOCK_STREAM) {
+		if ((flags & MSG_FASTOPEN) && !bpf_map_lookup_elem(&conns, &ino))
+			record_connect(tgid, fd, ino, st, &key.peer);
+		return 0;
+	}
+	if (st != SOCK_DGRAM && st != SOCK_RAW)
+		return 0;
+	key.sock = ino;
+	if (key.peer.port != DNS_PORT || st != SOCK_DGRAM) {
+		if (bpf_map_lookup_elem(&dgrams, &key))
+			return 1;
+		__u8 one = 1;
+		bpf_map_update_elem(&dgrams, &key, &one, BPF_ANY);
+	}
+
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 1;
+	__u32 n = 0;
+	int fault = 0;
+	if (iov_ptr) {
+		n = copy_iov(e, iov_ptr, iovcnt, &fault);
+	} else if (len) {
+		if (len > HELLO_CAP_LEN)
+			len = HELLO_CAP_LEN;
+		if (bpf_probe_read_user(e->payload, len, (void *)buf))
+			fault = 1;
+		else
+			n = (__u32)len;
+	}
+	if (fault)
+		count_in(&hello_fault_count);
+	fill_common(&e->hdr, NET_DGRAM, tgid, fd);
+	e->hdr.family = key.peer.family;
+	e->hdr.port = key.peer.port;
+	__builtin_memcpy(e->hdr.addr, key.peer.addr, sizeof(key.peer.addr));
+	e->hdr.sock = ino;
+	e->hdr.sotype = st;
+	barrier_var(n);
+	if (n > HELLO_CAP_LEN)
+		n = HELLO_CAP_LEN;
+	e->hdr.payload_len = n;
+	if (bpf_ringbuf_output(&net_events, e, sizeof(e->hdr) + n, 0))
+		count_drop();
+	return 1;
 }
 
 // send_without_bytes marks a connection sent for a path whose bytes the
@@ -865,6 +1061,9 @@ int trace_sendto(struct sys_enter_sendto_ctx *ctx)
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
+	if (ctx->addr && addressed_send(tgid, (__u32)ctx->fd, ctx->addr, ctx->addr_len,
+					ctx->flags, ctx->buff, ctx->len, 0, 0))
+		return 0;
 	return capture_hello(tgid, (__u32)ctx->fd, (const void *)ctx->buff, ctx->len);
 }
 
@@ -892,7 +1091,7 @@ struct msghdr_bpf {
 	__u32 __pad2;
 };
 
-static __always_inline int capture_hello_msg(__u32 tgid, __u32 fd, __u64 msg)
+static __always_inline int capture_hello_msg(__u32 tgid, __u32 fd, __u64 msg, __u64 flags)
 {
 	struct msghdr_bpf mh = {0};
 	if (bpf_probe_read_user(&mh, sizeof(mh), (void *)msg)) {
@@ -903,13 +1102,16 @@ static __always_inline int capture_hello_msg(__u32 tgid, __u32 fd, __u64 msg)
 		struct conn_state *cs = lookup_conn(fd, &ino);
 		if (!cs)
 			return 0;
-		if (!cs->hello_captured)
+		if (wants_hello(cs))
 			count_in(&hello_fault_count);
 		struct net_event *e = reserve_event();
 		if (e)
 			mark_sent(e, tgid, fd, ino, cs);
 		return 0;
 	}
+	if (mh.msg_name && addressed_send(tgid, fd, mh.msg_name, mh.msg_namelen, flags,
+					  0, 0, mh.msg_iov, mh.msg_iovlen))
+		return 0;
 	return capture_hello_iov(tgid, fd, mh.msg_iov, mh.msg_iovlen);
 }
 
@@ -919,7 +1121,7 @@ int trace_sendmsg(struct sys_enter_sendmsg_ctx *ctx)
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->msg);
+	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->msg, ctx->flags);
 }
 
 struct sys_enter_sendmmsg_ctx {
@@ -932,7 +1134,9 @@ struct sys_enter_sendmmsg_ctx {
 	__u64 flags;
 };
 
-// Only the first message is read for the hello; the rest are sent after it.
+// Only the first message is read, for the hello, a DNS query or an
+// addressed datagram; the rest are sent after it unseen. glibc sends its
+// parallel A and AAAA queries this way, so the AAAA query is not recorded.
 SEC("tracepoint/syscalls/sys_enter_sendmmsg")
 int trace_sendmmsg(struct sys_enter_sendmmsg_ctx *ctx)
 {
@@ -941,7 +1145,7 @@ int trace_sendmmsg(struct sys_enter_sendmmsg_ctx *ctx)
 		return 0;
 	if (ctx->vlen == 0)
 		return 0;
-	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->mmsg);
+	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->mmsg, ctx->flags);
 }
 
 struct sys_enter_writev_ctx {

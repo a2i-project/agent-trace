@@ -53,6 +53,10 @@ const (
 	// netSend marks a connection as having carried data through a send whose
 	// bytes were not read (N-23).
 	netSend uint8 = 8
+
+	// netDgram is a datagram sent to an explicit address on a datagram or
+	// raw socket, connected or not (N-28).
+	netDgram uint8 = 9
 )
 
 const (
@@ -120,6 +124,21 @@ type connection struct {
 	// process holding it, whatever it carried. A connection closed without
 	// one sent nothing (N-22, N-23).
 	wrote bool
+	// sotype is the socket's type as the kernel reported it (sockStream,
+	// sockDgram, ...), 0 when unknown or in a record from before N-27.
+	sotype uint16
+	// datagram marks a destination of an addressed datagram (N-28), not a
+	// connect(): it has no close, and port 0 is not address selection.
+	datagram bool
+}
+
+// dgramKey names one destination of one socket. A datagram destination is
+// recorded once (N-28); the kernel's LRU map can evict and repeat one.
+type dgramKey struct {
+	sock   uint64
+	family uint8
+	addr   [16]byte
+	port   uint16
 }
 
 // Observer watches network connections via eBPF and emits
@@ -158,7 +177,8 @@ type Observer struct {
 
 	bootOffsetNs int64
 
-	conns map[uint64]*connection // by socket inode number
+	conns  map[uint64]*connection // by socket inode number
+	dgrams map[dgramKey]bool      // datagram destinations already emitted (N-28)
 
 	// Content-capture (S5) state. tlsObjs and sslWriteLink are zero/nil
 	// when cfg.ExePath is unset -- Observer then runs identity-only, as it
@@ -317,6 +337,7 @@ func New(cfg Config) (*Observer, error) {
 		cfg:          cfg,
 		bootOffsetNs: bootOffsetNs,
 		conns:        make(map[uint64]*connection),
+		dgrams:       make(map[dgramKey]bool),
 		pending:      make(map[sslKey]*tlsparse.Stream),
 
 		iouringSubmitUnseen: !attached[submitTP.name] && attached[setupTP.name],
@@ -938,6 +959,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			addr:     hdr.Addr,
 			port:     hdr.Port,
 			openedAt: ts,
+			sotype:   hdr.Sotype,
 		}
 		o.coverage.Connections++
 
@@ -947,6 +969,11 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			return
 		}
 		conn.wrote = true
+		if conn.port == 53 {
+			// A DNS query, one per datagram on a datagram socket (N-27).
+			o.dnsQuery(conn, rec.payload, ts)
+			return
+		}
 		hello, err := tlsparse.ParseClientHello(rec.payload)
 		if err != nil || hello.ServerName == "" {
 			return
@@ -969,6 +996,9 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		if conn, ok := o.conns[key]; ok {
 			conn.wrote = true
 		}
+
+	case netDgram:
+		o.handleDatagram(hdr, rec.payload, ts)
 
 	case netSockBind:
 		o.emitListener(models.NetBind, hdr, rec.payload, ts)
@@ -1051,8 +1081,13 @@ func (o *Observer) emit(conn *connection, ts time.Time) {
 	// looks up, so no trajectory records it and it cannot be aligned; but a
 	// connection to that port is also a way to move data, and dropping it
 	// silently hid that. It is capability evidence, like a listener: in the
-	// capture and the report, never a finding (N-20).
-	if conn.port == 53 {
+	// capture and the report, never a finding (N-20). A query that parsed
+	// was emitted with its name when it was sent (dnsQuery); this is the
+	// connection that sent something no query could be read from. One that
+	// sent nothing falls through to a dial below: Go's address selection
+	// connects a datagram socket to port 53 of every candidate address and
+	// sends nothing (N-27).
+	if conn.port == 53 && conn.wrote {
 		conn.emitted = true
 		o.coverage.DNS++
 		o.emitGroundTruthOnly(models.NetDNS, tgid, peerAddrPort(conn.family, conn.addr, conn.port), ts)
@@ -1066,7 +1101,7 @@ func (o *Observer) emit(conn *connection, ts time.Time) {
 	// They name the destination's addresses, which change with DNS, so no
 	// trajectory could claim them and no baseline could list them. Counted,
 	// not emitted (N-19).
-	if conn.port == 0 {
+	if conn.port == 0 && !conn.datagram {
 		conn.emitted = true
 		o.coverage.AddressProbes++
 		return
@@ -1102,6 +1137,58 @@ func (o *Observer) emit(conn *connection, ts time.Time) {
 	default:
 		o.dropped.Add(1)
 	}
+}
+
+// dnsQuery handles the bytes of one send on a port-53 connection, or one
+// datagram to port 53. When they parse as a DNS query, a net_dns event
+// carrying the question is emitted, stamped at the send, and the connection
+// is marked emitted so its close adds no event without a name. Bytes that
+// do not parse are counted, never trusted: the connection then ends as a
+// net_dns event with the resolver's address alone (N-27).
+func (o *Observer) dnsQuery(conn *connection, payload []byte, ts time.Time) {
+	q, err := parseDNSQuery(payload, conn.sotype)
+	if err != nil {
+		o.coverage.DNSUnparsed++
+		return
+	}
+	conn.emitted = true
+	o.coverage.DNS++
+	o.coverage.DNSNamed++
+	o.emitGroundTruthOnly(models.NetDNS, conn.tgid, dnsTarget(q, peerAddrPort(conn.family, conn.addr, conn.port)), ts)
+}
+
+// handleDatagram turns a datagram sent to an explicit address into the
+// event a connection to that address that sent the same bytes would give
+// (N-28): to port 53, net_dns, one per datagram, with the question when it
+// parses (N-27); to any other port, net_connect by address, once per
+// socket and destination. The PID is the sender's.
+func (o *Observer) handleDatagram(hdr bpfNetEventHdr, payload []byte, ts time.Time) {
+	conn := &connection{
+		tgid:     hdr.Tgid,
+		family:   hdr.Family,
+		addr:     hdr.Addr,
+		port:     hdr.Port,
+		openedAt: ts,
+		wrote:    true,
+		sotype:   hdr.Sotype,
+		datagram: true,
+	}
+	if conn.port == 53 && conn.sotype == sockDgram {
+		o.coverage.Datagrams++
+		o.dnsQuery(conn, payload, ts)
+		o.emit(conn, ts) // the resolver alone, when no question parsed
+		return
+	}
+	key := dgramKey{sock: hdr.Sock, family: hdr.Family, addr: hdr.Addr, port: hdr.Port}
+	if o.dgrams == nil {
+		o.dgrams = map[dgramKey]bool{}
+	}
+	if o.dgrams[key] {
+		return
+	}
+	o.dgrams[key] = true
+	o.coverage.Datagrams++
+	o.emit(conn, ts)
 }
 
 // peerAddrPort formats a fallback target for a connection whose first bytes

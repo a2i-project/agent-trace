@@ -18,7 +18,10 @@ var errNotAPort = errors.New("net: not a port")
 // docs/architecture/13_probe_net.md.
 type Coverage struct {
 	Connections        int    // NET_CONNECT seen
-	DNS                int    // connections to port 53, emitted as net_dns capability evidence (N-20)
+	DNS                int    // net_dns events: DNS queries with their question, and port-53 connections that sent bytes no query was read from (N-20, N-27)
+	DNSNamed           int    // net_dns events that carry the question (N-27)
+	DNSUnparsed        int    // sends to port 53 whose bytes did not parse as a DNS query; counted, not trusted (N-27)
+	Datagrams          int    // datagrams to an explicit address recorded: every one to port 53, one per socket and destination otherwise (N-28)
 	AddressProbes      int    // connections to port 0: the resolver's source-address selection, not emitted
 	OpenAtStop         int    // connections still open when the capture stopped, emitted then with their connect time (N-21)
 	Replaced           int    // connections replaced by a new connect on the same socket before they were emitted, emitted then with their connect time (N-24)

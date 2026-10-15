@@ -986,6 +986,9 @@ func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.
 		return netRecord{hdr: bpfNetEventHdr{Type: typ, Tgid: 7, Fd: fd, Sock: uint64(fd), Family: afInet, Addr: v4, Port: port, TsNs: 1}}
 	}
 	o.handleNetRecord(rec(netConnect, 3, 53))
+	junk := rec(netHello, 3, 53)
+	junk.payload = []byte("x") // sent bytes that are no DNS query: the resolver alone (N-27)
+	o.handleNetRecord(junk)
 	o.handleNetRecord(rec(netClose, 3, 53))
 	o.handleNetRecord(rec(netConnect, 4, 0))
 	o.handleNetRecord(rec(netClose, 4, 0))
@@ -1003,7 +1006,7 @@ func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("emitted %v, want %v", got, want)
 	}
-	if o.coverage.DNS != 1 || o.coverage.AddressProbes != 1 || o.coverage.Connections != 3 {
+	if o.coverage.DNS != 1 || o.coverage.DNSUnparsed != 1 || o.coverage.AddressProbes != 1 || o.coverage.Connections != 3 {
 		t.Errorf("coverage = %+v", o.coverage)
 	}
 }

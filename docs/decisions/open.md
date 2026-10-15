@@ -135,11 +135,11 @@ Options: Reuse the `ssl_lib.cc` offset machinery for `SSL_read`, which also give
 Current behaviour: `SSL_write` only (N-16).
 Blocked by: O-14.
 
-### O-20: Unconnected UDP and DNS names as capability evidence, larger ClientHello capture
-Status: Proposed. Narrowed on 2026-10-11: N-20 records every connection to port 53 as `net_dns` capability evidence, which settles the connection part of the DNS question.
+### O-20: A ClientHello beyond 1 KiB or split across writes
+Status: Proposed. Narrowed on 2026-10-11: N-20 records every connection to port 53 as `net_dns` capability evidence, which settles the connection part of the DNS question. Narrowed on 2026-10-15: N-27 records the question of every DNS query in the `net_dns` target, and N-28 records datagrams sent to an explicit address, which settles the DNS-name and unconnected-UDP parts.
 Date: 2026-10-06.
-Question: Record UDP `sendto`/`sendmsg` with an address on an unconnected socket (DNS included), and the names looked up, as unclaimable capability evidence, and grow the hello capture beyond 1 KiB or parse SNI across writes?
-Current behaviour: A `connect()` to port 53, TCP or UDP, is `net_dns` with the `ip:port` target (N-20); the query and its name are not recorded. A datagram sent with an address on an unconnected socket creates no connection and is not observed. Hello capture is 1024 bytes of the first write or first iovec.
+Question: Grow the hello capture beyond 1 KiB, or parse SNI across writes?
+Current behaviour: Hello capture is 1024 bytes of the first send, from up to eight iovecs; an SNI extension beyond that is lost and the connection is reported by address.
 Blocked by: Whether Claude Code's ClientHello pushes SNI past 1024 bytes (Unverified).
 
 ### O-21: Synchronous in-kernel file hashing

@@ -37,10 +37,23 @@ type bpfConnState struct {
 	Port          uint16
 	HelloCaptured uint8
 	Sent          uint8
-	_             [2]byte
+	Sotype        uint8
+	_             [1]byte
 	Tgid          uint32
 	_             [4]byte
 	OpenTsNs      uint64
+}
+
+type bpfDgramKey struct {
+	_    structs.HostLayout
+	Sock uint64
+	Peer struct {
+		_      structs.HostLayout
+		Addr   [16]uint8
+		Port   uint16
+		Family uint8
+		Pad    [5]uint8
+	}
 }
 
 type bpfNetEvent struct {
@@ -61,7 +74,8 @@ type bpfNetEventHdr struct {
 	Addr       [16]uint8
 	Sock       uint64
 	PayloadLen uint32
-	_          [4]byte
+	Sotype     uint16
+	Pad        uint16
 }
 
 // Names of all BPF objects in the ELF.
@@ -70,6 +84,7 @@ type bpfNetEventHdr struct {
 const (
 	bpfMapBinds               = "binds"
 	bpfMapConns               = "conns"
+	bpfMapDgrams              = "dgrams"
 	bpfMapDropCount           = "drop_count"
 	bpfMapHeap                = "heap"
 	bpfMapHelloFaultCount     = "hello_fault_count"
@@ -168,6 +183,7 @@ type bpfProgramSpecs struct {
 type bpfMapSpecs struct {
 	Binds             *ebpf.MapSpec `ebpf:"binds"`
 	Conns             *ebpf.MapSpec `ebpf:"conns"`
+	Dgrams            *ebpf.MapSpec `ebpf:"dgrams"`
 	DropCount         *ebpf.MapSpec `ebpf:"drop_count"`
 	Heap              *ebpf.MapSpec `ebpf:"heap"`
 	HelloFaultCount   *ebpf.MapSpec `ebpf:"hello_fault_count"`
@@ -208,6 +224,7 @@ func (o *bpfObjects) Close() error {
 type bpfMaps struct {
 	Binds             *ebpf.Map `ebpf:"binds"`
 	Conns             *ebpf.Map `ebpf:"conns"`
+	Dgrams            *ebpf.Map `ebpf:"dgrams"`
 	DropCount         *ebpf.Map `ebpf:"drop_count"`
 	Heap              *ebpf.Map `ebpf:"heap"`
 	HelloFaultCount   *ebpf.Map `ebpf:"hello_fault_count"`
@@ -224,6 +241,7 @@ func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.Binds,
 		m.Conns,
+		m.Dgrams,
 		m.DropCount,
 		m.Heap,
 		m.HelloFaultCount,
