@@ -153,10 +153,11 @@ Three rules cut across all components:
 The probes, the verifier, the Claude Code and Gemini adapters, the baseline
 builder and the attack generators are implemented and tested against a
 simulated agent (`cmd/simagent`) and against fixtures. Paired captures of real
-Claude Code sessions and one of Gemini (agy 1.3.4) are checked in; each one,
+Claude Code sessions and two of Gemini (agy 1.3.4) are checked in; each one,
 its agent version and its outcome are listed in
-[30_agent_adapters.md](30_agent_adapters.md#objective). Still unchecked:
-Gemini beyond that one task, Claude Code versions other than
+[30_agent_adapters.md](30_agent_adapters.md#objective). Every fixture predates the filesystem probe's entry names (P-25), so
+those shapes are checked only by the probe's and end-to-end tests. Still
+unchecked: Gemini beyond those two tasks, Claude Code versions other than
 those captured, tools and shapes the captures do not exercise (listed in
 [30_agent_adapters.md](30_agent_adapters.md#known-limits)), and any population
 of real sessions. Known limits of each component are listed on its page.
