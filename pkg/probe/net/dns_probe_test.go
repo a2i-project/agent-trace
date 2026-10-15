@@ -102,12 +102,12 @@ s.close()
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(R)  # Go's address selection: connected, nothing sent
 s.close()
-if %t:
+if %s:
     t = socket.create_connection(R)
     m = q("tcp.dns.test", 1)
     t.sendall(struct.pack(">H", len(m)) + m)
     t.close()
-`, tcpOK))
+`, pyBool(tcpOK)))
 
 	// sendmmsg has no Python binding: a C-like call through ctypes would
 	// work, but glibc's getaddrinfo is the real user, checked in
@@ -299,4 +299,12 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// pyBool spells a Go bool as a Python literal.
+func pyBool(b bool) string {
+	if b {
+		return "True"
+	}
+	return "False"
 }
