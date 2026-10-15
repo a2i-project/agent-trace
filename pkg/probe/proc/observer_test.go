@@ -13,6 +13,7 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/cilium/ebpf"
+	"golang.org/x/sys/unix"
 )
 
 func skipUnprivileged(t *testing.T) {
@@ -1201,5 +1202,75 @@ func TestObserver_ExitCodeIsTheWaitStatus(t *testing.T) {
 		case *exit.ExitCode != want:
 			t.Errorf("_exit(%d): ExitCode = %d, want the wait status %d", args[i], *exit.ExitCode, want)
 		}
+	}
+}
+
+// leaderExitsFirst ends its main thread with a raw exit, so the thread-group
+// leader is a zombie while a second thread lives on, forks and execs a child,
+// and ends the process with exit_group(3).
+const leaderExitsFirst = `
+import ctypes, os, subprocess, sys, threading, time
+sys_exit, nonce = int(sys.argv[1]), sys.argv[2]
+tgid = os.getpid()
+def worker():
+    deadline = time.monotonic() + 5
+    while True:
+        with open(f"/proc/{tgid}/task/{tgid}/stat") as f:
+            state = f.read().rsplit(")", 1)[1].split()[0]
+        if state == "Z":
+            break
+        if time.monotonic() > deadline:
+            os._exit(99)
+        time.sleep(0.01)
+    subprocess.run(["/bin/true", nonce])
+    os._exit(3)
+threading.Thread(target=worker).start()
+ctypes.CDLL(None).syscall(sys_exit, 0)
+`
+
+// A process whose thread-group leader exits first is still alive: it stays
+// tracked, so a child it forks afterwards is in the tree, and its exit record
+// comes when the last thread exits, with that exit's code. The probe used to
+// treat the leader's exit as the process's.
+func TestObserver_ProcessOutlivesItsLeaderThread(t *testing.T) {
+	skipUnprivileged(t)
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not installed")
+	}
+	nonce := fmt.Sprintf("agenttrace-leader-%d", time.Now().UnixNano())
+	cmd := exec.Command(python, "-c", leaderExitsFirst, strconv.Itoa(unix.SYS_EXIT), nonce)
+	byPID := runTracked(t, []*exec.Cmd{cmd})
+	if code := cmd.ProcessState.ExitCode(); code != 3 {
+		t.Fatalf("the script exited %d, want 3 (99: the leader never became a zombie)", code)
+	}
+	pid := uint32(cmd.Process.Pid)
+
+	var child, exit *models.GroundTruthEvent
+	for p, evs := range byPID {
+		for i, e := range evs {
+			switch {
+			case e.ActionType == models.ProcessExec && e.Target == "/bin/true "+nonce:
+				child = &byPID[p][i]
+			case p == pid && e.ActionType == models.ProcessExit:
+				if exit != nil {
+					t.Errorf("a second exit record for %d: %+v", pid, e)
+				}
+				exit = &byPID[p][i]
+			}
+		}
+	}
+	if child == nil {
+		t.Errorf("no exec of the child forked after the leader exited: the process left the tracked set while it lived")
+	} else if child.PPID != pid {
+		t.Errorf("child's PPID = %d, want %d", child.PPID, pid)
+	}
+	switch {
+	case exit == nil:
+		t.Errorf("no exit record for %d", pid)
+	case exit.ExitCode == nil || *exit.ExitCode != 3:
+		t.Errorf("exit record has ExitCode %v, want 3 from the last thread's exit_group", exit.ExitCode)
+	case child != nil && exit.Timestamp.Before(child.Timestamp):
+		t.Errorf("exit record at %v precedes the child's exec at %v", exit.Timestamp, child.Timestamp)
 	}
 }

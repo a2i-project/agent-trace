@@ -439,11 +439,15 @@ int handle_exit_group(struct sys_enter_exit_group_ctx *ctx)
 SEC("tracepoint/sched/sched_process_exit")
 int handle_exit(struct sched_process_exit_ctx *ctx)
 {
-	__u64 id = bpf_get_current_pid_tgid();
-	__u32 tgid = id >> 32;
-	__u32 tid = (__u32)id;
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 
-	if (tgid != tid)
+	// The process ends with its last thread, not with its leader: a leader
+	// can exit first (pthread_exit, or a raw exit) or be replaced when
+	// another thread execs, and the process lives on, forks and exits with
+	// its own code. do_exit decrements signal->live before this tracepoint,
+	// so zero means the exiting thread is the last one.
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	if (BPF_CORE_READ(task, signal, live.counter) != 0)
 		return 0;
 
 	// A tracked process that never exec'd has no execs entry, but its
@@ -457,13 +461,14 @@ int handle_exit(struct sched_process_exit_ctx *ctx)
 		return 0;
 
 	// A header-only record: userspace joins it to the command line of the
-	// exec record it read for this pid.
+	// exec record it read for this pid. Two threads exiting at once can both
+	// read live as zero; only the one whose delete succeeds emits.
 	struct event_hdr xh = *cached;
+	if (bpf_map_delete_elem(&execs, &tgid))
+		return 0;
 	xh.kind = KIND_EXIT;
 	xh.ts_ns = bpf_ktime_get_ns();
 	if (bpf_ringbuf_output(&events, &xh, sizeof(xh), 0))
 		count_drop();
-
-	bpf_map_delete_elem(&execs, &tgid);
 	return 0;
 }
