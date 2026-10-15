@@ -47,6 +47,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits even if the adapter's format records them")
 	var jsonPath string
 	fs.StringVar(&jsonPath, "json", "", "Also write the whole verdict as JSON to this file: every list, the coverage, and each command with the events beneath it")
+	vflags := addVersionFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
@@ -88,6 +89,11 @@ func run(args []string, out, errOut io.Writer) int {
 			return exitError
 		}
 	}
+	vcheck, err := checkVersion(vflags, adapter.Name(), rep)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "verify: %v\n", err)
+		return exitError
+	}
 	data, err := os.ReadFile(groundTruthPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "verify: %v\n", err)
@@ -127,11 +133,13 @@ func run(args []string, out, errOut io.Writer) int {
 	in := agent.Prepare(adapter, tr, gt, measured, opts)
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
 	v := verification.Verify(in)
+	v = vcheck.applyStrict(v)
 
 	ri := reportInput{
 		trajectoryPath: trajectoryPath, groundTruthPath: groundTruthPath, adapter: adapter.Name(),
 		reader: readerNote(normalized, adapter.Name()),
 		parse:  rep, baseline: baseline, entries: len(tr), gt: gt, verdict: v,
+		version: vcheck,
 	}
 	report(out, ri)
 	if jsonPath != "" {
@@ -180,6 +188,7 @@ type reportInput struct {
 	entries                                          int
 	gt                                               models.GroundTruthFile
 	verdict                                          verification.Verdict
+	version                                          versionCheck
 }
 
 func report(w io.Writer, r reportInput) {
@@ -187,6 +196,7 @@ func report(w io.Writer, r reportInput) {
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
 
 	p("=== Agent-Trace Verification Report ===\n")
+	printVersionCheck(w, r.version)
 	p("trajectory:   %s (%d entries, %s)\n", r.trajectoryPath, r.entries, r.reader)
 	p("ground truth: %s (%d events, root pid %d)\n", r.groundTruthPath, len(r.gt.Events), r.gt.RootPID)
 	switch {
@@ -591,6 +601,7 @@ type jsonReport struct {
 	Capability   models.GroundTruth        `json:"capability,omitempty"`
 	Commands     []jsonCommand             `json:"commands"`
 	Complete     verification.Completeness `json:"completeness"`
+	versionJSON
 }
 
 type jsonAlignment struct {
@@ -656,6 +667,7 @@ func writeJSONReport(path string, r reportInput) error {
 		Capability: nonNilEvents(v.Capability), Commands: []jsonCommand{}, Complete: v.Completeness,
 	}
 	rep.Alignment.CorroboratedHarnessShared = v.CorroboratedHarnessShared
+	rep.versionJSON = r.version.json()
 	for _, p := range v.HarnessImplied {
 		rep.Alignment.HarnessImplied = append(rep.Alignment.HarnessImplied, jsonImplied{ImpliedBy: p.Entry.ImpliedBy, Claim: p.Entry, Event: &p.Event})
 	}

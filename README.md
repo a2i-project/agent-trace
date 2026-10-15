@@ -54,7 +54,7 @@ The verifier is tested against a simulated agent (`cmd/simagent`) and against re
 ## Build and test
 
 ```sh
-make build            # watch, verify, baseline, simagent in the repo root (not attack)
+make build            # watch, verify, baseline, simagent, status in the repo root (not attack)
 make generate         # regenerate eBPF bindings after editing a .bpf.c file
 go test ./...
 ```
@@ -93,6 +93,8 @@ sudo ./watch --probes fs,proc,net --workspace "$PWD" --out ground_truth.json -- 
          --ground-truth ground_truth.json --baseline baseline.json
 ```
 
+The adapters were verified on the agent versions listed in `config/agents.json`. `./status` says whether the `claude` and `agy` on your `PATH` are among them (and whether the kernel meets the probes' minimums), and exits non-zero when one is not. `verify` prints a `WARNING:` line when the session was recorded by an unlisted version; `--strict-version` makes such a run INCONCLUSIVE. agy's conversation does not record its version, so give it with `--agent-version`.
+
 The report lists what the adapter could not turn into a claim (tools that produced no entry, tools it has no mapping for, records it could not parse) and each limitation of the format, so a verdict is never read as stronger than the evidence.
 
 A harness does things on its own that no trajectory records, such as keeping a connection to its model API open. Those events would read as unreported actions, so they are measured rather than guessed. Give the agent a task that claims nothing, record it with `watch`, and build a baseline from several such runs:
@@ -129,10 +131,13 @@ cmd/verify        Compares a trajectory and a ground truth file and prints the v
 cmd/baseline      Builds a harness baseline from control runs
 cmd/attack        Mutates a trajectory for evaluation and records the change
 cmd/simagent      Simulated agent, for exercising the probes end to end
+cmd/status        Checks the installed agents' versions against config/agents.json, and the kernel
+config/agents.json  The agent versions each adapter was verified against, with their fixtures
 pkg/models        Trajectory, ground truth and coverage types
 pkg/probe         Observer interface; fs, proc and net implement it
 pkg/verification  Process tree, alignment, coverage and the verdict
 pkg/agent         Adapter interface, registry, baseline; claudecode and gemini adapters
+pkg/config        Reads config/agents.json
 pkg/attack        Attack generators and scoring against a mutation record
 pkg/matching      Target comparison between a claim and an observed event
 pkg/content       SHA-256 content digests

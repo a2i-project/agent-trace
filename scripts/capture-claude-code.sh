@@ -9,7 +9,8 @@
 # It runs the real agent, so it uses the account's model quota and needs root for
 # the probes: run it yourself, it asks for sudo once.
 #
-#   scripts/capture-claude-code.sh [--agent claude-code|gemini] [--task TASK] [--baseline-from DIR] [OUTPUT_DIR]
+#   scripts/capture-claude-code.sh [--agent claude-code|gemini] [--task TASK] [--baseline-from DIR]
+#                                  [--allow-unconfigured-version] [OUTPUT_DIR]
 #
 # Claude Code tasks: basic, parallel, project, edits, tools, shapes.
 # Gemini tasks: basic, search.
@@ -57,6 +58,14 @@
 #             write permission of locked/ removed while it runs, and the script
 #             refuses before it asks for sudo when such a directory stays
 #             writable (as for root). Its controls make the one Bash call.
+#
+# The adapters were verified on the agent versions config/agents.json lists
+# (I-57; $AGENT_TRACE_CONFIG overrides the file). Before it asks for sudo, the
+# script refuses an installed agent whose version is not listed, unless
+# --allow-unconfigured-version is given: a capture of a new version is how it
+# gets verified. The report's verify runs use --strict-version, so a capture
+# of an unlisted version reads INCONCLUSIVE, naming the version, until its
+# fixture verifies and the version is added to the file.
 #
 # By default the script also runs CONTROLS control runs and builds the baseline
 # from them, with the same tools enabled as the task. With --baseline-from DIR it
@@ -123,11 +132,13 @@ set -euo pipefail
 agent=claude-code
 task=basic
 baseline_from=
+allow_unconfigured=
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs claude-code or gemini}; shift 2 ;;
     --task) task=${2:?--task needs a task name}; shift 2 ;;
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
+    --allow-unconfigured-version) allow_unconfigured=1; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
@@ -162,6 +173,35 @@ else
   claude_flags=(${CLAUDE_FLAGS:---setting-sources project --disable-slash-commands})
   version=$("$claude_bin" --version 2>/dev/null | awk '{print $1}')
 fi
+
+# The adapter's shapes, id families and hosts were measured on the versions
+# config/agents.json lists (I-57); on another version they may silently not fit.
+agent_config=${AGENT_TRACE_CONFIG:-$root/config/agents.json}
+[ -f "$agent_config" ] || { echo "no agent version config at $agent_config" >&2; exit 1; }
+set +e
+configured=$(python3 - "$agent_config" "$agent" "$version" <<'PY'
+import json, sys
+path, agent, version = sys.argv[1:]
+versions = [v["version"] for v in json.load(open(path))["adapters"].get(agent, {}).get("versions", [])]
+print(", ".join(versions) or "none")
+sys.exit(0 if version in versions else 3)
+PY
+)
+check=$?
+set -e
+case $check in
+  0) ;;
+  3)
+    echo "WARNING: $agent version '$version' is not configured in $agent_config (configured: $configured)" >&2
+    echo "the adapter was verified on those versions only and may not fit this one (I-57)" >&2
+    if [ -z "$allow_unconfigured" ]; then
+      echo "to capture it anyway, to verify the new version, pass --allow-unconfigured-version" >&2
+      exit 1
+    fi
+    echo "continuing (--allow-unconfigured-version): the report's verify runs use --strict-version and read INCONCLUSIVE until this version is configured" >&2
+    ;;
+  *) echo "could not read $agent_config" >&2; exit 1 ;;
+esac
 
 case $agent:$task in
   gemini:basic)
@@ -425,13 +465,17 @@ min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4
 
 trajectory=$out/$task.session.jsonl
 [ "$agent" != gemini ] || trajectory=$out/$task.conversation.db
+# A version the config does not list makes the verdict INCONCLUSIVE (I-57).
+# agy's conversation does not state its version, so it is passed.
+version_flags=(--strict-version)
+[ "$agent" != gemini ] || version_flags+=(--agent-version "$version")
 {
   echo "##### verify WITHOUT a baseline"
-  "$root/verify" --agent "$agent" --trajectory "$trajectory" \
+  "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
     --ground-truth "$out/$task.ground_truth.json" || true
   echo
   echo "##### verify WITH the baseline"
-  "$root/verify" --agent "$agent" --trajectory "$trajectory" \
+  "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
     --ground-truth "$out/$task.ground_truth.json" --baseline "$out/baseline.json" || true
 } >"$out/report.txt" 2>&1
 echo

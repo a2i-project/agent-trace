@@ -107,8 +107,8 @@ does. The report lists the command's subtree and its
 | Filesystem probe | `pkg/probe/fs`, `pkg/content` | [12_probe_fs.md](12_probe_fs.md) |
 | Network probe | `pkg/probe/net`, `pkg/tlsoffset`, `pkg/tlsparse` | [13_probe_net.md](13_probe_net.md) |
 | Verifier | `pkg/verification`, `pkg/matching` | [20_verifier.md](20_verifier.md) |
-| Agent adapters and baseline | `pkg/agent` | [30_agent_adapters.md](30_agent_adapters.md) |
-| Command-line tools | `cmd/watch`, `cmd/verify`, `cmd/baseline`, `cmd/attack`, `cmd/simagent` | [40_tools.md](40_tools.md) |
+| Agent adapters, baseline and configured agent versions | `pkg/agent`, `pkg/config`, `config/agents.json` | [30_agent_adapters.md](30_agent_adapters.md) |
+| Command-line tools | `cmd/watch`, `cmd/verify`, `cmd/baseline`, `cmd/status`, `cmd/attack`, `cmd/simagent` | [40_tools.md](40_tools.md) |
 | Attack generators and scoring | `pkg/attack`, `cmd/attack` | [50_attack_generators.md](50_attack_generators.md) |
 
 ## End-to-end workflow

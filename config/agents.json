@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "adapters": {
+    "claude-code": {
+      "binary": "claude",
+      "versions": [
+        {
+          "version": "2.1.286",
+          "verified": "2026-10-12",
+          "fixtures": [
+            "pkg/agent/claudecode/testdata/paired-2.1.286",
+            "pkg/agent/claudecode/testdata/paired-2.1.286-p17",
+            "pkg/agent/claudecode/testdata/paired-2.1.286-parallel",
+            "pkg/agent/claudecode/testdata/paired-2.1.286-project",
+            "pkg/agent/claudecode/testdata/paired-2.1.286-project-heredoc"
+          ]
+        },
+        {
+          "version": "2.1.296",
+          "verified": "2026-10-13",
+          "fixtures": [
+            "pkg/agent/claudecode/testdata/paired-2.1.296-edits",
+            "pkg/agent/claudecode/testdata/paired-2.1.296-shapes",
+            "pkg/agent/claudecode/testdata/paired-2.1.296-tools"
+          ]
+        }
+      ]
+    },
+    "gemini": {
+      "binary": "agy",
+      "versions": [
+        {
+          "version": "1.3.4",
+          "verified": "2026-10-13",
+          "fixtures": [
+            "pkg/agent/gemini/testdata/agy-1.3.4-strace",
+            "pkg/agent/gemini/testdata/paired-agy-1.3.4-basic",
+            "pkg/agent/gemini/testdata/paired-agy-1.3.4-search"
+          ]
+        }
+      ]
+    }
+  }
+}

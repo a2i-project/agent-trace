@@ -10,11 +10,12 @@ build:
 	go build -o verify ./cmd/verify/
 	go build -o baseline ./cmd/baseline/
 	go build -o simagent ./cmd/simagent/
+	go build -o status ./cmd/status/
 
 test:
 	go test -v ./...
 
 clean:
-	rm -f watch verify simagent baseline
+	rm -f watch verify simagent baseline status
 	rm -f ground_truth.json trajectory.json
 	rm -rf /tmp/agent-trace-demo
