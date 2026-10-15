@@ -1322,7 +1322,9 @@ func TestObserver_ExecveatWithAPathNamesIt(t *testing.T) {
 		want := fmt.Sprintf("%s %s-%d", c.target, nonce, i)
 		var seen bool
 		for _, e := range byPID[uint32(cmds[i].Process.Pid)] {
-			if e.ActionType == models.ProcessExec && strings.HasSuffix(e.Target, fmt.Sprintf("%s-%d", nonce, i)) {
+			// The launcher's own exec carries the nonce among its arguments
+			// too; the record under test is the one execveat made.
+			if e.ActionType == models.ProcessExec && !strings.HasPrefix(e.Target, python) && strings.HasSuffix(e.Target, fmt.Sprintf("%s-%d", nonce, i)) {
 				seen = true
 				if e.Target != want {
 					t.Errorf("%s: target %q, want %q", c.name, e.Target, want)
