@@ -1,8 +1,10 @@
 package gemini
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
@@ -145,5 +147,20 @@ func TestHarnessHostsAreTheMeasuredOccasionalHosts(t *testing.T) {
 	got := Adapter{}.HarnessHosts()
 	if len(got) != 1 || got[0] != "oauth2.googleapis.com" {
 		t.Errorf("HarnessHosts() = %v, want only oauth2.googleapis.com", got)
+	}
+}
+
+// agy declares its CLI settings, shared configuration and MCP servers as its
+// sensitive files (I-59), each under the agent's home.
+func TestSensitiveFilesAreTheSettingsAndConfiguration(t *testing.T) {
+	got := Adapter{}.SensitiveFiles()
+	want := []string{"~/.gemini/antigravity-cli/settings.json", "~/.gemini/config/config.json", "~/.gemini/config/mcp_config.json"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("SensitiveFiles() = %v, want %v", got, want)
+	}
+	for _, f := range got {
+		if _, ok := sensitive.Resolve(f, "/home/user", "/ws/run"); !ok {
+			t.Errorf("%s does not resolve", f)
+		}
 	}
 }

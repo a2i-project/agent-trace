@@ -39,6 +39,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -46,6 +47,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agent-trace/agent-trace/pkg/agent"
+	_ "github.com/agent-trace/agent-trace/pkg/agent/claudecode"
+	_ "github.com/agent-trace/agent-trace/pkg/agent/gemini"
+	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/probe"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
@@ -303,12 +308,20 @@ type watchOptions struct {
 	out       string
 	rootPID   int
 	agentArgs []string // command (and args) after "--"; empty means no exec-wrap
+	// sensitive are the harness's security-sensitive files, as the adapters
+	// declare them, snapshotted at start and stop (V-40). Empty takes no
+	// snapshot.
+	sensitive []string
+	// agentHome is the home a declared "~/" resolves against. Empty means
+	// the home of the user sudo was run by, else the recorder's own.
+	agentHome string
 }
 
 func main() {
 	var workspace, probesFlag, procFilter, out string
 	var bufSize, rootPID int
 	var netExePath, netCachePath string
+	var agentName, agentHome string
 
 	flag.StringVar(&workspace, "workspace", "", "Path to the workspace to watch (fs probe)")
 	flag.StringVar(&probesFlag, "probes", "fs,proc", "Comma-separated probes to run (available: "+availableProbes()+")")
@@ -318,6 +331,8 @@ func main() {
 	flag.IntVar(&rootPID, "root-pid", 0, "Attach the proc probe's ancestry root to this already-running PID instead of launching the agent. RACE: anything that PID did before this call is invisible to the proc probe (the fs probe is unaffected). Mutually exclusive with a trailing -- <command>.")
 	flag.StringVar(&netExePath, "net-exe-path", "", "Path to the TLS library (e.g. libssl.so.3) for SSL_write content capture (net probe, Tier 3 S5+). Empty = identity-only (SNI).")
 	flag.StringVar(&netCachePath, "net-cache-path", "", "JSON cache file for pre-computed TLS offsets (net probe). Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json.")
+	flag.StringVar(&agentName, "agent", "", "Adapter whose security-sensitive harness files are snapshotted at start and stop ("+strings.Join(agent.Names(), ", ")+"). Default: the files of every adapter")
+	flag.StringVar(&agentHome, "agent-home", "", "Home directory of the user the agent runs as, which a declared ~/ file resolves against. Default: the home of the user who ran sudo ($SUDO_UID), else root's")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		_, _ = fmt.Fprintln(out, "Usage: watch --workspace PATH [flags] [-- <agent command> [args...]]")
@@ -330,16 +345,84 @@ func main() {
 	}
 	flag.Parse()
 
+	files, err := declaredSensitive(agentName)
+	if err != nil {
+		log.Fatal(err)
+	}
 	opts := watchOptions{
 		cfg:       watchConfig{Workspace: workspace, ProcFilter: procFilter, EventBufSize: bufSize, NetExePath: netExePath, NetCachePath: netCachePath},
 		probes:    probesFlag,
 		out:       out,
 		rootPID:   rootPID,
 		agentArgs: flag.Args(),
+		sensitive: files,
+		agentHome: agentHome,
 	}
 	if err := runWatch(opts); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// declaredSensitive is the security-sensitive files of the named adapter, or
+// of every registered adapter when name is empty, so a capture made without
+// naming the agent still holds its harness's files (V-40, I-59).
+func declaredSensitive(name string) ([]string, error) {
+	names := agent.Names()
+	if name != "" {
+		if _, ok := agent.Lookup(name); !ok {
+			return nil, fmt.Errorf("unknown agent %q (registered: %s)", name, strings.Join(names, ", "))
+		}
+		names = []string{name}
+	}
+	var files []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		a, _ := agent.Lookup(n)
+		for _, f := range agent.SensitiveFiles(a) {
+			if !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+			}
+		}
+	}
+	return files, nil
+}
+
+// resolveAgentHome is the home a declared "~/" resolves against and the uid
+// that owns it, which every snapshotted file must belong to. watch runs as
+// root under sudo, so without a flag the home is that of the user sudo was
+// run by: the agent is run as that user (scripts/capture-claude-code.sh
+// does so with setpriv), not as root.
+func resolveAgentHome(flagHome string) (string, int, error) {
+	home := flagHome
+	if home == "" {
+		if uid := os.Getenv("SUDO_UID"); uid != "" {
+			u, err := user.LookupId(uid)
+			if err != nil {
+				return "", 0, fmt.Errorf("look up the home of SUDO_UID %s: %w", uid, err)
+			}
+			home = u.HomeDir
+		} else {
+			h, err := os.UserHomeDir()
+			if err != nil {
+				return "", 0, err
+			}
+			home = h
+		}
+	}
+	home, err := filepath.Abs(home)
+	if err != nil {
+		return "", 0, err
+	}
+	fi, err := os.Stat(home)
+	if err != nil {
+		return "", 0, err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || !fi.IsDir() {
+		return "", 0, fmt.Errorf("%s is not a directory", home)
+	}
+	return home, int(st.Uid), nil
 }
 
 // runWatch builds the requested probes, records ground truth according to the
@@ -514,6 +597,21 @@ func runWatch(opts watchOptions) error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
+	// The harness's sensitive files are read before the agent runs and again
+	// once the probes have stopped (V-40). Reading them is the recorder's own
+	// file activity, which the fs scope drops.
+	workspace := workspaceAbs(opts.cfg.Workspace)
+	var snap *sensitive.Snapshot
+	if len(opts.sensitive) > 0 {
+		home, owner, err := resolveAgentHome(opts.agentHome)
+		if err == nil {
+			snap, err = sensitive.Start(opts.sensitive, home, workspace, owner)
+		}
+		if err != nil {
+			log.Printf("sensitive files: no snapshot taken: %v", err)
+		}
+	}
+
 	var agentErr error
 	// groundRoot is the pid the verifier roots the process forest at: the
 	// launched agent, or --root-pid. Zero when watch records host-wide with no
@@ -595,6 +693,14 @@ func runWatch(opts watchOptions) error {
 	fmt.Println("\nstopping probes...")
 	stopEverything()
 
+	var sensitiveRec *models.SensitiveSnapshot
+	if snap != nil {
+		rec := snap.Stop()
+		sensitiveRec = &rec
+		files, changes := sensitive.Changed(rec)
+		fmt.Printf("sensitive files: %d snapshotted under %s at start and stop; %d changed (%d change(s) by key path)\n", len(rec.Files), rec.Home, files, changes)
+	}
+
 	if netObs != nil {
 		nc := netObs.Coverage()
 		fmt.Printf("net probe coverage: connections=%d withHostname=%d withContent=%d unattributed=%d unsupported=%d dns=%d addressProbes=%d openAtStop=%d replaced=%d dials=%d\n",
@@ -626,7 +732,6 @@ func runWatch(opts watchOptions) error {
 		}
 	}
 
-	workspace := workspaceAbs(opts.cfg.Workspace)
 	var scope *models.FSScope
 	if fsObs != nil {
 		marked, unmarked := fsObs.Scope()
@@ -652,7 +757,7 @@ func runWatch(opts watchOptions) error {
 	if ground == nil {
 		ground = models.GroundTruth{}
 	}
-	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot, Workspace: workspace, FSScope: scope}, "", "  ")
+	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot, Workspace: workspace, FSScope: scope, Sensitive: sensitiveRec}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal ground truth: %w", err)
 	}

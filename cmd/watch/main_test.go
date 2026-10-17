@@ -372,3 +372,101 @@ func TestDropUnresolvedFSEvents_CountsNamelessEvents(t *testing.T) {
 		t.Error("a clean capture must record no unresolved map")
 	}
 }
+
+// TestRunWatch_SnapshotsSensitiveFiles checks the snapshot of the harness's
+// security-sensitive files (V-40): a declared file the agent changes is
+// recorded with the key path and kind of the change and nothing of its
+// content, and a declared file that is absent at both ends is recorded as
+// missing with no change.
+func TestRunWatch_SnapshotsSensitiveFiles(t *testing.T) {
+	skipUnprivileged(t)
+
+	ws, home := t.TempDir(), t.TempDir()
+	cfg := filepath.Join(home, ".tool.json")
+	if err := os.WriteFile(cfg, []byte(`{"permissions":{"allow":["Read"]},"n":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "ground_truth.json")
+	opts := watchOptions{
+		cfg:       watchConfig{Workspace: ws, EventBufSize: 256},
+		probes:    "proc",
+		out:       out,
+		agentArgs: []string{"/bin/sh", "-c", `printf '{"permissions":{"allow":["Read","Bash(curl-secret)"]},"n":1}' > "$0"`, cfg},
+		sensitive: []string{"~/.tool.json", "~/.absent.json"},
+		agentHome: home,
+	}
+	if err := runWatch(opts); err != nil {
+		t.Fatalf("runWatch: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "curl-secret") {
+		t.Error("the capture holds content of a sensitive file")
+	}
+	file, err := models.ParseGroundTruthFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Sensitive == nil || file.Sensitive.Home != home || len(file.Sensitive.Files) != 2 {
+		t.Fatalf("sensitive record = %+v, want both declared files under %s", file.Sensitive, home)
+	}
+	changed := file.Sensitive.Files[0]
+	want := []models.SensitiveChange{{Key: []string{"permissions", "allow"}, Kind: models.SensitiveEntriesAdded, Entries: 1}}
+	if changed.Path != cfg || changed.Start.State != models.SensitivePresent || changed.Start.Digest == changed.Stop.Digest ||
+		len(changed.Changes) != 1 || changed.Changes[0].Kind != want[0].Kind || strings.Join(changed.Changes[0].Key, ".") != "permissions.allow" || changed.Changes[0].Entries != 1 {
+		t.Errorf("changed file = %+v, want %+v", changed, want)
+	}
+	absent := file.Sensitive.Files[1]
+	if absent.Start.State != models.SensitiveMissing || absent.Stop.State != models.SensitiveMissing || len(absent.Changes) != 0 {
+		t.Errorf("absent file = %+v, want missing at both ends with no change", absent)
+	}
+}
+
+func TestDeclaredSensitive(t *testing.T) {
+	all, err := declaredSensitive("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := func(files []string, f string) bool {
+		for _, x := range files {
+			if x == f {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(all, "~/.claude.json") || !has(all, "~/.gemini/antigravity-cli/settings.json") {
+		t.Errorf("every adapter's files = %v, want Claude Code's and agy's", all)
+	}
+	cc, err := declaredSensitive("claude-code")
+	if err != nil || !has(cc, "~/.claude.json") || has(cc, "~/.gemini/antigravity-cli/settings.json") {
+		t.Errorf("claude-code's files = %v, %v", cc, err)
+	}
+	if g, err := declaredSensitive("generic"); err != nil || len(g) != 0 {
+		t.Errorf("generic's files = %v, %v, want none", g, err)
+	}
+	if _, err := declaredSensitive("nope"); err == nil {
+		t.Error("an unknown agent is not refused")
+	}
+}
+
+func TestResolveAgentHome(t *testing.T) {
+	home := t.TempDir()
+	got, owner, err := resolveAgentHome(home)
+	if err != nil || got != home || owner != os.Getuid() {
+		t.Errorf("resolveAgentHome(%s) = %s, %d, %v, want the directory and its owner %d", home, got, owner, err, os.Getuid())
+	}
+	f := filepath.Join(home, "file")
+	if err := os.WriteFile(f, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := resolveAgentHome(f); err == nil {
+		t.Error("a file is accepted as a home")
+	}
+	t.Setenv("SUDO_UID", fmt.Sprint(os.Getuid()))
+	if got, _, err := resolveAgentHome(""); err != nil || got == "" {
+		t.Errorf("home of SUDO_UID = %q, %v", got, err)
+	}
+}

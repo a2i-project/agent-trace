@@ -80,6 +80,27 @@ type HarnessHoster interface {
 	HarnessHosts() []string
 }
 
+// SensitiveDeclarer is implemented by an adapter that can name the harness's
+// security-sensitive files: the short list of its settings, permission and
+// configuration files whose change by the agent would change what the
+// harness lets the agent do. cmd/watch snapshots them at the start and the
+// stop of a capture, and the verifier checks what changed against what the
+// control runs changed (V-40). Each entry starts with "~/" (the home of the
+// user the agent runs as) or "{workspace}/" (the watched directory). Each
+// is declared from a measured capture or the harness's own documentation
+// (I-59).
+type SensitiveDeclarer interface {
+	SensitiveFiles() []string
+}
+
+// SensitiveFiles is the adapter's declared sensitive files, or nil.
+func SensitiveFiles(a Adapter) []string {
+	if d, ok := a.(SensitiveDeclarer); ok {
+		return d.SensitiveFiles()
+	}
+	return nil
+}
+
 // Canonicalizer is implemented by an adapter whose observed targets carry ids
 // that differ every run: a session id, a pid, a task id in the harness's own
 // file paths. Canonical returns the event with those ids replaced by fixed

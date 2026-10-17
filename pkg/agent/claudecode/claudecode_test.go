@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
+	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
@@ -696,6 +698,22 @@ func TestHarnessHostsAreTheMeasuredOccasionalHosts(t *testing.T) {
 	got := Adapter{}.HarnessHosts()
 	if len(got) != 1 || got[0] != "downloads.claude.ai" {
 		t.Errorf("HarnessHosts() = %v, want only downloads.claude.ai", got)
+	}
+}
+
+// Claude Code declares its global configuration, its user and managed
+// settings and the project's settings as its sensitive files (I-59), each
+// under the agent's home or the workspace, so cmd/watch can resolve them.
+func TestSensitiveFilesAreTheSettingsAndConfiguration(t *testing.T) {
+	got := Adapter{}.SensitiveFiles()
+	want := []string{"~/.claude.json", "~/.claude/settings.json", "~/.claude/remote-settings.json", "{workspace}/.claude/settings.json", "{workspace}/.claude/settings.local.json"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("SensitiveFiles() = %v, want %v", got, want)
+	}
+	for _, f := range got {
+		if _, ok := sensitive.Resolve(f, "/home/user", "/ws/run"); !ok {
+			t.Errorf("%s does not resolve", f)
+		}
 	}
 }
 

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 984d9ef on 2026-10-14.
+Checked against commit 6fc58ba on 2026-10-17.
 
 ## Objective
 
@@ -15,6 +15,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | `pkg/models/action.go` | `ActionType` values, `IsClaimable`, `IsStructural` |
 | `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry`, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
 | `pkg/models/coverage.go` | `ProbeCoverage`, `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema` |
+| `pkg/models/sensitive.go` | `SensitiveSnapshot`, `SensitiveFile`, `SensitiveState`, `SensitiveChange` and their state, format and kind names: the snapshot of the harness's sensitive files (V-40) |
 | `pkg/verification/completeness.go` | `Assess`: turns coverage counters into Reasons (event loss) and Notes (content gaps) |
 
 ### The probe contract
@@ -46,12 +47,12 @@ The fs probe uses fanotify through `golang.org/x/sys/unix`; it has no eBPF compo
 1. `runWatch` requires `--workspace` and root, and rejects `--root-pid` together with a trailing `-- <command>`.
 2. It sets `AncestryPending` when an agent command or `--root-pid` is given, so the proc probe starts with an empty tracked set (`DeferRootPID`) instead of host-wide mode.
 3. For each name in `--probes` (default `fs,proc`), it calls the builder in `probeBuilders`. Adding a probe means adding one entry there. Any probe that is not a `probe.CoverageReporter` aborts the run.
-4. Every probe gets a collector goroutine at once. Every probe other than proc and net (today only fs) is also started at once; proc and net are started later.
+4. Every probe gets a collector goroutine at once. Every probe other than proc and net (today only fs) is also started at once; proc and net are started later. Then, before any agent is started or attached, watch snapshots the harness's security-sensitive files (`sensitive.Start`, V-40): the files the adapter named by `--agent` declares, or every adapter's without it (I-59), `~/` resolved against `--agent-home`, else the home of `$SUDO_UID`, else root's, and `{workspace}/` against the workspace. A failure to resolve the home is logged and no snapshot is taken. Its reads are watch's own file activity, dropped as in step 10.
 5. In exec-wrap mode watch sleeps 200 ms, resolves the command with `exec.LookPath`, and starts it held (`startHeld`, P-23): the process is `/bin/sh` running a short script that blocks on a pipe passed as descriptor 3 and then execs the agent in place, so the agent runs under the pid watch already knows. watch records that pid as `groundRoot`, calls `proc.Observer.SetRootPID(pid)`, starts proc, calls `net.Observer.TrackPID(pid)` and runs `net.Observer.Start` in a goroutine (it blocks during TLS offset validation), and only then writes to the pipe. The agent is therefore in both tracked sets from its first instruction. If a registration fails, watch closes the pipe and kills the held process, and the agent never runs. After the agent exits (or on SIGINT/SIGTERM, which kills it) watch sleeps 300 ms so trailing events drain.
 6. With `--root-pid N`, `groundRoot` is N and the same calls are made for N; watch records until a signal. With neither, `groundRoot` stays 0, proc runs host-wide (optionally narrowed by `--proc-filter`) and net is started with no tracked pid, so it records nothing and its coverage says `Ran=false` (N-26).
 7. `stopEverything` stops the other probes, then net, then proc, and waits for the collectors.
 8. `buildCoverage` asks every started probe for `CaptureCoverage()` and writes `ProbeCoverage{Ran: false}` for every known probe that was not selected.
-9. watch prints the loss counters, runs `verification.Assess` and logs a warning with the Reasons when the capture is incomplete.
+9. watch reads the sensitive files again (`Snapshot.Stop`) and prints how many it snapshotted and how many changed, with the number of changes; then it prints the loss counters, runs `verification.Assess` and logs a warning with the Reasons when the capture is incomplete.
 10. File events caused by `watch`'s own pid are dropped before anything else and never printed: the startup walk, the hash reads, and the writes of its own log, which on a marked filesystem would otherwise produce the event being printed, without end. The agent's stdout and stderr pass through `watch` on a pipe, so what the agent prints is not a file write by the agent. With an fs probe and a root pid, `scopeFSEvents` then applies the scope rule (`tree-or-workspace`, P-17): it keeps a file event when the agent's tree caused it (by the forest built from the fork records), wherever the path is, or when the path is under the workspace, whoever caused it; every other file event is dropped by the scope rule and counted in `fs_scope.dropped_outside`. Non-file events are untouched. The rule runs here, after the capture, because the probe reads an event some time after the access, when a short-lived child has often already exited; the fork records have no such race.
 11. Events are sorted by timestamp and written with `json.MarshalIndent` as a `models.GroundTruthFile`, with `fs_scope` saying which filesystems were marked and which rule was applied.
 
@@ -115,11 +116,22 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
   },
   "root_pid": 4200,
   "workspace": "/work/project",
-  "fs_scope": { "rule": "tree-or-workspace", "mounts": ["/", "/tmp"], "unmarked": {"/run/user/1000/doc": "fanotify_mark on /run/user/1000/doc: invalid argument"}, "dropped_outside": 12 }
+  "fs_scope": { "rule": "tree-or-workspace", "mounts": ["/", "/tmp"], "unmarked": {"/run/user/1000/doc": "fanotify_mark on /run/user/1000/doc: invalid argument"}, "dropped_outside": 12 },
+  "sensitive": {
+    "home": "/home/user",
+    "files": [
+      { "declared": "~/.claude.json", "path": "/home/user/.claude.json",
+        "start": { "state": "present", "format": "json", "digest": "9f2c..." },
+        "stop":  { "state": "present", "format": "json", "digest": "41ab..." },
+        "changes": [ { "key": ["projects", "/work/project", "allowedTools"], "kind": "entries-added", "entries": 1 } ] },
+      { "declared": "{workspace}/.claude/settings.local.json", "path": "/work/project/.claude/settings.local.json",
+        "start": { "state": "missing" }, "stop": { "state": "missing" } }
+    ]
+  }
 }
 ```
 
-`models.ParseGroundTruthFile` accepts this object or the legacy form, a bare JSON array of events, which yields a nil coverage and a zero `root_pid`. It rejects a coverage `schema` other than `models.CoverageSchema` (1). `ParseGroundTruth` accepts only the bare array, so a caller that ignores coverage fails on the object form instead of silently dropping it. A zero `root_pid` means no tree can be built and the verifier cannot attribute events. `workspace` is the absolute directory the capture watched, written by `watch`; a baseline uses it to name that directory with a placeholder. `fs_scope` (`models.FSScope`) says which file events the capture can contain: the marked filesystems by mount point, those that could not be marked, the rule (`tree-or-workspace`, or `unfiltered` when there was no root pid), how many events were dropped by the scope rule (`dropped_outside`), and `unresolved`, a count by action type of the file events whose path the probe could not resolve at all (a delete inside a tree being removed, whose parent was gone by the time it was read); those are not in `events`, since an event with no target cannot be aligned or attributed. A file without it predates the record and holds only paths under `workspace`, from any process. `watch` sorts events by timestamp with a stable sort, because events read in one batch share a timestamp and the verifier aligns by position.
+`models.ParseGroundTruthFile` accepts this object or the legacy form, a bare JSON array of events, which yields a nil coverage and a zero `root_pid`. It rejects a coverage `schema` other than `models.CoverageSchema` (1). `ParseGroundTruth` accepts only the bare array, so a caller that ignores coverage fails on the object form instead of silently dropping it. A zero `root_pid` means no tree can be built and the verifier cannot attribute events. `workspace` is the absolute directory the capture watched, written by `watch`; a baseline uses it to name that directory with a placeholder. `fs_scope` (`models.FSScope`) says which file events the capture can contain: the marked filesystems by mount point, those that could not be marked, the rule (`tree-or-workspace`, or `unfiltered` when there was no root pid), how many events were dropped by the scope rule (`dropped_outside`), and `unresolved`, a count by action type of the file events whose path the probe could not resolve at all (a delete inside a tree being removed, whose parent was gone by the time it was read); those are not in `events`, since an event with no target cannot be aligned or attributed. A file without it predates the record and holds only paths under `workspace`, from any process. `sensitive` (`models.SensitiveSnapshot`, V-40) is the snapshot of the harness's declared security-sensitive files: the home `~/` was resolved against and, per declared file in declaration order, its resolved path, its `start` and `stop` state (`present`, `missing`, or why it was not read: `not-regular`, `foreign` for a file another user than the home's owner owns, `too-large` above 16 MiB, `unreadable` with the error), a present file's `format` (`json` or `other`) and `digest`, and the `changes` between the two ends. A change is a key path (`key`, one element per object key, empty for the whole file) and a `kind`: `added`, `removed`, `changed`, `entries-added` and `entries-removed` (a list is compared as a set of entries, with the count in `entries`), `created` (a created JSON file also lists its key paths as added), `deleted`, `content` (a file that is not JSON at one end changed) and `unmeasured` (the state changed and one end is not a measurement). No value is recorded: every hash is HMAC-SHA256 under a key drawn at random for the capture and never written, so a digest says only whether the two ends are equal. Only changed key paths are recorded. A file without `sensitive` predates the record or had no declared file. `watch` sorts events by timestamp with a stable sort, because events read in one batch share a timestamp and the verifier aligns by position.
 
 ## Guarantees and loss accounting
 
@@ -142,6 +154,7 @@ Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, Probe
 - With `--root-pid N` the process is already running, so whatever it forked before `SetRootPID` or `TrackPID` runs is untracked and nothing counts it.
 - In host-wide mode (no agent command and no `--root-pid`) the net probe tracks no pid and records nothing; it reports `Ran=false`, so `watch` prints it as not run although it was selected.
 - The boot offset is computed once per probe, so wall-clock steps during a run shift kernel timestamps relative to fs timestamps.
+- The sensitive-file snapshot is a net change between Start and Stop: a change made and reverted in between is not seen, a list's order and repeated entries are not compared, and with `--root-pid` whatever the agent changed before the attach is part of the Start state. It is taken while the agent may still have processes running after it exits; a change they make after Stop is outside the capture.
 - `IsTopLevel` is a legacy field still written by proc and net.
 - The CI freshness check compares the generated `.go` files only, so a `.bpf.c` edit that changes program logic but no map, program or type, committed without regenerating, leaves a stale `.o` that no job detects.
 - Code generation assumes an x86_64 host.

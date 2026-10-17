@@ -104,6 +104,10 @@ type GroundTruthFile struct {
 	// capture predates the record: the fs probe then kept only paths under
 	// Workspace, from any process.
 	FSScope *FSScope `json:"fs_scope,omitempty"`
+	// Sensitive is the snapshot of the harness's security-sensitive files at
+	// the start and the stop of the capture (V-40). Nil means the capture
+	// took none: it predates the record, or no adapter declared a file.
+	Sensitive *SensitiveSnapshot `json:"sensitive,omitempty"`
 }
 
 // FSScope rules.

@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 51e6a4b on 2026-10-15.
+Checked against commit 6fc58ba on 2026-10-17.
 
 ## Objective
 
@@ -10,7 +10,7 @@ Six commands turn the probes, adapters and verifier into a workflow: `watch` rec
 
 | Command | Source | Main function | Tests |
 |---|---|---|---|
-| `watch` | `cmd/watch/main.go` | `runWatch(watchOptions)`, `buildCoverage`, `probeBuilders` | `cmd/watch/main_test.go` |
+| `watch` | `cmd/watch/main.go` | `runWatch(watchOptions)`, `buildCoverage`, `probeBuilders`, `declaredSensitive`, `resolveAgentHome` | `cmd/watch/main_test.go` |
 | `verify` | `cmd/verify/main.go`, `cmd/verify/version.go` | `run(args, out, errOut) int`, `chooseAdapter`, `report`; `checkVersion`, `applyStrict`, `printVersionCheck` | `cmd/verify/main_test.go`, `cmd/verify/version_test.go` |
 | `baseline` | `cmd/baseline/main.go` | `run(args, out, errOut) int` | `cmd/baseline/main_test.go` |
 | `status` | `cmd/status/main.go` | `run(args, out, errOut, env) int`, `agentVersion`, `printKernel` | `cmd/status/main_test.go` |
@@ -31,10 +31,14 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 | `--root-pid N` | 0 | Attach the ancestry root to a running process instead of launching one; needs the proc probe; exclusive with `-- <command>` |
 | `--net-exe-path PATH` | empty | TLS library (for example `libssl.so.3`) for the `SSL_write` uprobe; empty means identity only |
 | `--net-cache-path PATH` | `$TMPDIR/agent-trace-tlsoffset-cache.json` | Cache of computed TLS offsets |
+| `--agent NAME` | every adapter | Adapter whose security-sensitive harness files are snapshotted (I-59); an unknown name is an error. Without it, the files every registered adapter declares |
+| `--agent-home DIR` | home of `$SUDO_UID`, else root's | Home of the user the agent runs as, which a declared `~/` file resolves against; every snapshotted file must belong to its owner |
 
 Modes: with a trailing `-- <command> [args]`, `watch` starts the command stopped before its exec, makes its pid the proc probe's ancestry root and the net probe's tracked pid, then lets it run (P-23), waits for it to exit (Ctrl+C kills it) and writes the file; the launch sequence, the output pipe and the wait for trailing events are in [10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes). With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
 
 `watch` requires root (fanotify and eBPF) and refuses a probe that does not implement `probe.CoverageReporter`. The output file is a `models.GroundTruthFile` ([10_probes_common.md](10_probes_common.md#ground_truthjson)); before writing it, `watch` applies the scope rule to file events ([10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes)). It prints one line with the marked and unmarked filesystem counts and the count dropped by the scope rule, a warning per action type with the count of file events whose path could not be resolved (counted, not recorded), and a warning per filesystem it could not mark. On exit it prints the net probe's diagnostic counts when it ran (connections, with a hostname, with content, unattributed, unsupported, DNS connections, address probes, connections emitted at the stop, connections replaced by a new connect on their descriptor, dials; [13_probe_net.md](13_probe_net.md)), each probe's loss counters, `hashlessCloses`, `undrainedRecords` and `unresolvedPaths` included, and logs a warning when `verification.Assess` judges the capture incomplete.
+
+Before the agent is released (or, with `--root-pid`, at attach) and again once the probes have stopped, `watch` snapshots the harness's security-sensitive files (V-40): it reads each declared file that is a regular file of the agent's user, no larger than 16 MiB, and writes into the capture's `sensitive` record each file's state at both ends and the changes between them by key path and kind, never a value ([10_probes_common.md](10_probes_common.md#ground_truthjson)). It prints one line with the number of files snapshotted, the home they were resolved under, and how many changed with how many changes. The record is written whenever some file is declared; a failure to find the agent's home is logged and leaves the record out.
 
 | Exit code | When |
 |---|---|

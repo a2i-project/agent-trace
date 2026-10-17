@@ -68,6 +68,25 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 // it and it is not declared.
 func (Adapter) HarnessHosts() []string { return []string{"oauth2.googleapis.com"} }
 
+// SensitiveFiles are agy's security-sensitive files (V-40, I-59), the three
+// configuration files its process opened at start-up in every run of the
+// paired captures of agy 1.3.4 (2026-10-13 and 2026-10-17) and that its
+// binary names as where it persists settings: the CLI settings
+// ~/.gemini/antigravity-cli/settings.json (its permission allow-list,
+// trusted workspaces and MCP servers; "Persist to settings.json" is what an
+// always-allow answer does), the shared configuration
+// ~/.gemini/config/config.json (installed plugins) and the MCP servers
+// ~/.gemini/config/mcp_config.json. No capture shows agy writing any of
+// them at rest. The administrator's /etc/antigravity/admin_settings.json is
+// not declared: it is root's, outside the agent's user's home.
+func (Adapter) SensitiveFiles() []string {
+	return []string{
+		"~/.gemini/antigravity-cli/settings.json",
+		"~/.gemini/config/config.json",
+		"~/.gemini/config/mcp_config.json",
+	}
+}
+
 var (
 	uuidRE        = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 	crashRE       = regexp.MustCompile(`/crashes/crash_\d+_`)

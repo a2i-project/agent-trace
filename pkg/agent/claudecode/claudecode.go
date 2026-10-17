@@ -152,6 +152,28 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 // explains them and they are not declared.
 func (Adapter) HarnessHosts() []string { return []string{"downloads.claude.ai"} }
 
+// SensitiveFiles are Claude Code's security-sensitive files (V-40, I-59):
+// the global configuration ~/.claude.json, which holds the per-project
+// allowed tools, MCP servers and trust flags and which the harness renamed
+// into place in each of the six runs of the 2026-10-17 tools capture of
+// 2.1.296, the first with directory-entry names; the user settings
+// ~/.claude/settings.json, which it opened in every run of the four
+// captures from 2026-10-12 to 2026-10-17 even under --setting-sources
+// project; the managed settings it fetches and wrote in place in every run
+// of those captures, ~/.claude/remote-settings.json; and the project's
+// shared and local
+// settings in the workspace, whose names the binary of 2.1.296 holds (the
+// captures cannot show a read of a file that is absent).
+func (Adapter) SensitiveFiles() []string {
+	return []string{
+		"~/.claude.json",
+		"~/.claude/settings.json",
+		"~/.claude/remote-settings.json",
+		"{workspace}/.claude/settings.json",
+		"{workspace}/.claude/settings.local.json",
+	}
+}
+
 // capturedVersion is the Claude Code version whose kernel-level behaviour the
 // claim shapes were checked against (scripts/capture-claude-code.sh).
 const capturedVersion = "2.1.286"
