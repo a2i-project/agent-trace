@@ -141,7 +141,7 @@ func TestKernelMergedRemovalsComeOutInOrder(t *testing.T) {
 				if errors.Is(err, unix.EAGAIN) || n <= 0 {
 					break
 				}
-				raws = append(raws, parseEvents(buf, n, resolve)...)
+				raws = append(raws, parseEvents(buf, n, resolve, nil)...)
 			}
 			obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "sha256:x", nil })
 			obs.events = make(chan models.GroundTruthEvent, 64)

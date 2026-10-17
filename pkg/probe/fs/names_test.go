@@ -47,7 +47,7 @@ func TestReportFlagsRequestEntryNames(t *testing.T) {
 func TestParseEvents_ContentRecordNamesTheEntryAsItWasNamed(t *testing.T) {
 	info := append(buildDfidNameInfo(1, []byte("dir123"), "notes.txt.tmp.1.0123456789ab"), buildFidInfo(1, []byte("file123"))...)
 	buf := append(buildMetadata(unix.FAN_CLOSE_WRITE, 1, uint16(len(info))), info...)
-	events := parseEvents(buf, len(buf), mockResolver)
+	events := parseEvents(buf, len(buf), mockResolver, nil)
 	if len(events) != 1 || events[0].Path != "/mock/dir/notes.txt.tmp.1.0123456789ab" || events[0].Ambiguous {
 		t.Fatalf("events = %+v, want the temporary's name, not ambiguous", events)
 	}
@@ -153,7 +153,7 @@ func TestKernelNamesEveryDirectoryEntryRecord(t *testing.T) {
 			if errors.Is(err, unix.EAGAIN) || n <= 0 {
 				return
 			}
-			raws = append(raws, parseEvents(buf, n, resolve)...)
+			raws = append(raws, parseEvents(buf, n, resolve, nil)...)
 		}
 	}
 	// Each step is read before the next, as the probe's read loop does.

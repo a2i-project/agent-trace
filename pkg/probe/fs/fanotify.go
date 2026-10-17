@@ -255,7 +255,10 @@ func (m markedSet) close() {
 }
 
 // newKernelResolver returns a handleResolver that resolves file handles via
-// open_by_handle_at on the mount fd of the handle's filesystem.
+// open_by_handle_at on the mount fd of the handle's filesystem. A removed
+// directory resolves to no path even when its handle still opens, since
+// readlink would name it with a " (deleted)" mark inside the path; the
+// directory cache names it instead (P-28).
 func newKernelResolver(mounts map[fsID]int) handleResolver {
 	return func(fsid fsID, handleType int32, handleData []byte) string {
 		mountFD, ok := mounts[fsid]
@@ -268,6 +271,9 @@ func newKernelResolver(mounts map[fsID]int) handleResolver {
 			return ""
 		}
 		defer func() { _ = unix.Close(fd) }()
+		if isRemovedDir(fd) {
+			return ""
+		}
 
 		path, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
 		if err != nil {
@@ -280,7 +286,11 @@ func newKernelResolver(mounts map[fsID]int) handleResolver {
 // --- Pure parsing (no kernel interaction) ----------------------------------
 
 // parseEvents extracts rawEvents from a buffer read from the fanotify fd.
-func parseEvents(buf []byte, n int, resolve handleResolver) []rawEvent {
+// dirs, which may be nil, names the directories that no longer resolve; it
+// first applies the directory renames queued since the last batch, so the
+// paths this batch caches are not dropped by a rename that preceded them.
+func parseEvents(buf []byte, n int, resolve handleResolver, dirs *dirCache) []rawEvent {
+	dirs.sync()
 	var events []rawEvent
 	offset := 0
 	for offset+metadataSize <= n {
@@ -293,7 +303,7 @@ func parseEvents(buf []byte, n int, resolve handleResolver) []rawEvent {
 
 			infoStart := offset + int(meta.MetadataLen)
 			infoEnd := offset + int(meta.EventLen)
-			path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve)
+			path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve, dirs)
 			fsid, handleType, handleData := extractFID(buf[infoStart:infoEnd])
 
 			events = append(events, rawEvent{
@@ -316,7 +326,7 @@ func parseEvents(buf []byte, n int, resolve handleResolver) []rawEvent {
 		// Info records follow the metadata header.
 		infoStart := offset + int(meta.MetadataLen)
 		infoEnd := offset + int(meta.EventLen)
-		path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve)
+		path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve, dirs)
 		fsid, handleType, handleData := extractFID(buf[infoStart:infoEnd])
 
 		events = append(events, rawEvent{
@@ -356,7 +366,8 @@ func readMetadata(buf []byte) eventMetadata {
 // case 1 names the entry as it was then; a FID record resolves to wherever
 // the file is when the record is read. With reportFlags every record carries
 // a DFID_NAME record (P-25), and on kernel 6.17 none carried a DFID-only one;
-// FID is the fallback for a directory that no longer resolves. A capture made
+// a directory that no longer resolves is named by the directory cache when it
+// can be (P-28), and FID is the fallback after that. A capture made
 // with the flags before P-25 had no names, so its create, delete and rename
 // records resolved through case 3.
 //
@@ -367,7 +378,7 @@ func readMetadata(buf []byte) eventMetadata {
 // covers any file inside it" matching leniency to genuinely coarse-resolution
 // events, not to every ground-truth event whose target happens to be a
 // directory.
-func resolveEventPath(infoData []byte, resolve handleResolver) (path string, ambiguous bool) {
+func resolveEventPath(infoData []byte, resolve handleResolver, dirs *dirCache) (path string, ambiguous bool) {
 	var fidPath, dfidNamePath, dfidPath string
 
 	offset := 0
@@ -381,7 +392,7 @@ func resolveEventPath(infoData []byte, resolve handleResolver) (path string, amb
 		record := infoData[offset : offset+infoLen]
 		switch infoType {
 		case fanEventInfoTypeDfidName:
-			dfidNamePath = parseDfidName(record, resolve)
+			dfidNamePath = parseDfidName(record, resolve, dirs)
 		case fanEventInfoTypeFid:
 			fidPath = parseHandleToPath(record, resolve)
 		case fanEventInfoTypeDfid:
@@ -412,7 +423,12 @@ func resolveEventPath(infoData []byte, resolve handleResolver) (path string, amb
 //	  handle_type  (4 bytes)
 //	  f_handle     (handle_bytes bytes)
 //	name     (remaining): null-terminated entry name
-func parseDfidName(record []byte, resolve handleResolver) string {
+//
+// A directory that resolves is recorded in dirs; one that does not, because
+// it was removed before the record was read, is looked up there (P-28). A
+// cached path is exact: the directory's path when it last resolved, with no
+// directory renamed on its filesystem since.
+func parseDfidName(record []byte, resolve handleResolver, dirs *dirCache) string {
 	// Minimum: header(4) + fsid(8) + handle_bytes(4) + handle_type(4) = 20
 	if len(record) < 20 {
 		return ""
@@ -440,7 +456,13 @@ func parseDfidName(record []byte, resolve handleResolver) string {
 		}
 	}
 
-	dirPath := resolve(recordFSID(record), handleType, handleData)
+	fsid := recordFSID(record)
+	dirPath := resolve(fsid, handleType, handleData)
+	if dirPath != "" {
+		dirs.fill(fsid, handleType, handleData, dirPath)
+	} else if cached, ok := dirs.lookup(fsid, handleType, handleData); ok {
+		dirPath = cached
+	}
 
 	// An unresolved directory yields no path, not the bare entry name: a
 	// relative name would read as a path and escape the unresolved count.

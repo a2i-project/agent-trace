@@ -40,7 +40,7 @@ func TestKernelMergesATruncatingOpenIntoTheUnreadClose(t *testing.T) {
 			if errors.Is(err, unix.EAGAIN) || n <= 0 {
 				return out
 			}
-			for _, r := range parseEvents(buf, n, func(fsID, int32, []byte) string { return "" }) {
+			for _, r := range parseEvents(buf, n, func(fsID, int32, []byte) string { return "" }, nil) {
 				out = append(out, r.Mask)
 			}
 		}

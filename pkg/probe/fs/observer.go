@@ -91,6 +91,9 @@ type Observer struct {
 	// unresolved counts the events whose path no handle resolved, one per
 	// action type of each such record (V-35).
 	unresolved atomic.Uint64
+	// dirs names the directory of a record read after that directory was
+	// removed (P-28); nil in tests that drive the observer without it.
+	dirs *dirCache
 	// stopDrain is how long the read loop keeps reading records after the
 	// stop signal before it counts the rest instead. Defaults to
 	// stopDrainBudget; tests lower it to provoke the count.
@@ -287,11 +290,13 @@ func New(cfg Config) (*Observer, error) {
 		return nil, err
 	}
 	mountFD := set.fds[pathID]
+	dirs := newDirCache(dirCacheSize, openRenameWatch(set.marked, unix.FAN_MARK_FILESYSTEM))
 
 	// Pipe for signaling the read loop to stop.
 	pipeFDs := [2]int{}
 	if err := unix.Pipe2(pipeFDs[:], unix.O_CLOEXEC); err != nil {
 		set.close()
+		dirs.close()
 		_ = unix.Close(fd)
 		return nil, fmt.Errorf("pipe2: %w", err)
 	}
@@ -301,6 +306,7 @@ func New(cfg Config) (*Observer, error) {
 		mountFD:             mountFD,
 		mounts:              set.fds,
 		marked:              set.marked,
+		dirs:                dirs,
 		unmarked:            set.unmarked,
 		stopR:               pipeFDs[0],
 		stopW:               pipeFDs[1],
@@ -366,6 +372,13 @@ func (o *Observer) Events() <-chan models.GroundTruthEvent {
 	return o.events
 }
 
+// DirCache reports what the directory cache did: how many records it named
+// whose directory had been removed, and how many entries it dropped (P-28).
+// Call after Stop.
+func (o *Observer) DirCache() DirCacheStats {
+	return o.dirs.snapshot()
+}
+
 // Overflow reports whether the kernel's fanotify queue overflowed,
 // meaning some events were lost. Check after Stop returns.
 func (o *Observer) Overflow() bool {
@@ -392,7 +405,9 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 // the walk opens queues a record while the mark is active: with nothing
 // reading, a directory of more files than the kernel queue holds (16384 by
 // default) would overflow it before the run began. An open the read loop
-// processes before the walk has hashed its file carries no input hash.
+// processes before the walk has hashed its file carries no input hash. The
+// walk also caches every directory it passes by its handle, so a record read
+// after its directory was removed can still be named (P-28).
 func (o *Observer) Start() {
 	o.startedAt = time.Now()
 	go o.readLoop()
@@ -402,6 +417,9 @@ func (o *Observer) Start() {
 	}
 	if walk != "" {
 		_ = filepath.Walk(walk, func(path string, info os.FileInfo, err error) error {
+			if err == nil && info.IsDir() {
+				o.dirs.fillPath(path)
+			}
 			if err == nil && info.Mode().IsRegular() {
 				if h, err := content.SHA256File(path); err == nil {
 					// A hash the read loop settled meanwhile is newer than
@@ -435,6 +453,7 @@ func (o *Observer) Stop() error {
 	<-o.stopped
 
 	_ = unix.Close(o.fanotifyFD)
+	o.dirs.close()
 	for _, fd := range o.mounts {
 		_ = unix.Close(fd)
 	}
@@ -556,7 +575,7 @@ func (o *Observer) drainAtStop(buf []byte) {
 			return
 		}
 		now := time.Now()
-		raw := parseEvents(buf, n, resolve)
+		raw := parseEvents(buf, n, resolve, o.dirs)
 		for i := range raw {
 			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
 		}
@@ -662,7 +681,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 		// (P-18). A batch is read in microseconds, so the offsets never reach
 		// the next batch's reading.
 		now := time.Now()
-		raw := parseEvents(buf, n, newKernelResolver(o.mounts))
+		raw := parseEvents(buf, n, newKernelResolver(o.mounts), o.dirs)
 		for i := range raw {
 			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
 		}

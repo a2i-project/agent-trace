@@ -96,7 +96,7 @@ func TestParseEvents_DfidName(t *testing.T) {
 	buf.Write(metaBuf)
 	buf.Write(infoBuf)
 
-	events := parseEvents(buf.Bytes(), buf.Len(), mockResolver)
+	events := parseEvents(buf.Bytes(), buf.Len(), mockResolver, nil)
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
@@ -123,7 +123,7 @@ func TestParseEvents_Fid(t *testing.T) {
 	buf.Write(metaBuf)
 	buf.Write(infoBuf)
 
-	events := parseEvents(buf.Bytes(), buf.Len(), mockResolver)
+	events := parseEvents(buf.Bytes(), buf.Len(), mockResolver, nil)
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
@@ -144,7 +144,7 @@ func TestParseEvents_DfidOnly(t *testing.T) {
 	buf.Write(metaBuf)
 	buf.Write(infoBuf)
 
-	events := parseEvents(buf.Bytes(), buf.Len(), mockResolver)
+	events := parseEvents(buf.Bytes(), buf.Len(), mockResolver, nil)
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
@@ -160,7 +160,7 @@ func TestParseEvents_DfidOnly(t *testing.T) {
 func TestParseEvents_Overflow(t *testing.T) {
 	metaBuf := buildMetadata(unix.FAN_Q_OVERFLOW, 0, 0)
 
-	events := parseEvents(metaBuf, len(metaBuf), mockResolver)
+	events := parseEvents(metaBuf, len(metaBuf), mockResolver, nil)
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
@@ -303,7 +303,7 @@ func TestParseEvents_DfidNameWithUnresolvedDirectory(t *testing.T) {
 				info = append(info, r...)
 			}
 			buf := append(buildMetadata(unix.FAN_DELETE, 1, uint16(len(info))), info...)
-			events := parseEvents(buf, len(buf), mockResolver)
+			events := parseEvents(buf, len(buf), mockResolver, nil)
 			if len(events) != 1 || events[0].Path != tc.want {
 				t.Fatalf("events = %+v, want one with path %q", events, tc.want)
 			}

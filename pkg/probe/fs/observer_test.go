@@ -935,7 +935,7 @@ func TestDiag_RawFanotify(t *testing.T) {
 		}
 
 		// Try path resolution.
-		path, ambiguous := resolveEventPath(infoData, newKernelResolver(mountsOf(mountFD)))
+		path, ambiguous := resolveEventPath(infoData, newKernelResolver(mountsOf(mountFD)), nil)
 		t.Logf("  resolved path: %q (ambiguous=%v)", path, ambiguous)
 
 		// Detailed handle resolution debugging for each info record.
