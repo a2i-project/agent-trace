@@ -33,6 +33,8 @@ func TestAssess(t *testing.T) {
 		{name: "records left in the fanotify queue at stop are event loss", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, UndrainedRecords: 5}}), wantReason: "fs probe: 5 record(s) were still queued when the capture stopped"},
 		{name: "undrained records on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: false, UndrainedRecords: 5}}), wantComplete: true},
 		{name: "unresolved file events are a note, not a loss (V-35)", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, UnresolvedPaths: 2}}), wantComplete: true, wantNotes: 1},
+		{name: "unresolved file events of the agent's tree are event loss (V-39)", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: true, UnresolvedPaths: 5, UnresolvedInTree: 2}}), wantReason: "fs probe: 2 file event(s) by the agent's process tree had no resolvable path", wantNotes: 1},
+		{name: "unresolved file events of the tree on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: false, UnresolvedPaths: 5, UnresolvedInTree: 2}}), wantComplete: true},
 		{name: "unresolved file events on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"fs": {Ran: false, UnresolvedPaths: 2}}), wantComplete: true},
 		{name: "counters on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, RingbufDrops: 9}}), wantComplete: true},
 		{name: "faulted reads are a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, FaultedReads: 4}}), wantComplete: true, wantNotes: 1},
@@ -80,5 +82,20 @@ func TestAssess_HashlessClosesAreANote(t *testing.T) {
 	c := Assess(cov(map[string]models.ProbeCoverage{"fs": {Ran: true, HashlessCloses: 2}}))
 	if !c.Complete || len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "2 file close(s)") {
 		t.Errorf("Assess = %+v, want complete with one note", c)
+	}
+}
+
+// A capture written before V-39 has no unresolved_in_tree key: it reads as
+// zero, so its host-wide count stays a note and its outcome is unchanged.
+func TestAssess_ACaptureWithoutTheTreeCountIsUnchanged(t *testing.T) {
+	f, err := models.ParseGroundTruthFile([]byte(`{"events": [], "coverage": {"schema": 1, "probes": {"fs": {"ran": true, "ringbuf_drops": 0, "untracked_children": 0, "state_map_full": 0, "channel_drops": 0, "unresolved_paths": 3}}}, "fs_scope": {"rule": "tree-or-workspace", "mounts": ["/"], "dropped_outside": 0, "unresolved": {"file_delete": 3}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Coverage.Probes["fs"].UnresolvedInTree != 0 {
+		t.Fatalf("UnresolvedInTree = %d, want 0 when the key is absent", f.Coverage.Probes["fs"].UnresolvedInTree)
+	}
+	if c := Assess(f.Coverage); !c.Complete || len(c.Notes) != 1 {
+		t.Errorf("Assess = %+v, want complete with the V-35 note only", c)
 	}
 }

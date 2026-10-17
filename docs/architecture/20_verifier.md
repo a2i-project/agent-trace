@@ -1,6 +1,6 @@
 # Verifier
 
-Checked against commit 455c301 on 2026-10-17.
+Checked against commit ef8a60a on 2026-10-17.
 
 ## Objective
 
@@ -55,7 +55,7 @@ Pure Go with the standard library only. The alignment is a dynamic program over 
 
 `Verify(in)` runs these stages in order.
 
-1. **Completeness.** `Assess(in.Coverage)` judges whether G can support FAITHFUL: a nil record or an event-loss counter yields a reason, a content gap a note. Which coverage field is which is in [10_probes_common.md](10_probes_common.md#probecoverage).
+1. **Completeness.** `Assess(in.Coverage)` judges whether G can support FAITHFUL: a nil record or an event-loss counter yields a reason, a content gap a note. Which coverage field is which is in [10_probes_common.md](10_probes_common.md#probecoverage). One field is not a probe's counter: `UnresolvedInTree`, the file events with no resolvable path that the agent's tree caused, which `watch` writes into the fs probe's entry after the scope rule, is a reason; the host-wide `UnresolvedPaths`, which includes them, stays a note (V-39, V-35).
 2. **Preconditions.** `RootPID == 0` returns INCONCLUSIVE. A non-empty G in which no event carries a pid returns INCONCLUSIVE (legacy ground truth).
 3. **Forest.** `BuildForest(G, RootPID)` builds the process tree. Each `process_fork` record creates a `Process` incarnation with the parent edge recorded at creation; an exec record fills in `Process.Exec`, and stands in for a missing fork record (legacy files) using its own ppid. Processes are linked in creation order, and each gets its [level](00_overview.md#terms). A reused pid has several incarnations; `Forest.Resolve` picks the one alive at the event's timestamp, and an event stamped before every incarnation goes to the earliest one. Time is used for nothing else here.
 4. **Partition.** `Forest.Partition(G)` sorts G by timestamp, skips structural events (`process_fork`), and places each event by `Forest.Attribute`:

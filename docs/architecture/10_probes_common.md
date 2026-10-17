@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 6fc58ba on 2026-10-17.
+Checked against commit ef8a60a on 2026-10-17.
 
 ## Objective
 
@@ -52,9 +52,10 @@ The fs probe uses fanotify through `golang.org/x/sys/unix`; it has no eBPF compo
 6. With `--root-pid N`, `groundRoot` is N and the same calls are made for N; watch records until a signal. With neither, `groundRoot` stays 0, proc runs host-wide (optionally narrowed by `--proc-filter`) and net is started with no tracked pid, so it records nothing and its coverage says `Ran=false` (N-26).
 7. `stopEverything` stops the other probes, then net, then proc, and waits for the collectors.
 8. `buildCoverage` asks every started probe for `CaptureCoverage()` and writes `ProbeCoverage{Ran: false}` for every known probe that was not selected.
-9. watch reads the sensitive files again (`Snapshot.Stop`) and prints how many it snapshotted and how many changed, with the number of changes; then it prints the loss counters, runs `verification.Assess` and logs a warning with the Reasons when the capture is incomplete.
-10. File events caused by `watch`'s own pid are dropped before anything else and never printed: the startup walk, the hash reads, and the writes of its own log, which on a marked filesystem would otherwise produce the event being printed, without end. The agent's stdout and stderr pass through `watch` on a pipe, so what the agent prints is not a file write by the agent. With an fs probe and a root pid, `scopeFSEvents` then applies the scope rule (`tree-or-workspace`, P-17): it keeps a file event when the agent's tree caused it (by the forest built from the fork records), wherever the path is, or when the path is under the workspace, whoever caused it; every other file event is dropped by the scope rule and counted in `fs_scope.dropped_outside`. Non-file events are untouched. The rule runs here, after the capture, because the probe reads an event some time after the access, when a short-lived child has often already exited; the fork records have no such race.
-11. Events are sorted by timestamp and written with `json.MarshalIndent` as a `models.GroundTruthFile`, with `fs_scope` saying which filesystems were marked and which rule was applied.
+9. watch reads the sensitive files again (`Snapshot.Stop`) and prints how many it snapshotted and how many changed, with the number of changes.
+10. File events caused by `watch`'s own pid are dropped before anything else and never printed: the startup walk, the hash reads, and the writes of its own log, which on a marked filesystem would otherwise produce the event being printed, without end. The agent's stdout and stderr pass through `watch` on a pipe, so what the agent prints is not a file write by the agent. With an fs probe and a root pid, `scopeFSEvents` then applies the scope rule (`tree-or-workspace`, P-17): it keeps a file event when the agent's tree caused it (by the forest built from the fork records), wherever the path is, or when the path is under the workspace, whoever caused it; every other file event is dropped by the scope rule and counted in `fs_scope.dropped_outside`. Non-file events are untouched. The rule runs here, after the capture, because the probe reads an event some time after the access, when a short-lived child has often already exited; the fork records have no such race. A file event with no path is left out of the capture and counted by type in `fs_scope.unresolved`; with a root pid, `scopeFSEvents` also counts those the forest places in the agent's tree (the agent or a descendant; an event with no pid is not the tree's), and `watch` writes the count into the fs probe's `UnresolvedInTree` (V-39).
+11. watch prints the loss counters, runs `verification.Assess` and logs a warning with the Reasons when the capture is incomplete. It does so after the scope rule, which supplies `UnresolvedInTree`.
+12. Events are sorted by timestamp and written with `json.MarshalIndent` as a `models.GroundTruthFile`, with `fs_scope` saying which filesystems were marked and which rule was applied.
 
 ### Clocks
 
@@ -94,6 +95,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `QueueOverflow` | `queue_overflow` | fs | fanotify `FAN_Q_OVERFLOW` seen | Reason |
 | `UndrainedRecords` | `undrained_records` | fs | records still queued when the stop drain's time budget ran out, never read (P-24); a lower bound | Reason |
 | `UnresolvedPaths` | `unresolved_paths` | fs | file events whose path no handle resolved, by any process but the recorder, one per action type of each record; `watch` leaves them out of the capture | Note (V-35) |
+| `UnresolvedInTree` | `unresolved_in_tree` | `cmd/watch`, for fs | of those, the events the process forest places in the agent's tree, one per action type; written by `watch` after the scope rule, not by the probe, which does not know the tree; zero without a root pid | Reason (V-39) |
 | `HashlessCloses` | `hashless_closes` | fs | a close was published without a content hash (P-16, or a failed read) | Note (content gap) |
 | `FaultedReads` | `faulted_reads` | net (TLS) | `SSL_write` plaintext read faulted | Note (content gap) |
 | `Content` | `content` | net | `active`, `identity_only` or `attach_failed` | `attach_failed` is a Note |
@@ -135,7 +137,7 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 
 ## Guarantees and loss accounting
 
-Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, ProbeCoverage above; the outcome rules are in [20_verifier.md](20_verifier.md#outcome-rules)). Not every loss has a counter: a failed update of the net probe's `binds` map is counted nowhere. It costs a listener's address, never an event (P-12), and listeners are capability evidence outside the verdict, so a counter for it would be a Note. The file events whose path no handle resolved are counted by the fs probe in `UnresolvedPaths`, a Note (V-35); `fs_scope.unresolved` lists the same events by type as `watch` dropped them, and `Assess` does not read it, so a capture written before the counter existed carries no note for them. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
+Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, ProbeCoverage above; the outcome rules are in [20_verifier.md](20_verifier.md#outcome-rules)). Not every loss has a counter: a failed update of the net probe's `binds` map is counted nowhere. It costs a listener's address, never an event (P-12), and listeners are capability evidence outside the verdict, so a counter for it would be a Note. The file events whose path no handle resolved are counted by the fs probe in `UnresolvedPaths`, a Note (V-35), since they include every other process on the host; `fs_scope.unresolved` lists the same events by type as `watch` dropped them, and `Assess` does not read it, so a capture written before the counter existed carries no note for them. The share of them the agent's tree caused, which `watch` counts in `UnresolvedInTree` once the forest is known, is event loss, a Reason (V-39). A capture written before that field carries no key for it, which reads as zero, so its outcome is unchanged. Counters are read live while a probe runs and from a snapshot that `Stop` stores before closing the maps; the snapshot value is stored before an atomic "final" flag is raised, so a reader never sees a closed map.
 
 ### Adding a loss counter
 
@@ -144,7 +146,7 @@ Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, Probe
 3. In the observer, read it with `sumPerCPU` while running, and in `Stop`, after the readers have finished and before `objs.Close()`, store the final value and then raise the final flag.
 4. Map it in `CaptureCoverage` to an existing `ProbeCoverage` field when the meaning is the same; otherwise add a field to `models.ProbeCoverage`.
 5. Decide in `verification.Assess` whether it is event loss (append to `Reasons`) or a content gap (append to `Notes`). A new field that `Assess` does not read does not affect the outcome.
-6. Add it to the loss line `cmd/watch` prints.
+6. Add it to the loss line `cmd/watch` prints. A count that needs the process tree, such as `UnresolvedInTree`, is written by `cmd/watch` after the scope rule and before that line.
 7. Add a test that forces the counter non-zero through a test-only `Config` capacity override (the pattern of `RingbufBytes`, `TrackedPIDsMax`, `ExecsMax`, `ConnsMax`), a test that it stays zero when the map fits, and a case in `completeness_test.go`. Capacity overrides have no command-line flag.
 
 ## Known limits
@@ -158,3 +160,4 @@ Any non-zero event-loss counter keeps the outcome from FAITHFUL (`Assess`, Probe
 - `IsTopLevel` is a legacy field still written by proc and net.
 - The CI freshness check compares the generated `.go` files only, so a `.bpf.c` edit that changes program logic but no map, program or type, committed without regenerating, leaves a stale `.o` that no job detects.
 - Code generation assumes an x86_64 host.
+- An unresolved file event that the agent's tree caused makes the run INCONCLUSIVE (`UnresolvedInTree`, V-39), whoever in the tree caused it: the harness's own clean-up at level 0 counts as much as a command's, and no baseline explains it, since the lost event has no target. Since the directory cache (P-28) such events are rare: none in the six runs of a Claude Code capture of 2026-10-17 (private), where before it every Claude Code run lost one delete. The cases the cache cannot name are in [12_probe_fs.md](12_probe_fs.md#known-limits).

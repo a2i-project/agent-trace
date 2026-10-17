@@ -62,6 +62,11 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.UndrainedRecords > 0 {
 			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: %d record(s) were still queued when the capture stopped and were never read", name, p.UndrainedRecords))
 		}
+		// The tree's share of the unresolved events is loss; the host-wide
+		// count, which includes it, stays a note below (V-39, V-35).
+		if p.UnresolvedInTree > 0 {
+			c.Reasons = append(c.Reasons, fmt.Sprintf("%s probe: %d file event(s) by the agent's process tree had no resolvable path and are not in the capture (V-39)", name, p.UnresolvedInTree))
+		}
 		if p.HashlessCloses > 0 {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d file close(s) were published without a content hash, so a claimed content for those is neither confirmed nor refuted", name, p.HashlessCloses))
 		}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/probe"
+	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
@@ -322,7 +324,7 @@ func TestScopeFSEvents_KeepsTheTreeAnywhereAndTheWorkspaceForEveryone(t *testing
 		ev(models.FileOpen, "/var/x", 0, 0),                 // no pid, elsewhere: dropped
 		ev(models.NetConnect, "example.com", stranger, 0),   // not a file event: untouched
 	}
-	kept, dropped := scopeFSEvents(g, root, "/ws")
+	kept, dropped, _ := scopeFSEvents(g, root, "/ws")
 	if dropped != 3 {
 		t.Errorf("dropped = %d, want 3", dropped)
 	}
@@ -348,7 +350,7 @@ func TestScopeFSEvents_DropsTheRecordersOwnFileEvents(t *testing.T) {
 		{Timestamp: ts, ActionType: models.FileWrite, Target: "/ws/a.txt", PID: 100},
 		{Timestamp: ts, ActionType: models.NetConnect, Target: "example.com", PID: self}, // not a file event
 	}
-	kept, dropped := scopeFSEvents(g, 100, "/ws")
+	kept, dropped, _ := scopeFSEvents(g, 100, "/ws")
 	if dropped != 0 || len(kept) != 2 || kept[0].Target != "/ws/a.txt" || kept[1].Target != "example.com" {
 		t.Errorf("kept=%v dropped=%d", kept, dropped)
 	}
@@ -468,5 +470,109 @@ func TestResolveAgentHome(t *testing.T) {
 	t.Setenv("SUDO_UID", fmt.Sprint(os.Getuid()))
 	if got, _, err := resolveAgentHome(""); err != nil || got == "" {
 		t.Errorf("home of SUDO_UID = %q, %v", got, err)
+	}
+}
+
+// The unresolved events the forest places in the agent's tree are counted
+// apart, as event loss (V-39); every unresolved event, the tree's or not, is
+// still left out of the capture.
+func TestScopeFSEvents_CountsTheTreesUnresolvedEvents(t *testing.T) {
+	const root, child, grandchild, stranger = 100, 200, 300, 900
+	ts := time.Now()
+	ev := func(typ models.ActionType, target string, pid, ppid uint32) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: ts, ActionType: typ, Target: target, PID: pid, PPID: ppid}
+	}
+	g := models.GroundTruth{
+		ev(models.ProcessFork, "200", child, root),
+		ev(models.ProcessFork, "300", grandchild, child),
+		ev(models.FileDelete, "", root, 0),           // the agent itself: counted
+		ev(models.FileDelete, "", child, root),       // a command: counted
+		ev(models.FileWrite, "", grandchild, 200),    // beneath a command: counted
+		ev(models.FileDelete, "", stranger, 0),       // another process: not counted
+		ev(models.FileDelete, "", 0, 0),              // no pid (the kernel): not counted
+		ev(models.FileWrite, "/ws/a", root, 0),       // resolved: kept
+		ev(models.FileDelete, "/etc/x", stranger, 0), // resolved, outside: dropped
+	}
+	kept, dropped, inTree := scopeFSEvents(g, root, "/ws")
+	if inTree != 3 {
+		t.Errorf("unresolvedInTree = %d, want 3", inTree)
+	}
+	if dropped != 1 {
+		t.Errorf("dropped = %d, want 1: an unresolved event is not counted as outside the scope", dropped)
+	}
+	for _, e := range kept {
+		if e.Target == "" {
+			t.Errorf("an unresolved event was kept: %+v", e)
+		}
+	}
+	if len(kept) != 3 {
+		t.Errorf("kept = %v, want the two forks and /ws/a", kept)
+	}
+	if _, _, n := scopeFSEvents(g[len(g)-2:], root, "/ws"); n != 0 {
+		t.Errorf("a capture with no unresolved event counted %d", n)
+	}
+}
+
+// A real unresolved event, made by the kernel: a child deletes a file in a
+// directory it removes before the probe reads the queue. The tree is outside
+// the workspace, so the start walk never resolves it and the directory cache
+// cannot name the delete (P-28). Placed in the tree by its pid, watch counts
+// it, and the count makes the capture incomplete; rooted elsewhere, it stays
+// a note.
+func TestScopeFSEvents_CountsARealUnresolvedEventOfTheTree(t *testing.T) {
+	skipUnprivileged(t)
+	ws := t.TempDir()
+	sub := filepath.Join(t.TempDir(), "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "leaf"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o, err := probeBuilders["fs"](watchConfig{Workspace: ws, EventBufSize: 4096})
+	if err != nil {
+		t.Fatalf("fs builder: %v", err)
+	}
+	obs := o.(*fs.Observer)
+	// The marks exist from New, so the kernel queues the child's records now
+	// and the probe reads them only after Start, when sub is gone.
+	rm := exec.Command("rm", "-rf", sub)
+	if out, err := rm.CombinedOutput(); err != nil {
+		t.Fatalf("rm: %v\n%s", err, out)
+	}
+	agent := uint32(rm.Process.Pid)
+
+	var g models.GroundTruth
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for e := range o.Events() {
+			if e.PID == agent {
+				g = append(g, e)
+			}
+		}
+	}()
+	o.Start()
+	// CI sets the bound, not the dev box: a contended runner reads the queue late.
+	time.Sleep(500 * time.Millisecond)
+	if err := o.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	<-drained
+
+	_, _, inTree := scopeFSEvents(g, agent, ws)
+	if inTree == 0 {
+		t.Fatalf("no unresolved event of the tree counted; the child's events: %+v", g)
+	}
+	cov := obs.CaptureCoverage()
+	if cov.UnresolvedPaths < uint64(inTree) {
+		t.Errorf("UnresolvedPaths = %d < unresolvedInTree = %d: the tree's count must be a subset", cov.UnresolvedPaths, inTree)
+	}
+	cov.UnresolvedInTree = uint64(inTree)
+	if c := verification.Assess(&models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": cov}}); c.Complete {
+		t.Errorf("Assess judged complete a capture that lost %d event(s) of the tree", inTree)
+	}
+	if _, _, n := scopeFSEvents(g, agent+1_000_000, ws); n != 0 {
+		t.Errorf("rooted at another process, %d event(s) were counted as the tree's", n)
 	}
 }

@@ -77,6 +77,14 @@ type ProbeCoverage struct {
 	// type in FSScope.Unresolved. A note, not event loss (V-35).
 	// Filesystem probe only.
 	UnresolvedPaths uint64 `json:"unresolved_paths,omitempty"`
+	// UnresolvedInTree counts the file events with no resolvable path whose
+	// pid the process forest places in the agent's tree (the agent itself or
+	// a descendant), one per action type, as FSScope.Unresolved counts them.
+	// cmd/watch fills it after the capture, when every fork record is known;
+	// the probe cannot, since it does not know the tree. Event loss (V-39).
+	// Zero when the capture has no root pid, so there is no tree. A subset
+	// of UnresolvedPaths. Filesystem probe only.
+	UnresolvedInTree uint64 `json:"unresolved_in_tree,omitempty"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.

@@ -168,8 +168,14 @@ func underDir(path, dir string) bool {
 // and not in the probe because the probe reads an event some time after the
 // access, when a short-lived child has often already left any live tracked
 // set; the forest built from the fork records has no such race.
-func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept models.GroundTruth, dropped int) {
-	g, _ = dropUnresolvedFSEvents(dropSelfFSEvents(g, uint32(os.Getpid())))
+//
+// A file event with no path is dropped too (dropUnresolvedFSEvents), and
+// unresolvedInTree counts those the forest places in the agent's tree, one
+// per event as FSScope.Unresolved counts them: the agent's own events the
+// capture lost (V-39). An event with no pid (caused by the kernel) is not
+// the tree's.
+func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept models.GroundTruth, dropped, unresolvedInTree int) {
+	g = dropSelfFSEvents(g, uint32(os.Getpid()))
 	forest := verification.BuildForest(g, root)
 	kept = make(models.GroundTruth, 0, len(g))
 	for _, e := range g {
@@ -178,13 +184,20 @@ func scopeFSEvents(g models.GroundTruth, root uint32, workspace string) (kept mo
 			continue
 		}
 		zone := forest.Attribute(e).Zone
-		if zone == verification.ZoneAgent || zone == verification.ZoneSubtree || underDir(e.Target, workspace) {
+		inTree := zone == verification.ZoneAgent || zone == verification.ZoneSubtree
+		if e.Target == "" {
+			if inTree {
+				unresolvedInTree++
+			}
+			continue
+		}
+		if inTree || underDir(e.Target, workspace) {
 			kept = append(kept, e)
 			continue
 		}
 		dropped++
 	}
-	return kept, dropped
+	return kept, dropped, unresolvedInTree
 }
 
 // dropUnresolvedFSEvents removes the file events whose path the probe could
@@ -711,6 +724,39 @@ func runWatch(opts watchOptions) error {
 	}
 
 	cov := buildCoverage(reporters)
+
+	// The scope rule runs before the coverage is printed and judged, since
+	// it is what counts the agent tree's unresolved file events (V-39).
+	var scope *models.FSScope
+	if fsObs != nil {
+		marked, unmarked := fsObs.Scope()
+		scope = &models.FSScope{Rule: models.FSScopeUnfiltered, Mounts: marked, Unmarked: unmarked}
+		ground = dropSelfFSEvents(ground, self)
+		var resolved models.GroundTruth
+		resolved, scope.Unresolved = dropUnresolvedFSEvents(ground)
+		if groundRoot != 0 {
+			var dropped, inTree int
+			ground, dropped, inTree = scopeFSEvents(ground, groundRoot, workspace)
+			scope.Rule, scope.DroppedOutside = models.FSScopeTreeOrWorkspace, dropped
+			fsCov := cov.Probes["fs"]
+			fsCov.UnresolvedInTree = uint64(inTree)
+			cov.Probes["fs"] = fsCov
+			fmt.Printf("fs scope: %d filesystem(s) marked, %d unmarked; kept the agent tree's file events anywhere and %s for everyone else; dropped %d event(s) by other processes elsewhere\n",
+				len(marked), len(unmarked), workspace, dropped)
+			if inTree > 0 {
+				log.Printf("fs probe: %d of the unresolved file event(s) were caused by the agent's tree: event loss (V-39)", inTree)
+			}
+		} else {
+			ground = resolved
+		}
+		for typ, n := range scope.Unresolved {
+			log.Printf("fs probe: %d %s event(s) had no resolvable path and are counted, not recorded", n, typ)
+		}
+		for point, why := range unmarked {
+			log.Printf("fs probe could not mark %s: %s", point, why)
+		}
+	}
+
 	names := make([]string, 0, len(cov.Probes))
 	for name := range cov.Probes {
 		names = append(names, name)
@@ -722,33 +768,13 @@ func runWatch(opts watchOptions) error {
 			fmt.Printf("%s probe: not run\n", name)
 			continue
 		}
-		fmt.Printf("%s probe loss: ringbufDrops=%d untrackedChildren=%d stateMapFull=%d channelDrops=%d faultedReads=%d queueOverflow=%v hashlessCloses=%d ioUringNetOps=%d undrainedRecords=%d unresolvedPaths=%d\n",
-			name, p.RingbufDrops, p.UntrackedChildren, p.StateMapFull, p.ChannelDrops, p.FaultedReads, p.QueueOverflow, p.HashlessCloses, p.IOURingNetOps, p.UndrainedRecords, p.UnresolvedPaths)
+		fmt.Printf("%s probe loss: ringbufDrops=%d untrackedChildren=%d stateMapFull=%d channelDrops=%d faultedReads=%d queueOverflow=%v hashlessCloses=%d ioUringNetOps=%d undrainedRecords=%d unresolvedPaths=%d unresolvedInTree=%d\n",
+			name, p.RingbufDrops, p.UntrackedChildren, p.StateMapFull, p.ChannelDrops, p.FaultedReads, p.QueueOverflow, p.HashlessCloses, p.IOURingNetOps, p.UndrainedRecords, p.UnresolvedPaths, p.UnresolvedInTree)
 	}
 	if c := verification.Assess(&cov); !c.Complete {
 		log.Printf("WARNING: %s is incomplete and a verdict built on it is unreliable:", opts.out)
 		for _, r := range c.Reasons {
 			log.Printf("  %s", r)
-		}
-	}
-
-	var scope *models.FSScope
-	if fsObs != nil {
-		marked, unmarked := fsObs.Scope()
-		scope = &models.FSScope{Rule: models.FSScopeUnfiltered, Mounts: marked, Unmarked: unmarked}
-		ground, scope.Unresolved = dropUnresolvedFSEvents(dropSelfFSEvents(ground, self))
-		if groundRoot != 0 {
-			var dropped int
-			ground, dropped = scopeFSEvents(ground, groundRoot, workspace)
-			scope.Rule, scope.DroppedOutside = models.FSScopeTreeOrWorkspace, dropped
-			fmt.Printf("fs scope: %d filesystem(s) marked, %d unmarked; kept the agent tree's file events anywhere and %s for everyone else; dropped %d event(s) by other processes elsewhere\n",
-				len(marked), len(unmarked), workspace, dropped)
-		}
-		for typ, n := range scope.Unresolved {
-			log.Printf("fs probe: %d %s event(s) had no resolvable path and are counted, not recorded", n, typ)
-		}
-		for point, why := range unmarked {
-			log.Printf("fs probe could not mark %s: %s", point, why)
 		}
 	}
 
