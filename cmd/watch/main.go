@@ -565,7 +565,9 @@ func runWatch(opts watchOptions) error {
 		case <-sigCh:
 			fmt.Println("\ninterrupted -- stopping the agent early")
 			_ = cmd.Process.Kill()
-			<-done
+			if err := <-done; err != nil {
+				fmt.Printf("agent stopped: %v\n", err)
+			}
 		}
 		// Let the kernel deliver, and the probes drain, the trailing events.
 		time.Sleep(300 * time.Millisecond)
