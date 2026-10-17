@@ -10,19 +10,24 @@ import (
 
 // MutationResult is how a verdict treated one mutation.
 type MutationResult struct {
-	Mutation Mutation
+	Mutation Mutation `json:"mutation"`
 	// Detected: some finding of any kind refers to the mutated entry or to the
 	// observed event that corresponds to it.
-	Detected bool
+	Detected bool `json:"detected"`
 	// Classified: the finding is of the kind the attack is. An omission is an
 	// unrecorded action (or an unexplained command), a fabrication an
 	// unwitnessed claim, a substitution a mismatched pair that names the field.
 	// Detected and not Classified is the pre-Tier 6 failure: the right alarm
 	// under the wrong name, such as a substitution read as a fabrication plus an
 	// omission.
-	Classified bool
+	Classified bool `json:"classified"`
 	// Located: the finding names exactly the mutated entry, and not a neighbour.
-	Located bool
+	Located bool `json:"located"`
+	// UndetectableByDesign: an omission whose observed action the verifier's
+	// documented design explains, so no finding can arise (E-5). It is set by
+	// MarkUndetectableByDesign from the honest run, never from whether this
+	// verdict found it. Tally counts it apart: neither a miss nor detected.
+	UndetectableByDesign bool `json:"undetectable_by_design"`
 }
 
 // Result is how a verdict treated a whole attack.
@@ -81,6 +86,50 @@ func Score(rec Record, v verification.Verdict) Result {
 // unexplained subtree (V3), and both belong to it.
 func unaccounted(rec Record, v verification.Verdict) int {
 	n := 0
+	for _, f := range findingsOf(rec, v, nil) {
+		if !f.Accounted {
+			n++
+		}
+	}
+	return n
+}
+
+// Finding is one finding of a verdict as the diagnostics report it (E-5):
+// what kind it is, what it names, and whether a mutation of the record
+// explains it.
+type Finding struct {
+	// Kind is unrecorded, unexplained_subtree, unwitnessed, mismatched or
+	// outside_interval.
+	Kind string `json:"kind"`
+	// ClaimIndex is the position, in the mutated trajectory, of the claim the
+	// finding names (unwitnessed, mismatched, outside_interval), or -1 when it
+	// names an observed event only or the claim is not found there.
+	ClaimIndex int                     `json:"claim_index"`
+	Claim      *models.TrajectoryEntry `json:"claim,omitempty"`
+	// Event is the observed side: the unrecorded event, the paired event of a
+	// mismatched or outside-interval pair, or the exec of an unexplained
+	// subtree.
+	Event *models.GroundTruthEvent `json:"event,omitempty"`
+	Diffs []string                 `json:"diffs,omitempty"`
+	// Accounted: a mutation of the record explains the finding, by the same
+	// rules as Result.Unaccounted.
+	Accounted bool `json:"accounted"`
+}
+
+// findingsOf lists the verdict's findings in a fixed order (unrecorded,
+// unexplained subtrees, unwitnessed, mismatched, outside interval), each
+// marked accounted when a mutation of the record explains it. mutated, when
+// given, locates each named claim by position.
+func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) []Finding {
+	var out []Finding
+	claimAt := func(e models.TrajectoryEntry) int {
+		for i := range mutated {
+			if sameClaim(e, &mutated[i]) {
+				return i
+			}
+		}
+		return -1
+	}
 	for _, ev := range v.Unrecorded {
 		ok := false
 		for _, m := range rec.Mutations {
@@ -89,9 +138,8 @@ func unaccounted(rec Record, v verification.Verdict) int {
 				ok = ok || (m.Before.ActionType == ev.ActionType && matching.TargetsMatch(*m.Before, ev))
 			}
 		}
-		if !ok {
-			n++
-		}
+		ev := ev
+		out = append(out, Finding{Kind: "unrecorded", ClaimIndex: -1, Event: &ev, Accounted: ok})
 	}
 	for _, c := range v.Coverage.UnexplainedSubtrees {
 		ok := false
@@ -100,9 +148,12 @@ func unaccounted(rec Record, v verification.Verdict) int {
 				ok = true
 			}
 		}
-		if !ok {
-			n++
+		f := Finding{Kind: "unexplained_subtree", ClaimIndex: -1, Accounted: ok}
+		if c.Exec != nil {
+			ev := *c.Exec
+			f.Event = &ev
 		}
+		out = append(out, f)
 	}
 	for _, u := range v.Unwitnessed {
 		ok := false
@@ -111,9 +162,8 @@ func unaccounted(rec Record, v verification.Verdict) int {
 				ok = true
 			}
 		}
-		if !ok {
-			n++
-		}
+		u := u
+		out = append(out, Finding{Kind: "unwitnessed", ClaimIndex: claimAt(u), Claim: &u, Accounted: ok})
 	}
 	for _, p := range v.Mismatched {
 		ok := false
@@ -122,9 +172,7 @@ func unaccounted(rec Record, v verification.Verdict) int {
 				ok = true
 			}
 		}
-		if !ok {
-			n++
-		}
+		out = append(out, pairFinding("mismatched", p, claimAt(p.Entry), ok))
 	}
 	for _, p := range v.OutsideInterval {
 		ok := false
@@ -133,11 +181,14 @@ func unaccounted(rec Record, v verification.Verdict) int {
 				ok = true
 			}
 		}
-		if !ok {
-			n++
-		}
+		out = append(out, pairFinding("outside_interval", p, claimAt(p.Entry), ok))
 	}
-	return n
+	return out
+}
+
+func pairFinding(kind string, p verification.MatchedPair, at int, ok bool) Finding {
+	c, ev := p.Entry, p.Event
+	return Finding{Kind: kind, ClaimIndex: at, Claim: &c, Event: &ev, Diffs: p.Diffs, Accounted: ok}
 }
 
 func sameClaim(a models.TrajectoryEntry, b *models.TrajectoryEntry) bool {
@@ -237,16 +288,125 @@ func SuppressedNothing(without, with verification.Verdict) bool {
 		len(with.Coverage.UnexplainedSubtrees) >= len(without.Coverage.UnexplainedSubtrees)
 }
 
+// MarkUndetectableByDesign sets UndetectableByDesign on each omission of the
+// result whose observed action the verifier explains by its documented design
+// (E-5). The criterion reads only the honest run, verified with the same
+// baseline: the omitted claim (the record's Before, found among the honest
+// verdict's corroborated pairs by action type, target, tool and timestamp)
+// paired with an event that is
+//
+//   - listed in the honest verdict's CorroboratedHarnessShared (V-36: a read
+//     of a file the harness itself opens at rest), or
+//   - a level-0 event, that is not a command's exec or exit, that a rule of
+//     baseline matches (V7, V-30, V-37).
+//
+// Without the claim such an event is subtracted with the harness's own
+// activity, or kept for another claim on its path and then explained (V-30),
+// so it is never Unrecorded. Whether this verdict happened to report the
+// omission is not consulted. A nil baseline marks only the V-36 pairs.
+func MarkUndetectableByDesign(r Result, honest verification.Verdict, baseline verification.Baseline) Result {
+	out := r
+	out.Mutations = append([]MutationResult(nil), r.Mutations...)
+	for i, mr := range out.Mutations {
+		m := mr.Mutation
+		if m.Kind != Omission || m.Before == nil {
+			continue
+		}
+		out.Mutations[i].UndetectableByDesign = explainedByDesign(*m.Before, honest, baseline)
+	}
+	return out
+}
+
+func explainedByDesign(e models.TrajectoryEntry, honest verification.Verdict, baseline verification.Baseline) bool {
+	for _, p := range honest.CorroboratedHarnessShared {
+		if sameClaim(p.Entry, &e) {
+			return true
+		}
+	}
+	if baseline == nil {
+		return false
+	}
+	for _, p := range honest.Corroborated {
+		if sameClaim(p.Entry, &e) && verification.LaneOf(p.Event.ActionType) != verification.LaneProc && baseline(p.Event) {
+			return true
+		}
+	}
+	return false
+}
+
+// Diagnosis is the record of one scored run for a later investigation of
+// where the verifier put its findings (E-5): every mutation with its scores,
+// every finding with what it names and whether a mutation explains it, and
+// each lane's count of minimum-cost alignments.
+type Diagnosis struct {
+	Kind      Kind                 `json:"kind"`
+	Seed      uint64               `json:"seed"`
+	Outcome   verification.Outcome `json:"outcome"`
+	Mutations []MutationResult     `json:"mutations"`
+	Findings  []Finding            `json:"findings"`
+	// Unaccounted is the number of findings with Accounted false.
+	Unaccounted int             `json:"unaccounted"`
+	Ambiguous   bool            `json:"ambiguous"`
+	Lanes       []LaneDiagnosis `json:"lanes"`
+}
+
+// LaneDiagnosis is one lane's alignment summary: Optimal is the number of
+// minimum-cost alignments, saturating (V-11).
+type LaneDiagnosis struct {
+	Lane      verification.Lane `json:"lane"`
+	Optimal   uint32            `json:"optimal"`
+	Ambiguous bool              `json:"ambiguous"`
+}
+
+// Diagnose builds the Diagnosis of a scored result. mutated is the trajectory
+// the verdict was computed for, used to give each finding's claim its
+// position.
+func Diagnose(rec Record, r Result, v verification.Verdict, mutated models.Trajectory) Diagnosis {
+	d := Diagnosis{Kind: rec.Kind, Seed: rec.Seed, Outcome: v.Outcome, Ambiguous: v.Ambiguous, Findings: findingsOf(rec, v, mutated)}
+	d.Mutations = append(d.Mutations, r.Mutations...)
+	for _, f := range d.Findings {
+		if !f.Accounted {
+			d.Unaccounted++
+		}
+	}
+	for _, la := range v.Alignments {
+		d.Lanes = append(d.Lanes, LaneDiagnosis{Lane: la.Lane, Optimal: la.Optimal, Ambiguous: la.Ambiguous})
+	}
+	return d
+}
+
+// NeedsDiagnosis says whether a result is one the diagnostics record: its
+// alignment is ambiguous, a finding is unaccounted, or a mutation not
+// undetectable by design is not detected, classified and located.
+func NeedsDiagnosis(r Result) bool {
+	if r.Ambiguous || r.Unaccounted != 0 {
+		return true
+	}
+	for _, m := range r.Mutations {
+		if !m.UndetectableByDesign && (!m.Detected || !m.Classified || !m.Located) {
+			return true
+		}
+	}
+	return false
+}
+
 // Tally accumulates results into the rates an evaluation reports.
 type Tally struct {
-	Runs         int
-	Mutations    int
-	Detected     int
-	Classified   int
-	Located      int
-	Ambiguous    int // runs whose alignment was ambiguous
-	Unaccounted  int // findings no mutation explains, summed over runs
-	Inconclusive int
+	Runs      int
+	Mutations int
+	// Undetectable counts mutations scored UndetectableByDesign (E-5). They
+	// are left out of Detected, Classified and Located, and the rates are over
+	// the remaining, detectable, mutations.
+	Undetectable int
+	// UndetectableFound counts those among them a finding was about anyway;
+	// the criterion says none should be, so a non-zero count questions it.
+	UndetectableFound int
+	Detected          int
+	Classified        int
+	Located           int
+	Ambiguous         int // runs whose alignment was ambiguous
+	Unaccounted       int // findings no mutation explains, summed over runs
+	Inconclusive      int
 	// Distinct counts different mutations among those added. Seeds repeat
 	// mutations when a trajectory admits few of them (seven single omissions
 	// of a seven-claim trajectory), so a rate over a hundred seeds is a rate
@@ -279,6 +439,13 @@ func (t *Tally) Add(r Result) {
 			t.Distinct++
 		}
 		t.Mutations++
+		if m.UndetectableByDesign {
+			t.Undetectable++
+			if m.Detected {
+				t.UndetectableFound++
+			}
+			continue
+		}
 		if m.Detected {
 			t.Detected++
 		}
@@ -291,10 +458,14 @@ func (t *Tally) Add(r Result) {
 	}
 }
 
-// Rate returns n over the number of mutations, or zero for an empty tally.
+// Detectable is the number of mutations not undetectable by design.
+func (t Tally) Detectable() int { return t.Mutations - t.Undetectable }
+
+// Rate returns n over the number of detectable mutations (E-5), or zero when
+// there are none.
 func (t Tally) Rate(n int) float64 {
-	if t.Mutations == 0 {
+	if t.Detectable() == 0 {
 		return 0
 	}
-	return float64(n) / float64(t.Mutations)
+	return float64(n) / float64(t.Detectable())
 }

@@ -1,6 +1,9 @@
 package attack
 
 import (
+	"encoding/json"
+	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,11 +25,39 @@ import (
 // real sessions, not an evaluation of the verifier on a population: the claim
 // count is small, two agent versions and one machine. See
 // docs/methodology/being_data_driven.md before quoting a rate.
+//
+// The two tools captures of 2.1.296 are evaluated and reported, not gated
+// (E-5): their numbers are logged, and what would fail a gated capture is
+// logged as "not gated" instead, until the mislocated fabrications and
+// substitutions on them are explained.
+
+// diagnostics names a file to write the E-5 diagnostics to, as JSON: every
+// run of TestAttacksAreDetectedClassifiedAndLocated whose alignment is
+// ambiguous, that has an unaccounted finding, or whose mutation is detectable
+// and not detected, classified and located.
+//
+//	go test ./pkg/attack -run TestAttacksAreDetectedClassifiedAndLocated -args -attack.diagnostics=/path/diag.json
+var diagnostics = flag.String("attack.diagnostics", "", "write the E-5 diagnostics of the attack evaluation to this JSON file")
 
 type capture struct {
 	name  string
 	dir   string
 	label string
+	// gated: a failure of an acceptance check fails the test. A capture that
+	// is not gated is evaluated and its numbers logged, and a check that would
+	// fail is logged as not gated (E-5).
+	gated bool
+}
+
+// check fails the test for a gated capture and logs the failure as not gated
+// for any other.
+func (c capture) check(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if c.gated {
+		t.Errorf(format, args...)
+		return
+	}
+	t.Logf("not gated: "+format, args...)
 }
 
 // captures lists the checked-in real captures. A capture whose fixture
@@ -34,12 +65,18 @@ type capture struct {
 // scripts/capture-claude-code.sh, turned into a fixture with
 // scripts/make-capture-fixture.py) joins the evaluation as soon as it is added.
 var captures = existing([]capture{
-	{"basic", "../agent/claudecode/testdata/paired-2.1.286", "task"},
-	{"parallel", "../agent/claudecode/testdata/paired-2.1.286-parallel", "parallel"},
-	{"project", "../agent/claudecode/testdata/paired-2.1.286-project", "project"},
+	{"basic", "../agent/claudecode/testdata/paired-2.1.286", "task", true},
+	{"parallel", "../agent/claudecode/testdata/paired-2.1.286-parallel", "parallel", true},
+	{"project", "../agent/claudecode/testdata/paired-2.1.286-project", "project", true},
 	// One Write and five Edits with their content hashes (I-31): the first
 	// capture on which a substitution of an Edit's content is exercised.
-	{"edits", "../agent/claudecode/testdata/paired-2.1.296-edits", "edits"},
+	{"edits", "../agent/claudecode/testdata/paired-2.1.296-edits", "edits", true},
+	// The tools task of 2.1.296, unnamed and named: reported, not gated
+	// (E-5). Their omitted Read of the background command's output file is
+	// undetectable by design (V-36), and their fabrications and substitutions
+	// are detected but not always located; the diagnostics record why.
+	{"tools", "../agent/claudecode/testdata/paired-2.1.296-tools", "tools", false},
+	{"tools-named", "../agent/claudecode/testdata/paired-2.1.296-tools-named", "tools", false},
 })
 
 func existing(cs []capture) []capture {
@@ -74,6 +111,11 @@ type session struct {
 	// observed is every target the capture observed, after normalization, so a
 	// generator can be told not to produce a claim that happens to be true.
 	observed map[string]bool
+	// honest is the verdict of the unmodified claims and rule the baseline
+	// predicate the verifier applied, from which an omission is judged
+	// undetectable by design (E-5).
+	honest verification.Verdict
+	rule   verification.Baseline
 }
 
 func loadSession(t *testing.T, c capture) session {
@@ -95,6 +137,8 @@ func loadSession(t *testing.T, c capture) session {
 	}
 	s := session{claims: claims, g: loadRun(t, c, c.label), base: base, observed: map[string]bool{}}
 	in := s.input(claims)
+	s.rule = in.Baseline
+	s.honest = verification.Verify(in)
 	for _, e := range in.Ground {
 		s.observed[e.Target] = true
 	}
@@ -135,7 +179,7 @@ func TestTheHonestControlHasNoFindings(t *testing.T) {
 			s := loadSession(t, c)
 			v := s.verify(s.claims)
 			if !honestVerdict(v) {
-				t.Fatalf("the honest control: outcome %s, %d findings, reasons %v", v.Outcome, Findings(v), v.Reasons)
+				c.check(t, "the honest control: outcome %s, %d findings, reasons %v", v.Outcome, Findings(v), v.Reasons)
 			}
 		})
 	}
@@ -160,6 +204,10 @@ var generators = []generator{
 // mutation counts. Rates are logged so a regression shows as a number.
 func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 	const seeds = 100
+	var diag []diagnosedRun
+	if *diagnostics != "" {
+		defer func() { writeDiagnostics(t, *diagnostics, diag) }()
+	}
 	for _, c := range captures {
 		s := loadSession(t, c)
 		for _, g := range generators {
@@ -172,16 +220,30 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 							t.Fatalf("seed %d: %v", seed, err)
 						}
 						v := s.verify(mut)
-						res := Score(rec, v)
+						res := MarkUndetectableByDesign(Score(rec, v), s.honest, s.rule)
 						tally.Add(res)
-						if !res.Detected {
-							t.Errorf("seed %d: the run was not NOT FAITHFUL (%s)", seed, res.Outcome)
+						if *diagnostics != "" && NeedsDiagnosis(res) {
+							diag = append(diag, diagnosedRun{Capture: c.name, Gated: c.gated, Generator: g.name, N: n, Diagnosis: Diagnose(rec, res, v, mut)})
 						}
+						detectable := false
 						for _, m := range res.Mutations {
+							if m.UndetectableByDesign {
+								// The criterion reads the honest run only; a finding
+								// about such an omission would contradict it, on any
+								// capture, gated or not.
+								if m.Detected {
+									t.Errorf("seed %d: %s of %s %q is undetectable by design and was detected", seed, g.kind, entryKind(m.Mutation), entryTarget(m.Mutation))
+								}
+								continue
+							}
+							detectable = true
 							if !m.Detected || !m.Classified || !m.Located {
-								t.Errorf("seed %d: %s of %s %q: detected=%v classified=%v located=%v",
+								c.check(t, "seed %d: %s of %s %q: detected=%v classified=%v located=%v",
 									seed, g.kind, entryKind(m.Mutation), entryTarget(m.Mutation), m.Detected, m.Classified, m.Located)
 							}
+						}
+						if detectable && !res.Detected {
+							c.check(t, "seed %d: the run was not NOT FAITHFUL (%s)", seed, res.Outcome)
 						}
 						// The one side effect tolerated: when removing claims leaves
 						// identical observed actions with fewer claims than events, the
@@ -191,17 +253,52 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 						// an error.
 						if res.Unaccounted != 0 {
 							if !v.Ambiguous || res.Unaccounted != len(v.OutsideInterval) {
-								t.Errorf("seed %d: %d finding(s) that no mutation explains, not interval findings of an ambiguous alignment", seed, res.Unaccounted)
+								c.check(t, "seed %d: %d finding(s) that no mutation explains, not interval findings of an ambiguous alignment", seed, res.Unaccounted)
 							}
 						}
 					}
-					t.Logf("%s %s n=%d: %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f, ambiguous alignments %d, unaccounted findings %d",
+					// Rates are over the detectable mutations; the undetectable by
+					// design are counted apart (E-5).
+					t.Logf("%s %s n=%d: %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f, ambiguous alignments %d, unaccounted findings %d, undetectable by design %d of %d%s",
 						c.name, g.name, n, tally.Runs, tally.Mutations, tally.Distinct,
-						tally.Rate(tally.Detected), tally.Rate(tally.Classified), tally.Rate(tally.Located), tally.Ambiguous, tally.Unaccounted)
+						tally.Rate(tally.Detected), tally.Rate(tally.Classified), tally.Rate(tally.Located), tally.Ambiguous, tally.Unaccounted,
+						tally.Undetectable, tally.Mutations, gating(c))
 				})
 			}
 		}
 	}
+}
+
+func gating(c capture) string {
+	if c.gated {
+		return ""
+	}
+	return " (reported, not gated)"
+}
+
+// diagnosedRun is one entry of the diagnostics file: which capture, generator
+// and mutation count the run belongs to, and its Diagnosis.
+type diagnosedRun struct {
+	Capture   string    `json:"capture"`
+	Gated     bool      `json:"gated"`
+	Generator string    `json:"generator"`
+	N         int       `json:"n"`
+	Diagnosis Diagnosis `json:"diagnosis"`
+}
+
+func writeDiagnostics(t *testing.T, path string, runs []diagnosedRun) {
+	t.Helper()
+	data, err := json.MarshalIndent(struct {
+		Note string         `json:"note"`
+		Runs []diagnosedRun `json:"runs"`
+	}{fmt.Sprintf("E-5 diagnostics: %d runs that are ambiguous, have an unaccounted finding, or have a detectable mutation not detected, classified and located", len(runs)), runs}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("diagnostics: %d runs written to %s", len(runs), path)
 }
 
 func entryKind(m Mutation) models.ActionType {
@@ -234,7 +331,7 @@ func TestSubstitutionIsClassifiedByTheFieldThatChanged(t *testing.T) {
 				res := Score(rec, s.verify(mut))
 				m := res.Mutations[0]
 				if !m.Detected || !m.Classified || !m.Located {
-					t.Errorf("%s %s seed %d: %+v", c.name, field, seed, m)
+					c.check(t, "%s %s seed %d: %+v", c.name, field, seed, m)
 				}
 			}
 			t.Logf("%s: %d substitutions of %s checked", c.name, ran, field)
@@ -258,7 +355,7 @@ func TestIntervalWideningSuppressesNothing(t *testing.T) {
 				}
 				v := s.verify(mut)
 				if !SuppressedNothing(honest, v) || !honestVerdict(v) || len(v.OutsideInterval) != 0 {
-					t.Fatalf("%s n=%d seed %d: widening changed the verdict: %s, %d outside interval", c.name, n, seed, v.Outcome, len(v.OutsideInterval))
+					c.check(t, "%s n=%d seed %d: widening changed the verdict: %s, %d outside interval", c.name, n, seed, v.Outcome, len(v.OutsideInterval))
 				}
 				_ = rec
 			}
@@ -280,13 +377,16 @@ func TestOmissionIsStillFoundWhenItsNeighboursAreWidened(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s entry %d: %v", c.name, i, err)
 			}
-			res := Score(orec, s.verify(widened))
+			res := MarkUndetectableByDesign(Score(orec, s.verify(widened)), s.honest, s.rule)
 			tally.Add(res)
+			if res.Mutations[0].UndetectableByDesign {
+				continue
+			}
 			if !res.Detected || !res.Mutations[0].Classified || !res.Mutations[0].Located {
-				t.Errorf("%s: omitting %s %q with widened neighbours: %+v", c.name, s.claims[i].ActionType, s.claims[i].Target, res.Mutations[0])
+				c.check(t, "%s: omitting %s %q with widened neighbours: %+v", c.name, s.claims[i].ActionType, s.claims[i].Target, res.Mutations[0])
 			}
 		}
-		t.Logf("%s: %d omissions with widened neighbours, detected %.3f", c.name, tally.Mutations, tally.Rate(tally.Detected))
+		t.Logf("%s: %d omissions with widened neighbours, detected %.3f, undetectable by design %d%s", c.name, tally.Mutations, tally.Rate(tally.Detected), tally.Undetectable, gating(c))
 	}
 }
 
@@ -306,19 +406,19 @@ func TestRetimedOmissionIsStillFoundAndTripsTheIntervalCheck(t *testing.T) {
 				t.Fatal(err)
 			}
 			v := s.verify(mut)
-			res := Score(rec, v)
+			res := MarkUndetectableByDesign(Score(rec, v), s.honest, s.rule)
 			tally.Add(res)
 			m := res.Mutations[0]
-			if !res.Detected || !m.Detected || !m.Classified || !m.Located {
-				t.Errorf("%s seed %d: %+v", c.name, seed, m)
+			if !m.UndetectableByDesign && (!res.Detected || !m.Detected || !m.Classified || !m.Located) {
+				c.check(t, "%s seed %d: %+v", c.name, seed, m)
 			}
 			if res.Unaccounted != len(v.OutsideInterval) {
-				t.Errorf("%s seed %d: %d unaccounted findings, %d of them interval findings: some other side effect", c.name, seed, res.Unaccounted, len(v.OutsideInterval))
+				c.check(t, "%s seed %d: %d unaccounted findings, %d of them interval findings: some other side effect", c.name, seed, res.Unaccounted, len(v.OutsideInterval))
 			}
 			if len(v.OutsideInterval) > 0 {
 				outside++
 			}
 		}
-		t.Logf("%s: retimed omissions detected %.3f, %d of %d runs also reported claims outside their interval", c.name, tally.Rate(tally.Detected), outside, tally.Runs)
+		t.Logf("%s: retimed omissions detected %.3f, %d of %d runs also reported claims outside their interval, undetectable by design %d%s", c.name, tally.Rate(tally.Detected), outside, tally.Runs, tally.Undetectable, gating(c))
 	}
 }
