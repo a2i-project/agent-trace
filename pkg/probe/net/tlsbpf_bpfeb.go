@@ -20,27 +20,41 @@ type tlsbpfSslFrame struct {
 }
 
 type tlsbpfSslFrameHdr struct {
-	_    structs.HostLayout
-	Tgid uint32
-	Tid  uint32
-	TsNs uint64
-	Len  uint32
-	_    [4]byte
+	_     structs.HostLayout
+	TsNs  uint64
+	Ssl   uint64
+	Tgid  uint32
+	Tid   uint32
+	Len   uint32
+	Total uint32
+	Dir   uint32
+	Pad   uint32
+}
+
+type tlsbpfSslReadArg struct {
+	_   structs.HostLayout
+	Buf uint64
+	Ssl uint64
 }
 
 // Names of all BPF objects in the ELF.
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	tlsbpfMapDropCount      = "drop_count"
-	tlsbpfMapFaultedReads   = "faulted_reads"
-	tlsbpfMapSslEvents      = "ssl_events"
-	tlsbpfMapSslHeap        = "ssl_heap"
-	tlsbpfMapTrackedPids    = "tracked_pids"
-	tlsbpfMapUntrackedCount = "untracked_count"
-	tlsbpfProgHandleExit    = "handle_exit"
-	tlsbpfProgHandleFork    = "handle_fork"
-	tlsbpfProgProbeSslWrite = "probe_ssl_write"
+	tlsbpfMapDropCount           = "drop_count"
+	tlsbpfMapFaultedReads        = "faulted_reads"
+	tlsbpfMapReadDropCount       = "read_drop_count"
+	tlsbpfMapReadFaultCount      = "read_fault_count"
+	tlsbpfMapSslEvents           = "ssl_events"
+	tlsbpfMapSslHeap             = "ssl_heap"
+	tlsbpfMapSslReadArgs         = "ssl_read_args"
+	tlsbpfMapTrackedPids         = "tracked_pids"
+	tlsbpfMapUntrackedCount      = "untracked_count"
+	tlsbpfProgHandleExit         = "handle_exit"
+	tlsbpfProgHandleFork         = "handle_fork"
+	tlsbpfProgProbeSslReadEntry  = "probe_ssl_read_entry"
+	tlsbpfProgProbeSslReadReturn = "probe_ssl_read_return"
+	tlsbpfProgProbeSslWrite      = "probe_ssl_write"
 )
 
 // loadTlsbpf returns the embedded CollectionSpec for tlsbpf.
@@ -85,9 +99,11 @@ type tlsbpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tlsbpfProgramSpecs struct {
-	HandleExit    *ebpf.ProgramSpec `ebpf:"handle_exit"`
-	HandleFork    *ebpf.ProgramSpec `ebpf:"handle_fork"`
-	ProbeSslWrite *ebpf.ProgramSpec `ebpf:"probe_ssl_write"`
+	HandleExit         *ebpf.ProgramSpec `ebpf:"handle_exit"`
+	HandleFork         *ebpf.ProgramSpec `ebpf:"handle_fork"`
+	ProbeSslReadEntry  *ebpf.ProgramSpec `ebpf:"probe_ssl_read_entry"`
+	ProbeSslReadReturn *ebpf.ProgramSpec `ebpf:"probe_ssl_read_return"`
+	ProbeSslWrite      *ebpf.ProgramSpec `ebpf:"probe_ssl_write"`
 }
 
 // tlsbpfMapSpecs contains maps before they are loaded into the kernel.
@@ -96,8 +112,11 @@ type tlsbpfProgramSpecs struct {
 type tlsbpfMapSpecs struct {
 	DropCount      *ebpf.MapSpec `ebpf:"drop_count"`
 	FaultedReads   *ebpf.MapSpec `ebpf:"faulted_reads"`
+	ReadDropCount  *ebpf.MapSpec `ebpf:"read_drop_count"`
+	ReadFaultCount *ebpf.MapSpec `ebpf:"read_fault_count"`
 	SslEvents      *ebpf.MapSpec `ebpf:"ssl_events"`
 	SslHeap        *ebpf.MapSpec `ebpf:"ssl_heap"`
+	SslReadArgs    *ebpf.MapSpec `ebpf:"ssl_read_args"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
@@ -130,8 +149,11 @@ func (o *tlsbpfObjects) Close() error {
 type tlsbpfMaps struct {
 	DropCount      *ebpf.Map `ebpf:"drop_count"`
 	FaultedReads   *ebpf.Map `ebpf:"faulted_reads"`
+	ReadDropCount  *ebpf.Map `ebpf:"read_drop_count"`
+	ReadFaultCount *ebpf.Map `ebpf:"read_fault_count"`
 	SslEvents      *ebpf.Map `ebpf:"ssl_events"`
 	SslHeap        *ebpf.Map `ebpf:"ssl_heap"`
+	SslReadArgs    *ebpf.Map `ebpf:"ssl_read_args"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
@@ -140,8 +162,11 @@ func (m *tlsbpfMaps) Close() error {
 	return _TlsbpfClose(
 		m.DropCount,
 		m.FaultedReads,
+		m.ReadDropCount,
+		m.ReadFaultCount,
 		m.SslEvents,
 		m.SslHeap,
+		m.SslReadArgs,
 		m.TrackedPids,
 		m.UntrackedCount,
 	)
@@ -157,15 +182,19 @@ type tlsbpfVariables struct {
 //
 // It can be passed to loadTlsbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tlsbpfPrograms struct {
-	HandleExit    *ebpf.Program `ebpf:"handle_exit"`
-	HandleFork    *ebpf.Program `ebpf:"handle_fork"`
-	ProbeSslWrite *ebpf.Program `ebpf:"probe_ssl_write"`
+	HandleExit         *ebpf.Program `ebpf:"handle_exit"`
+	HandleFork         *ebpf.Program `ebpf:"handle_fork"`
+	ProbeSslReadEntry  *ebpf.Program `ebpf:"probe_ssl_read_entry"`
+	ProbeSslReadReturn *ebpf.Program `ebpf:"probe_ssl_read_return"`
+	ProbeSslWrite      *ebpf.Program `ebpf:"probe_ssl_write"`
 }
 
 func (p *tlsbpfPrograms) Close() error {
 	return _TlsbpfClose(
 		p.HandleExit,
 		p.HandleFork,
+		p.ProbeSslReadEntry,
+		p.ProbeSslReadReturn,
 		p.ProbeSslWrite,
 	)
 }

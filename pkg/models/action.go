@@ -38,6 +38,11 @@ const (
 	ProcessExec ActionType = "process_exec"
 	ProcessExit ActionType = "process_exit"
 	GitCommit   ActionType = "git_commit"
+	// NetResponse is an HTTP response read over TLS, with its attestation
+	// record in GroundTruthEvent.Response. Ground truth only, like NetDNS: a
+	// response is attested, never claimed or compared with a trajectory
+	// (N-11, N-29).
+	NetResponse ActionType = "net_response"
 )
 
 var validActionTypes = map[ActionType]bool{
@@ -58,6 +63,7 @@ var validActionTypes = map[ActionType]bool{
 	ProcessExec:    true,
 	ProcessExit:    true,
 	GitCommit:      true,
+	NetResponse:    true,
 }
 
 func (a ActionType) IsValid() bool {
@@ -73,6 +79,7 @@ var unclaimableActionTypes = map[ActionType]bool{
 	NetListen:      true,
 	NetUnixConnect: true,
 	ProcessFork:    true,
+	NetResponse:    true,
 }
 
 // IsStructural reports whether an event describes the shape of the process

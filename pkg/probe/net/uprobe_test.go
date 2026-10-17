@@ -1,6 +1,12 @@
 package net
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"crypto/tls"
+	"encoding/hex"
+	"fmt"
+	"io"
 	stdnet "net"
 	"os"
 	"os/exec"
@@ -158,5 +164,170 @@ drain:
 	}
 	if got.RequestHash != nil {
 		t.Errorf("RequestHash = %v, want nil for a bodyless GET", *got.RequestHash)
+	}
+}
+
+// startSSEServer serves one HTTP/1.1 response per connection: a chunked
+// text/event-stream of the given events, each written separately so they
+// arrive in separate TLS records and separate SSL_read calls.
+func startSSEServer(t *testing.T, host, requestID string, events []string) (addr string) {
+	t.Helper()
+	cert := selfSignedCert(t, host)
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				r := bufio.NewReader(conn)
+				for {
+					line, err := r.ReadString('\n')
+					if err != nil {
+						return
+					}
+					if line == "\r\n" {
+						break
+					}
+				}
+				_, _ = io.WriteString(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nRequest-Id: "+requestID+"\r\nTransfer-Encoding: chunked\r\n\r\n")
+				for _, ev := range events {
+					time.Sleep(20 * time.Millisecond)
+					_, _ = fmt.Fprintf(conn, "%x\r\n%s\r\n", len(ev), ev)
+				}
+				_, _ = io.WriteString(conn, "0\r\n\r\n")
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// TestObserver_SSEResponseViaSSLReadUretprobe is the response-side
+// counterpart of TestObserver_ContentCaptureViaSSLWriteUprobe (N-29): a
+// local TLS server streams a server-sent event response to openssl(1)
+// s_client, a tracked client linked against the system libssl; the
+// observer validates the SSL_read offset on the status line, reassembles
+// the chunked stream and emits a net_response paired with the request,
+// carrying the request id, the body hash and the event count.
+func TestObserver_SSEResponseViaSSLReadUretprobe(t *testing.T) {
+	skipUnprivileged(t)
+	if _, err := exec.LookPath("openssl"); err != nil {
+		t.Skip("openssl not available")
+	}
+	libssl := findLibSSL(t)
+
+	const host = "agenttrace-sse-test.internal"
+	events := []string{
+		"event: message_start\ndata: {\"type\":\"message_start\"}\n\n",
+		"event: content_block_delta\ndata: {\"text\":\"hello\"}\n\n",
+		": ping comment\n\n",
+		"event: message_stop\ndata: {}\n\n",
+	}
+	body := strings.Join(events, "")
+	addr := startSSEServer(t, host, "req_sse_test_01", events)
+	serverHost, port, err := stdnet.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split host port: %v", err)
+	}
+
+	// The probes attach in New (8b68980), before the client exists.
+	obs, err := New(Config{
+		ExePath:           libssl,
+		EventBufSize:      256,
+		ValidationTimeout: 8 * time.Second,
+		CachePath:         t.TempDir() + "/cache.json",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cmd := exec.Command("openssl", "s_client",
+		"-connect", stdnet.JoinHostPort(serverHost, port),
+		"-servername", host, "-quiet")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start openssl: %v", err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	if err := obs.TrackPID(int32(cmd.Process.Pid)); err != nil {
+		t.Fatalf("TrackPID: %v", err)
+	}
+
+	startDone := make(chan struct{})
+	go func() {
+		obs.Start()
+		close(startDone)
+	}()
+	if _, err := stdin.Write([]byte("GET /v1/stream HTTP/1.1\r\nHost: " + host + "\r\nAccept: text/event-stream\r\n\r\n")); err != nil {
+		t.Fatalf("write to openssl stdin: %v", err)
+	}
+	select {
+	case <-startDone:
+	case <-time.After(15 * time.Second):
+		t.Fatal("Observer.Start did not return")
+	}
+	if err := obs.TLSAttachError(); err != nil {
+		t.Fatalf("TLSAttachError: %v", err)
+	}
+
+	// s_client exits when the server closes the connection after the last
+	// chunk; CI sets this bound, not a dev box.
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	select {
+	case <-exited:
+	case <-time.After(15 * time.Second):
+		t.Log("openssl did not exit; stopping anyway")
+	}
+	_ = stdin.Close()
+	time.Sleep(500 * time.Millisecond)
+
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	var resp *models.GroundTruthEvent
+	var all []models.GroundTruthEvent
+	for ev := range obs.Events() {
+		all = append(all, ev)
+		if ev.ActionType == models.NetResponse && resp == nil {
+			e := ev
+			resp = &e
+		}
+	}
+	cov := obs.Coverage()
+	t.Logf("coverage: %+v", cov)
+	if err := obs.ResponseAttachError(); err != nil {
+		t.Fatalf("ResponseAttachError: %v (events %+v)", err, all)
+	}
+	if got := obs.CaptureCoverage().Responses; got != models.ContentActive {
+		t.Errorf("CaptureCoverage().Responses = %q, want %q", got, models.ContentActive)
+	}
+	if resp == nil {
+		t.Fatalf("no net_response (events %+v)", all)
+	}
+	r := resp.Response
+	t.Logf("response: target=%q %+v sse=%+v", resp.Target, r, r.SSE)
+	if want := "GET https://" + host + "/v1/stream"; resp.Target != want || !r.Paired {
+		t.Errorf("Target = %q paired %v, want %q paired", resp.Target, r.Paired, want)
+	}
+	sum := sha256.Sum256([]byte(body))
+	if r.Status != 200 || r.RequestID != "req_sse_test_01" || r.ContentType != "text/event-stream" ||
+		!r.Complete || r.Truncated || r.BodyBytes != int64(len(body)) || r.BodyHash != "sha256:"+hex.EncodeToString(sum[:]) {
+		t.Errorf("attestation %+v, want status 200, the request id, a complete body of %d bytes and its hash", r, len(body))
+	}
+	if r.SSE == nil || r.SSE.Events != 3 || r.SSE.Types["message_stop"] != 1 || r.SSE.Overflow {
+		t.Errorf("SSE = %+v, want 3 events ending in message_stop", r.SSE)
+	}
+	if resp.PID != uint32(cmd.Process.Pid) {
+		t.Errorf("PID = %d, want %d", resp.PID, cmd.Process.Pid)
 	}
 }

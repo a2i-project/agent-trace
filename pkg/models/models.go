@@ -108,6 +108,9 @@ type GroundTruthEvent struct {
 	// body, computed from the plaintext captured pre-encryption. Nil when
 	// the request had no body, or the action isn't a NetRequest.
 	RequestHash *string `json:"request_hash,omitempty"`
+	// Response is the attestation record of a NetResponse event (N-29).
+	// Nil on every other action type.
+	Response *ResponseAttestation `json:"response,omitempty"`
 }
 
 func (e *TrajectoryEntry) Validate() error {

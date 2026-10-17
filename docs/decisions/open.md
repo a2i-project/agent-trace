@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). None is decided.
 
@@ -113,9 +113,9 @@ Blocked by: The baseline (whole-host capture brings noise) and a decision on whe
 Status: Open.
 Date: 2026-10-02 (with the traced `WebSearch` run of I-16).
 Question: `WebSearch` runs server-side inside the model API exchange (I-16). How is it verified?
-Options: (a) capture the API stream with an `SSL_read` uretprobe plus SSE reassembly (O-19); (b) an N2 proxy, which gives framed responses but is detectable and fails on pinning.
-Current behaviour: Not verified; `WebSearch` is non-effectful.
-Blocked by: Design choice between (a) and (b), offsets per Bun release for (a), and the unverified join between the transcript `requestId` and the response `request-id` header.
+Options: (a) capture the API stream with an `SSL_read` uretprobe plus SSE reassembly; (b) an N2 proxy, which gives framed responses but is detectable and fails on pinning. Narrowed on 2026-10-17: N-29 chose and built (a) as capture only. What remains is how a claim uses a `net_response`: (c) attest only: the response's status, `request-id`, volume and event counts are shown and nothing changes in the verdict; (d) corroborate the call: a `WebSearch` claim whose transcript `requestId` equals the `request-id` of a `net_response` with status 200 and a complete stream is Corroborated as a call, with no statement about its query or results; (e) corroborate the content: record from the stream, hashed, the query of each server-side tool use and the result URLs, and compare them with the claim's input and its verbatim Links array, which needs a decision against N-D3 (no plaintext kept) and N-11 (responses are not compared).
+Current behaviour: Not verified; `WebSearch` is non-effectful. Since N-29 the capture records each response of the model API as `net_response`, ground truth only, with its `request-id` and the event counts by name, and the verifier ignores it beyond listing it.
+Blocked by: The choice between (c), (d) and (e), offsets per Bun release, a live capture showing that Claude Code's `SSL_read` validates and its stream is readable, and the unverified join between the transcript `requestId` and the response `request-id` header.
 
 ## Proposals (not decided)
 
@@ -126,14 +126,6 @@ Question: Should `net.bpf.c` hook `tcp_connect`, `inet_sendmsg`, `udp_sendmsg` a
 Options: Rewrite the net probe; or at minimum detect io_uring use by tracked PIDs and mark the run INCONCLUSIVE.
 Current behaviour: `sys_enter_*` tracepoints only. `IORING_OP_CONNECT` and `IORING_OP_SEND` bypass them, so an io_uring network action is not recorded. Since N-25 (option 1, detect and degrade) the probe counts io_uring network operations by tracked processes in `IOURingNetOps`, and `Assess` makes such a run INCONCLUSIVE; on 2026-10-13 Claude Code 2.1.296 (Bun) made no io_uring call and Node.js 20 submitted only `EPOLL_CTL`, which does not count (N-25). Since N-23 and N-24 the tracepoints cover `writev`, `pwritev2`, `sendmmsg`, `sendfile`, `splice` and multi-iovec sends, and follow a connection by socket to any tracked process that writes it. A connection without a name whose data went only through io_uring or Linux AIO, or was written only by a process outside the tracked tree, still reads as `net_dial`, capability evidence rather than a connection a claim must explain ([../architecture/13_probe_net.md](../architecture/13_probe_net.md), Known limits).
 Blocked by: Cost of the rewrite. Whether runtimes use io_uring for sockets is measured in N-25: Claude Code 2.1.296 (Bun) makes no io_uring call, Node.js 20 children submit only `EPOLL_CTL`, and python, curl and git use none; since N-25 a tracked socket operation through io_uring makes the run INCONCLUSIVE.
-
-### O-19: `SSL_read` uretprobe and SSE reassembly
-Status: Proposed.
-Date: 2026-10-06.
-Question: Add the read side to N1 and port SSE handling into `pkg/tlsparse`?
-Options: Reuse the `ssl_lib.cc` offset machinery for `SSL_read`, which also gives a structural cross-check for offsets.
-Current behaviour: `SSL_write` only (N-16).
-Blocked by: O-14.
 
 ### O-20: A ClientHello beyond 1 KiB or split across writes
 Status: Proposed. Narrowed on 2026-10-11: N-20 records every connection to port 53 as `net_dns` capability evidence, which settles the connection part of the DNS question. Narrowed on 2026-10-15: N-27 records the question of every DNS query in the `net_dns` target, and N-28 records datagrams sent to an explicit address, which settles the DNS-name and unconnected-UDP parts.

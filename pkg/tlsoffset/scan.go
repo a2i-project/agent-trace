@@ -8,55 +8,106 @@ import (
 	"sort"
 )
 
-// Target represents a resolved candidate for SSL_write.
+// Target represents the validated offsets of one build. SSLRead is zero
+// when no SSL_read offset was validated for it.
 type Target struct {
 	Path     string `json:"path"`
 	BuildID  string `json:"build_id"`
 	SSLWrite uint64 `json:"ssl_write_file_offset"`
+	SSLRead  uint64 `json:"ssl_read_file_offset,omitempty"`
 }
 
-// Candidate represents a potential SSL_write location.
+// Candidate represents a potential SSL_write or SSL_read location.
 type Candidate struct {
 	VA      uint64
 	FileOff uint64
 	Score   int
 }
 
+// Result holds the candidates Scan found for both functions.
+type Result struct {
+	BuildID string
+	Write   []Candidate // SSL_write
+	Read    []Candidate // SSL_read
+}
+
 // ScanELF analyzes a stripped executable to find SSL_write candidates.
 func ScanELF(path string) ([]Candidate, string, error) {
+	r, err := Scan(path)
+	return r.Write, r.BuildID, err
+}
+
+// Scan finds SSL_write and SSL_read candidates in one pass. A function with
+// a symbol has that symbol as its only candidate. Otherwise both lists are
+// the functions that reference the ssl_lib.cc string, ranked by the number
+// of references: SSL_write and SSL_read both sit in that cluster, and only
+// runtime validation tells them apart (N-D4). Read is empty, without an
+// error, when SSL_write has a symbol, SSL_read has none and the cluster
+// cannot be scanned.
+func Scan(path string) (Result, error) {
 	f, err := elf.Open(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("open elf: %w", err)
+		return Result{}, fmt.Errorf("open elf: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
-	buildID := getBuildID(f)
+	res := Result{BuildID: getBuildID(f)}
 
 	// 1. Try symbols first
 	for _, get := range []func() ([]elf.Symbol, error){f.Symbols, f.DynamicSymbols} {
 		syms, err := get()
-		if err == nil {
-			for _, s := range syms {
-				if s.Name == "SSL_write" {
-					return []Candidate{{VA: s.Value, FileOff: vaToFileOff(f, s.Value), Score: 100}}, buildID, nil
-				}
+		if err != nil {
+			continue
+		}
+		for _, s := range syms {
+			if s.Value == 0 {
+				continue
+			}
+			c := []Candidate{{VA: s.Value, FileOff: vaToFileOff(f, s.Value), Score: 100}}
+			switch {
+			case s.Name == "SSL_write" && res.Write == nil:
+				res.Write = c
+			case s.Name == "SSL_read" && res.Read == nil:
+				res.Read = c
 			}
 		}
 	}
+	if res.Write != nil && res.Read != nil {
+		return res, nil
+	}
 
+	cluster, err := scanCluster(f)
+	if err != nil {
+		if res.Write != nil {
+			return res, nil
+		}
+		return res, err
+	}
+	if res.Write == nil {
+		res.Write = cluster
+	}
+	if res.Read == nil {
+		res.Read = append([]Candidate(nil), cluster...)
+	}
+	return res, nil
+}
+
+// scanCluster returns the functions that reference the ssl_lib.cc string,
+// ranked by reference count.
+func scanCluster(f *elf.File) ([]Candidate, error) {
 	// 2. Locate ssl_lib.cc string
 	strVA, err := findString(f, "ssl_lib.cc")
 	if err != nil {
-		return nil, buildID, fmt.Errorf("find string: %w", err)
+		return nil, fmt.Errorf("find string: %w", err)
 	}
 
 	text := f.Section(".text")
 	if text == nil {
-		return nil, buildID, fmt.Errorf("no .text section")
+		return nil, fmt.Errorf("no .text section")
 	}
 	code, err := text.Data()
 	if err != nil {
-		return nil, buildID, fmt.Errorf("read .text: %w", err)
+		return nil, fmt.Errorf("read .text: %w", err)
 	}
 
 	// 3. Scan .text for xrefs to strVA
@@ -81,12 +132,15 @@ func ScanELF(path string) ([]Candidate, string, error) {
 			Score:   score,
 		})
 	}
-	
+
 	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Score > candidates[j].Score
+		if candidates[i].Score != candidates[j].Score {
+			return candidates[i].Score > candidates[j].Score
+		}
+		return candidates[i].VA < candidates[j].VA
 	})
 
-	return candidates, buildID, nil
+	return candidates, nil
 }
 
 func scanLEA(code []byte, base, target uint64) []uint64 {
@@ -155,7 +209,9 @@ func classifyImmediate(code []byte, i int) bool {
 func findFunctionStart(code []byte, base, site uint64, maxBack int) uint64 {
 	off := int(site - base)
 	limit := off - maxBack
-	if limit < 0 { limit = 0 }
+	if limit < 0 {
+		limit = 0
+	}
 	for i := off; i >= limit+4; i-- {
 		if code[i] == 0xf3 && code[i+1] == 0x0f && code[i+2] == 0x1e && code[i+3] == 0xfa {
 			if i == 0 || code[i-1] == 0xcc || code[i-1] == 0x90 {
@@ -195,9 +251,13 @@ func findString(f *elf.File, needle string) (uint64, error) {
 
 func getBuildID(f *elf.File) string {
 	sect := f.Section(".note.gnu.build-id")
-	if sect == nil { return "" }
+	if sect == nil {
+		return ""
+	}
 	data, _ := sect.Data()
-	if len(data) < 16 { return "" }
+	if len(data) < 16 {
+		return ""
+	}
 	return fmt.Sprintf("%x", data[16:])
 }
 

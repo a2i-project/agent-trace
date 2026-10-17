@@ -38,49 +38,122 @@ type Coverage struct {
 	IOURingOps         uint64 // io_uring operations of any kind by tracked processes; diagnostic
 	IOURingRings       uint64 // io_uring rings set up by tracked processes; diagnostic
 	HelloFaults        uint64 // hello reads that faulted on a connection still waiting for its hello; content gap (no hostname), not event loss
+	FramesTruncated    int    // SSL_write calls larger than the capture copies; the request stream is dropped and counted in FramesUnattributed too
+
+	// Response capture (N-29). All diagnostic; ResponseGaps in
+	// ProbeCoverage sums the ones that mean missing response data.
+	Responses             int    // net_response events emitted
+	ResponsesUnpaired     int    // emitted with no request seen on the connection; the target names the host only
+	ResponsesUnattributed int    // parsed but not emitted: no request, so no host, on the connection
+	ResponsesIncomplete   int    // emitted before their body ended: end of capture, connection reused, or bytes that did not parse
+	ResponsesTruncated    int    // responses with bytes the capture missed (a read larger than it copies)
+	ResponsesUnparsed     int    // times a connection's reads stopped parsing as HTTP/1.x responses and were skipped up to the next status line
+	SSEEvents             int    // server-sent events counted across all responses
+	ReadsUnvalidated      int    // SSL_read frames discarded before a read began with a status line, which validates the SSL_read offset
+	ReadFaults            uint64 // SSL_read buffers whose read faulted in-kernel
+	ReadDrops             uint64 // SSL_read frames the TLS ring buffer discarded because it was full
 }
 
-// sslKey identifies the (tgid, tid) pair a run of ssl_frames belongs to.
-// Frames from the same thread are assumed to belong to one logical
-// request/response stream at a time -- see N-D1 in
-// docs/decisions/network.md: since the write-bracket join is abandoned, this is the only
-// correlation signal available short of parsing BoringSSL's SSL* internals.
+// sslKey identifies the connection a run of ssl_frames belongs to: the
+// process and the SSL object the call was made on (N-30). Since the
+// write-bracket join is abandoned (N-D1), the SSL* pointer is the only
+// connection identity the uprobes see; it keeps apart the streams of
+// connections one thread serves in turn, as an event loop does. A pointer
+// the allocator reuses for a later connection continues the earlier key.
 type sslKey struct {
 	tgid uint32
-	tid  uint32
+	ssl  uint64
 }
 
-// handleSSLFrame feeds one captured SSL_write payload into the per-thread
+// tlsConn is the content state of one TLS connection: the request stream
+// being reassembled, the response parser, and the latest request still
+// waiting for its response.
+type tlsConn struct {
+	req      *tlsparse.Stream
+	resp     *tlsparse.ResponseParser
+	last     *sentRequest
+	host     string // host and port of the latest attributed request
+	port     int
+	lastSeen time.Time
+}
+
+// sentRequest is what a response needs of the request it answers.
+type sentRequest struct {
+	target string // "" when the request could not be attributed to a host
+	method string
+}
+
+// maxTLSConns bounds the connections whose content state is kept. Past it,
+// the connection seen least recently is dropped (and its response in
+// progress emitted as incomplete) to make room.
+const maxTLSConns = 4096
+
+func (o *Observer) tlsConn(key sslKey, ts time.Time) *tlsConn {
+	c := o.tlsConns[key]
+	if c == nil {
+		if len(o.tlsConns) >= maxTLSConns {
+			o.evictTLSConn()
+		}
+		c = &tlsConn{req: tlsparse.NewStream(), resp: tlsparse.NewResponseParser()}
+		c.resp.Bodyless = func() bool { return c.last != nil && c.last.method == "HEAD" }
+		o.tlsConns[key] = c
+	}
+	c.lastSeen = ts
+	return c
+}
+
+func (o *Observer) evictTLSConn() {
+	var oldest sslKey
+	var at time.Time
+	first := true
+	for k, c := range o.tlsConns {
+		if first || c.lastSeen.Before(at) {
+			oldest, at, first = k, c.lastSeen, false
+		}
+	}
+	o.closeTLSConn(oldest)
+}
+
+// handleSSLFrame feeds one captured SSL_write payload into its connection's
 // reassembly stream and emits a models.NetRequest GroundTruthEvent for every
 // complete HTTP/1.1 request it yields. Per N-D3, the
 // raw plaintext never leaves this function: only RequestHash and the fields
-// CanonicalNetTarget needs are retained in the emitted event.
-func (o *Observer) handleSSLFrame(tgid, tid uint32, payload []byte, ts time.Time) {
-	key := sslKey{tgid: tgid, tid: tid}
-	stream := o.pending[key]
-	if stream == nil {
-		stream = tlsparse.NewStream()
-		o.pending[key] = stream
+// CanonicalNetTarget needs are retained in the emitted event. missing is the
+// number of bytes the call wrote beyond the captured payload.
+func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts time.Time) {
+	c := o.tlsConn(key, ts)
+	if missing > 0 {
+		// The request stream has a hole: a body hashed across it would be
+		// wrong, and its framing cannot be trusted past it.
+		c.req = tlsparse.NewStream()
+		o.coverage.FramesTruncated++
+		o.coverage.FramesUnattributed++
+		return
 	}
-	stream.Append(payload)
+	c.req.Append(payload)
 
 	for {
-		req, ok, err := tlsparse.ParseHTTP1(stream)
+		req, ok, err := tlsparse.ParseHTTP1(c.req)
 		if err != nil {
 			// Not an HTTP/1.1 request (h2 ciphertext-looking-like-plaintext
 			// never happens post-decryption, but a partial/aliased capture
 			// or an ALPN-negotiated h2 connection produces bytes this
-			// parser can't make sense of). Drop the rest of this thread's
-			// buffered bytes rather than retrying forever against the same
-			// malformed prefix.
-			delete(o.pending, key)
+			// parser can't make sense of). Drop the rest of this
+			// connection's buffered bytes rather than retrying forever
+			// against the same malformed prefix.
+			c.req = tlsparse.NewStream()
 			o.coverage.FramesUnattributed++
 			return
 		}
 		if !ok {
 			return // need more bytes; wait for the next ssl_frame
 		}
-		o.emitNetRequest(tgid, req, ts)
+		sent := &sentRequest{method: req.Method}
+		if target, host, port, ok := o.emitNetRequest(key.tgid, req, ts); ok {
+			sent.target = target
+			c.host, c.port = host, port
+		}
+		c.last = sent
 	}
 }
 
@@ -89,17 +162,19 @@ func (o *Observer) handleSSLFrame(tgid, tid uint32, payload []byte, ts time.Time
 // the D1 resolution -- this is the join key back to a connection, not
 // connection state itself, so a request line's target host need not equal
 // any (tgid, fd) tracked in o.conns for the event to be emitted.
-func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts time.Time) {
-	host := req.Headers.Get("Host")
+//
+// It returns the target, host and port, with ok false when the request
+// could not be attributed to a host and nothing was emitted.
+func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts time.Time) (target, host string, port int, ok bool) {
+	host = req.Headers.Get("Host")
 	if host == "" {
 		host = o.newestHostForTGID(tgid)
 	}
 	if host == "" {
 		o.coverage.FramesUnattributed++
-		return
+		return "", "", 0, false
 	}
 
-	port := 0
 	if i := strings.LastIndexByte(host, ':'); i != -1 && !strings.Contains(host[i:], "]") {
 		if p, err := parsePort(host[i+1:]); err == nil {
 			port = p
@@ -107,7 +182,7 @@ func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts tim
 		}
 	}
 
-	target := models.CanonicalNetTarget(req.Method, host, port, req.Path, req.Query)
+	target = models.CanonicalNetTarget(req.Method, host, port, req.Path, req.Query)
 
 	var reqHash *string
 	if len(req.Body) > 0 {
@@ -132,6 +207,7 @@ func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts tim
 	default:
 		o.dropped.Add(1)
 	}
+	return target, host, port, true
 }
 
 // newestHostForTGID falls back to the most recently opened tracked

@@ -8,14 +8,14 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
-	"github.com/agent-trace/agent-trace/pkg/tlsparse"
 )
 
 func newTestObserver() *Observer {
 	return &Observer{
-		conns:   make(map[uint64]*connection),
-		pending: make(map[sslKey]*tlsparse.Stream),
-		events:  make(chan models.GroundTruthEvent, 16),
+		conns:    make(map[uint64]*connection),
+		tlsConns: make(map[sslKey]*tlsConn),
+		readOK:   make(chan struct{}),
+		events:   make(chan models.GroundTruthEvent, 16),
 	}
 }
 
@@ -24,7 +24,7 @@ func TestHandleSSLFrame_EmitsNetRequestFromHostHeader(t *testing.T) {
 	ts := time.Now()
 
 	req := "GET /v1/messages?x=1 HTTP/1.1\r\nHost: api.example.com\r\nConnection: close\r\n\r\n"
-	o.handleSSLFrame(42, 7, []byte(req), ts)
+	o.handleSSLFrame(sslKey{tgid: 42, ssl: 7}, []byte(req), 0, ts)
 
 	select {
 	case ev := <-o.events:
@@ -56,7 +56,7 @@ func TestHandleSSLFrame_RequestHashOfBody(t *testing.T) {
 	req := "POST /v1/messages HTTP/1.1\r\nHost: api.example.com\r\nContent-Length: " +
 		strconv.Itoa(len(body)) + "\r\n\r\n" + body
 
-	o.handleSSLFrame(1, 1, []byte(req), time.Now())
+	o.handleSSLFrame(sslKey{tgid: 1, ssl: 1}, []byte(req), 0, time.Now())
 
 	ev := <-o.events
 	if ev.RequestHash == nil {
@@ -74,14 +74,14 @@ func TestHandleSSLFrame_SplitAcrossFrames(t *testing.T) {
 	full := "GET /a HTTP/1.1\r\nHost: split.example.com\r\n\r\n"
 	mid := len(full) / 2
 
-	o.handleSSLFrame(1, 1, []byte(full[:mid]), time.Now())
+	o.handleSSLFrame(sslKey{tgid: 1, ssl: 1}, []byte(full[:mid]), 0, time.Now())
 	select {
 	case ev := <-o.events:
 		t.Fatalf("emitted before the request was complete: %+v", ev)
 	default:
 	}
 
-	o.handleSSLFrame(1, 1, []byte(full[mid:]), time.Now())
+	o.handleSSLFrame(sslKey{tgid: 1, ssl: 1}, []byte(full[mid:]), 0, time.Now())
 	select {
 	case ev := <-o.events:
 		if ev.Target != "GET https://split.example.com/a" {
@@ -98,7 +98,7 @@ func TestHandleSSLFrame_NoHostFallsBackToConnectionSNI(t *testing.T) {
 
 	// HTTP/1.0 request with no Host header at all.
 	req := "GET /root HTTP/1.0\r\n\r\n"
-	o.handleSSLFrame(9, 1, []byte(req), time.Now())
+	o.handleSSLFrame(sslKey{tgid: 9, ssl: 1}, []byte(req), 0, time.Now())
 
 	select {
 	case ev := <-o.events:
@@ -113,7 +113,7 @@ func TestHandleSSLFrame_NoHostFallsBackToConnectionSNI(t *testing.T) {
 func TestHandleSSLFrame_UnattributableRequestIsCounted(t *testing.T) {
 	o := newTestObserver()
 	req := "GET /root HTTP/1.0\r\n\r\n" // no Host header, no matching connection
-	o.handleSSLFrame(9, 1, []byte(req), time.Now())
+	o.handleSSLFrame(sslKey{tgid: 9, ssl: 1}, []byte(req), 0, time.Now())
 
 	select {
 	case ev := <-o.events:
@@ -127,20 +127,20 @@ func TestHandleSSLFrame_UnattributableRequestIsCounted(t *testing.T) {
 
 func TestHandleSSLFrame_MalformedRequestDropsPendingBytes(t *testing.T) {
 	o := newTestObserver()
-	o.handleSSLFrame(1, 1, []byte("not an http request\r\n\r\n"), time.Now())
+	o.handleSSLFrame(sslKey{tgid: 1, ssl: 1}, []byte("not an http request\r\n\r\n"), 0, time.Now())
 
 	if o.coverage.FramesUnattributed != 1 {
 		t.Errorf("coverage.FramesUnattributed = %d, want 1", o.coverage.FramesUnattributed)
 	}
-	if _, ok := o.pending[sslKey{tgid: 1, tid: 1}]; ok {
-		t.Error("malformed stream was not dropped from pending")
+	if c := o.tlsConns[sslKey{tgid: 1, ssl: 1}]; c == nil || c.req.Len() != 0 {
+		t.Error("malformed stream was not dropped")
 	}
 }
 
 func TestHandleSSLFrame_HostHeaderWithNonDefaultPort(t *testing.T) {
 	o := newTestObserver()
 	req := "GET /a HTTP/1.1\r\nHost: api.example.com:8443\r\n\r\n"
-	o.handleSSLFrame(1, 1, []byte(req), time.Now())
+	o.handleSSLFrame(sslKey{tgid: 1, ssl: 1}, []byte(req), 0, time.Now())
 
 	ev := <-o.events
 	want := "GET https://api.example.com:8443/a"

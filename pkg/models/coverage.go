@@ -85,6 +85,17 @@ type ProbeCoverage struct {
 	// Zero when the capture has no root pid, so there is no tree. A subset
 	// of UnresolvedPaths. Filesystem probe only.
 	UnresolvedInTree uint64 `json:"unresolved_in_tree,omitempty"`
+	// Responses is the state of response capture (the SSL_read side of
+	// content capture, N-29), one of the Content* constants: active once a
+	// read of a tracked process validated the SSL_read offset. Empty in a
+	// capture written before the field existed. Net probe only.
+	Responses string `json:"responses,omitempty"`
+	// ResponseGaps counts response data the capture may be missing: SSL_read
+	// buffers that faulted or that the ring buffer discarded, responses
+	// with bytes missed, and read streams that lost their place and were
+	// skipped. A content gap on attestation, never event loss: no claim
+	// depends on a response (N-29). Net probe only.
+	ResponseGaps uint64 `json:"response_gaps,omitempty"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit ef8a60a on 2026-10-17.
+Checked against commit 4c56a31 on 2026-10-17.
 
 ## Objective
 
@@ -15,6 +15,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | `pkg/models/action.go` | `ActionType` values, `IsClaimable`, `IsStructural` |
 | `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry`, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
 | `pkg/models/coverage.go` | `ProbeCoverage`, `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema` |
+| `pkg/models/response.go` | `ResponseAttestation`, `SSESummary`: the record a `net_response` event carries (N-29) |
 | `pkg/models/sensitive.go` | `SensitiveSnapshot`, `SensitiveFile`, `SensitiveState`, `SensitiveChange` and their state, format and kind names: the snapshot of the harness's sensitive files (V-40) |
 | `pkg/verification/completeness.go` | `Assess`: turns coverage counters into Reasons (event loss) and Notes (content gaps) |
 
@@ -79,8 +80,9 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `PathIsAmbiguous` | `path_is_ambiguous` | fs, when only the parent directory resolved: the create, delete and rename records of captures made before P-25, which requested no entry names |
 | `TargetTruncated` | `target_truncated` | proc, when the command line or the program path did not fit the record (P-19) |
 | `RequestHash` | `request_hash` | net, on `net_request` with a body |
+| `Response` | `response` | net, on `net_response` only: status, request id, content type and encoding, body length and hash, end time, completeness, pairing and the server-sent event counts ([13_probe_net.md](13_probe_net.md), N-29) |
 
-`process_fork`, `net_bind`, `net_listen`, `net_unix_connect`, `net_dns` and `net_dial` are ground truth only: `ActionType.IsClaimable` rejects them in a trajectory. `process_fork` is also structural (`IsStructural`): the verifier uses it to build the tree and neither aligns nor counts it. No probe emits `file_read` or `git_commit`.
+`process_fork`, `net_bind`, `net_listen`, `net_unix_connect`, `net_dns`, `net_dial` and `net_response` are ground truth only: `ActionType.IsClaimable` rejects them in a trajectory. `process_fork` is also structural (`IsStructural`): the verifier uses it to build the tree and neither aligns nor counts it. No probe emits `file_read` or `git_commit`.
 
 ### ProbeCoverage
 
@@ -100,6 +102,8 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `FaultedReads` | `faulted_reads` | net (TLS) | `SSL_write` plaintext read faulted | Note (content gap) |
 | `Content` | `content` | net | `active`, `identity_only` or `attach_failed` | `attach_failed` is a Note |
 | `HelloFaults` | `hello_faults` | net | the read of a connection's first bytes faulted; the connection is recorded and counts as written, its hostname may be missing (an upper bound on the connections affected) | Note (content gap) |
+| `Responses` | `responses` | net | response capture (`SSL_read`, N-29): `active` once a read validated the offset, `identity_only` without `ExePath`, `attach_failed` otherwise; absent in a capture written before it | not read |
+| `ResponseGaps` | `response_gaps` | net | response data the capture may be missing: faulted or ring-dropped `SSL_read` buffers, truncated responses, read streams that stopped parsing, responses with no host to name; a content gap on attestation, no claim depends on it | not read |
 
 Any Reason makes `Assess` return `Complete=false`, and the verifier then reports INCONCLUSIVE instead of FAITHFUL. Notes limit what content checks can say but do not make the event set incomplete. A nil coverage record (legacy file) is itself a Reason.
 
