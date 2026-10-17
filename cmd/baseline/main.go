@@ -103,6 +103,12 @@ func run(args []string, out, errOut io.Writer) int {
 		beneath += len(st.Events)
 	}
 	_, _ = fmt.Fprintf(out, "recorded the subtrees of %d command rule(s): %d action(s) beneath them that a baselined command explains (V-38)\n", len(b.Subtrees), beneath)
+	switch {
+	case b.Sensitive != nil:
+		_, _ = fmt.Fprintf(out, "recorded what the controls changed in %d of %d sensitive harness file(s): %d change(s) by key path explained, %d unstable left out (V-40)\n", len(b.Sensitive.Files), len(agent.SensitiveFiles(a)), len(b.Sensitive.Changes), len(b.Sensitive.Unstable))
+	case len(agent.SensitiveFiles(a)) > 0:
+		_, _ = fmt.Fprintln(out, "note: some control run holds no snapshot of the harness's sensitive files (captured before V-40), so the baseline records none and verify checks no change of them")
+	}
 	if b.Runs == 1 {
 		_, _ = fmt.Fprintln(out, "note: one control run cannot tell stable activity from incidental activity; capture at least three")
 	}

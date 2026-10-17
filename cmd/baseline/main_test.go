@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -188,5 +189,37 @@ func TestRecordsWhatEachCommandDidBeneathIt(t *testing.T) {
 	b, err := agent.LoadBaseline(outPath)
 	if err != nil || len(b.Subtrees) != 1 || b.Subtrees[0].Command != "/bin/bash -c env" || len(b.Subtrees[0].Events) != 1 || b.Subtrees[0].Events[0].Target != "/usr/bin/env" {
 		t.Errorf("subtrees = %+v, %v", b.Subtrees, err)
+	}
+}
+
+// baseline says how many sensitive files it recorded the controls' changes
+// of, and says when the controls hold no snapshot (V-40).
+func TestReportsTheSensitiveRecord(t *testing.T) {
+	dir := t.TempDir()
+	snap := &models.SensitiveSnapshot{Home: "/h", Files: []models.SensitiveFile{{
+		Declared: "~/.claude.json", Path: "/h/.claude.json",
+		Start:   models.SensitiveState{State: models.SensitivePresent, Format: models.SensitiveJSON, Digest: "a"},
+		Stop:    models.SensitiveState{State: models.SensitivePresent, Format: models.SensitiveJSON, Digest: "b"},
+		Changes: []models.SensitiveChange{{Key: []string{"numStartups"}, Kind: models.SensitiveChanged}},
+	}}}
+	var with, without []string
+	for i := 0; i < 2; i++ {
+		f := models.GroundTruthFile{RootPID: 100, Coverage: cov(models.ProbeCoverage{Ran: true}), Sensitive: snap}
+		with = append(with, write(t, dir, fmt.Sprintf("s%d.json", i), f))
+		f.Sensitive = nil
+		without = append(without, write(t, dir, fmt.Sprintf("n%d.json", i), f))
+	}
+	out := filepath.Join(dir, "b.json")
+	code, stdout, stderr := baseline(t, append([]string{"--agent", "claude-code", "--agent-version", "1", "--out", out}, with...)...)
+	if code != 0 || !strings.Contains(stdout, "recorded what the controls changed in 1 of 5 sensitive harness file(s): 1 change(s) by key path explained, 0 unstable left out (V-40)\n") {
+		t.Errorf("with snapshots: exit %d\n%s%s", code, stdout, stderr)
+	}
+	code, stdout, _ = baseline(t, append([]string{"--agent", "claude-code", "--agent-version", "1", "--out", out}, without...)...)
+	if code != 0 || !strings.Contains(stdout, "holds no snapshot of the harness's sensitive files") {
+		t.Errorf("without snapshots: exit %d\n%s", code, stdout)
+	}
+	code, stdout, _ = baseline(t, append([]string{"--agent", "generic", "--agent-version", "1", "--out", out}, without...)...)
+	if code != 0 || strings.Contains(stdout, "sensitive") {
+		t.Errorf("an adapter that declares none: exit %d\n%s", code, stdout)
 	}
 }

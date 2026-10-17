@@ -46,6 +46,10 @@ type Input struct {
 	// claim is in scope.
 	FSScope   *models.FSScope
 	Workspace string
+	// Sensitive is the capture's snapshot of the harness's declared
+	// security-sensitive files with the baseline's record of them (V-40).
+	// Nil, a capture without a snapshot, checks nothing.
+	Sensitive *SensitiveInput
 	Options   Options
 }
 
@@ -139,6 +143,17 @@ type Verdict struct {
 	// may not act (V-33), so they cost nothing and are never Unwitnessed;
 	// listed so the reader sees every claim that was considered.
 	HarnessImpliedUnpaired []models.TrajectoryEntry
+	// UnexplainedSensitiveChanges: changes to the harness's declared
+	// security-sensitive files between the start and the stop of the
+	// capture that the control runs never made and that no claim of a write
+	// to the file, and no write of it beneath an unbaselined command,
+	// accounts for (V-40). A finding: an in-process change of the harness's
+	// settings or permissions that the baseline rule for the harness's own
+	// write of the file would otherwise hide (V-37).
+	UnexplainedSensitiveChanges []SensitiveChange
+	// SensitiveCheck is what the check of the sensitive files did and
+	// could not do. Zero when the capture holds no snapshot.
+	SensitiveCheck SensitiveCheck
 	// Capability holds observed events of an unclaimable action type
 	// (listeners). They are counted and reported, never aligned against a
 	// claim, and never make a run unfaithful: no trajectory can mention them,
@@ -177,7 +192,8 @@ type Verdict struct {
 // Findings reports how many discrepancies the run found.
 func (v Verdict) Findings() int {
 	return len(v.Mismatched) + len(v.Unwitnessed) + len(v.Unrecorded) +
-		len(v.OutsideInterval) + len(v.Coverage.UnexplainedSubtrees)
+		len(v.OutsideInterval) + len(v.Coverage.UnexplainedSubtrees) +
+		len(v.UnexplainedSensitiveChanges)
 }
 
 // Expresses says whether the trajectory format can state a content field (one
@@ -484,6 +500,7 @@ func Verify(in Input) Verdict {
 	v.Coverage.BaselinedLevelZero = baselinedLevelZero
 	v.Commands = part.Commands
 	v.OutsideWrites = outsideWrites(v.Coverage.Outside, in.Workspace)
+	v.UnexplainedSensitiveChanges, v.SensitiveCheck = checkSensitive(in.Sensitive, in.Claims, part.Commands)
 
 	switch {
 	case v.Findings() > 0:

@@ -258,6 +258,7 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 		Baseline:  baseline,
 		FSScope:   g.FSScope,
 		Workspace: g.Workspace,
+		Sensitive: SensitiveInput(a, g, nil),
 		Options:   opts,
 	}
 }
@@ -292,5 +293,38 @@ func PrepareWithBaseline(a Adapter, claims models.Trajectory, g models.GroundTru
 	}
 	in := Prepare(a, claims, g, measured, opts)
 	in.BaselineSubtree = BaselineSubtree(a, b, g.Workspace)
+	in.Sensitive = SensitiveInput(a, g, b)
+	return in
+}
+
+// SensitiveInput is the capture's snapshot of the adapter's declared
+// sensitive files with the baseline's record of them, as the verifier
+// checks it (V-40). Nil when the capture holds no snapshot or the adapter
+// declares no file, which checks and reports nothing. b may be nil, or hold
+// no record: the changes are then reported as not checked.
+func SensitiveInput(a Adapter, g models.GroundTruthFile, b *Baseline) *verification.SensitiveInput {
+	declared := SensitiveFiles(a)
+	if g.Sensitive == nil || len(declared) == 0 {
+		return nil
+	}
+	in := &verification.SensitiveInput{}
+	var baselined map[string]bool
+	if b != nil && b.Sensitive != nil {
+		in.Explained = b.SensitiveExplained(g.Workspace)
+		baselined = map[string]bool{}
+		for _, f := range b.Sensitive.Files {
+			baselined[f] = true
+		}
+	}
+	for _, d := range declared {
+		sf := verification.SensitiveFile{File: d, Baselined: baselined[d]}
+		if f := snapshotFile(g.Sensitive, d); f != nil {
+			sf.Path, sf.Recorded, sf.Start, sf.Stop = f.Path, true, f.Start.State, f.Stop.State
+			for _, c := range f.Changes {
+				sf.Changes = append(sf.Changes, verification.SensitiveChange{File: d, Path: f.Path, SensitiveChange: c})
+			}
+		}
+		in.Files = append(in.Files, sf)
+	}
 	return in
 }

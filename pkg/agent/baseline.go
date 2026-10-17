@@ -73,6 +73,35 @@ type Baseline struct {
 	// baselined command explaining its whole subtree (V7); Capture always
 	// sets it, empty when there is no command rule.
 	Subtrees []Subtree `json:"subtrees"`
+	// Sensitive is what the controls changed in the harness's declared
+	// security-sensitive files between the start and the stop of each run
+	// (V-40). Nil, as in a baseline written before V-40 or built from
+	// controls without a snapshot, records nothing, and verify then checks
+	// no change of those files.
+	Sensitive *SensitiveBaseline `json:"sensitive,omitempty"`
+}
+
+// SensitiveBaseline is what the controls changed in the harness's
+// security-sensitive files (V-40).
+type SensitiveBaseline struct {
+	// Files are the declared files every control measured at both ends; a
+	// change of another file is not checked.
+	Files []string `json:"files"`
+	// Changes are the changes enough controls made; they are explained in a
+	// run.
+	Changes []SensitiveRule `json:"changes"`
+	// Unstable lists the changes made by at least one control but too few.
+	// Recorded for the reader; they explain nothing.
+	Unstable []SensitiveRule `json:"unstable,omitempty"`
+}
+
+// SensitiveRule is one change of a sensitive file: the file as the adapter
+// declares it, the key path with the run's workspace replaced by the
+// placeholder, and the kind of change. No value: the snapshot records none.
+type SensitiveRule struct {
+	File string   `json:"file"`
+	Key  []string `json:"key,omitempty"`
+	Kind string   `json:"kind"`
 }
 
 // Subtree is what one command rule's command did beneath it in the control
@@ -219,7 +248,119 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		sortRules(st.Unstable)
 		b.Subtrees = append(b.Subtrees, st)
 	}
+	b.Sensitive = captureSensitive(a, runs, need)
 	return b, nil
+}
+
+// captureSensitive is what the controls changed in the adapter's declared
+// sensitive files, at the agreement rules use (V-40). Nil when the adapter
+// declares no file or some control has no snapshot: a record built from part
+// of the controls would read the rest as having changed nothing.
+func captureSensitive(a Adapter, runs []models.GroundTruthFile, need int) *SensitiveBaseline {
+	declared := SensitiveFiles(a)
+	if len(declared) == 0 {
+		return nil
+	}
+	for _, r := range runs {
+		if r.Sensitive == nil {
+			return nil
+		}
+	}
+	sb := &SensitiveBaseline{Files: []string{}, Changes: []SensitiveRule{}}
+	for _, d := range declared {
+		measured := true
+		for _, r := range runs {
+			f := snapshotFile(r.Sensitive, d)
+			if f == nil || !f.Start.Measured() || !f.Stop.Measured() {
+				measured = false
+				break
+			}
+		}
+		if measured {
+			sb.Files = append(sb.Files, d)
+		}
+	}
+	counts := map[string]int{}
+	rules := map[string]SensitiveRule{}
+	for _, r := range runs {
+		seen := map[string]bool{}
+		for _, d := range sb.Files {
+			for _, c := range snapshotFile(r.Sensitive, d).Changes {
+				rule := SensitiveRule{File: d, Key: templateKey(c.Key, r.Workspace), Kind: c.Kind}
+				id := rule.id()
+				rules[id] = rule
+				seen[id] = true
+			}
+		}
+		for id := range seen {
+			counts[id]++
+		}
+	}
+	for id, n := range counts {
+		if n >= need {
+			sb.Changes = append(sb.Changes, rules[id])
+		} else {
+			sb.Unstable = append(sb.Unstable, rules[id])
+		}
+	}
+	sortSensitive(sb.Changes)
+	sortSensitive(sb.Unstable)
+	return sb
+}
+
+// snapshotFile is the snapshot's entry for a declared file, or nil.
+func snapshotFile(s *models.SensitiveSnapshot, declared string) *models.SensitiveFile {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Files {
+		if s.Files[i].Declared == declared {
+			return &s.Files[i]
+		}
+	}
+	return nil
+}
+
+// templateKey is a key path with the run's workspace replaced by the
+// placeholder in every element, as rules name it (I-24): Claude Code keys
+// its per-project entries of ~/.claude.json by the directory.
+func templateKey(key []string, workspace string) []string {
+	if len(key) == 0 {
+		return nil
+	}
+	out := make([]string, len(key))
+	for i, k := range key {
+		out[i] = templateWorkspace(k, workspace)
+	}
+	return out
+}
+
+// id is the rule as one comparable string.
+func (r SensitiveRule) id() string {
+	k, _ := json.Marshal(r.Key)
+	return r.File + "\x00" + string(k) + "\x00" + r.Kind
+}
+
+func sortSensitive(r []SensitiveRule) {
+	sort.Slice(r, func(i, j int) bool { return r[i].id() < r[j].id() })
+}
+
+// SensitiveExplained returns the baseline's sensitive record for a run that
+// watched workspace, as the verifier asks it: did the controls make this
+// change. The run's key is compared with the workspace replaced by the
+// placeholder, exactly; there is no other pattern. Nil when the baseline
+// records no sensitive changes.
+func (b Baseline) SensitiveExplained(workspace string) func(verification.SensitiveChange) bool {
+	if b.Sensitive == nil {
+		return nil
+	}
+	set := make(map[string]bool, len(b.Sensitive.Changes))
+	for _, r := range b.Sensitive.Changes {
+		set[r.id()] = true
+	}
+	return func(c verification.SensitiveChange) bool {
+		return set[SensitiveRule{File: c.File, Key: templateKey(c.Key, workspace), Kind: c.Kind}.id()]
+	}
 }
 
 // templateWorkspace replaces the watched directory inside a target with the

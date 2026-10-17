@@ -839,3 +839,81 @@ func TestABaselinedCommandsSubtreeIsCheckedAgainstItsRecord(t *testing.T) {
 		t.Errorf("an old baseline: exit %d\n%s", code, out)
 	}
 }
+
+// sensitiveRun is a Claude Code capture with no event and a snapshot in which
+// ~/.claude.json changed as given (V-40).
+func sensitiveRun(ws string, changes ...models.SensitiveChange) models.GroundTruthFile {
+	ca, _ := agent.Lookup("claude-code")
+	rec := &models.SensitiveSnapshot{Home: "/home/user"}
+	for _, d := range agent.SensitiveFiles(ca) {
+		f := models.SensitiveFile{Declared: d, Path: "/elsewhere", Start: models.SensitiveState{State: models.SensitiveMissing}, Stop: models.SensitiveState{State: models.SensitiveMissing}}
+		if d == "~/.claude.json" {
+			f.Path, f.Changes = "/home/user/.claude.json", changes
+			f.Start = models.SensitiveState{State: models.SensitivePresent, Format: models.SensitiveJSON, Digest: "a"}
+			f.Stop = models.SensitiveState{State: models.SensitivePresent, Format: models.SensitiveJSON, Digest: "b"}
+		}
+		rec.Files = append(rec.Files, f)
+	}
+	return models.GroundTruthFile{RootPID: 100, Coverage: completeCov(), Workspace: ws, Sensitive: rec}
+}
+
+// verify reports a change of a sensitive file the controls never made as a
+// finding by file, key path and kind, with no value; without a record of
+// the controls' changes it lists them as not checked, with no finding (V-40).
+func TestSensitiveChangesAreReported(t *testing.T) {
+	dir := t.TempDir()
+	ca, _ := agent.Lookup("claude-code")
+	last := func(ws string) models.SensitiveChange {
+		return models.SensitiveChange{Key: []string{"projects", ws, "lastSessionId"}, Kind: models.SensitiveChanged}
+	}
+	b, err := agent.Capture(ca, "1", []models.GroundTruthFile{sensitiveRun("/w/c1", last("/w/c1")), sensitiveRun("/w/c2", last("/w/c2"))}, t0, agent.CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bp := filepath.Join(dir, "b.json")
+	if err := agent.SaveBaseline(bp, b); err != nil {
+		t.Fatal(err)
+	}
+	added := models.SensitiveChange{Key: []string{"projects", "/w/task", "allowedTools"}, Kind: models.SensitiveEntriesAdded, Entries: 1}
+	g := writeJSON(t, dir, "g.json", sensitiveRun("/w/task", last("/w/task"), added))
+	claims := writeJSON(t, dir, "claims.json", models.Trajectory{})
+	jp := filepath.Join(dir, "v.json")
+
+	code, out, errOut := verify(t, "--normalized", "--agent", "claude-code", "--trajectory", claims, "--ground-truth", g, "--baseline", bp, "--json", jp)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 (NOT FAITHFUL)\n%s%s", code, out, errOut)
+	}
+	for _, want := range []string{
+		"sensitive:    5 harness file(s) checked against the controls: 2 change(s), 1 made by the controls, 0 by a claimed write, 1 unexplained\n",
+		"  limitation: the snapshot compares each sensitive file at the start and the stop only, so a change made and reverted in between is not seen (V-40)\n",
+		"  Unexplained sensitive changes: 1  (",
+		"\nUnexplained sensitive changes:\n  /home/user/.claude.json  projects[\"/w/task\"].allowedTools  entries-added (1)\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	data, err := os.ReadFile(jp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep struct {
+		Findings  int `json:"findings"`
+		Sensitive struct {
+			Checked     bool                           `json:"checked"`
+			Unexplained []verification.SensitiveChange `json:"unexplained"`
+		} `json:"sensitive"`
+	}
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Findings != 1 || !rep.Sensitive.Checked || len(rep.Sensitive.Unexplained) != 1 || rep.Sensitive.Unexplained[0].Kind != models.SensitiveEntriesAdded {
+		t.Errorf("JSON report = %+v", rep)
+	}
+
+	code, out, _ = verify(t, "--normalized", "--agent", "claude-code", "--trajectory", claims, "--ground-truth", g)
+	if code == 1 || !strings.Contains(out, "sensitive:    the capture snapshots the harness's sensitive files; 2 change(s) not checked\n") ||
+		!strings.Contains(out, "limitation: the baseline holds no record") || !strings.Contains(out, "\nSensitive changes not checked:\n") {
+		t.Errorf("without a baseline: exit %d\n%s", code, out)
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/claudecode"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/gemini"
+	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
@@ -132,6 +133,7 @@ func run(args []string, out, errOut io.Writer) int {
 	opts := verification.Options{IntervalSlack: slack}
 	in := agent.Prepare(adapter, tr, gt, measured, opts)
 	in.BaselineSubtree = agent.BaselineSubtree(adapter, baseline, gt.Workspace) // V-38
+	in.Sensitive = agent.SensitiveInput(adapter, gt, baseline)                  // V-40
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)
@@ -221,6 +223,7 @@ func report(w io.Writer, r reportInput) {
 			p("  limitation: this baseline records no subtrees (written before V-38), so each of its %d command(s) explains every event beneath it whatever the controls did; rebuild it with baseline to check them (V-38)\n", n)
 		}
 	}
+	printSensitiveInputs(w, v.SensitiveCheck)
 	printParse(w, r.parse)
 
 	p("\nAlignment (what the agent said against what it did at the top level):\n")
@@ -241,6 +244,9 @@ func report(w io.Writer, r reportInput) {
 	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
 	if len(v.BaselinedWritesOutsideHarness) > 0 {
 		p("  Baselined writes outside the harness's directories: %d  (level-0 writes a baseline rule explains on paths the adapter does not declare as the harness's own: an unclaimed write there would be hidden)\n", len(v.BaselinedWritesOutsideHarness))
+	}
+	if v.SensitiveCheck.Snapshot {
+		p("  Unexplained sensitive changes: %d  (changes to the harness's settings and permission files the controls never made and nothing claims)\n", len(v.UnexplainedSensitiveChanges))
 	}
 	if n := len(v.HarnessImplied) + len(v.HarnessImpliedUnpaired); n > 0 {
 		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", len(v.HarnessImplied), n)
@@ -275,6 +281,8 @@ func report(w io.Writer, r reportInput) {
 	printEvents(w, "Unexplained harness network activity", v.UnexplainedHarnessNet)
 	printEvents(w, "Outside writes", v.OutsideWrites)
 	printEvents(w, "Baselined writes outside the harness's directories", v.BaselinedWritesOutsideHarness)
+	printSensitive(w, "Unexplained sensitive changes", v.UnexplainedSensitiveChanges)
+	printSensitive(w, "Sensitive changes not checked", v.SensitiveCheck.Unchecked)
 	printImplied(w, v.HarnessImplied)
 	printEvents(w, "Capability", v.Capability)
 	printCommands(w, v.Commands)
@@ -381,6 +389,40 @@ func printSubtrees(w io.Writer, cmds []*verification.Command) {
 			continue
 		}
 		_, _ = fmt.Fprintf(w, "  pid %d %s  (%d events beneath it)\n", c.Process.PID, target, len(c.Content))
+	}
+}
+
+// printSensitiveInputs says what the snapshot of the harness's sensitive
+// files holds and what could not be checked (V-40). Nothing for a capture
+// without a snapshot.
+func printSensitiveInputs(w io.Writer, c verification.SensitiveCheck) {
+	if !c.Snapshot {
+		return
+	}
+	if c.Checked {
+		_, _ = fmt.Fprintf(w, "sensitive:    %d harness file(s) checked against the controls: %d change(s), %d made by the controls, %d by a claimed write, %d unexplained\n",
+			c.Files, c.Changes, c.Baselined, c.Claimed, c.Changes-c.Baselined-c.Claimed)
+	} else {
+		_, _ = fmt.Fprintf(w, "sensitive:    the capture snapshots the harness's sensitive files; %d change(s) not checked\n", len(c.Unchecked))
+	}
+	for _, l := range c.Limitations {
+		_, _ = fmt.Fprintf(w, "  limitation: %s\n", l)
+	}
+}
+
+// printSensitive lists changes of sensitive files by file, key path and
+// kind; the snapshot holds no value to print.
+func printSensitive(w io.Writer, label string, changes []verification.SensitiveChange) {
+	if len(changes) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "\n%s:\n", label)
+	for _, c := range changes {
+		kind := c.Kind
+		if c.Entries > 0 {
+			kind = fmt.Sprintf("%s (%d)", c.Kind, c.Entries)
+		}
+		_, _ = fmt.Fprintf(w, "  %s  %s  %s\n", c.Path, sensitive.FormatKey(c.Key), kind)
 	}
 }
 
@@ -669,6 +711,10 @@ type jsonReport struct {
 	Complete     verification.Completeness `json:"completeness"`
 	versionJSON
 
+	// Sensitive is present only when the capture holds a snapshot of the
+	// harness's sensitive files (V-40).
+	Sensitive *jsonSensitive `json:"sensitive,omitempty"`
+
 	// RestingWrites is present only when the baseline holds write-class
 	// rules that apply to the run: the paths where an unclaimed in-process
 	// write is not detectable (V-37).
@@ -699,6 +745,18 @@ type jsonAlignment struct {
 	// baseline rule explains lies outside the harness's declared directories
 	// (V-37).
 	BaselinedWritesOutsideHarness models.GroundTruth `json:"baselined_writes_outside_harness,omitempty"`
+}
+
+// jsonSensitive is the check of the harness's sensitive files (V-40).
+type jsonSensitive struct {
+	Checked     bool                           `json:"checked"`
+	Files       int                            `json:"files"`
+	Changes     int                            `json:"changes"`
+	Baselined   int                            `json:"baselined"`
+	Claimed     int                            `json:"claimed"`
+	Unexplained []verification.SensitiveChange `json:"unexplained"`
+	Unchecked   []verification.SensitiveChange `json:"unchecked"`
+	Limitations []string                       `json:"limitations"`
 }
 
 // jsonImplied is a harness-implied claim with the call that implied it, which
@@ -747,6 +805,12 @@ func writeJSONReport(path string, r reportInput) error {
 	if r.baseline != nil {
 		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)
 	}
+	if c := v.SensitiveCheck; c.Snapshot {
+		rep.Sensitive = &jsonSensitive{
+			Checked: c.Checked, Files: c.Files, Changes: c.Changes, Baselined: c.Baselined, Claimed: c.Claimed,
+			Unexplained: nonNilSensitive(v.UnexplainedSensitiveChanges), Unchecked: nonNilSensitive(c.Unchecked), Limitations: c.Limitations,
+		}
+	}
 	for _, p := range v.HarnessImplied {
 		rep.Alignment.HarnessImplied = append(rep.Alignment.HarnessImplied, jsonImplied{ImpliedBy: p.Entry.ImpliedBy, Claim: p.Entry, Event: &p.Event})
 	}
@@ -773,6 +837,13 @@ func writeJSONReport(path string, r reportInput) error {
 		return fmt.Errorf("write JSON report %s: %w", path, err)
 	}
 	return nil
+}
+
+func nonNilSensitive(c []verification.SensitiveChange) []verification.SensitiveChange {
+	if c == nil {
+		return []verification.SensitiveChange{}
+	}
+	return c
 }
 
 func nonNilPairs(p []verification.MatchedPair) []verification.MatchedPair {
