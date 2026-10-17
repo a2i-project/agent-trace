@@ -328,7 +328,9 @@ static __always_inline int record_exec(const char *filename, const char *const *
 		fn_len = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), filename);
 	}
 	e->hdr.filename_len = (fn_len > 0) ? fn_len : 0;
-	if (!via_fd && fn_len >= FILENAME_LEN && !nul_at(filename, FILENAME_LEN - 1))
+	// Fail safe: the record claims a whole filename only when the read
+	// succeeded and the string provably ended inside the buffer.
+	if (!via_fd && (fn_len <= 0 || (fn_len >= FILENAME_LEN && !nul_at(filename, FILENAME_LEN - 1))))
 		e->hdr.args_truncated = 1;
 
 	if (get_use_pid_filter()) {
@@ -346,17 +348,30 @@ static __always_inline int record_exec(const char *filename, const char *const *
 	__u32 args_size = 0;
 	__u32 nargs = 0;
 
+	// Fail safe: args_truncated stays 0 only when every read succeeded and
+	// argv provably ended (a NULL pointer) inside the area. A read can fail
+	// even on a valid argv, since these reads cannot fault a page in; a
+	// failure used to end the loop as if argv had ended, which recorded a
+	// cut command line as whole.
 #pragma clang loop unroll(full)
 	for (int i = 0; i < MAX_ARGS; i++) {
+		if (!argv)
+			break; // Linux accepts a NULL argv as an empty one
 		const char *argp = NULL;
-		if (bpf_probe_read_user(&argp, sizeof(argp), &argv[i]) || !argp)
+		if (bpf_probe_read_user(&argp, sizeof(argp), &argv[i])) {
+			e->hdr.args_truncated = 1;
+			break;
+		}
+		if (!argp)
 			break;
 
 		__u32 offset = args_size & (MAX_ARGS_BYTES - 1);
-		
+
 		long n = bpf_probe_read_user_str(&e->args[offset], MAX_ARGS_BYTES, argp);
-		if (n <= 0)
+		if (n <= 0) {
+			e->hdr.args_truncated = 1;
 			break;
+		}
 		if (n >= MAX_ARGS_BYTES && !nul_at(argp, MAX_ARGS_BYTES - 1))
 			e->hdr.args_truncated = 1; // one string did not fit
 
@@ -368,15 +383,15 @@ static __always_inline int record_exec(const char *filename, const char *const *
 		if (args_size >= MAX_ARGS_BYTES) {
 			// The area is full, which is no cut unless an argument follows.
 			const char *next = NULL;
-			if (!bpf_probe_read_user(&next, sizeof(next), &argv[i + 1]) && next)
+			if (bpf_probe_read_user(&next, sizeof(next), &argv[i + 1]) || next)
 				e->hdr.args_truncated = 1;
 			break;
 		}
 	}
 	if (nargs == MAX_ARGS && !e->hdr.args_truncated) {
 		const char *more = NULL;
-		if (!bpf_probe_read_user(&more, sizeof(more), &argv[MAX_ARGS]) && more)
-			e->hdr.args_truncated = 1; // more arguments than MAX_ARGS
+		if (bpf_probe_read_user(&more, sizeof(more), &argv[MAX_ARGS]) || more)
+			e->hdr.args_truncated = 1; // more arguments than MAX_ARGS, or unknown
 	}
 	if (args_size > MAX_ARGS_BYTES)
 		args_size = MAX_ARGS_BYTES;
