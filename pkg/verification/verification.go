@@ -151,6 +151,13 @@ type Verdict struct {
 	// settings or permissions that the baseline rule for the harness's own
 	// write of the file would otherwise hide (V-37).
 	UnexplainedSensitiveChanges []SensitiveChange
+	// UnexplainedSensitiveOther: the changes of a declared sensitive file
+	// that mixes the harness's state with its settings which nothing
+	// explains but which lie under none of its security-relevant key paths
+	// (V-41): caches, counters, timestamps. Report-only: not counted in
+	// Findings and no reason for INCONCLUSIVE; listed so that nothing the
+	// snapshot shows is hidden.
+	UnexplainedSensitiveOther []SensitiveChange
 	// SensitiveCheck is what the check of the sensitive files did and
 	// could not do. Zero when the capture holds no snapshot.
 	SensitiveCheck SensitiveCheck
@@ -500,7 +507,7 @@ func Verify(in Input) Verdict {
 	v.Coverage.BaselinedLevelZero = baselinedLevelZero
 	v.Commands = part.Commands
 	v.OutsideWrites = outsideWrites(v.Coverage.Outside, in.Workspace)
-	v.UnexplainedSensitiveChanges, v.SensitiveCheck = checkSensitive(in.Sensitive, in.Claims, part.Commands)
+	v.UnexplainedSensitiveChanges, v.UnexplainedSensitiveOther, v.SensitiveCheck = checkSensitive(in.Sensitive, in.Claims, part.Commands)
 
 	switch {
 	case v.Findings() > 0:

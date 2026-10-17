@@ -2,6 +2,7 @@ package verification
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
@@ -31,6 +32,37 @@ type SensitiveFile struct {
 	Baselined bool
 	// Changes are the snapshot's changes of the file.
 	Changes []SensitiveChange
+	// Keys are the file's security-relevant key paths, for a file that
+	// mixes the harness's state with its settings (V-41): patterns of
+	// dot-separated elements, "*" matching any one element. An unexplained
+	// change under none of them is report-only. Nil: every key path is
+	// relevant, as for a file that is settings only.
+	Keys []string
+}
+
+// Relevant reports whether a change at key is under one of the
+// security-relevant key paths (V-41). Every key is relevant when patterns
+// is nil, and so is a change of the whole file (an empty key). A key is
+// relevant when a pattern matches it or a prefix of it (a change beneath an
+// allowlisted key), or when it matches a prefix of a pattern (a change of an
+// object that holds an allowlisted key, such as a per-project entry
+// replaced whole).
+func Relevant(patterns []string, key []string) bool {
+	if patterns == nil || len(key) == 0 {
+		return true
+	}
+	for _, p := range patterns {
+		elems := strings.Split(p, ".")
+		n := min(len(elems), len(key))
+		match := true
+		for i := 0; i < n && match; i++ {
+			match = elems[i] == "*" || elems[i] == key[i]
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 // SensitiveInput is the snapshot of the harness's declared sensitive files
@@ -56,8 +88,8 @@ type SensitiveCheck struct {
 	// Files is how many declared files were checked.
 	Files int
 	// Changes is how many changes of checked files the snapshot shows;
-	// Baselined, Claimed and len(Verdict.UnexplainedSensitiveChanges) split
-	// them.
+	// Baselined, Claimed, len(Verdict.UnexplainedSensitiveChanges) and
+	// len(Verdict.UnexplainedSensitiveOther) split them.
 	Changes   int
 	Baselined int
 	// Claimed counts the changes a write-class claim of the file, or a
@@ -76,11 +108,12 @@ type SensitiveCheck struct {
 // claim names exactly the file, or when a write-class event on exactly the
 // file lies beneath a command no baseline rule explains: that command is
 // claimed, so its subtree is (D3), or it is itself a finding. Every other
-// change of a checked file is returned as unexplained.
-func checkSensitive(in *SensitiveInput, claims models.Trajectory, cmds []*Command) ([]SensitiveChange, SensitiveCheck) {
-	var check SensitiveCheck
+// change of a checked file is returned as unexplained when it is under one
+// of the file's security-relevant key paths, and as other, report-only,
+// when it is not (V-41).
+func checkSensitive(in *SensitiveInput, claims models.Trajectory, cmds []*Command) (unexplained, other []SensitiveChange, check SensitiveCheck) {
 	if in == nil {
-		return nil, check
+		return nil, nil, check
 	}
 	check.Snapshot = true
 	check.Checked = in.Explained != nil
@@ -100,7 +133,6 @@ func checkSensitive(in *SensitiveInput, claims models.Trajectory, cmds []*Comman
 			}
 		}
 	}
-	var unexplained []SensitiveChange
 	total := 0
 	for _, f := range in.Files {
 		total += len(f.Changes)
@@ -129,6 +161,8 @@ func checkSensitive(in *SensitiveInput, claims models.Trajectory, cmds []*Comman
 				check.Baselined++
 			case claimed[c.Path]:
 				check.Claimed++
+			case !Relevant(f.Keys, c.Key):
+				other = append(other, c)
 			default:
 				unexplained = append(unexplained, c)
 			}
@@ -139,7 +173,7 @@ func checkSensitive(in *SensitiveInput, claims models.Trajectory, cmds []*Comman
 	} else {
 		check.Limitations = append(check.Limitations, "the snapshot compares each sensitive file at the start and the stop only, so a change made and reverted in between is not seen (V-40)")
 	}
-	return unexplained, check
+	return unexplained, other, check
 }
 
 func measuredState(s string) bool {

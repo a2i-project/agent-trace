@@ -223,7 +223,7 @@ func report(w io.Writer, r reportInput) {
 			p("  limitation: this baseline records no subtrees (written before V-38), so each of its %d command(s) explains every event beneath it whatever the controls did; rebuild it with baseline to check them (V-38)\n", n)
 		}
 	}
-	printSensitiveInputs(w, v.SensitiveCheck)
+	printSensitiveInputs(w, v)
 	printParse(w, r.parse)
 
 	p("\nAlignment (what the agent said against what it did at the top level):\n")
@@ -247,6 +247,9 @@ func report(w io.Writer, r reportInput) {
 	}
 	if v.SensitiveCheck.Snapshot {
 		p("  Unexplained sensitive changes: %d  (changes to the harness's settings and permission files the controls never made and nothing claims)\n", len(v.UnexplainedSensitiveChanges))
+		if v.SensitiveCheck.Checked {
+			p("  Other sensitive changes: %d  (report-only: the same, outside the security-relevant keys of a file that mixes the harness's state with its settings, such as caches and counters; not findings)\n", len(v.UnexplainedSensitiveOther))
+		}
 	}
 	if n := len(v.HarnessImplied) + len(v.HarnessImpliedUnpaired); n > 0 {
 		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", len(v.HarnessImplied), n)
@@ -282,6 +285,7 @@ func report(w io.Writer, r reportInput) {
 	printEvents(w, "Outside writes", v.OutsideWrites)
 	printEvents(w, "Baselined writes outside the harness's directories", v.BaselinedWritesOutsideHarness)
 	printSensitive(w, "Unexplained sensitive changes", v.UnexplainedSensitiveChanges)
+	printSensitive(w, "Other sensitive changes (report-only)", v.UnexplainedSensitiveOther)
 	printSensitive(w, "Sensitive changes not checked", v.SensitiveCheck.Unchecked)
 	printImplied(w, v.HarnessImplied)
 	printEvents(w, "Capability", v.Capability)
@@ -395,13 +399,14 @@ func printSubtrees(w io.Writer, cmds []*verification.Command) {
 // printSensitiveInputs says what the snapshot of the harness's sensitive
 // files holds and what could not be checked (V-40). Nothing for a capture
 // without a snapshot.
-func printSensitiveInputs(w io.Writer, c verification.SensitiveCheck) {
+func printSensitiveInputs(w io.Writer, v verification.Verdict) {
+	c := v.SensitiveCheck
 	if !c.Snapshot {
 		return
 	}
 	if c.Checked {
-		_, _ = fmt.Fprintf(w, "sensitive:    %d harness file(s) checked against the controls: %d change(s), %d made by the controls, %d by a claimed write, %d unexplained\n",
-			c.Files, c.Changes, c.Baselined, c.Claimed, c.Changes-c.Baselined-c.Claimed)
+		_, _ = fmt.Fprintf(w, "sensitive:    %d harness file(s) checked against the controls: %d change(s), %d made by the controls, %d by a claimed write, %d unexplained, %d report-only outside the security-relevant keys\n",
+			c.Files, c.Changes, c.Baselined, c.Claimed, len(v.UnexplainedSensitiveChanges), len(v.UnexplainedSensitiveOther))
 	} else {
 		_, _ = fmt.Fprintf(w, "sensitive:    the capture snapshots the harness's sensitive files; %d change(s) not checked\n", len(c.Unchecked))
 	}
@@ -755,6 +760,9 @@ type jsonSensitive struct {
 	Baselined   int                            `json:"baselined"`
 	Claimed     int                            `json:"claimed"`
 	Unexplained []verification.SensitiveChange `json:"unexplained"`
+	// Other holds the unexplained changes outside the security-relevant
+	// keys of a file that mixes state and settings: report-only (V-41).
+	Other       []verification.SensitiveChange `json:"other"`
 	Unchecked   []verification.SensitiveChange `json:"unchecked"`
 	Limitations []string                       `json:"limitations"`
 }
@@ -808,7 +816,7 @@ func writeJSONReport(path string, r reportInput) error {
 	if c := v.SensitiveCheck; c.Snapshot {
 		rep.Sensitive = &jsonSensitive{
 			Checked: c.Checked, Files: c.Files, Changes: c.Changes, Baselined: c.Baselined, Claimed: c.Claimed,
-			Unexplained: nonNilSensitive(v.UnexplainedSensitiveChanges), Unchecked: nonNilSensitive(c.Unchecked), Limitations: c.Limitations,
+			Unexplained: nonNilSensitive(v.UnexplainedSensitiveChanges), Other: nonNilSensitive(v.UnexplainedSensitiveOther), Unchecked: nonNilSensitive(c.Unchecked), Limitations: c.Limitations,
 		}
 	}
 	for _, p := range v.HarnessImplied {

@@ -101,6 +101,29 @@ func SensitiveFiles(a Adapter) []string {
 	return nil
 }
 
+// SensitiveKeyDeclarer is implemented by an adapter one of whose declared
+// sensitive files mixes the harness's state (caches, counters, timestamps)
+// with its settings. SensitiveKeys returns, for such a file as it is
+// declared, the key paths that decide what the harness lets the agent do:
+// patterns of dot-separated elements, "*" matching any one element (a
+// per-project entry keyed by its directory, say). An unexplained change
+// under one of them is a finding; any other unexplained change of the file
+// is listed report-only (V-41). Nil for a file that is settings only, whose
+// every key path is checked. Each pattern is declared from the harness's
+// binary and documentation (I-60).
+type SensitiveKeyDeclarer interface {
+	SensitiveKeys(file string) []string
+}
+
+// SensitiveKeys is the adapter's security-relevant key paths of a declared
+// sensitive file, or nil when every key path of it is checked.
+func SensitiveKeys(a Adapter, file string) []string {
+	if d, ok := a.(SensitiveKeyDeclarer); ok {
+		return d.SensitiveKeys(file)
+	}
+	return nil
+}
+
 // Canonicalizer is implemented by an adapter whose observed targets carry ids
 // that differ every run: a session id, a pid, a task id in the harness's own
 // file paths. Canonical returns the event with those ids replaced by fixed
@@ -298,8 +321,9 @@ func PrepareWithBaseline(a Adapter, claims models.Trajectory, g models.GroundTru
 }
 
 // SensitiveInput is the capture's snapshot of the adapter's declared
-// sensitive files with the baseline's record of them, as the verifier
-// checks it (V-40). Nil when the capture holds no snapshot or the adapter
+// sensitive files with the baseline's record of them and the adapter's
+// security-relevant key paths of each, as the verifier checks it (V-40,
+// V-41). Nil when the capture holds no snapshot or the adapter
 // declares no file, which checks and reports nothing. b may be nil, or hold
 // no record: the changes are then reported as not checked.
 func SensitiveInput(a Adapter, g models.GroundTruthFile, b *Baseline) *verification.SensitiveInput {
@@ -317,7 +341,7 @@ func SensitiveInput(a Adapter, g models.GroundTruthFile, b *Baseline) *verificat
 		}
 	}
 	for _, d := range declared {
-		sf := verification.SensitiveFile{File: d, Baselined: baselined[d]}
+		sf := verification.SensitiveFile{File: d, Baselined: baselined[d], Keys: SensitiveKeys(a, d)}
 		if f := snapshotFile(g.Sensitive, d); f != nil {
 			sf.Path, sf.Recorded, sf.Start, sf.Stop = f.Path, true, f.Start.State, f.Stop.State
 			for _, c := range f.Changes {

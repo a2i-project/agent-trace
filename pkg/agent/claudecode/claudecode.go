@@ -174,6 +174,56 @@ func (Adapter) SensitiveFiles() []string {
 	}
 }
 
+// globalConfigKeys are the security-relevant key paths of ~/.claude.json
+// (V-41, I-60). The file mixes the harness's state (feature-flag and model
+// caches, counters, timestamps, notices seen) with a few keys that decide
+// what the harness lets the agent do; the 2026-10-17 tools capture of
+// 2.1.296 changed 135 key paths of the state at rest that no control
+// changed. Each key below is read by the binary of 2.1.296 where it decides
+// a permission, a trust, an MCP server, an API key or a dangerous mode:
+var globalConfigKeys = []string{
+	// The command run to obtain an API key, and the environment applied to
+	// the harness and its commands: both in the binary's GLOBAL_CONFIG_KEYS.
+	"apiKeyHelper",
+	"env",
+	// The user-scope MCP servers, which the harness starts.
+	"mcpServers",
+	// The API key the harness sends, and the custom keys the user approved
+	// or rejected.
+	"primaryApiKey",
+	"customApiKeyResponses",
+	// The consent to --dangerously-skip-permissions: without it the harness
+	// downgrades bypassPermissions to the default mode. The auto mode's
+	// entry warning, shown once.
+	"bypassPermissionsModeAccepted",
+	"hasSeenAutoModeEntryWarning",
+	// Per project, keyed by its directory: the binary's PROJECT_CONFIG_KEYS
+	// (allowed tools and the trust dialog's answer), the project's MCP
+	// servers and its approvals of .mcp.json servers, the built-in servers
+	// switched on or off, the MCP resources it adds to the context, and the
+	// approval to load CLAUDE.md files from outside the project.
+	"projects.*.allowedTools",
+	"projects.*.hasTrustDialogAccepted",
+	"projects.*.mcpServers",
+	"projects.*.enabledMcpjsonServers",
+	"projects.*.disabledMcpjsonServers",
+	"projects.*.enabledMcpServers",
+	"projects.*.disabledMcpServers",
+	"projects.*.mcpContextUris",
+	"projects.*.hasClaudeMdExternalIncludesApproved",
+}
+
+// SensitiveKeys are the security-relevant key paths of ~/.claude.json, the
+// one declared file that mixes the harness's state with its settings (V-41,
+// I-60). The settings files are settings only, so every key path of them is
+// checked (nil).
+func (Adapter) SensitiveKeys(file string) []string {
+	if file == "~/.claude.json" {
+		return append([]string(nil), globalConfigKeys...)
+	}
+	return nil
+}
+
 // capturedVersion is the Claude Code version whose kernel-level behaviour the
 // claim shapes were checked against (scripts/capture-claude-code.sh).
 const capturedVersion = "2.1.286"

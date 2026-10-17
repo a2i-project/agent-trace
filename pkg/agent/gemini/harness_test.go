@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
@@ -161,6 +162,11 @@ func TestSensitiveFilesAreTheSettingsAndConfiguration(t *testing.T) {
 	for _, f := range got {
 		if _, ok := sensitive.Resolve(f, "/home/user", "/ws/run"); !ok {
 			t.Errorf("%s does not resolve", f)
+		}
+		// Each is settings only, so every key path of it is checked
+		// (V-41, I-60).
+		if keys := agent.SensitiveKeys(Adapter{}, f); keys != nil {
+			t.Errorf("%s declares keys %v, want every key checked", f, keys)
 		}
 	}
 }

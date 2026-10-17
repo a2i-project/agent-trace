@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
+	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
@@ -858,7 +859,8 @@ func sensitiveRun(ws string, changes ...models.SensitiveChange) models.GroundTru
 }
 
 // verify reports a change of a sensitive file the controls never made as a
-// finding by file, key path and kind, with no value; without a record of
+// finding by file, key path and kind, with no value, and one outside the
+// file's security-relevant keys as report-only (V-41); without a record of
 // the controls' changes it lists them as not checked, with no finding (V-40).
 func TestSensitiveChangesAreReported(t *testing.T) {
 	dir := t.TempDir()
@@ -875,7 +877,8 @@ func TestSensitiveChangesAreReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	added := models.SensitiveChange{Key: []string{"projects", "/w/task", "allowedTools"}, Kind: models.SensitiveEntriesAdded, Entries: 1}
-	g := writeJSON(t, dir, "g.json", sensitiveRun("/w/task", last("/w/task"), added))
+	cache := models.SensitiveChange{Key: []string{"cachedGrowthBookFeatures", "flag"}, Kind: models.SensitiveAdded}
+	g := writeJSON(t, dir, "g.json", sensitiveRun("/w/task", last("/w/task"), added, cache))
 	claims := writeJSON(t, dir, "claims.json", models.Trajectory{})
 	jp := filepath.Join(dir, "v.json")
 
@@ -884,10 +887,12 @@ func TestSensitiveChangesAreReported(t *testing.T) {
 		t.Fatalf("exit %d, want 1 (NOT FAITHFUL)\n%s%s", code, out, errOut)
 	}
 	for _, want := range []string{
-		"sensitive:    5 harness file(s) checked against the controls: 2 change(s), 1 made by the controls, 0 by a claimed write, 1 unexplained\n",
+		"sensitive:    5 harness file(s) checked against the controls: 3 change(s), 1 made by the controls, 0 by a claimed write, 1 unexplained, 1 report-only outside the security-relevant keys\n",
 		"  limitation: the snapshot compares each sensitive file at the start and the stop only, so a change made and reverted in between is not seen (V-40)\n",
 		"  Unexplained sensitive changes: 1  (",
 		"\nUnexplained sensitive changes:\n  /home/user/.claude.json  projects[\"/w/task\"].allowedTools  entries-added (1)\n",
+		"  Other sensitive changes: 1  (report-only: ",
+		"\nOther sensitive changes (report-only):\n  /home/user/.claude.json  cachedGrowthBookFeatures.flag  added\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -902,18 +907,29 @@ func TestSensitiveChangesAreReported(t *testing.T) {
 		Sensitive struct {
 			Checked     bool                           `json:"checked"`
 			Unexplained []verification.SensitiveChange `json:"unexplained"`
+			Other       []verification.SensitiveChange `json:"other"`
 		} `json:"sensitive"`
 	}
 	if err := json.Unmarshal(data, &rep); err != nil {
 		t.Fatal(err)
 	}
-	if rep.Findings != 1 || !rep.Sensitive.Checked || len(rep.Sensitive.Unexplained) != 1 || rep.Sensitive.Unexplained[0].Kind != models.SensitiveEntriesAdded {
+	if rep.Findings != 1 || !rep.Sensitive.Checked || len(rep.Sensitive.Unexplained) != 1 || rep.Sensitive.Unexplained[0].Kind != models.SensitiveEntriesAdded ||
+		len(rep.Sensitive.Other) != 1 || sensitive.FormatKey(rep.Sensitive.Other[0].Key) != "cachedGrowthBookFeatures.flag" {
 		t.Errorf("JSON report = %+v", rep)
 	}
 
+	// The cache key alone: listed, no finding, FAITHFUL.
+	g2 := writeJSON(t, dir, "g2.json", sensitiveRun("/w/task", last("/w/task"), cache))
+	code, out, errOut = verify(t, "--normalized", "--agent", "claude-code", "--trajectory", claims, "--ground-truth", g2, "--baseline", bp)
+	if code != 0 || !strings.Contains(out, "0 unexplained, 1 report-only") || !strings.Contains(out, "  Unexplained sensitive changes: 0  (") ||
+		strings.Contains(out, "\nUnexplained sensitive changes:\n") || !strings.Contains(out, "\nOther sensitive changes (report-only):\n") {
+		t.Errorf("a cache key only: exit %d\n%s%s", code, out, errOut)
+	}
+
 	code, out, _ = verify(t, "--normalized", "--agent", "claude-code", "--trajectory", claims, "--ground-truth", g)
-	if code == 1 || !strings.Contains(out, "sensitive:    the capture snapshots the harness's sensitive files; 2 change(s) not checked\n") ||
-		!strings.Contains(out, "limitation: the baseline holds no record") || !strings.Contains(out, "\nSensitive changes not checked:\n") {
+	if code == 1 || !strings.Contains(out, "sensitive:    the capture snapshots the harness's sensitive files; 3 change(s) not checked\n") ||
+		!strings.Contains(out, "limitation: the baseline holds no record") || !strings.Contains(out, "\nSensitive changes not checked:\n") ||
+		strings.Contains(out, "Other sensitive changes") {
 		t.Errorf("without a baseline: exit %d\n%s", code, out)
 	}
 }
