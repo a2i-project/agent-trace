@@ -35,7 +35,7 @@ Consequences: Ground truth files can be shared without leaking credentials. Debu
 Alternatives rejected: Retaining plaintext by default. A debug-only retention flag was left as a possible later addition.
 
 ### N-D4: Runtime validation is authoritative for TLS offsets
-Status: Accepted, implemented in `net.Observer` (`attachAndValidateTLS`) and `pkg/tlsoffset`.
+Status: Accepted, implemented in `net.Observer` (`attachAndValidateTLS`) and `pkg/tlsoffset`. Amended 2026-10-17: `New` attaches the uprobe at the first candidate, and validation in `Start` reads the frames it captured since then, so a request a tracked process sends between `New` and `Start` validates the offset instead of being missed; validation stays the only thing that accepts an offset.
 Date: 2026-09-14.
 Context: A static heuristic on function shape picked the wrong candidate in the offset experiment.
 Decision: The scanner (symbols, then cross-references to the `ssl_lib.cc` string) returns ranked candidates only. The observer attaches to each and accepts the first whose first captured frame parses as an HTTP/1.x request line within a timeout. A validated offset is cached by GNU build ID.

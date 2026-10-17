@@ -185,10 +185,15 @@ type Observer struct {
 	// did before this slice existed.
 	tlsObjs      tlsbpfObjects
 	sslWriteLink link.Link
-	tlsForkLink  link.Link
-	tlsExitLink  link.Link
-	exe          *link.Executable
-	sslReader    *ringbuf.Reader
+	// firstLink is the uprobe New attaches at the first candidate, so a
+	// tracked process's SSL_write between New and Start is captured and
+	// waits in ssl_events for validation. attachAndValidateTLS takes it
+	// over (and clears the field) when it tries that candidate.
+	firstLink   link.Link
+	tlsForkLink link.Link
+	tlsExitLink link.Link
+	exe         *link.Executable
+	sslReader   *ringbuf.Reader
 
 	tlsCandidates   []tlsoffset.Candidate
 	tlsBuildID      string
@@ -363,12 +368,16 @@ func New(cfg Config) (*Observer, error) {
 var httpRequestLineRE = regexp.MustCompile(`^[A-Z]{2,10} \S+ HTTP/1\.[01]\r\n`)
 
 // prepareTLS loads tls.bpf.c's objects, seeds its tracked_pids, opens the
-// executable and the ssl_events ring buffer, and resolves SSL_write
-// candidates in cfg.ExePath -- everything content capture needs except the
-// actual uprobe attach, which Start (via attachAndValidateTLS) performs.
-// Validation is a separate mandatory step performed by
-// net.Observer.Start, not New, because the process(es) whose traffic will validate a candidate may not
-// exist yet at New time.
+// executable and the ssl_events ring buffer, resolves SSL_write candidates
+// in cfg.ExePath, and attaches the uprobe at the first (highest-ranked)
+// candidate. Validation is a separate mandatory step performed by
+// net.Observer.Start, not New, because the process(es) whose traffic will
+// validate a candidate may not exist yet at New time. The first candidate
+// is attached here all the same: a process started after New and tracked
+// before Start (an agent started by watch) can send its first
+// request before Start runs, and a uprobe attached only in Start missed
+// that frame, so validation then waited for a second request that may
+// never come. The frame waits in ssl_events until validation reads it.
 func (o *Observer) prepareTLS(cfg Config) (err error) {
 	candidates, buildID, err := tlsoffset.ScanELF(cfg.ExePath)
 	if err != nil {
@@ -441,6 +450,11 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	o.tlsCache = cache
 	o.tlsBuildID = buildID
 	o.tlsCandidates = candidates
+	// A failed attach is not fatal here: attachAndValidateTLS tries the
+	// candidate again and reports the outcome.
+	if l, err := exe.Uprobe("", o.tlsObjs.ProbeSslWrite, &link.UprobeOptions{Address: candidates[0].FileOff}); err == nil {
+		o.firstLink = l
+	}
 	return nil
 }
 
@@ -469,10 +483,16 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 	var chosen tlsoffset.Candidate
 	var framesSeen int
 	var validated bool
-	for _, cand := range o.tlsCandidates {
-		l, err := o.exe.Uprobe("", o.tlsObjs.ProbeSslWrite, &link.UprobeOptions{Address: cand.FileOff})
-		if err != nil {
-			continue
+	for i, cand := range o.tlsCandidates {
+		var l link.Link
+		if i == 0 && o.firstLink != nil {
+			l, o.firstLink = o.firstLink, nil // attached in New (prepareTLS)
+		} else {
+			var err error
+			l, err = o.exe.Uprobe("", o.tlsObjs.ProbeSslWrite, &link.UprobeOptions{Address: cand.FileOff})
+			if err != nil {
+				continue
+			}
 		}
 		rec, seen, ok := validateSSLWriteCandidate(o.sslReader, timeout)
 		framesSeen += seen
@@ -766,6 +786,9 @@ func (o *Observer) Stop() error {
 		o.kernelCountersFinal.Store(true)
 		if o.sslWriteLink != nil {
 			_ = o.sslWriteLink.Close()
+		}
+		if o.firstLink != nil {
+			_ = o.firstLink.Close() // never taken over by a validation
 		}
 		if o.tlsForkLink != nil {
 			_ = o.tlsForkLink.Close()
