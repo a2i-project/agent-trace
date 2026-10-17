@@ -181,6 +181,7 @@ func TestSubtreeRecordsAddNoFindingToAnHonestFixture(t *testing.T) {
 		{"testdata/paired-2.1.296-edits", "edits"},
 		{"testdata/paired-2.1.296-shapes", "shapes"},
 		{"testdata/paired-2.1.296-tools", "tools"},
+		{"testdata/paired-2.1.296-tools-named", "tools"},
 	}
 	load := func(t *testing.T, path string) models.GroundTruthFile {
 		data, err := os.ReadFile(path)

@@ -155,8 +155,9 @@ builder and the attack generators are implemented and tested against a
 simulated agent (`cmd/simagent`) and against fixtures. Paired captures of real
 Claude Code sessions and two of Gemini (agy 1.3.4) are checked in; each one,
 its agent version and its outcome are listed in
-[30_agent_adapters.md](30_agent_adapters.md#objective). Every fixture predates the filesystem probe's entry names (P-25), so
-those shapes are checked only by the probe's and end-to-end tests. Still
+[30_agent_adapters.md](30_agent_adapters.md#objective). One fixture, a Claude Code capture, was recorded with the filesystem
+probe's entry names (P-25); otherwise those shapes are checked by the probe's
+and end-to-end tests. Still
 unchecked: Gemini beyond those two tasks, Claude Code versions other than
 those captured, tools and shapes the captures do not exercise (listed in
 [30_agent_adapters.md](30_agent_adapters.md#known-limits)), and any population

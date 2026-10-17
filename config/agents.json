@@ -17,11 +17,12 @@
         },
         {
           "version": "2.1.296",
-          "verified": "2026-10-13",
+          "verified": "2026-10-17",
           "fixtures": [
             "pkg/agent/claudecode/testdata/paired-2.1.296-edits",
             "pkg/agent/claudecode/testdata/paired-2.1.296-shapes",
-            "pkg/agent/claudecode/testdata/paired-2.1.296-tools"
+            "pkg/agent/claudecode/testdata/paired-2.1.296-tools",
+            "pkg/agent/claudecode/testdata/paired-2.1.296-tools-named"
           ]
         }
       ]
