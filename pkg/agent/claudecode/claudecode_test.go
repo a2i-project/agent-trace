@@ -505,6 +505,16 @@ func TestCanonicalReplacesThePerRunIdsOfTheHarnessOwnFilePaths(t *testing.T) {
 		"/home/u/.claude/sessions/1142436.74821b1a692244346c03ff21ee8811b6eceaf464cb010e1baac32b8891041deb.key":                                    "/home/u/.claude/sessions/N.KEY.key",
 		"/ws/subagents/agent-a556a28b177cacb1b.jsonl":                                                                                              "/ws/subagents/agent-a556a28b177cacb1b.jsonl", // not under .claude/projects
 		"/home/u/.claude/projects/-ws/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/notes/agent-a5.jsonl":                                                   "/home/u/.claude/projects/-ws/6c1d13c0-4b6a-4624-80a8-5f80f7274cd4/notes/agent-a5.jsonl",
+		// The harness's socket, named by its pid, which a capture with
+		// directory-entry names shows (I-58). Only that exact path: the
+		// directory, which captures before P-25 show, and any other name or
+		// place keep their text.
+		"/tmp/cc-socks/31331.sock":           "/tmp/cc-socks/N.sock",
+		"/tmp/cc-socks/31331.sock (deleted)": "/tmp/cc-socks/N.sock",
+		"/tmp/cc-socks":                      "/tmp/cc-socks",
+		"/tmp/cc-socks/31331.sock.tmp":       "/tmp/cc-socks/31331.sock.tmp",
+		"/tmp/cc-socks/x31331.sock":          "/tmp/cc-socks/x31331.sock",
+		"/ws/tmp/cc-socks/31331.sock":        "/ws/tmp/cc-socks/31331.sock",
 	} {
 		for _, typ := range []models.ActionType{models.FileOpen, models.FileWrite, models.FileClose, models.FileDelete, models.FileRename} {
 			if got := (Adapter{}).Canonical(models.GroundTruthEvent{ActionType: typ, Target: in}); got.Target != want {
@@ -597,6 +607,53 @@ func TestAClaimOnATaskOutputPairsWithThatFileOnly(t *testing.T) {
 	})
 }
 
+// The harness creates its Unix socket /tmp/cc-socks/<pid>.sock at start-up
+// and deletes it at exit, named by its own pid, so with directory-entry names
+// no two runs agree on it (I-58). The baseline compares the canonical path: a
+// control's socket explains the run's own. Without a baseline the two events
+// are unexplained harness activity, not findings, and a file of another name
+// in that directory stays a finding. Shapes from the first capture of 2.1.296
+// with names (2026-10-17).
+func TestTheHarnessSocketIsComparedAcrossRuns(t *testing.T) {
+	cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}}
+	run := func(pid uint32, extra ...string) models.GroundTruthFile {
+		sock := fmt.Sprintf("/tmp/cc-socks/%d.sock", pid)
+		g := models.GroundTruthFile{RootPID: pid, Workspace: "/tmp/cap/ws", FSScope: &models.FSScope{Mounts: []string{"/"}}, Coverage: cov, Events: models.GroundTruth{
+			{Timestamp: time.Unix(1, 0), ActionType: models.FileWrite, Target: sock, PID: pid},
+			{Timestamp: time.Unix(9, 0), ActionType: models.FileDelete, Target: sock, PID: pid},
+		}}
+		for i, p := range extra {
+			g.Events = append(g.Events, models.GroundTruthEvent{Timestamp: time.Unix(int64(2+i), 0), ActionType: models.FileWrite, Target: p, PID: pid})
+		}
+		return g
+	}
+	base, err := agent.Capture(Adapter{}, "2.1.296", []models.GroundTruthFile{run(31556), run(31715)}, time.Unix(10, 0), agent.CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rules []string
+	for _, r := range base.Rules {
+		rules = append(rules, string(r.ActionType)+" "+r.Target)
+	}
+	if strings.Join(rules, "|") != "file_delete /tmp/cc-socks/N.sock|file_write /tmp/cc-socks/N.sock" || len(base.Unstable) != 0 {
+		t.Fatalf("rules = %v, unstable = %v; want the socket's write and delete in canonical form", rules, base.Unstable)
+	}
+
+	g := run(31331)
+	if v := verification.Verify(agent.Prepare(Adapter{}, nil, g, base.Predicate(g.Workspace), verification.Options{})); v.Outcome != verification.OutcomeFaithful {
+		t.Errorf("with the baseline: outcome %s, unrecorded %v, harness %v; want FAITHFUL", v.Outcome, v.Unrecorded, v.UnexplainedHarness)
+	}
+	v := verification.Verify(agent.Prepare(Adapter{}, nil, g, nil, verification.Options{}))
+	if v.Outcome != verification.OutcomeInconclusive || v.Findings() != 0 || len(v.UnexplainedHarness) != 2 {
+		t.Errorf("without a baseline: outcome %s, unrecorded %v, harness %v; want INCONCLUSIVE on the two socket events", v.Outcome, v.Unrecorded, v.UnexplainedHarness)
+	}
+	g = run(31331, "/tmp/cc-socks/notes.txt")
+	v = verification.Verify(agent.Prepare(Adapter{}, nil, g, base.Predicate(g.Workspace), verification.Options{}))
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "/tmp/cc-socks/notes.txt" {
+		t.Errorf("another file in the directory: outcome %s, unrecorded %v; want NOT FAITHFUL on it", v.Outcome, v.Unrecorded)
+	}
+}
+
 // Wrapper recovery is for process events only: a file event whose path happens
 // to look like a wrapper is not read as one, and keeps its path.
 // The harness's own directories, as measured on 2.1.286 (I-30). Nothing
@@ -614,6 +671,10 @@ func TestIsHarnessOwnedNamesTheHarnessDirectoriesOnly(t *testing.T) {
 		"/home/u/.cache/claude-cli-nodejs/x/mcp-logs-y/TIME.jsonl": true,
 		"/tmp/claude-1000/fswatch-probe-N/probe":                   true,
 		"/tmp/claude-N-cwd":                                        true,
+		"/tmp/cc-socks/31331.sock":                                 true,  // the harness's socket, named by its pid (I-58)
+		"/tmp/cc-socks":                                            false, // the directory, shared by every Claude Code process (I-58)
+		"/tmp/cc-socks/notes.txt":                                  false,
+		"/tmp/cc-socks/31331.sock/x":                               false,
 		"/home/u/.claude.json.backup":                              false,
 		"/home/u/.ssh/authorized_keys":                             false,
 		"/home/u/.bashrc":                                          false,

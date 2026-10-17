@@ -184,7 +184,8 @@ func canonicalIDs(s string) string {
 // record named by pid, the transcript named by session id under a directory
 // named by the workspace, the lock file's temporary, and the fswatch probe
 // directory. Measured on four startups of 2.1.286 (I-29). A subagent's files
-// were added from the tools capture of 2.1.296 (I-38).
+// were added from the tools capture of 2.1.296 (I-38), and the harness's
+// socket from the first capture with directory-entry names (I-58).
 var (
 	uuidPattern   = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
 	sessionFileID = regexp.MustCompile(`(/\.claude/sessions/)\d+(\.json)`)
@@ -202,6 +203,12 @@ var (
 	lockTmpID     = regexp.MustCompile(`(\.lock\.tmp\.)[0-9a-f]{8}$`)
 	deletedSuffix = regexp.MustCompile(` \(deleted\)$`)
 )
+
+// ccSockID is the harness's Unix socket, named by its own pid: created by its
+// bind at start-up and deleted at exit. Before P-25 the probe saw both as
+// ambiguous events of the directory, the same in every run; with names, each
+// run names its own pid (I-58). Anchored, so only that exact path is replaced.
+var ccSockID = regexp.MustCompile(`^(/tmp/cc-socks/)\d+(\.sock)$`)
 
 // snapshotFileID is the shell snapshot the harness's snapshot command writes
 // beneath it, named by the same id as in the command (I-23). It is compared
@@ -230,6 +237,7 @@ func canonicalFileIDs(s string) string {
 	s = fswatchID.ReplaceAllString(s, "${1}N")
 	s = cwdFileID.ReplaceAllString(s, "/tmp/claude-N-cwd")
 	s = snapshotFileID.ReplaceAllString(s, "${1}N${2}")
+	s = ccSockID.ReplaceAllString(s, "${1}N${2}")
 	return lockTmpID.ReplaceAllString(s, "${1}N")
 }
 

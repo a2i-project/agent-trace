@@ -130,11 +130,13 @@ const ControlCommand = ": agent-trace-control-marker"
 // measured on the captures of 2.1.286: the configuration file and directory
 // under the home directory, the version locks under the state directory, the
 // MCP logs under the cache directory, and the per-user temporary directory
-// that holds the cwd files, the task outputs and the fswatch probe. An
+// that holds the cwd files, the task outputs and the fswatch probe, and,
+// from the first capture of 2.1.296 with directory-entry names, the harness's
+// socket /tmp/cc-socks/<pid>.sock, but not that directory (I-58). An
 // unexplained level-0 file event there is unexplained harness activity, not
 // an agent's unreported action (V-24, I-30). The list names where the
 // harness keeps files, not what it does; it explains nothing.
-var harnessOwned = regexp.MustCompile(`^(?:/(?:home/[^/]+|root)/(?:\.claude(?:/|$)|\.claude\.json(?:$|\.tmp\.)|\.local/state/claude(?:/|$)|\.cache/claude-cli-nodejs(?:/|$))|/tmp/claude-(?:\d+/|[0-9a-zA-Z]+-cwd$))`)
+var harnessOwned = regexp.MustCompile(`^(?:/(?:home/[^/]+|root)/(?:\.claude(?:/|$)|\.claude\.json(?:$|\.tmp\.)|\.local/state/claude(?:/|$)|\.cache/claude-cli-nodejs(?:/|$))|/tmp/claude-(?:\d+/|[0-9a-zA-Z]+-cwd$)|/tmp/cc-socks/\d+\.sock$)`)
 
 // IsHarnessOwned reports whether path is under one of the harness's own
 // directories.
