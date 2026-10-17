@@ -95,6 +95,37 @@ Each adapter package calls `agent.Register` from `init`. `Register` panics on an
 
 `Generic` reads a trajectory already in the normalized JSON form (`models.ParseTrajectory`, which rejects unclaimable action types). It normalizes nothing, declares no noise, treats every field as expressible, and declares `ShellPerCommand`, `IntervalNone`, `Sequential` and `ExitsClaimed: true`. Its report carries one degradation saying so. It is the adapter for `cmd/simagent` output and for an agent whose format has been converted elsewhere.
 
+**Precision lost against the native adapters.** **Verified** on the eleven paired fixtures of both native adapters (`generic_paired_test.go` in `pkg/agent`): each session is read by its own adapter, written as the generic format and read back by `Generic`, then verified against the same task run, once with a baseline `Generic` captured from the fixture's controls and once without, both at an agreement of one control in N. The conversion applies only what the format can state: the entries as the native `Parse` returned them, without the harness-implied claims (`attack.WithoutImplied`). `ImpliedBy` has no JSON form, so a converted trajectory never names it, and `ParseTrajectory` refuses one that does (V-33); a converter that kept such an entry would make the harness's read a claim of the agent's. Nothing on the observed side is converted. A run of `cmd/verify --agent generic` with a baseline from `cmd/baseline --agent generic` on `paired-2.1.286` gives the same counts as the test.
+
+Every one of the 22 verdicts is NOT FAITHFUL, against FAITHFUL or INCONCLUSIVE natively. No claim is unwitnessed, and every mismatch differs on the target: a command against its wrapper's argv, a write against a temporary or the harness's own file. None is a disagreement on the content of the claimed target, so the outcomes show lost precision, not a defect of `Generic`. Per fixture, the first three columns are what `Generic` concludes, the rest what the native adapter does on the task run that `Generic` cannot: observed events its `Normalize` rewrites (wrapper recovery), events its `NormalizeStream` folds away, events whose `Canonical` form differs, the harness file events and host connections it reports apart, and the harness-implied claims the converter dropped.
+
+| Fixture | Native, with baseline | Generic, with baseline: corroborated, mismatched, unrecorded (of them exits), unexplained subtrees, unverified | Generic, without: unrecorded, subtrees | Rewritten | Folded | Canonical | Harness files, hosts | Implied |
+|---|---|---|---|---|---|---|---|---|
+| `paired-2.1.286` | FAITHFUL | 6, 1, 18 (2), 1, 2 | 64, 9 | 4 | 15 | 0 | 0, 0 | 0 |
+| `paired-2.1.286-parallel` | FAITHFUL | 4, 4, 6 (5), 1, 0 | 43, 9 | 10 | 0 | 0 | 0, 0 | 0 |
+| `paired-2.1.286-project` | FAITHFUL | 16, 3, 51 (4), 1, 3 | 91, 9 | 8 | 70 | 0 | 0, 0 | 0 |
+| `paired-2.1.286-project-heredoc` | INCONCLUSIVE | 0, 3, 113 (4), 1, 0 | 410, 9 | 8 | 43 | 184 | 8, 0 | 0 |
+| `paired-2.1.286-p17` | FAITHFUL | 6, 1, 113 (2), 1, 3 | 419, 9 | 4 | 54 | 152 | 0, 0 | 0 |
+| `paired-2.1.296-edits` | INCONCLUSIVE | 11, 1, 123 (2), 1, 6 | 405, 9 | 4 | 65 | 150 | 2, 0 | 0 |
+| `paired-2.1.296-tools` | INCONCLUSIVE | 14, 2, 163 (3), 1, 6 | 462, 9 | 7 | 67 | 190 | 1, 0 | 0 |
+| `paired-2.1.296-shapes` | INCONCLUSIVE | 5, 5, 137 (6), 1, 2 | 437, 9 | 13 | 34 | 191 | 5, 0 | 1 |
+| `paired-2.1.296-tools-named` | INCONCLUSIVE | 8, 8, 221 (3), 1, 6 | 497, 9 | 6 | 83 | 216 | 4, 1 | 0 |
+| `paired-agy-1.3.4-basic` | INCONCLUSIVE | 9, 2, 221 (1), 0, 0 | 599, 0 | 3 | 16 | 229 | 0, 1 | 0 |
+| `paired-agy-1.3.4-search` | INCONCLUSIVE | 3, 2, 269 (3), 1, 0 | 669, 1 | 1 | 10 | 283 | 0, 1 | 0 |
+
+What each lost property costs:
+
+- Wrapper recovery (I-23, I-26, I-47). Each Bash or `run_command` claim, and each Claude Code search tool's ripgrep or agy's `grep`, pairs with the wrapper's argv and is a target mismatch, so any session that runs a command is NOT FAITHFUL on that alone. With a baseline, the one unexplained subtree left is Claude Code's snapshot shell, whose argv names a per-run file, or on `paired-agy-1.3.4-search` the failed exec of agy's embedded ripgrep, which the native adapter folds with its `grep` fallback into the search claim (I-54).
+- The folds (atomic writes, the named shapes of I-56, the in-place rewrite of I-45). The temporaries, renames and reads of a harness write stay unrecorded. A Write claim pairs with what is left of it, often an ambiguous open of the directory, which is unverified on its hash; on `paired-2.1.296-tools-named`, whose events carry names, five of its six write claims pair instead with the harness's writes of its own transcripts and one with a temporary.
+- Harness-owned directories (I-30). `Generic` declares none, so the events the native adapter reports apart, which leave a run INCONCLUSIVE (V-24), are unrecorded findings.
+- Canonical ids (I-29, I-41). The baseline's rules name each control's own session and process ids, so most of the harness's activity under `~` is explained by no rule; that is most of what stays unrecorded with a baseline on the captures that observe the whole filesystem.
+- Harness-implied reads (I-46, V-33). The format cannot carry them, so the harness's read they explain natively is unrecorded (`paired-2.1.296-shapes`).
+- Declared hosts (V-34). The harness's own connection (`downloads.claude.ai`, `oauth2.googleapis.com`) is an unrecorded finding, not unexplained harness network activity.
+- Sensitive files (I-59, I-60). `Generic` declares none, so a capture's snapshot is never checked (V-40). No fixture holds a snapshot, so the fixtures do not measure it.
+- Exit claims (I-15). `Generic` claims exits and a converted session states none, so every exit of a command that no baseline rule explains is unrecorded. A converted trajectory that did claim exits would meet the proc probe's join of an exit to the latest exec read for its process ([11_probe_proc.md](11_probe_proc.md), known limits), which can read as a false substitution.
+- The control's own command (I-28). `Capture` excludes it by its normalized target, which `Generic` never produces, so the exclusion matches nothing: agy's wrapper of the marker command is the same in every control and becomes a rule.
+- Version configuration (I-57). `Generic` states no harness version and `cmd/verify` does not check one: the report prints no warning, the JSON report says `not applicable`, and `--strict-version` leaves the verdict as it is. A baseline's version is not compared either.
+
 ### Claude Code (`claude-code`)
 
 Detect: a `.jsonl` file in which one of the first 20 lines decodes with non-empty `sessionId`, `type` and `version`.
