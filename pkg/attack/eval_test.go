@@ -12,18 +12,21 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/agent/claudecode"
+	"github.com/agent-trace/agent-trace/pkg/agent/gemini"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
-// The evaluation tests run every generator over the real paired captures of
-// Claude Code checked in under pkg/agent/claudecode/testdata (three of 2.1.286
-// and the edits task of 2.1.296), and score the verifier's verdicts against each
-// mutation's record. They are the Tier 8 acceptance: detection, classification
-// and localization against the record, no false findings on the honest control,
-// and A4 suppressing nothing. They are a check of the machinery on four short
-// real sessions, not an evaluation of the verifier on a population: the claim
-// count is small, two agent versions and one machine. See
+// The evaluation tests run every generator over the real paired captures
+// checked in under pkg/agent/claudecode/testdata (three of Claude Code 2.1.286
+// and the edits task of 2.1.296) and pkg/agent/gemini/testdata (the basic and
+// search tasks of agy 1.3.4), each read and verified through its own adapter,
+// and score the verifier's verdicts against each mutation's record. They are
+// the Tier 8 acceptance: detection, classification and localization against the
+// record, no false findings on the honest control, and A4 suppressing nothing.
+// They are a check of the machinery on six short real sessions, not an
+// evaluation of the verifier on a population: the claim count is small, two
+// agents, three agent versions and one machine. See
 // docs/methodology/being_data_driven.md before quoting a rate.
 //
 // The two tools captures of 2.1.296 are evaluated and reported, not gated
@@ -43,6 +46,12 @@ type capture struct {
 	name  string
 	dir   string
 	label string
+	// session is the agent's session file in dir, read by adapter.
+	session string
+	adapter agent.Adapter
+	// version is the harness version of a capture whose session states none
+	// (agy's conversation database), for the baseline.
+	version string
 	// gated: a failure of an acceptance check fails the test. A capture that
 	// is not gated is evaluated and its numbers logged, and a check that would
 	// fail is logged as not gated (E-5).
@@ -65,19 +74,34 @@ func (c capture) check(t *testing.T, format string, args ...any) {
 // scripts/capture-claude-code.sh, turned into a fixture with
 // scripts/make-capture-fixture.py) joins the evaluation as soon as it is added.
 var captures = existing([]capture{
-	{"basic", "../agent/claudecode/testdata/paired-2.1.286", "task", true},
-	{"parallel", "../agent/claudecode/testdata/paired-2.1.286-parallel", "parallel", true},
-	{"project", "../agent/claudecode/testdata/paired-2.1.286-project", "project", true},
+	claude("basic", "paired-2.1.286", "task", true),
+	claude("parallel", "paired-2.1.286-parallel", "parallel", true),
+	claude("project", "paired-2.1.286-project", "project", true),
 	// One Write and five Edits with their content hashes (I-31): the first
 	// capture on which a substitution of an Edit's content is exercised.
-	{"edits", "../agent/claudecode/testdata/paired-2.1.296-edits", "edits", true},
+	claude("edits", "paired-2.1.296-edits", "edits", true),
 	// The tools task of 2.1.296, unnamed and named: reported, not gated
 	// (E-5). Their omitted Read of the background command's output file is
 	// undetectable by design (V-36), and their fabrications and substitutions
 	// are detected but not always located; the diagnostics record why.
-	{"tools", "../agent/claudecode/testdata/paired-2.1.296-tools", "tools", false},
-	{"tools-named", "../agent/claudecode/testdata/paired-2.1.296-tools-named", "tools", false},
+	claude("tools", "paired-2.1.296-tools", "tools", false),
+	claude("tools-named", "paired-2.1.296-tools-named", "tools", false),
+	// The two paired captures of agy 1.3.4: the first scored on an agent other
+	// than Claude Code, gated since they met every acceptance check.
+	gem("agy-basic", "paired-agy-1.3.4-basic", "basic", true),
+	gem("agy-search", "paired-agy-1.3.4-search", "search", true),
 })
+
+func claude(name, fixture, label string, gated bool) capture {
+	return capture{name: name, dir: filepath.Join("../agent/claudecode/testdata", fixture), label: label,
+		session: label + ".session.jsonl", adapter: claudecode.Adapter{}, gated: gated}
+}
+
+// gem is a paired capture of agy.
+func gem(name, fixture, label string, gated bool) capture {
+	return capture{name: name, dir: filepath.Join("../agent/gemini/testdata", fixture), label: label,
+		session: label + ".conversation.db", adapter: gemini.Adapter{}, version: "1.3.4", gated: gated}
+}
 
 func existing(cs []capture) []capture {
 	var out []capture
@@ -105,9 +129,10 @@ func loadRun(t *testing.T, c capture, label string) models.GroundTruthFile {
 // session is one capture ready to verify: the honest claims, the ground truth
 // and the baseline built from its control runs.
 type session struct {
-	claims models.Trajectory
-	g      models.GroundTruthFile
-	base   agent.Baseline
+	adapter agent.Adapter
+	claims  models.Trajectory
+	g       models.GroundTruthFile
+	base    agent.Baseline
 	// observed is every target the capture observed, after normalization, so a
 	// generator can be told not to produce a claim that happens to be true.
 	observed map[string]bool
@@ -118,24 +143,32 @@ type session struct {
 	rule   verification.Baseline
 }
 
+// controlCommand is the control task's own command, which never becomes a rule
+// (I-28). scripts/capture-claude-code.sh gives the same one to both agents.
+const controlCommand = claudecode.ControlCommand
+
 func loadSession(t *testing.T, c capture) session {
 	t.Helper()
-	claims, rep, err := claudecode.Adapter{}.Parse(filepath.Join(c.dir, c.label+".session.jsonl"))
+	claims, rep, err := c.adapter.Parse(filepath.Join(c.dir, c.session))
 	if err != nil || len(rep.ParseErrors) != 0 {
 		t.Fatalf("%s: %v %v", c.name, err, rep.ParseErrors)
 	}
 	// Every control the fixture holds (three for the 2.1.286 captures, two for
-	// the edits one), at the version the session states.
+	// the edits one, five for agy's), at the version the session states.
+	version := rep.AgentVersion
+	if version == "" {
+		version = c.version
+	}
 	paths, _ := filepath.Glob(filepath.Join(c.dir, "control-*.ground_truth.json"))
 	var controls []models.GroundTruthFile
 	for _, p := range paths {
 		controls = append(controls, loadRun(t, c, strings.TrimSuffix(filepath.Base(p), ".ground_truth.json")))
 	}
-	base, err := agent.Capture(claudecode.Adapter{}, rep.AgentVersion, controls, time.Now(), agent.CaptureOptions{Exclude: []string{claudecode.ControlCommand}})
+	base, err := agent.Capture(c.adapter, version, controls, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := session{claims: claims, g: loadRun(t, c, c.label), base: base, observed: map[string]bool{}}
+	s := session{adapter: c.adapter, claims: claims, g: loadRun(t, c, c.label), base: base, observed: map[string]bool{}}
 	in := s.input(claims)
 	s.rule = in.Baseline
 	s.honest = verification.Verify(in)
@@ -149,7 +182,7 @@ func loadSession(t *testing.T, c capture) session {
 }
 
 func (s session) input(claims models.Trajectory) verification.Input {
-	in := agent.PrepareWithBaseline(claudecode.Adapter{}, claims, s.g, &s.base, verification.Options{IntervalSlack: 500 * time.Millisecond})
+	in := agent.PrepareWithBaseline(s.adapter, claims, s.g, &s.base, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	return in
 }
 
@@ -159,7 +192,9 @@ func (s session) verify(claims models.Trajectory) verification.Verdict {
 
 // honest is what the unmodified control must read as: no finding, and either
 // FAITHFUL or INCONCLUSIVE only for harness activity the baseline did not
-// cover (V-24), which the edits capture has. Never NOT FAITHFUL.
+// cover, in files (V-24), which the edits and agy captures have, or in
+// connections to the harness's declared hosts (V-34), which the agy captures
+// have. Never NOT FAITHFUL.
 func honestVerdict(v verification.Verdict) bool {
 	if Findings(v) != 0 {
 		return false
@@ -168,7 +203,7 @@ func honestVerdict(v verification.Verdict) bool {
 	case verification.OutcomeFaithful:
 		return true
 	case verification.OutcomeInconclusive:
-		return len(v.UnexplainedHarness) > 0 && len(v.Unverified) == 0 && len(v.OutOfScope) == 0 && len(v.OutsideWrites) == 0 && v.Completeness.Complete
+		return len(v.UnexplainedHarness)+len(v.UnexplainedHarnessNet) > 0 && len(v.Unverified) == 0 && len(v.OutOfScope) == 0 && len(v.OutsideWrites) == 0 && v.Completeness.Complete
 	}
 	return false
 }

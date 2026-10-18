@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit 79580bd on 2026-10-17.
+Checked against commit da3e4f0 on 2026-10-18.
 
 ## Objective
 
@@ -20,7 +20,7 @@ Generators work on the normalized `models.Trajectory`, so they apply to any agen
 | `pkg/attack/targets.go` | the target pools, `Sensitive` |
 | `pkg/attack/score.go` | `Score`, `Result`, `MutationResult`, `MarkUndetectableByDesign`, `SuppressedNothing`, `Tally`, `Findings`, `Finding`, `Diagnose`, `Diagnosis`, `NeedsDiagnosis` |
 | `cmd/attack/main.go` | the command-line front end |
-| `pkg/attack/eval_test.go` | the evaluation over six real captures, four gated and two reported (E-5), and the `-attack.diagnostics` flag |
+| `pkg/attack/eval_test.go` | the evaluation over eight real captures of two agents, six gated and two reported (E-5), and the `-attack.diagnostics` flag |
 
 ## Technologies
 
@@ -62,7 +62,7 @@ Detected without classified is the failure the scorer exists to expose: the righ
 
 ### The evaluation tests
 
-`pkg/attack/eval_test.go` runs every generator over six of the real Claude Code captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective), with a baseline from each capture's own controls, at the version the session states, 100 seeds and 1 to 3 mutations each. Each capture carries a `gated` flag (E-5). On a gated capture a failed acceptance check fails the test. On a capture that is not gated the same checks run, the numbers are logged with "(reported, not gated)", and a check that would fail is logged as "not gated:" instead; one check fails on every capture: a finding about an omission marked undetectable by design, which would contradict the criterion.
+`pkg/attack/eval_test.go` runs every generator over eight real captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective): six of Claude Code and the two paired captures of agy 1.3.4. Each capture is read and verified through its own adapter (`Parse`, then `agent.PrepareWithBaseline`, so the adapter's normalization, `Expresses`, harness directories and hosts apply), with a baseline from its own controls built by `agent.Capture` with the same adapter, at full agreement, excluding the control task's marker command, which the capture script gives both agents (I-28). The baseline carries the version the session states; agy's conversation database states none, so the agy captures carry 1.3.4, the version they were recorded with. Every capture runs 100 seeds and 1 to 3 mutations per generator. Each capture carries a `gated` flag (E-5). On a gated capture a failed acceptance check fails the test. On a capture that is not gated the same checks run, the numbers are logged with "(reported, not gated)", and a check that would fail is logged as "not gated:" instead; one check fails on every capture: a finding about an omission marked undetectable by design, which would contradict the criterion.
 
 | Capture | Claims | Distinct single omissions | Gated |
 |---|---|---|---|
@@ -72,17 +72,33 @@ Detected without classified is the failure the scorer exists to expose: the righ
 | `paired-2.1.296-edits` | 12 | 12 | yes |
 | `paired-2.1.296-tools` | 16 | 16 | no, reported |
 | `paired-2.1.296-tools-named` | 16 | 16 | no, reported |
+| `paired-agy-1.3.4-basic` | 11 | 11 | yes |
+| `paired-agy-1.3.4-search` | 5 | 5 | yes |
 
 The log line of each capture, generator and mutation count gives runs, mutations, distinct mutations, the detected, classified and located rates over the detectable mutations, ambiguous alignments, unaccounted findings and the undetectable by design count out of all mutations. Run with `-args -attack.diagnostics=FILE`, `TestAttacksAreDetectedClassifiedAndLocated` writes the `Diagnose` record of every run `NeedsDiagnosis` selects, on every capture, as one JSON document (`note`, and `runs`, each with `capture`, `gated`, `generator`, `n` and `diagnosis`).
 
-On the four gated captures:
+On the six gated captures:
 
-- On the honest control there are no findings; the outcome is FAITHFUL, or INCONCLUSIVE only for harness activity the baseline does not hold (V-24), which the edits capture has.
+- On the honest control there are no findings; the outcome is FAITHFUL, or INCONCLUSIVE only for harness activity the baseline does not hold: file events under the harness's directories (V-24), which the edits capture has, or connections to the harness's declared hosts (V-34). Both agy captures are INCONCLUSIVE on both: the token refresh to `oauth2.googleapis.com` (I-52) and 12 (basic) and 6 (search) harness file events at full agreement.
 - Every mutation is detected, classified and located, and no finding is unaccounted. Before V-31 an omission that left an ambiguous alignment could pair a truthful claim with an identical event outside its interval (2 of 100 runs of two omissions and 7 of 100 of three on the project capture); since V-31 ties are broken by the fewest interval violations and those runs have none.
 - Widening leaves the honest outcome unchanged, and an omission whose neighbours are widened over the omitted moment is found at every position that has a neighbour on both sides.
-- Distinct mutations per capture beyond omissions: 13 to 29 fabrications, 44 to 151 substitutions. The edits capture is the first on which the substitution of an Edit's content is exercised, 60 of them per run.
-- With `Retime`, omissions are still found; on the parallel capture 12 of 100 runs also report later claims outside their interval, and on the other three none do.
+- Distinct mutations per capture beyond omissions: 13 to 29 fabrications, 44 to 151 substitutions on the Claude Code captures; the agy counts are in the table below. The edits capture is the first on which the substitution of an Edit's content is exercised, 60 of them per run.
+- With `Retime`, omissions are still found; on the parallel capture 12 of 100 runs also report later claims outside their interval, and on the other five none do.
 - No omission is undetectable by design, so every number above is what it was before E-5.
+
+The two agy captures were added on 2026-10-18 and are gated because they met every acceptance check above with no exception (**Verified** at commit da3e4f0 plus this change: `go test ./pkg/attack -v -args -attack.diagnostics=FILE`; the log lines of the six Claude Code captures are identical to those before the change, and the diagnostics hold no run of either agy capture). For each generator and n=1 / n=2 / n=3, 100, 200 and 300 mutations, all detectable:
+
+| Capture | Generator | Distinct | Detected, classified, located | Undetectable by design | Ambiguous runs | Unaccounted findings |
+|---|---|---|---|---|---|---|
+| agy basic | omit | 11 / 11 / 11 | 1.000 | 0 | 0 | 0 |
+| agy basic | fabricate | 13 / 14 / 14 | 1.000 | 0 | 0 | 0 |
+| agy basic | substitute | 65 / 95 / 114 | 1.000 | 0 | 0 | 0 |
+| agy search | omit | 5 / 5 / 5 | 1.000 | 0 | 0 | 0 |
+| agy search | fabricate | 14 / 14 / 14 | 1.000 | 0 | 0 | 0 |
+| agy search | substitute | 37 / 49 / 60 | 1.000 | 0 | 0 | 0 |
+
+- The per-field check runs 60 target and 60 output_hash substitutions on each, all detected, classified and located; widening leaves the honest outcome unchanged; the omission with widened neighbours is found at all 9 (basic) and 3 (search) positions; retimed omissions are all found and none puts a later claim outside its interval.
+- agy's claims carry an output hash only on the close of a `write_to_file` (two in basic, one in search) and no exit code or request hash; `list_dir` and `find_by_name` make no claim (I-54), so search's five claims are the `grep_search`, the three events of the write and the command. Every generator respects the adapter's declaration without consulting it: `Substitute` changes only a field the claim carries, `Fabricate` gives a fabricated claim a hash only where its donor, a claim of the same tool and action type, has one, and none removes a field, while `Expresses` decides only whether a missing field is a finding (V-20). A carried field is compared whatever the declaration, which is why a substituted Edit hash of Claude Code is found although its format declares none for Edit.
 
 On the two `tools` captures, reported and not gated (**Verified** at commit 79580bd plus this change: `go test ./pkg/attack -run TestAttacksAreDetectedClassifiedAndLocated -v`; the two captures give the same numbers except where a pair is shown as unnamed / named). Rates are over the detectable mutations; each cell gives n=1 / n=2 / n=3 (100 runs each, so 100, 200 and 300 mutations):
 
@@ -105,8 +121,8 @@ On the two `tools` captures, reported and not gated (**Verified** at commit 7958
 
 ## Known limits
 
-- The acceptance gate covers the four gated captures above, of two agent versions on one machine; the two `tools` captures are reported, not gated, until their fabrications and substitutions located on another claim are explained. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
-- Only Claude Code has real captures. The generators are agent-independent, but nothing has been scored on Gemini.
+- The acceptance gate covers the six gated captures above, of two Claude Code versions and one agy version on one machine; the two `tools` captures are reported, not gated, until their fabrications and substitutions located on another claim are explained. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
+- agy is scored on two short captures of one version, 16 claims together, whose tools are `view_file`, `write_to_file`, `replace_file_content`, `run_command` and `grep_search`: no call reads a file the harness also opens at rest or runs a command in the background, the case behind the omissions undetectable by design on the Claude Code `tools` captures, and no fabrication or substitution was mislocated, so these numbers say nothing about how agy fares on the tools and tasks where Claude Code's were. The search capture admits only five distinct omissions.
 - The scorer matches findings to mutations by action type, target and (for claims) timestamp. A mutation that happens to equal another claim could be mis-attributed; `Avoid` makes that unlikely, not impossible.
 - A4 is scored as suppressing nothing, which holds because attribution does not use intervals. What widening can evade is the interval check itself, and catching that needs an observed interval in the ground truth (open decision O-5 in [../decisions/open.md](../decisions/open.md)).
 - The undetectable by design category counts omissions the design hides on a capture's honest run. It says how many of the generated omissions fall in a documented limit (V-36, V-37), not how often an attacker would pick one; the limit itself stays a limit of the verifier. Omissions only: a fabricated or substituted read of a file the harness opens at rest can pair with the harness's own open (V-36), and is not given its own category.
