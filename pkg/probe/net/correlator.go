@@ -27,6 +27,7 @@ type Coverage struct {
 	Replaced           int    // connections replaced by a new connect on the same socket before they were emitted, emitted then with their connect time (N-24)
 	Dials              int    // connections closed with no name and nothing written, emitted as net_dial capability evidence (N-22)
 	WithHostname       int    // SNI parsed from a ClientHello
+	HellosFollowed     int    // ClientHellos whose first send did not hold them whole, followed into later sends (N-31)
 	WithContent        int    // at least one HTTP request attributed to a connection
 	FramesUnattributed int    // ssl_frame whose request could not be joined to a connection or parsed
 	ContentUnsupported int    // h2 connections (ALPN negotiated h2; content parsing skipped)

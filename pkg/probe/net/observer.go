@@ -60,7 +60,19 @@ const (
 	// netDgram is a datagram sent to an explicit address on a datagram or
 	// raw socket, connected or not (N-28).
 	netDgram uint8 = 9
+
+	// netHelloMore continues a ClientHello the connection's first send did
+	// not hold whole (N-31).
+	netHelloMore uint8 = 10
 )
+
+// netFlagHelloMore, in a NET_HELLO or NET_HELLO_MORE header's flags, says
+// that further sends of the same ClientHello follow (NET_FLAG_HELLO_MORE).
+const netFlagHelloMore uint16 = 1
+
+// maxHelloBytes bounds the ClientHello bytes kept per connection, the
+// kernel's HELLO_FOLLOW_MAX: one full TLS record.
+const maxHelloBytes = 5 + 16384
 
 const (
 	afUnix  = 1
@@ -133,6 +145,12 @@ type connection struct {
 	// datagram marks a destination of an addressed datagram (N-28), not a
 	// connect(): it has no close, and port 0 is not address selection.
 	datagram bool
+	// hello holds the ClientHello bytes captured so far while helloPending:
+	// the first send did not hold the whole hello and the kernel follows it
+	// into later sends (N-31). helloAt is when the first of them was sent.
+	hello        []byte
+	helloAt      time.Time
+	helloPending bool
 }
 
 // dgramKey names one destination of one socket. A datagram destination is
@@ -1101,20 +1119,30 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			o.dnsQuery(conn, rec.payload, ts)
 			return
 		}
-		hello, err := tlsparse.ParseClientHello(rec.payload)
-		if err != nil || hello.ServerName == "" {
+		conn.hello = append(conn.hello[:0], rec.payload...)
+		conn.helloAt = ts
+		conn.helloPending = true
+		if hdr.Flags&netFlagHelloMore != 0 && !tlsparse.ClientHelloComplete(conn.hello) {
+			// The rest of the hello follows in NET_HELLO_MORE (N-31).
+			o.coverage.HellosFollowed++
 			return
 		}
-		conn.host = hello.ServerName
-		conn.alpn = hello.ALPN
-		o.coverage.WithHostname++
-		for _, proto := range hello.ALPN {
-			if proto == "h2" {
-				o.coverage.ContentUnsupported++
-				break
-			}
+		if o.resolveHello(conn) {
+			o.emit(conn, conn.helloAt)
 		}
-		o.emit(conn, ts)
+
+	case netHelloMore:
+		conn, ok := o.conns[key]
+		if !ok || !conn.helloPending {
+			return // the hello was already complete, or its connection is gone
+		}
+		conn.hello = append(conn.hello, rec.payload...)
+		if hdr.Flags&netFlagHelloMore != 0 && len(conn.hello) < maxHelloBytes && !tlsparse.ClientHelloComplete(conn.hello) {
+			return
+		}
+		if o.resolveHello(conn) {
+			o.emit(conn, conn.helloAt)
+		}
 
 	case netSend:
 		// A send whose bytes were not read (sendfile, splice, a faulted
@@ -1150,6 +1178,29 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		}
 		delete(o.conns, key)
 	}
+}
+
+// resolveHello parses the ClientHello captured for conn and reports whether
+// it named a host. With one, it stores host and ALPN and counts the hostname.
+// It runs once per connection: when the hello is whole, or, for one still
+// being followed, when the connection is emitted without the rest.
+func (o *Observer) resolveHello(conn *connection) bool {
+	conn.helloPending = false
+	hello, err := tlsparse.ParseClientHello(conn.hello)
+	conn.hello = nil
+	if err != nil || hello.ServerName == "" {
+		return false
+	}
+	conn.host = hello.ServerName
+	conn.alpn = hello.ALPN
+	o.coverage.WithHostname++
+	for _, proto := range hello.ALPN {
+		if proto == "h2" {
+			o.coverage.ContentUnsupported++
+			break
+		}
+	}
+	return true
 }
 
 // emitListener sends a NetBind or NetListen event. They carry no hostname and
@@ -1202,6 +1253,13 @@ func unixTarget(payload []byte) string {
 func (o *Observer) emit(conn *connection, ts time.Time) {
 	if conn.emitted {
 		return
+	}
+	// A hello still being followed when the connection ends (its close, a
+	// new connect, the end of the capture) is parsed from what arrived; a
+	// name found there stamps the connection at the hello, as a whole one
+	// does.
+	if conn.helloPending && o.resolveHello(conn) {
+		ts = conn.helloAt
 	}
 	tgid := conn.tgid
 	// Port 53 is DNS. The resolver connects to it for every name an agent

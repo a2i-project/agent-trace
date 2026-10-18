@@ -15,11 +15,9 @@ var ErrNotClientHello = errors.New("tlsparse: not a TLS ClientHello")
 // ErrTruncated means the input looks like the start of a ClientHello but
 // ends before the mandatory fixed-size fields (through the compression
 // methods list) are fully present. Unlike ErrNotClientHello, this can be a
-// capture-size artifact: the correlator's caller may see it if it (unlike
-// net.bpf.c's 1024-byte NET_HELLO capture) hands ParseClientHello something
-// smaller. Truncation inside the extensions block, which is far more likely
-// in practice given how small the fixed prefix is, is not an error at all --
-// see the doc comment on ParseClientHello.
+// capture artifact: a capture that stopped early. Truncation inside the
+// extensions block is not an error at all; see the doc comment on
+// ParseClientHello.
 var ErrTruncated = errors.New("tlsparse: truncated ClientHello")
 
 // ClientHello holds the fields this package extracts from a ClientHello.
@@ -34,43 +32,26 @@ type ClientHello struct {
 }
 
 // ParseClientHello extracts the SNI hostname and ALPN protocol list from the
-// first TLS record of a connection.
+// first bytes a client sent on a connection.
+//
+// The ClientHello is read from the handshake records at the start of data,
+// joined: a ClientHello larger than one record, or one a client fragments on
+// purpose, spans several (N-31). Joining stops at the end of data, at a
+// record that is not a handshake record, or once the message is complete.
 //
 // The fixed-size ClientHello prefix (legacy version, random, session ID,
 // cipher suites, compression methods) must be fully present or this returns
 // ErrTruncated: that prefix is a few dozen bytes and any real capture should
-// contain it whole. The extensions block that follows has no such guarantee
-// -- a capture limit (net.bpf.c takes at most 1024 bytes) can legitimately
-// cut it off mid-extension, especially with a long cipher/extension list
-// ahead of SNI. Truncation there is therefore not an error: parsing stops at
-// the first incomplete extension and returns whatever was found in the
-// extensions read so far. SNI and ALPN are both early, small extensions in
-// practice, so this degrades gracefully rather than losing them outright.
+// contain it whole. The extensions block that follows has no such guarantee:
+// a capture that stopped early can cut it off mid-extension. Truncation there
+// is therefore not an error: parsing stops at the first incomplete extension
+// and returns whatever was found in the extensions read so far.
 func ParseClientHello(data []byte) (ClientHello, error) {
-	c := &cursor{buf: data}
-
-	contentType, err := c.u8()
+	msg, _, err := handshakeMessage(data)
 	if err != nil {
-		return ClientHello{}, ErrTruncated
+		return ClientHello{}, err
 	}
-	if contentType != recordTypeHandshake {
-		return ClientHello{}, ErrNotClientHello
-	}
-
-	// Legacy record version and record length. We don't validate the
-	// version beyond requiring it look like a TLS version (major byte 3):
-	// ClientHello records commonly carry 0x0301 regardless of the
-	// negotiated version, and stricter checking buys nothing here.
-	ver, err := c.u16()
-	if err != nil {
-		return ClientHello{}, ErrTruncated
-	}
-	if ver>>8 != 3 {
-		return ClientHello{}, ErrNotClientHello
-	}
-	if _, err := c.u16(); err != nil { // record length, unused: we trust buf's own bounds
-		return ClientHello{}, ErrTruncated
-	}
+	c := &cursor{buf: msg}
 
 	msgType, err := c.u8()
 	if err != nil {
@@ -79,7 +60,7 @@ func ParseClientHello(data []byte) (ClientHello, error) {
 	if msgType != handshakeTypeClientHello {
 		return ClientHello{}, ErrNotClientHello
 	}
-	if _, err := c.u24(); err != nil { // handshake body length, same as above
+	if _, err := c.u24(); err != nil { // handshake body length; handshakeMessage already bounded msg by it
 		return ClientHello{}, ErrTruncated
 	}
 
@@ -150,8 +131,66 @@ func ParseClientHello(data []byte) (ClientHello, error) {
 	return hello, nil
 }
 
+// ClientHelloComplete reports whether data holds a whole ClientHello: the
+// handshake records at its start carry the complete first handshake message.
+// It is false for bytes that are not a TLS handshake record at all.
+func ClientHelloComplete(data []byte) bool {
+	_, complete, err := handshakeMessage(data)
+	return err == nil && complete
+}
+
+// handshakeMessage joins the payloads of the handshake records at the start
+// of data and returns the first handshake message, cut to its stated length
+// when complete, else as much of it as data holds. The record version's major
+// byte must be 3 (a ClientHello record commonly carries 0x0301 whatever
+// version is negotiated, so nothing stricter is checked).
+func handshakeMessage(data []byte) (msg []byte, complete bool, err error) {
+	if len(data) < 1 {
+		return nil, false, ErrTruncated
+	}
+	if data[0] != recordTypeHandshake {
+		return nil, false, ErrNotClientHello
+	}
+	if len(data) < 3 {
+		return nil, false, ErrTruncated
+	}
+	if data[1] != 3 {
+		return nil, false, ErrNotClientHello
+	}
+	if len(data) < recordHeaderLen {
+		return nil, false, ErrTruncated
+	}
+	for pos := 0; pos+recordHeaderLen <= len(data); {
+		if data[pos] != recordTypeHandshake || data[pos+1] != 3 {
+			break
+		}
+		n := int(data[pos+3])<<8 | int(data[pos+4])
+		end := pos + recordHeaderLen + n
+		whole := end <= len(data)
+		if !whole {
+			end = len(data)
+		}
+		if msg == nil && whole && end == len(data) {
+			msg = data[pos+recordHeaderLen : end : end] // one record: no copy
+		} else {
+			msg = append(msg, data[pos+recordHeaderLen:end]...)
+		}
+		if len(msg) >= 4 {
+			if want := 4 + (int(msg[1])<<16 | int(msg[2])<<8 | int(msg[3])); len(msg) >= want {
+				return msg[:want], true, nil
+			}
+		}
+		if !whole {
+			break
+		}
+		pos = end
+	}
+	return msg, false, nil
+}
+
 const (
-	recordTypeHandshake     = 0x16
+	recordHeaderLen          = 5
+	recordTypeHandshake      = 0x16
 	handshakeTypeClientHello = 0x01
 	extTypeSNI               = 0x0000
 	extTypeALPN              = 0x0010

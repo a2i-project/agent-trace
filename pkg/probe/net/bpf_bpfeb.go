@@ -38,9 +38,10 @@ type bpfConnState struct {
 	HelloCaptured uint8
 	Sent          uint8
 	Sotype        uint8
-	_             [1]byte
+	HelloParts    uint8
 	Tgid          uint32
-	_             [4]byte
+	HelloLeft     uint16
+	_             [2]byte
 	OpenTsNs      uint64
 }
 
@@ -59,7 +60,7 @@ type bpfDgramKey struct {
 type bpfNetEvent struct {
 	_       structs.HostLayout
 	Hdr     bpfNetEventHdr
-	Payload [2048]uint8
+	Payload [8192]uint8
 }
 
 type bpfNetEventHdr struct {
@@ -75,7 +76,7 @@ type bpfNetEventHdr struct {
 	Sock       uint64
 	PayloadLen uint32
 	Sotype     uint16
-	Pad        uint16
+	Flags      uint16
 }
 
 // Names of all BPF objects in the ELF.

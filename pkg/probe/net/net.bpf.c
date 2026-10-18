@@ -27,7 +27,19 @@ char LICENSE[] SEC("license") = "GPL";
 #define AF_INET  2
 #define AF_INET6 10
 #define UNIX_PATH_LEN 108 // sizeof(((struct sockaddr_un *)0)->sun_path)
-#define HELLO_CAP_LEN 1024
+// HELLO_CAP_LEN bounds the bytes one record carries: the first send of a
+// connection, one continuation of its ClientHello, a DNS query or a
+// datagram. A ClientHello with a post-quantum key share is 1.5 to 2 KiB
+// (N-31), so one send of it fits whole.
+#define HELLO_CAP_LEN 4096
+// HELLO_FOLLOW_MAX bounds the bytes of a ClientHello captured across sends,
+// first send included: one full TLS record. HELLO_MAX_PARTS bounds the
+// continuation records of one connection (N-31).
+#define HELLO_FOLLOW_MAX (5 + 16384)
+#define HELLO_MAX_PARTS 8
+// net_event_hdr.flags: on NET_HELLO and NET_HELLO_MORE, further sends of the
+// same ClientHello follow as NET_HELLO_MORE.
+#define NET_FLAG_HELLO_MORE 1
 #define SOCK_STREAM 1
 #define SOCK_DGRAM  2
 #define SOCK_RAW    3
@@ -59,6 +71,10 @@ enum net_event_type {
 	// first bytes of the datagram. Sent once per socket and destination,
 	// except to port 53, where every datagram is a DNS query (N-27).
 	NET_DGRAM = 9,
+	// The bytes of a later send on a connection whose first send began a
+	// ClientHello it did not hold whole (N-31): the hello continues here.
+	// Payload as NET_HELLO; flags says whether more follows.
+	NET_HELLO_MORE = 10,
 };
 
 struct net_event_hdr {
@@ -80,7 +96,7 @@ struct net_event_hdr {
 	// that carry sock; 0 when unknown. Userspace reads a DNS query with or
 	// without the TCP length prefix by it (N-27).
 	__u16 sotype;
-	__u16 _pad;
+	__u16 flags; // NET_FLAG_* bits
 };
 
 struct net_event {
@@ -104,7 +120,9 @@ struct conn_state {
 	__u8  hello_captured;
 	__u8  sent; // a NET_HELLO or NET_SEND was emitted
 	__u8  sotype; // the socket's type, 0 when unknown
+	__u8  hello_parts; // NET_HELLO_MORE records emitted (N-31)
 	__u32 tgid; // the process that connected
+	__u16 hello_left; // ClientHello bytes still to capture from later sends (N-31)
 	__u64 open_ts_ns;
 };
 
@@ -153,7 +171,7 @@ struct {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
-	__uint(max_entries, 1 << 18); // 256 KiB
+	__uint(max_entries, 1 << 20); // 1 MiB: a record carries up to HELLO_CAP_LEN bytes
 } net_events SEC(".maps");
 
 // drop_count counts bpf_ringbuf_output failures on net_events. A full ring
@@ -301,7 +319,7 @@ static __always_inline void fill_common(struct net_event_hdr *hdr, __u8 type,
 	hdr->sock = 0;
 	hdr->payload_len = 0;
 	hdr->sotype = 0;
-	hdr->_pad = 0;
+	hdr->flags = 0;
 }
 
 // --- socket resolution (N-24) ---------------------------------------------
@@ -415,9 +433,10 @@ static __always_inline struct conn_state *lookup_conn(__u32 fd, __u64 *ino)
 // emit_conn sends one record about connection cs whose payload, if any, is
 // already in e->payload.
 static __always_inline void emit_conn(struct net_event *e, __u8 type, __u32 tgid, __u32 fd,
-				      __u64 ino, struct conn_state *cs, __u32 len)
+				      __u64 ino, struct conn_state *cs, __u32 len, __u16 flags)
 {
 	fill_common(&e->hdr, type, tgid, fd);
+	e->hdr.flags = flags;
 	e->hdr.family = cs->family;
 	e->hdr.port = cs->port;
 	__builtin_memcpy(e->hdr.addr, cs->addr, sizeof(cs->addr));
@@ -436,7 +455,7 @@ static __always_inline void mark_sent(struct net_event *e, __u32 tgid, __u32 fd,
 {
 	if (cs->sent)
 		return;
-	emit_conn(e, NET_SEND, tgid, fd, ino, cs, 0);
+	emit_conn(e, NET_SEND, tgid, fd, ino, cs, 0, 0);
 	cs->sent = 1;
 }
 
@@ -767,6 +786,14 @@ int trace_listen(struct sys_enter_listen_ctx *ctx)
 // send that then fails still counts, like a failed connect. A zero-length
 // send carries nothing and is ignored. On a connected datagram socket to
 // port 53 every send is captured, one DNS query each (N-27).
+//
+// A first send on a stream that begins a TLS handshake record but does not
+// hold the whole ClientHello (the client wrote the record in pieces, or split
+// the hello over several records) is followed (N-31): the next sends on the
+// connection are captured as NET_HELLO_MORE until the hello's bytes are in,
+// up to HELLO_FOLLOW_MAX bytes and HELLO_MAX_PARTS records. Following stops
+// at a send the capture cannot hold whole, since the one after it would not
+// continue the captured bytes.
 
 // HELLO_MAX_IOV bounds how many iovecs of a writev or sendmsg are copied
 // into the hello buffer. The loop is unrolled, so the verifier sees straight
@@ -787,15 +814,103 @@ static __always_inline int wants_hello(struct conn_state *cs)
 	return !cs->hello_captured || dns_per_datagram(cs);
 }
 
+// hello_continues reports whether the next send on cs continues a ClientHello.
+static __always_inline int hello_continues(struct conn_state *cs)
+{
+	return cs->hello_captured && cs->hello_left && !dns_per_datagram(cs);
+}
+
+// hello_follow decides, from the first n captured bytes of a connection,
+// how many bytes of its ClientHello later sends still carry, and returns the
+// flags for the NET_HELLO record. whole says the capture holds the entire
+// send. The record header gives the record's length and the handshake
+// header the message's: a message that fits its record ends with the
+// record; one larger than its record continues in further records whose
+// sizes are unknown here, so up to HELLO_FOLLOW_MAX is followed and
+// userspace stops at the end of the message. Bytes that do not begin a
+// handshake record carrying a ClientHello are not followed.
+static __always_inline __u16 hello_follow(struct conn_state *cs, struct net_event *e, __u32 n, int whole)
+{
+	cs->hello_left = 0;
+	cs->hello_parts = 0;
+	if (!whole || n < 2 || cs->sotype == SOCK_DGRAM || cs->port == DNS_PORT)
+		return 0;
+	if (e->payload[0] != 0x16 || e->payload[1] != 3)
+		return 0;
+	__u32 want = HELLO_FOLLOW_MAX;
+	if (n >= 9) {
+		if (e->payload[5] != 1) // handshake type client_hello
+			return 0;
+		__u32 rec = ((__u32)e->payload[3] << 8) | e->payload[4];
+		__u32 msg = 4 + (((__u32)e->payload[6] << 16) | ((__u32)e->payload[7] << 8) |
+				 e->payload[8]);
+		if (msg <= rec)
+			want = 5 + rec;
+	}
+	if (want > HELLO_FOLLOW_MAX)
+		want = HELLO_FOLLOW_MAX;
+	if (want <= n)
+		return 0;
+	cs->hello_left = (__u16)(want - n);
+	return NET_FLAG_HELLO_MORE;
+}
+
+// hello_more_done accounts for n continuation bytes just captured and returns
+// the flags for their NET_HELLO_MORE record.
+static __always_inline __u16 hello_more_done(struct conn_state *cs, __u32 n, int whole)
+{
+	__u32 left = cs->hello_left;
+	left = n < left ? left - n : 0;
+	cs->hello_parts++;
+	if (!whole || cs->hello_parts >= HELLO_MAX_PARTS)
+		left = 0;
+	cs->hello_left = (__u16)left;
+	return left ? NET_FLAG_HELLO_MORE : 0;
+}
+
+// capture_more captures the next bytes of a ClientHello from a send of len
+// bytes at buf. A send longer than what the hello still needs ends it there.
+static __always_inline int capture_more(__u32 tgid, __u32 fd, __u64 ino, struct conn_state *cs,
+					const void *buf, __u64 len)
+{
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 0;
+	__u64 n = len;
+	if (n > cs->hello_left)
+		n = cs->hello_left;
+	int whole = 1;
+	if (n > HELLO_CAP_LEN) {
+		n = HELLO_CAP_LEN;
+		whole = 0;
+	}
+	barrier_var(n);
+	if (n > HELLO_CAP_LEN)
+		n = HELLO_CAP_LEN;
+	if (bpf_probe_read_user(e->payload, n, buf)) {
+		count_in(&hello_fault_count);
+		cs->hello_left = 0;
+		return 0;
+	}
+	__u16 flags = hello_more_done(cs, (__u32)n, whole);
+	emit_conn(e, NET_HELLO_MORE, tgid, fd, ino, cs, (__u32)n, flags);
+	return 0;
+}
+
 static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, __u64 len)
 {
 	if (len == 0)
 		return 0;
 	__u64 ino = 0;
 	struct conn_state *cs = lookup_conn(fd, &ino);
-	if (!cs || !wants_hello(cs))
+	if (!cs)
+		return 0;
+	if (hello_continues(cs))
+		return capture_more(tgid, fd, ino, cs, buf, len);
+	if (!wants_hello(cs))
 		return 0;
 
+	int whole = len <= HELLO_CAP_LEN;
 	if (len > HELLO_CAP_LEN)
 		len = HELLO_CAP_LEN;
 
@@ -813,7 +928,8 @@ static __always_inline int capture_hello(__u32 tgid, __u32 fd, const void *buf, 
 		return 0;
 	}
 
-	emit_conn(e, NET_HELLO, tgid, fd, ino, cs, (__u32)len);
+	__u16 flags = hello_follow(cs, e, (__u32)len, whole);
+	emit_conn(e, NET_HELLO, tgid, fd, ino, cs, (__u32)len, flags);
 	cs->hello_captured = 1;
 	cs->sent = 1;
 	return 0;
@@ -827,22 +943,32 @@ struct iovec_bpf {
 // copy_iov concatenates the first HELLO_MAX_IOV entries of an iovec array in
 // user memory into e->payload, up to HELLO_CAP_LEN bytes, and returns how
 // many bytes it copied. *fault is set when a read faulted; the bytes before
-// it are kept.
-static __always_inline __u32 copy_iov(struct net_event *e, __u64 iov_ptr, __u64 iovcnt, int *fault)
+// it are kept. *cut is set when bytes of the array may be left uncopied (an
+// entry beyond the cap or beyond the eighth).
+static __always_inline __u32 copy_iov(struct net_event *e, __u64 iov_ptr, __u64 iovcnt, int *fault,
+				      int *cut)
 {
 	__u32 off = 0;
+	if (iovcnt > HELLO_MAX_IOV)
+		*cut = 1;
 #pragma unroll
 	for (int i = 0; i < HELLO_MAX_IOV; i++) {
-		if (i >= iovcnt || off >= HELLO_CAP_LEN)
+		if (i >= iovcnt)
 			break;
+		if (off >= HELLO_CAP_LEN) {
+			*cut = 1;
+			break;
+		}
 		struct iovec_bpf iov = {0};
 		if (bpf_probe_read_user(&iov, sizeof(iov), (void *)(iov_ptr + i * sizeof(iov)))) {
 			*fault = 1;
 			break;
 		}
 		__u64 n = iov.iov_len;
-		if (n > HELLO_CAP_LEN - off)
+		if (n > HELLO_CAP_LEN - off) {
 			n = HELLO_CAP_LEN - off;
+			*cut = 1;
+		}
 		// The verifier bounds off and n separately, not their sum: clamp
 		// both against constants it can see (the barriers keep clang from
 		// folding the clamps away), and the payload's slack half covers
@@ -867,6 +993,35 @@ static __always_inline __u32 copy_iov(struct net_event *e, __u64 iov_ptr, __u64 
 	return off;
 }
 
+// capture_more_iov is capture_more for an iovec array in user memory.
+static __always_inline int capture_more_iov(__u32 tgid, __u32 fd, __u64 ino, struct conn_state *cs,
+					    __u64 iov_ptr, __u64 iovcnt)
+{
+	struct net_event *e = reserve_event();
+	if (!e)
+		return 0;
+	int fault = 0, cut = 0;
+	__u32 n = copy_iov(e, iov_ptr, iovcnt, &fault, &cut);
+	if (fault) {
+		count_in(&hello_fault_count);
+		cs->hello_left = 0;
+		return 0;
+	}
+	if (n == 0)
+		return 0;
+	int whole = 1;
+	if (n >= cs->hello_left)
+		n = cs->hello_left; // the hello ends inside this send
+	else if (cut)
+		whole = 0;
+	barrier_var(n);
+	if (n > HELLO_CAP_LEN)
+		n = HELLO_CAP_LEN;
+	__u16 flags = hello_more_done(cs, n, whole);
+	emit_conn(e, NET_HELLO_MORE, tgid, fd, ino, cs, n, flags);
+	return 0;
+}
+
 // capture_hello_iov is capture_hello for an iovec array in user memory.
 // When nothing could be copied (every copied entry empty, or a read
 // faulted), the connection is marked sent instead.
@@ -876,22 +1031,27 @@ static __always_inline int capture_hello_iov(__u32 tgid, __u32 fd, __u64 iov_ptr
 		return 0;
 	__u64 ino = 0;
 	struct conn_state *cs = lookup_conn(fd, &ino);
-	if (!cs || !wants_hello(cs))
+	if (!cs)
+		return 0;
+	if (hello_continues(cs))
+		return capture_more_iov(tgid, fd, ino, cs, iov_ptr, iovcnt);
+	if (!wants_hello(cs))
 		return 0;
 
 	struct net_event *e = reserve_event();
 	if (!e)
 		return 0;
 
-	int fault = 0;
-	__u32 off = copy_iov(e, iov_ptr, iovcnt, &fault);
+	int fault = 0, cut = 0;
+	__u32 off = copy_iov(e, iov_ptr, iovcnt, &fault, &cut);
 	if (fault)
 		count_in(&hello_fault_count);
 	if (fault || off == 0) {
 		mark_sent(e, tgid, fd, ino, cs);
 		return 0;
 	}
-	emit_conn(e, NET_HELLO, tgid, fd, ino, cs, off);
+	__u16 flags = hello_follow(cs, e, off, !cut);
+	emit_conn(e, NET_HELLO, tgid, fd, ino, cs, off, flags);
 	cs->hello_captured = 1;
 	cs->sent = 1;
 	return 0;
@@ -980,9 +1140,9 @@ static __always_inline int addressed_send(__u32 tgid, __u32 fd, __u64 uaddr, __u
 	if (!e)
 		return 1;
 	__u32 n = 0;
-	int fault = 0;
+	int fault = 0, cut = 0;
 	if (iov_ptr) {
-		n = copy_iov(e, iov_ptr, iovcnt, &fault);
+		n = copy_iov(e, iov_ptr, iovcnt, &fault, &cut);
 	} else if (len) {
 		if (len > HELLO_CAP_LEN)
 			len = HELLO_CAP_LEN;
@@ -1102,8 +1262,9 @@ static __always_inline int capture_hello_msg(__u32 tgid, __u32 fd, __u64 msg, __
 		struct conn_state *cs = lookup_conn(fd, &ino);
 		if (!cs)
 			return 0;
-		if (wants_hello(cs))
+		if (wants_hello(cs) || hello_continues(cs))
 			count_in(&hello_fault_count);
+		cs->hello_left = 0;
 		struct net_event *e = reserve_event();
 		if (e)
 			mark_sent(e, tgid, fd, ino, cs);
@@ -1255,7 +1416,7 @@ static __always_inline void release_fd(__u32 tgid, __u32 fd)
 
 	struct net_event *e = reserve_event();
 	if (e)
-		emit_conn(e, NET_CLOSE, tgid, fd, ino, cs, 0);
+		emit_conn(e, NET_CLOSE, tgid, fd, ino, cs, 0, 0);
 	bpf_map_delete_elem(&conns, &ino);
 }
 

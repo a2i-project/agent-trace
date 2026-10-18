@@ -143,8 +143,8 @@ s.close()
 }
 
 // clientHello returns the first TLS record a Go client sends for host: a
-// ClientHello with an SNI extension. X25519 alone keeps it small, so the
-// whole extension block fits in the probe's 1024-byte capture.
+// ClientHello with an SNI extension. X25519 alone keeps it small, well within
+// the probe's 4096-byte record (N-31).
 func clientHello(t *testing.T, host string) []byte {
 	t.Helper()
 	c1, c2 := stdnet.Pipe()
@@ -165,8 +165,8 @@ func clientHello(t *testing.T, host string) []byte {
 		t.Fatalf("read record body: %v", err)
 	}
 	hello := append(hdr, body...)
-	if len(hello) > 1024 {
-		t.Fatalf("ClientHello is %d bytes, more than the 1024-byte capture", len(hello))
+	if len(hello) > 4096 {
+		t.Fatalf("ClientHello is %d bytes, more than one 4096-byte record", len(hello))
 	}
 	if h, err := tlsparse.ParseClientHello(hello); err != nil || h.ServerName != host {
 		t.Fatalf("ParseClientHello = %+v, %v; want SNI %s", h, err, host)
