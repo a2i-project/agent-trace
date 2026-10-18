@@ -94,6 +94,7 @@ const (
 	bpfMapIouringSetupCount   = "iouring_setup_count"
 	bpfMapNetEvents           = "net_events"
 	bpfMapStateLostCount      = "state_lost_count"
+	bpfMapSysEnterProgs       = "sys_enter_progs"
 	bpfMapTrackedPids         = "tracked_pids"
 	bpfMapUntrackedCount      = "untracked_count"
 	bpfProgHandleExit         = "handle_exit"
@@ -103,7 +104,6 @@ const (
 	bpfProgTraceConnect       = "trace_connect"
 	bpfProgTraceDup2          = "trace_dup2"
 	bpfProgTraceDup3          = "trace_dup3"
-	bpfProgTraceIouringSetup  = "trace_iouring_setup"
 	bpfProgTraceIouringSubmit = "trace_iouring_submit"
 	bpfProgTraceListen        = "trace_listen"
 	bpfProgTracePwritev2      = "trace_pwritev2"
@@ -112,6 +112,7 @@ const (
 	bpfProgTraceSendmsg       = "trace_sendmsg"
 	bpfProgTraceSendto        = "trace_sendto"
 	bpfProgTraceSplice        = "trace_splice"
+	bpfProgTraceSysEnter      = "trace_sys_enter"
 	bpfProgTraceWrite         = "trace_write"
 	bpfProgTraceWritev        = "trace_writev"
 )
@@ -165,7 +166,6 @@ type bpfProgramSpecs struct {
 	TraceConnect       *ebpf.ProgramSpec `ebpf:"trace_connect"`
 	TraceDup2          *ebpf.ProgramSpec `ebpf:"trace_dup2"`
 	TraceDup3          *ebpf.ProgramSpec `ebpf:"trace_dup3"`
-	TraceIouringSetup  *ebpf.ProgramSpec `ebpf:"trace_iouring_setup"`
 	TraceIouringSubmit *ebpf.ProgramSpec `ebpf:"trace_iouring_submit"`
 	TraceListen        *ebpf.ProgramSpec `ebpf:"trace_listen"`
 	TracePwritev2      *ebpf.ProgramSpec `ebpf:"trace_pwritev2"`
@@ -174,6 +174,7 @@ type bpfProgramSpecs struct {
 	TraceSendmsg       *ebpf.ProgramSpec `ebpf:"trace_sendmsg"`
 	TraceSendto        *ebpf.ProgramSpec `ebpf:"trace_sendto"`
 	TraceSplice        *ebpf.ProgramSpec `ebpf:"trace_splice"`
+	TraceSysEnter      *ebpf.ProgramSpec `ebpf:"trace_sys_enter"`
 	TraceWrite         *ebpf.ProgramSpec `ebpf:"trace_write"`
 	TraceWritev        *ebpf.ProgramSpec `ebpf:"trace_writev"`
 }
@@ -193,6 +194,7 @@ type bpfMapSpecs struct {
 	IouringSetupCount *ebpf.MapSpec `ebpf:"iouring_setup_count"`
 	NetEvents         *ebpf.MapSpec `ebpf:"net_events"`
 	StateLostCount    *ebpf.MapSpec `ebpf:"state_lost_count"`
+	SysEnterProgs     *ebpf.MapSpec `ebpf:"sys_enter_progs"`
 	TrackedPids       *ebpf.MapSpec `ebpf:"tracked_pids"`
 	UntrackedCount    *ebpf.MapSpec `ebpf:"untracked_count"`
 }
@@ -234,6 +236,7 @@ type bpfMaps struct {
 	IouringSetupCount *ebpf.Map `ebpf:"iouring_setup_count"`
 	NetEvents         *ebpf.Map `ebpf:"net_events"`
 	StateLostCount    *ebpf.Map `ebpf:"state_lost_count"`
+	SysEnterProgs     *ebpf.Map `ebpf:"sys_enter_progs"`
 	TrackedPids       *ebpf.Map `ebpf:"tracked_pids"`
 	UntrackedCount    *ebpf.Map `ebpf:"untracked_count"`
 }
@@ -251,6 +254,7 @@ func (m *bpfMaps) Close() error {
 		m.IouringSetupCount,
 		m.NetEvents,
 		m.StateLostCount,
+		m.SysEnterProgs,
 		m.TrackedPids,
 		m.UntrackedCount,
 	)
@@ -273,7 +277,6 @@ type bpfPrograms struct {
 	TraceConnect       *ebpf.Program `ebpf:"trace_connect"`
 	TraceDup2          *ebpf.Program `ebpf:"trace_dup2"`
 	TraceDup3          *ebpf.Program `ebpf:"trace_dup3"`
-	TraceIouringSetup  *ebpf.Program `ebpf:"trace_iouring_setup"`
 	TraceIouringSubmit *ebpf.Program `ebpf:"trace_iouring_submit"`
 	TraceListen        *ebpf.Program `ebpf:"trace_listen"`
 	TracePwritev2      *ebpf.Program `ebpf:"trace_pwritev2"`
@@ -282,6 +285,7 @@ type bpfPrograms struct {
 	TraceSendmsg       *ebpf.Program `ebpf:"trace_sendmsg"`
 	TraceSendto        *ebpf.Program `ebpf:"trace_sendto"`
 	TraceSplice        *ebpf.Program `ebpf:"trace_splice"`
+	TraceSysEnter      *ebpf.Program `ebpf:"trace_sys_enter"`
 	TraceWrite         *ebpf.Program `ebpf:"trace_write"`
 	TraceWritev        *ebpf.Program `ebpf:"trace_writev"`
 }
@@ -295,7 +299,6 @@ func (p *bpfPrograms) Close() error {
 		p.TraceConnect,
 		p.TraceDup2,
 		p.TraceDup3,
-		p.TraceIouringSetup,
 		p.TraceIouringSubmit,
 		p.TraceListen,
 		p.TracePwritev2,
@@ -304,6 +307,7 @@ func (p *bpfPrograms) Close() error {
 		p.TraceSendmsg,
 		p.TraceSendto,
 		p.TraceSplice,
+		p.TraceSysEnter,
 		p.TraceWrite,
 		p.TraceWritev,
 	)

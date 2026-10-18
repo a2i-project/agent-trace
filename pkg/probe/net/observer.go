@@ -166,14 +166,20 @@ type dgramKey struct {
 // models.GroundTruthEvent values. See the package doc comment for what this
 // slice does and does not cover.
 type Observer struct {
-	objs     bpfObjects
-	links    []link.Link // net.bpf.c tracepoints, in attach order
-	reader   *ringbuf.Reader
-	events   chan models.GroundTruthEvent
-	stopped  chan struct{}
-	cfg      Config
-	dropped  atomic.Uint64
-	stopOnce sync.Once
+	objs    bpfObjects
+	links   []link.Link // net.bpf.c raw tracepoints, in attach order
+	reader  *ringbuf.Reader
+	events  chan models.GroundTruthEvent
+	stopped chan struct{}
+	// stopping is closed when Stop begins, so a validation in progress
+	// gives up instead of trying further candidates (N-32).
+	stopping chan struct{}
+	// sslDraining is raised by Stop once the TLS write side is detached:
+	// the next flush of the ssl ring then ends sslFeed's reading (N-32).
+	sslDraining atomic.Bool
+	cfg         Config
+	dropped     atomic.Uint64
+	stopOnce    sync.Once
 
 	// tracking is raised once a pid is in tracked_pids, by New or TrackPID.
 	// Until then the probe watches nothing (N-26).
@@ -262,43 +268,67 @@ type Observer struct {
 	coverage Coverage
 }
 
-// netTracepoint is one net.bpf.c program and the tracepoint it attaches to.
-type netTracepoint struct {
-	group, name string
-	prog        *ebpf.Program
+// rawTracepoint is one program and the raw tracepoint it attaches to.
+type rawTracepoint struct {
+	name string
+	prog *ebpf.Program
 }
 
-// netTracepoints lists the programs New attaches, in attach order. The send
-// hooks beyond write, sendto and sendmsg, and dup2 and dup3, complete the
-// send side of a connection (N-23, N-24).
-func netTracepoints(objs *bpfObjects) []netTracepoint {
-	return []netTracepoint{
-		{"syscalls", "sys_enter_connect", objs.TraceConnect},
-		{"syscalls", "sys_enter_write", objs.TraceWrite},
-		{"syscalls", "sys_enter_sendto", objs.TraceSendto},
-		{"syscalls", "sys_enter_sendmsg", objs.TraceSendmsg},
-		{"syscalls", "sys_enter_sendmmsg", objs.TraceSendmmsg},
-		{"syscalls", "sys_enter_writev", objs.TraceWritev},
-		{"syscalls", "sys_enter_pwritev2", objs.TracePwritev2},
-		{"syscalls", "sys_enter_sendfile64", objs.TraceSendfile},
-		{"syscalls", "sys_enter_splice", objs.TraceSplice},
-		{"syscalls", "sys_enter_close", objs.TraceClose},
-		{"syscalls", "sys_enter_dup2", objs.TraceDup2},
-		{"syscalls", "sys_enter_dup3", objs.TraceDup3},
-		{"task", "task_newtask", objs.HandleFork},
-		{"sched", "sched_process_exit", objs.HandleExit},
-		{"syscalls", "sys_enter_bind", objs.TraceBind},
-		{"syscalls", "sys_enter_listen", objs.TraceListen},
+// netRawTracepoints lists the net.bpf.c programs New attaches, in attach
+// order. Every hook is a raw tracepoint, whose detach does not wait for an
+// RCU grace period the way a perf-event tracepoint's does (N-32): the
+// syscall hooks sit behind the one sys_enter dispatcher.
+func netRawTracepoints(objs *bpfObjects) []rawTracepoint {
+	return []rawTracepoint{
+		{"task_newtask", objs.HandleFork},
+		{"sched_process_exit", objs.HandleExit},
+		{"sys_enter", objs.TraceSysEnter},
 	}
 }
 
-// iouringTracepoints lists the io_uring counters' programs (N-25). Unlike the
-// programs above, a missing tracepoint is not an error: a kernel built
-// without io_uring has neither, and New handles a kernel that has the
-// syscall but not io_uring_submit_req.
-func iouringTracepoints(objs *bpfObjects) (submit, setup netTracepoint) {
-	return netTracepoint{"io_uring", "io_uring_submit_req", objs.TraceIouringSubmit},
-		netTracepoint{"syscalls", "sys_enter_io_uring_setup", objs.TraceIouringSetup}
+// sysEnterPrograms lists the programs the sys_enter dispatcher tail-calls,
+// indexed by their slot (enum sys_slot in net.bpf.c, same order). The send
+// hooks beyond write, sendto and sendmsg, and dup2 and dup3, complete the
+// send side of a connection (N-23, N-24).
+func sysEnterPrograms(objs *bpfObjects) []*ebpf.Program {
+	return []*ebpf.Program{
+		objs.TraceConnect,
+		objs.TraceBind,
+		objs.TraceListen,
+		objs.TraceWrite,
+		objs.TraceSendto,
+		objs.TraceSendmsg,
+		objs.TraceSendmmsg,
+		objs.TraceWritev,
+		objs.TracePwritev2,
+		objs.TraceSendfile,
+		objs.TraceSplice,
+		objs.TraceClose,
+		objs.TraceDup2,
+		objs.TraceDup3,
+	}
+}
+
+// iouringSubmitTracepoint is the io_uring operation counter's program
+// (N-25). Unlike the programs above, a missing tracepoint is not an error: a
+// kernel built without io_uring, or one older than the event's name, lacks
+// it, and New handles that.
+func iouringSubmitTracepoint(objs *bpfObjects) rawTracepoint {
+	return rawTracepoint{"io_uring_submit_req", objs.TraceIouringSubmit}
+}
+
+// kernelHasIOURing reports whether the kernel has io_uring, from its trace
+// events in tracefs. Without tracefs it cannot tell and says yes, so a ring
+// is never taken as harmless for want of a mount.
+func kernelHasIOURing() bool {
+	for _, root := range []string{"/sys/kernel/tracing", "/sys/kernel/debug/tracing"} {
+		if _, err := os.Stat(filepath.Join(root, "events")); err != nil {
+			continue
+		}
+		_, err := os.Stat(filepath.Join(root, "events", "io_uring"))
+		return err == nil
+	}
+	return true
 }
 
 // New loads the eBPF programs, attaches the tracepoints, and opens the ring
@@ -349,27 +379,30 @@ func New(cfg Config) (*Observer, error) {
 		}
 		_ = objs.Close()
 	}
-	for _, tp := range netTracepoints(&objs) {
-		l, err := link.Tracepoint(tp.group, tp.name, tp.prog, nil)
+	// The dispatcher's slots are filled before it is attached, so no syscall
+	// reaches an empty slot.
+	for slot, prog := range sysEnterPrograms(&objs) {
+		if err := objs.SysEnterProgs.Update(uint32(slot), prog, ebpf.UpdateAny); err != nil {
+			closeAll()
+			return nil, fmt.Errorf("fill sys_enter slot %d: %w", slot, err)
+		}
+	}
+	for _, tp := range netRawTracepoints(&objs) {
+		l, err := link.AttachRawTracepoint(link.RawTracepointOptions{Name: tp.name, Program: tp.prog})
 		if err != nil {
 			closeAll()
 			return nil, fmt.Errorf("attach %s: %w", tp.name, err)
 		}
 		links = append(links, l)
 	}
-	submitTP, setupTP := iouringTracepoints(&objs)
-	attached := map[string]bool{}
-	for _, tp := range []netTracepoint{submitTP, setupTP} {
-		l, err := link.Tracepoint(tp.group, tp.name, tp.prog, nil)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			closeAll()
-			return nil, fmt.Errorf("attach %s: %w", tp.name, err)
-		}
+	submitTP := iouringSubmitTracepoint(&objs)
+	submitSeen := false
+	if l, err := link.AttachRawTracepoint(link.RawTracepointOptions{Name: submitTP.name, Program: submitTP.prog}); err == nil {
 		links = append(links, l)
-		attached[tp.name] = true
+		submitSeen = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		closeAll()
+		return nil, fmt.Errorf("attach %s: %w", submitTP.name, err)
 	}
 
 	reader, err := ringbuf.NewReader(objs.NetEvents)
@@ -384,6 +417,7 @@ func New(cfg Config) (*Observer, error) {
 		reader:       reader,
 		events:       make(chan models.GroundTruthEvent, cfg.EventBufSize),
 		stopped:      make(chan struct{}),
+		stopping:     make(chan struct{}),
 		tlsReady:     make(chan struct{}),
 		cfg:          cfg,
 		bootOffsetNs: bootOffsetNs,
@@ -394,7 +428,7 @@ func New(cfg Config) (*Observer, error) {
 		readStop:     make(chan struct{}),
 		readDone:     make(chan struct{}),
 
-		iouringSubmitUnseen: !attached[submitTP.name] && attached[setupTP.name],
+		iouringSubmitUnseen: !submitSeen && kernelHasIOURing(),
 	}
 	o.tracking.Store(cfg.TrackedPID > 0)
 
@@ -483,13 +517,13 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 		return fmt.Errorf("open ssl ring buffer: %w", err)
 	}
 
-	tlsForkLink, err := link.Tracepoint("task", "task_newtask", o.tlsObjs.HandleFork, nil)
+	tlsForkLink, err := link.AttachRawTracepoint(link.RawTracepointOptions{Name: "task_newtask", Program: o.tlsObjs.HandleFork})
 	if err != nil {
 		_ = sslReader.Close()
 		return fmt.Errorf("attach tls task_newtask: %w", err)
 	}
 
-	tlsExitLink, err := link.Tracepoint("sched", "sched_process_exit", o.tlsObjs.HandleExit, nil)
+	tlsExitLink, err := link.AttachRawTracepoint(link.RawTracepointOptions{Name: "sched_process_exit", Program: o.tlsObjs.HandleExit})
 	if err != nil {
 		_ = tlsForkLink.Close()
 		_ = sslReader.Close()
@@ -544,7 +578,16 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 	var chosen tlsoffset.Candidate
 	var framesSeen int
 	var validated bool
+	stopped := false
 	for i, cand := range o.tlsCandidates {
+		select {
+		case <-o.stopping:
+			stopped = true
+		default:
+		}
+		if stopped {
+			break
+		}
 		var l link.Link
 		if i == 0 && o.firstLink != nil {
 			l, o.firstLink = o.firstLink, nil // attached in New (prepareTLS)
@@ -572,10 +615,13 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 		// is what an ALPN-negotiated h2 connection looks like from here, and
 		// reporting it as a failed offset search sends the reader hunting
 		// for a symbol-resolution bug that isn't there.
-		if framesSeen > 0 {
+		switch {
+		case stopped:
+			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s before the capture stopped", cfg.ExePath)
+		case framesSeen > 0:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): captured %d frame(s), none began with an HTTP/1.x request line -- HTTP/2 plaintext cannot validate an offset, and its content is not parsed",
 				cfg.ExePath, len(o.tlsCandidates), framesSeen)
-		} else {
+		default:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): no frame was captured from a tracked process within %s",
 				cfg.ExePath, len(o.tlsCandidates), timeout)
 		}
@@ -872,19 +918,46 @@ func (o *Observer) TLSAttachError() error {
 	return o.tlsAttachErr
 }
 
-// Stop unblocks both ring-buffer reads, waits for the correlator goroutine
-// to finish, and releases all resources. The events channel is closed by
-// correlate itself once both feeders have drained, which happens before it
-// signals o.stopped, so Stop can safely wait on o.stopped alone and must
-// not close o.events again. Safe to call once.
+// Stop ends the capture without losing what is already in the rings, and
+// releases all resources (N-32). It detaches the producers first, then lets
+// each feeder read its ring until it is empty and return: a ring flush wakes
+// a feeder blocked in Read, which then reads with a deadline of now, so it
+// gets every record already committed and stops at the first empty read.
+// The net side goes first; the TLS write side is detached once Start has
+// finished (a validation in progress gives up when the flush interrupts
+// it), and its ring is drained the same way. correlate closes the events
+// channel once both feeders have returned, which happens before it signals
+// o.stopped, so Stop waits on o.stopped alone and must not close o.events
+// again. Every hook is a raw tracepoint or a uprobe, so no step waits for a
+// fixed time. Safe to call once, after Start.
 func (o *Observer) Stop() error {
 	o.stopOnce.Do(func() {
-		_ = o.reader.Close() // unblocks netFeed's Read with ErrClosed
+		close(o.stopping)
+		closeLinksReverse(o.links)
+		o.links = nil
+		_ = o.reader.Flush() // netFeed drains the net ring and returns
 		if o.sslReader != nil {
-			// Unblocks whichever of attachAndValidateTLS or sslFeed is
-			// reading, with ErrClosed. A failed validation has already
-			// closed it; ringbuf.Reader.Close is idempotent.
-			_ = o.sslReader.Close()
+			// Interrupts a validation still reading; a failed validation
+			// has already closed the reader, and this is then a no-op.
+			_ = o.sslReader.Flush()
+		}
+		<-o.tlsReady
+		// Start has returned, so the TLS write side's links are settled.
+		if o.sslWriteLink != nil {
+			_ = o.sslWriteLink.Close()
+		}
+		if o.firstLink != nil {
+			_ = o.firstLink.Close() // never taken over by a validation
+		}
+		if o.tlsForkLink != nil {
+			_ = o.tlsForkLink.Close()
+		}
+		if o.tlsExitLink != nil {
+			_ = o.tlsExitLink.Close()
+		}
+		o.sslDraining.Store(true)
+		if o.sslReader != nil {
+			_ = o.sslReader.Flush() // sslFeed drains the TLS ring and returns
 		}
 		<-o.stopped
 		// correlate has returned, so Start has decided whether
@@ -906,26 +979,36 @@ func (o *Observer) Stop() error {
 		o.finalReadFaults.Store(k.readFault)
 		o.finalReadDrops.Store(k.readDrop)
 		o.kernelCountersFinal.Store(true)
-		if o.sslWriteLink != nil {
-			_ = o.sslWriteLink.Close()
-		}
-		if o.firstLink != nil {
-			_ = o.firstLink.Close() // never taken over by a validation
-		}
 		closeLinks(o.readLinks)
-		if o.tlsForkLink != nil {
-			_ = o.tlsForkLink.Close()
-		}
-		if o.tlsExitLink != nil {
-			_ = o.tlsExitLink.Close()
+		_ = o.reader.Close()
+		if o.sslReader != nil {
+			_ = o.sslReader.Close() // idempotent
 		}
 		_ = o.tlsObjs.Close()
-		for i := len(o.links) - 1; i >= 0; i-- {
-			_ = o.links[i].Close()
-		}
 		_ = o.objs.Close()
 	})
 	return nil
+}
+
+// closeLinksReverse closes links in the reverse of attach order.
+func closeLinksReverse(ls []link.Link) {
+	for i := len(ls) - 1; i >= 0; i-- {
+		_ = ls[i].Close()
+	}
+}
+
+// drainRead classifies a ring-buffer read error for a feeder that drains at
+// Stop (N-32). A flush starts the drain when drain allows it: the reader's
+// deadline becomes now, so further reads return what the ring holds and then
+// os.ErrDeadlineExceeded, which ends the feeder, as does a closed reader.
+func drainRead(r *ringbuf.Reader, err error, drain bool) (stop bool) {
+	switch {
+	case errors.Is(err, ringbuf.ErrClosed), errors.Is(err, os.ErrDeadlineExceeded):
+		return true
+	case errors.Is(err, ringbuf.ErrFlushed) && drain:
+		r.SetDeadline(time.Now())
+	}
+	return false
 }
 
 // netRecord is one decoded net_events ring-buffer record.
@@ -1000,7 +1083,7 @@ func (o *Observer) netFeed(out chan<- netRecord) {
 	for {
 		record, err := o.reader.Read()
 		if err != nil {
-			if errors.Is(err, ringbuf.ErrClosed) {
+			if drainRead(o.reader, err, true) {
 				return
 			}
 			continue
@@ -1047,7 +1130,10 @@ func (o *Observer) sslFeed(out chan<- sslRecord) {
 	for {
 		record, err := o.sslReader.Read()
 		if err != nil {
-			if errors.Is(err, ringbuf.ErrClosed) {
+			// A flush before the write side is detached (the one that
+			// interrupts a validation, when it arrives after the validation
+			// ended) does not start the drain.
+			if drainRead(o.sslReader, err, o.sslDraining.Load()) {
 				return
 			}
 			continue

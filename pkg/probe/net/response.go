@@ -135,16 +135,28 @@ func (o *Observer) validateRead(timeout time.Duration) {
 				continue
 			}
 		}
+		accept := func() {
+			o.readLinks = links
+			o.readActive.Store(true)
+			_ = o.tlsCache.Store(o.tlsBuildID, tlsoffset.Target{Path: o.cfg.ExePath, BuildID: o.tlsBuildID, SSLWrite: o.writeOffset, SSLRead: cand.FileOff})
+		}
 		timer := time.NewTimer(timeout)
 		select {
 		case <-o.readOK:
 			timer.Stop()
-			o.readLinks = links
-			o.readActive.Store(true)
-			_ = o.tlsCache.Store(o.tlsBuildID, tlsoffset.Target{Path: o.cfg.ExePath, BuildID: o.tlsBuildID, SSLWrite: o.writeOffset, SSLRead: cand.FileOff})
+			accept()
 			return
 		case <-o.readStop:
 			timer.Stop()
+			// Stop closes readStop after correlate has drained the rings
+			// (N-32), so a status line read in the drain has closed readOK
+			// already; it wins over the stop.
+			select {
+			case <-o.readOK:
+				accept()
+				return
+			default:
+			}
 			closeLinks(links)
 			o.readAttachErr = fmt.Errorf("no SSL_read candidate validated in %s before the capture stopped: no read of a tracked process began with an HTTP/1.x status line", o.cfg.ExePath)
 			return

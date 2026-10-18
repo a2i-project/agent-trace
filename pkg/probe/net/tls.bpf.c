@@ -19,6 +19,7 @@
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
+#include <bpf/bpf_core_read.h>
 
 char LICENSE[] SEC("license") = "GPL";
 
@@ -297,25 +298,21 @@ int probe_ssl_read_return(struct pt_regs *ctx)
 	return 0;
 }
 
-struct task_newtask_ctx {
-	__u64 pad;
-	__s32 pid;
-	char comm[16];
-	__u64 clone_flags;
-	__s16 oom_score_adj;
-};
-
 #define CLONE_THREAD 0x10000
 
-SEC("tracepoint/task/task_newtask")
-int handle_fork(struct task_newtask_ctx *ctx)
+// The fork and exit hooks are raw tracepoints, whose detach does not wait
+// for a grace period (N-32). task_newtask fires in the parent; its arguments
+// are the new task and the clone flags.
+SEC("raw_tracepoint/task_newtask")
+int handle_fork(struct bpf_raw_tracepoint_args *ctx)
 {
 	// Threads share the tracked tgid; see proc.bpf.c handle_fork.
-	if (ctx->clone_flags & CLONE_THREAD)
+	if (ctx->args[1] & CLONE_THREAD)
 		return 0;
 
 	__u32 parent_pid = bpf_get_current_pid_tgid() >> 32;
-	__u32 child_pid = ctx->pid;
+	struct task_struct *child = (struct task_struct *)ctx->args[0];
+	__u32 child_pid = BPF_CORE_READ(child, pid);
 
 	__u8 *p = bpf_map_lookup_elem(&tracked_pids, &parent_pid);
 	if (!p)
@@ -327,15 +324,9 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	return 0;
 }
 
-struct sched_process_exit_ctx {
-	__u64 pad;
-	char comm[16];
-	__s32 pid;
-	__s32 prio;
-};
-
-SEC("tracepoint/sched/sched_process_exit")
-int handle_exit(struct sched_process_exit_ctx *ctx)
+// sched_process_exit fires in the exiting task.
+SEC("raw_tracepoint/sched_process_exit")
+int handle_exit(struct bpf_raw_tracepoint_args *ctx)
 {
 	__u64 id = bpf_get_current_pid_tgid();
 	__u32 tgid = id >> 32;

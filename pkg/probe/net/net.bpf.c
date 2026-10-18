@@ -15,7 +15,8 @@
 // process that received the descriptor over SCM_RIGHTS reaches the same
 // conns entry (N-23). A datagram sent to an explicit address needs no
 // connect() and is recorded on its own (NET_DGRAM, N-28); a DNS query is
-// captured from every datagram to port 53 (N-27).
+// captured from every datagram to port 53 (N-27). Every hook is a raw
+// tracepoint, whose detach does not wait for a grace period (N-32).
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
@@ -236,7 +237,7 @@ static __always_inline void count_state_lost(void)
 		__sync_fetch_and_add(count, 1);
 }
 
-// io_uring counters (N-25). Every hook above is a sys_enter_* tracepoint,
+// io_uring counters (N-25). Every syscall hook runs at sys_enter,
 // which an operation submitted through io_uring never passes. The probe does
 // not record those operations; it counts them so the capture can say it is
 // blind. iouring_net_count is event loss: an operation on a socket (or one
@@ -322,9 +323,125 @@ static __always_inline void fill_common(struct net_event_hdr *hdr, __u8 type,
 	hdr->flags = 0;
 }
 
+// --- syscall entry (N-32) ---------------------------------------------------
+//
+// The syscall hooks are not per-syscall tracepoints (sys_enter_connect, ...):
+// detaching one of those waits for RCU grace periods under the kernel's
+// event_mutex, about 60 ms each, which made Stop take over a second. One raw
+// tracepoint on sys_enter, whose detach does not wait, dispatches the
+// syscalls this file handles by number to one program each through a tail
+// call; the programs are those the tracepoints ran, reading their arguments
+// from the saved user registers. sys_enter fires for every syscall on the
+// host, so the dispatcher's switch on the number comes before anything else.
+// The numbers and the argument registers are those of x86_64 (rdi, rsi, rdx,
+// r10, r8, r9). A 32-bit (ia32) syscall has other numbers; like the
+// per-syscall tracepoints, which ignore compat syscalls on x86_64, the
+// dispatcher skips it. An x32 number carries bit 30 and matches nothing.
+
+#define NR_write          1
+#define NR_close          3
+#define NR_writev         20
+#define NR_dup2           33
+#define NR_sendfile       40
+#define NR_connect        42
+#define NR_sendto         44
+#define NR_sendmsg        46
+#define NR_bind           49
+#define NR_listen         50
+#define NR_splice         275
+#define NR_dup3           292
+#define NR_sendmmsg       307
+#define NR_pwritev2       328
+#define NR_io_uring_setup 425
+
+// Slots of sys_enter_progs. sysEnterPrograms in observer.go fills them in
+// this order.
+enum sys_slot {
+	SLOT_CONNECT,
+	SLOT_BIND,
+	SLOT_LISTEN,
+	SLOT_WRITE,
+	SLOT_SENDTO,
+	SLOT_SENDMSG,
+	SLOT_SENDMMSG,
+	SLOT_WRITEV,
+	SLOT_PWRITEV2,
+	SLOT_SENDFILE,
+	SLOT_SPLICE,
+	SLOT_CLOSE,
+	SLOT_DUP2,
+	SLOT_DUP3,
+	SLOT_COUNT,
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__uint(max_entries, SLOT_COUNT);
+	__type(key, __u32);
+	__type(value, __u32);
+} sys_enter_progs SEC(".maps");
+
+#define TS_COMPAT 0x0002 // thread_info.status: a 32-bit syscall is running
+
+static __always_inline struct pt_regs *sys_regs(struct bpf_raw_tracepoint_args *ctx)
+{
+	return (struct pt_regs *)ctx->args[0];
+}
+
+#define SYS_ARG1(regs) BPF_CORE_READ(regs, di)
+#define SYS_ARG2(regs) BPF_CORE_READ(regs, si)
+#define SYS_ARG3(regs) BPF_CORE_READ(regs, dx)
+#define SYS_ARG4(regs) BPF_CORE_READ(regs, r10)
+#define SYS_ARG5(regs) BPF_CORE_READ(regs, r8)
+#define SYS_ARG6(regs) BPF_CORE_READ(regs, r9)
+
+SEC("raw_tracepoint/sys_enter")
+int trace_sys_enter(struct bpf_raw_tracepoint_args *ctx)
+{
+	__u32 slot;
+	switch (ctx->args[1]) {
+	case NR_connect:  slot = SLOT_CONNECT; break;
+	case NR_bind:     slot = SLOT_BIND; break;
+	case NR_listen:   slot = SLOT_LISTEN; break;
+	case NR_write:    slot = SLOT_WRITE; break;
+	case NR_sendto:   slot = SLOT_SENDTO; break;
+	case NR_sendmsg:  slot = SLOT_SENDMSG; break;
+	case NR_sendmmsg: slot = SLOT_SENDMMSG; break;
+	case NR_writev:   slot = SLOT_WRITEV; break;
+	case NR_pwritev2: slot = SLOT_PWRITEV2; break;
+	case NR_sendfile: slot = SLOT_SENDFILE; break;
+	case NR_splice:   slot = SLOT_SPLICE; break;
+	case NR_close:    slot = SLOT_CLOSE; break;
+	case NR_dup2:     slot = SLOT_DUP2; break;
+	case NR_dup3:     slot = SLOT_DUP3; break;
+	case NR_io_uring_setup: slot = SLOT_COUNT; break;
+	default:
+		return 0;
+	}
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (!is_tracked(tgid))
+		return 0;
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	if (BPF_CORE_READ(task, thread_info.status) & TS_COMPAT)
+		return 0;
+	if (slot == SLOT_COUNT) {
+		// io_uring_setup: count the rings tracked processes set up. A
+		// diagnostic, except on a kernel without io_uring_submit_req,
+		// where the observer reports every ring as possible network
+		// activity (N-25).
+		count_in(&iouring_setup_count);
+		return 0;
+	}
+	bpf_tail_call(ctx, &sys_enter_progs, slot);
+	// Reached only when the slot is empty, which New rules out: the
+	// syscall went unrecorded, so it is counted as event loss.
+	count_drop();
+	return 0;
+}
+
 // --- socket resolution (N-24) ---------------------------------------------
 //
-// A sys_enter_* tracepoint sees only the descriptor number. fd_socket looks
+// A syscall hook sees only the descriptor number. fd_socket looks
 // it up in the calling task's fd table (task->files->fdt->fd[fd]) with CO-RE
 // reads and returns the struct file and the socket inode number when the
 // descriptor is a socket. Every read is a bpf_probe_read_kernel, which the
@@ -556,18 +673,13 @@ static __always_inline void record_connect(__u32 tgid, __u32 fd, __u64 ino, __u8
 		count_drop();
 }
 
-struct sys_enter_connect_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 uservaddr;
-	__u64 addrlen;
-};
-
-SEC("tracepoint/syscalls/sys_enter_connect")
-int trace_connect(struct sys_enter_connect_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_connect(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_uservaddr = SYS_ARG2(regs);
+	__u64 a_addrlen = SYS_ARG3(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
@@ -579,7 +691,7 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	// register as potentially negative across __u64->__u32 cast boundaries.
 	// Two reads with compile-time-constant sizes avoid the issue entirely.
 	__u16 family;
-	if (bpf_probe_read_user(&family, sizeof(family), (void *)ctx->uservaddr))
+	if (bpf_probe_read_user(&family, sizeof(family), (void *)a_uservaddr))
 		return 0;
 	if (family == AF_UNIX) {
 		// Capability evidence only: a connect to /var/run/docker.sock or a
@@ -588,10 +700,10 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 		struct net_event *ue = reserve_event();
 		if (!ue)
 			return 0;
-		int ulen = read_unix_path(ue, ctx->uservaddr, ctx->addrlen);
+		int ulen = read_unix_path(ue, a_uservaddr, a_addrlen);
 		if (ulen < 0)
 			return 0;
-		emit_unix(ue, NET_UNIX_CONNECT, tgid, (__u32)ctx->fd, (__u32)ulen);
+		emit_unix(ue, NET_UNIX_CONNECT, tgid, (__u32)a_fd, (__u32)ulen);
 		return 0;
 	}
 	if (family != AF_INET && family != AF_INET6)
@@ -601,10 +713,10 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	// sizeof(sockaddr_in) = 16, sizeof(sockaddr_in6) = 28.
 	__u8 sa[28] = {};
 	if (family == AF_INET) {
-		if (bpf_probe_read_user(sa, 16, (void *)ctx->uservaddr))
+		if (bpf_probe_read_user(sa, 16, (void *)a_uservaddr))
 			return 0;
 	} else {
-		if (bpf_probe_read_user(sa, 28, (void *)ctx->uservaddr))
+		if (bpf_probe_read_user(sa, 28, (void *)a_uservaddr))
 			return 0;
 	}
 
@@ -614,7 +726,7 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 	// A descriptor that is not a socket makes connect fail (EBADF, ENOTSOCK)
 	// with nothing sent, so it is not recorded. A failed kernel read loses a
 	// connection the caller did make, and is counted.
-	__u32 fd = (__u32)ctx->fd;
+	__u32 fd = (__u32)a_fd;
 	struct file *f = NULL;
 	__u64 ino = 0;
 	int res = fd_socket(fd, &f, &ino);
@@ -647,34 +759,29 @@ int trace_connect(struct sys_enter_connect_ctx *ctx)
 // process accepts connections. AF_UNIX sockets take the same path with the
 // socket name in the payload.
 
-struct sys_enter_bind_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 umyaddr;
-	__u64 addrlen;
-};
-
-SEC("tracepoint/syscalls/sys_enter_bind")
-int trace_bind(struct sys_enter_bind_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_bind(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_umyaddr = SYS_ARG2(regs);
+	__u64 a_addrlen = SYS_ARG3(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
 
 	// Constant-size reads only, see trace_connect for why.
 	__u16 family;
-	if (bpf_probe_read_user(&family, sizeof(family), (void *)ctx->umyaddr))
+	if (bpf_probe_read_user(&family, sizeof(family), (void *)a_umyaddr))
 		return 0;
 	if (family == AF_UNIX) {
 		struct net_event *ue = reserve_event();
 		if (!ue)
 			return 0;
-		int ulen = read_unix_path(ue, ctx->umyaddr, ctx->addrlen);
+		int ulen = read_unix_path(ue, a_umyaddr, a_addrlen);
 		if (ulen < 0)
 			return 0;
-		struct conn_key ukey = { .tgid = tgid, .fd = (__u32)ctx->fd };
+		struct conn_key ukey = { .tgid = tgid, .fd = (__u32)a_fd };
 		struct bind_state ubs = {0};
 		ubs.family = AF_UNIX;
 		ubs.unix_len = (__u32)ulen;
@@ -691,21 +798,21 @@ int trace_bind(struct sys_enter_bind_ctx *ctx)
 	// are not the caller's address.
 	__u8 sa[28] = {};
 	if (family == AF_INET) {
-		if (ctx->addrlen < 16)
+		if (a_addrlen < 16)
 			return 0;
-		if (bpf_probe_read_user(sa, 16, (void *)ctx->umyaddr))
+		if (bpf_probe_read_user(sa, 16, (void *)a_umyaddr))
 			return 0;
 	} else {
-		if (ctx->addrlen < 28)
+		if (a_addrlen < 28)
 			return 0;
-		if (bpf_probe_read_user(sa, 28, (void *)ctx->umyaddr))
+		if (bpf_probe_read_user(sa, 28, (void *)a_umyaddr))
 			return 0;
 	}
 
 	__u16 port_be = *(__u16 *)(sa + 2);
 	__u16 port = ((port_be & 0xff) << 8) | (port_be >> 8);
 
-	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
+	struct conn_key key = { .tgid = tgid, .fd = (__u32)a_fd };
 	struct bind_state bs = {0};
 	bs.family = (__u8)family;
 	bs.port = port;
@@ -727,17 +834,11 @@ int trace_bind(struct sys_enter_bind_ctx *ctx)
 	return 0;
 }
 
-struct sys_enter_listen_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 backlog;
-};
-
-SEC("tracepoint/syscalls/sys_enter_listen")
-int trace_listen(struct sys_enter_listen_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_listen(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
@@ -746,7 +847,7 @@ int trace_listen(struct sys_enter_listen_ctx *ctx)
 	if (!e)
 		return 0;
 
-	struct conn_key key = { .tgid = tgid, .fd = (__u32)ctx->fd };
+	struct conn_key key = { .tgid = tgid, .fd = (__u32)a_fd };
 	fill_common(&e->hdr, NET_SOCK_LISTEN, tgid, key.fd);
 	// reserve_event returns per-CPU scratch that holds the previous event,
 	// so every address field is set explicitly. family 0 means the socket
@@ -1185,56 +1286,37 @@ static __always_inline int send_without_bytes(__u32 tgid, __u32 fd, __u64 len)
 	return 0;
 }
 
-struct sys_enter_write_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 buf;
-	__u64 count;
-};
-
-SEC("tracepoint/syscalls/sys_enter_write")
-int trace_write(struct sys_enter_write_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_write(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_buf = SYS_ARG2(regs);
+	__u64 a_count = SYS_ARG3(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return capture_hello(tgid, (__u32)ctx->fd, (const void *)ctx->buf, ctx->count);
+	return capture_hello(tgid, (__u32)a_fd, (const void *)a_buf, a_count);
 }
 
-struct sys_enter_sendto_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 buff;
-	__u64 len;
-	__u64 flags;
-	__u64 addr;
-	__u64 addr_len;
-};
-
-SEC("tracepoint/syscalls/sys_enter_sendto")
-int trace_sendto(struct sys_enter_sendto_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_sendto(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_buff = SYS_ARG2(regs);
+	__u64 a_len = SYS_ARG3(regs);
+	__u64 a_flags = SYS_ARG4(regs);
+	__u64 a_addr = SYS_ARG5(regs);
+	__u64 a_addr_len = SYS_ARG6(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	if (ctx->addr && addressed_send(tgid, (__u32)ctx->fd, ctx->addr, ctx->addr_len,
-					ctx->flags, ctx->buff, ctx->len, 0, 0))
+	if (a_addr && addressed_send(tgid, (__u32)a_fd, a_addr, a_addr_len,
+				     a_flags, a_buff, a_len, 0, 0))
 		return 0;
-	return capture_hello(tgid, (__u32)ctx->fd, (const void *)ctx->buff, ctx->len);
+	return capture_hello(tgid, (__u32)a_fd, (const void *)a_buff, a_len);
 }
-
-struct sys_enter_sendmsg_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 msg;
-	__u64 flags;
-};
 
 // Mirrors struct msghdr / struct iovec's user-space layout on x86_64. struct
 // mmsghdr starts with a struct msghdr, so sendmmsg reads its first element
@@ -1276,120 +1358,91 @@ static __always_inline int capture_hello_msg(__u32 tgid, __u32 fd, __u64 msg, __
 	return capture_hello_iov(tgid, fd, mh.msg_iov, mh.msg_iovlen);
 }
 
-SEC("tracepoint/syscalls/sys_enter_sendmsg")
-int trace_sendmsg(struct sys_enter_sendmsg_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_sendmsg(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_msg = SYS_ARG2(regs);
+	__u64 a_flags = SYS_ARG3(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->msg, ctx->flags);
+	return capture_hello_msg(tgid, (__u32)a_fd, a_msg, a_flags);
 }
-
-struct sys_enter_sendmmsg_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 mmsg;
-	__u64 vlen;
-	__u64 flags;
-};
 
 // Only the first message is read, for the hello, a DNS query or an
 // addressed datagram; the rest are sent after it unseen. glibc sends its
 // parallel A and AAAA queries this way, so the AAAA query is not recorded.
-SEC("tracepoint/syscalls/sys_enter_sendmmsg")
-int trace_sendmmsg(struct sys_enter_sendmmsg_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_sendmmsg(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_mmsg = SYS_ARG2(regs);
+	__u64 a_vlen = SYS_ARG3(regs);
+	__u64 a_flags = SYS_ARG4(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	if (ctx->vlen == 0)
+	if (a_vlen == 0)
 		return 0;
-	return capture_hello_msg(tgid, (__u32)ctx->fd, ctx->mmsg, ctx->flags);
+	return capture_hello_msg(tgid, (__u32)a_fd, a_mmsg, a_flags);
 }
 
-struct sys_enter_writev_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 vec;
-	__u64 vlen;
-};
-
-SEC("tracepoint/syscalls/sys_enter_writev")
-int trace_writev(struct sys_enter_writev_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_writev(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_vec = SYS_ARG2(regs);
+	__u64 a_vlen = SYS_ARG3(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return capture_hello_iov(tgid, (__u32)ctx->fd, ctx->vec, ctx->vlen);
+	return capture_hello_iov(tgid, (__u32)a_fd, a_vec, a_vlen);
 }
-
-struct sys_enter_pwritev2_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-	__u64 vec;
-	__u64 vlen;
-	__u64 pos_l;
-	__u64 pos_h;
-	__u64 flags;
-};
 
 // pwritev2 with offset -1 writes at the current position, which for a
 // socket is a writev; any other offset fails on a socket with ESPIPE.
-SEC("tracepoint/syscalls/sys_enter_pwritev2")
-int trace_pwritev2(struct sys_enter_pwritev2_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_pwritev2(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
+	__u64 a_vec = SYS_ARG2(regs);
+	__u64 a_vlen = SYS_ARG3(regs);
+	__u64 a_pos_l = SYS_ARG4(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	if ((__s64)ctx->pos_l != -1)
+	if ((__s64)a_pos_l != -1)
 		return 0;
-	return capture_hello_iov(tgid, (__u32)ctx->fd, ctx->vec, ctx->vlen);
+	return capture_hello_iov(tgid, (__u32)a_fd, a_vec, a_vlen);
 }
 
-struct sys_enter_sendfile64_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 out_fd;
-	__u64 in_fd;
-	__u64 offset;
-	__u64 count;
-};
-
-SEC("tracepoint/syscalls/sys_enter_sendfile64")
-int trace_sendfile(struct sys_enter_sendfile64_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_sendfile(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_out_fd = SYS_ARG1(regs);
+	__u64 a_count = SYS_ARG4(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return send_without_bytes(tgid, (__u32)ctx->out_fd, ctx->count);
+	return send_without_bytes(tgid, (__u32)a_out_fd, a_count);
 }
 
-struct sys_enter_splice_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd_in;
-	__u64 off_in;
-	__u64 fd_out;
-	__u64 off_out;
-	__u64 len;
-	__u64 flags;
-};
-
-SEC("tracepoint/syscalls/sys_enter_splice")
-int trace_splice(struct sys_enter_splice_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_splice(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd_out = SYS_ARG3(regs);
+	__u64 a_len = SYS_ARG5(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	return send_without_bytes(tgid, (__u32)ctx->fd_out, ctx->len);
+	return send_without_bytes(tgid, (__u32)a_fd_out, a_len);
 }
 
 // --- connection teardown: close, dup2, dup3 (N-24) ------------------------
@@ -1420,31 +1473,17 @@ static __always_inline void release_fd(__u32 tgid, __u32 fd)
 	bpf_map_delete_elem(&conns, &ino);
 }
 
-struct sys_enter_close_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 fd;
-};
-
-SEC("tracepoint/syscalls/sys_enter_close")
-int trace_close(struct sys_enter_close_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_close(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_fd = SYS_ARG1(regs);
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
-	release_fd(tgid, (__u32)ctx->fd);
+	release_fd(tgid, (__u32)a_fd);
 	return 0;
 }
-
-struct sys_enter_dup3_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 oldfd;
-	__u64 newfd;
-	__u64 flags;
-};
 
 // dup2 and dup3 close newfd when it is open and differs from oldfd. A call
 // whose oldfd is not open fails with EBADF and leaves newfd alone, so it is
@@ -1463,16 +1502,22 @@ static __always_inline int dup_over(__u32 oldfd, __u32 newfd)
 	return 0;
 }
 
-SEC("tracepoint/syscalls/sys_enter_dup2")
-int trace_dup2(struct sys_enter_dup3_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_dup2(struct bpf_raw_tracepoint_args *ctx)
 {
-	return dup_over((__u32)ctx->oldfd, (__u32)ctx->newfd);
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_oldfd = SYS_ARG1(regs);
+	__u64 a_newfd = SYS_ARG2(regs);
+	return dup_over((__u32)a_oldfd, (__u32)a_newfd);
 }
 
-SEC("tracepoint/syscalls/sys_enter_dup3")
-int trace_dup3(struct sys_enter_dup3_ctx *ctx)
+SEC("raw_tracepoint/sys_enter")
+int trace_dup3(struct bpf_raw_tracepoint_args *ctx)
 {
-	return dup_over((__u32)ctx->oldfd, (__u32)ctx->newfd);
+	struct pt_regs *regs = sys_regs(ctx);
+	__u64 a_oldfd = SYS_ARG1(regs);
+	__u64 a_newfd = SYS_ARG2(regs);
+	return dup_over((__u32)a_oldfd, (__u32)a_newfd);
 }
 
 // --- io_uring (N-25) --------------------------------------------------------
@@ -1490,19 +1535,6 @@ int trace_dup3(struct sys_enter_dup3_ctx *ctx)
 // Everything else (file opens, stat, EPOLL_CTL, timeouts, ...) is not. libuv
 // in Node.js submits only IORING_OP_EPOLL_CTL, so a Node.js process does not
 // count (N-25).
-
-// Field layout of the io_uring_submit_req tracepoint up to opcode, which is
-// the same from the kernel that introduced the name to at least 6.17.
-// Handwritten rather than taken from vmlinux.h so that a kernel without the
-// event has no CO-RE relocation to fail at load: the observer then simply
-// does not attach this program.
-struct io_uring_submit_req_ctx {
-	__u64 pad;
-	void *ctx;
-	void *req;
-	__u64 user_data;
-	__u8  opcode;
-};
 
 #define IOSQE_FIXED_FILE 1 // bit 0 of the sqe flags, stored in req->flags
 
@@ -1570,52 +1602,45 @@ static __always_inline int iouring_target_may_be_socket(struct io_kiocb *req)
 	return fd_socket((__u32)fd, &f, &ino) != FD_NONE;
 }
 
-SEC("tracepoint/io_uring/io_uring_submit_req")
-int trace_iouring_submit(struct io_uring_submit_req_ctx *ctx)
+// The raw tracepoint's one argument is the request (TP_PROTO(struct
+// io_kiocb *req) from the kernel that introduced the name to at least 7.0).
+// Its opcode is read through CO-RE, guarded, so a kernel without struct
+// io_kiocb loads the program; the observer then fails to attach it and skips
+// it. An opcode that cannot be read counts as a network operation.
+SEC("raw_tracepoint/io_uring_submit_req")
+int trace_iouring_submit(struct bpf_raw_tracepoint_args *ctx)
 {
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	if (!is_tracked(tgid))
 		return 0;
 	count_in(&iouring_ops_count);
-	__u8 op = ctx->opcode;
+	struct io_kiocb *req = (struct io_kiocb *)ctx->args[0];
+	__u8 op = 0;
+	if (!req || !bpf_core_field_exists(req->opcode) ||
+	    bpf_core_read(&op, sizeof(op), &req->opcode)) {
+		count_in(&iouring_net_count);
+		return 0;
+	}
 	if (iouring_socket_only_op(op) ||
-	    (iouring_data_op(op) && iouring_target_may_be_socket((struct io_kiocb *)ctx->req)))
+	    (iouring_data_op(op) && iouring_target_may_be_socket(req)))
 		count_in(&iouring_net_count);
 	return 0;
 }
 
-// trace_iouring_setup counts the rings tracked processes set up. A
-// diagnostic, except on a kernel without io_uring_submit_req, where the
-// observer reports every ring as possible network activity (N-25).
-SEC("tracepoint/syscalls/sys_enter_io_uring_setup")
-int trace_iouring_setup(void *ctx)
-{
-	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
-	if (!is_tracked(tgid))
-		return 0;
-	count_in(&iouring_setup_count);
-	return 0;
-}
-
-struct task_newtask_ctx {
-	__u64 pad;
-	__s32 pid;
-	char comm[16];
-	__u64 clone_flags;
-	__s16 oom_score_adj;
-};
-
 #define CLONE_THREAD 0x10000
 
-SEC("tracepoint/task/task_newtask")
-int handle_fork(struct task_newtask_ctx *ctx)
+// task_newtask fires in the parent; its arguments are the new task and the
+// clone flags.
+SEC("raw_tracepoint/task_newtask")
+int handle_fork(struct bpf_raw_tracepoint_args *ctx)
 {
 	// Threads share the tracked tgid; see proc.bpf.c handle_fork.
-	if (ctx->clone_flags & CLONE_THREAD)
+	if (ctx->args[1] & CLONE_THREAD)
 		return 0;
 
 	__u32 parent_pid = bpf_get_current_pid_tgid() >> 32;
-	__u32 child_pid = ctx->pid;
+	struct task_struct *child = (struct task_struct *)ctx->args[0];
+	__u32 child_pid = BPF_CORE_READ(child, pid);
 
 	__u8 *p = bpf_map_lookup_elem(&tracked_pids, &parent_pid);
 	if (!p)
@@ -1627,15 +1652,9 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	return 0;
 }
 
-struct sched_process_exit_ctx {
-	__u64 pad;
-	char comm[16];
-	__s32 pid;
-	__s32 prio;
-};
-
-SEC("tracepoint/sched/sched_process_exit")
-int handle_exit(struct sched_process_exit_ctx *ctx)
+// sched_process_exit fires in the exiting task.
+SEC("raw_tracepoint/sched_process_exit")
+int handle_exit(struct bpf_raw_tracepoint_args *ctx)
 {
 	__u64 id = bpf_get_current_pid_tgid();
 	__u32 tgid = id >> 32;
