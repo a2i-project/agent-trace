@@ -27,6 +27,8 @@ type bpfEventHdr struct {
 	Pad0          uint8
 	FilenameLen   uint32
 	ArgsSize      uint32
+	Tid           uint32
+	Pad1          uint32
 }
 
 type bpfExecScratch struct {
@@ -55,6 +57,7 @@ const (
 	bpfMapStateLostCount   = "state_lost_count"
 	bpfMapTrackedPids      = "tracked_pids"
 	bpfMapUntrackedCount   = "untracked_count"
+	bpfProgHandleExecOk    = "handle_exec_ok"
 	bpfProgHandleExecve    = "handle_execve"
 	bpfProgHandleExecveat  = "handle_execveat"
 	bpfProgHandleExit      = "handle_exit"
@@ -104,6 +107,7 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
+	HandleExecOk    *ebpf.ProgramSpec `ebpf:"handle_exec_ok"`
 	HandleExecve    *ebpf.ProgramSpec `ebpf:"handle_execve"`
 	HandleExecveat  *ebpf.ProgramSpec `ebpf:"handle_execveat"`
 	HandleExit      *ebpf.ProgramSpec `ebpf:"handle_exit"`
@@ -187,6 +191,7 @@ type bpfVariables struct {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
+	HandleExecOk    *ebpf.Program `ebpf:"handle_exec_ok"`
 	HandleExecve    *ebpf.Program `ebpf:"handle_execve"`
 	HandleExecveat  *ebpf.Program `ebpf:"handle_execveat"`
 	HandleExit      *ebpf.Program `ebpf:"handle_exit"`
@@ -196,6 +201,7 @@ type bpfPrograms struct {
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
+		p.HandleExecOk,
 		p.HandleExecve,
 		p.HandleExecveat,
 		p.HandleExit,

@@ -33,6 +33,8 @@ const (
 	kindExec uint32 = 0
 	kindExit uint32 = 1
 	kindFork uint32 = 2
+	// kindExecOK is header only: the exec attempt of thread Tid took effect.
+	kindExecOK uint32 = 3
 )
 
 // Config controls the observer's behavior.
@@ -87,6 +89,7 @@ type Observer struct {
 	objs          bpfObjects
 	execLink      link.Link
 	execveatLink  link.Link
+	execOKLink    link.Link
 	forkLink      link.Link
 	exitLink      link.Link
 	exitGroupLink link.Link
@@ -203,10 +206,21 @@ func New(cfg Config) (*Observer, error) {
 		return nil, fmt.Errorf("attach sys_enter_execveat: %w", err)
 	}
 
-	exitGroupLink, err := link.Tracepoint("syscalls", "sys_enter_exit_group", objs.HandleExitGroup, nil)
+	execOKLink, err := link.Tracepoint("sched", "sched_process_exec", objs.HandleExecOk, nil)
 	if err != nil {
 		_ = execLink.Close()
 		_ = execveatLink.Close()
+		_ = forkLink.Close()
+		_ = objs.Close()
+		return nil, fmt.Errorf("attach sched_process_exec: %w", err)
+	}
+
+	exitGroupLink, err := link.Tracepoint("syscalls", "sys_enter_exit_group", objs.HandleExitGroup, nil)
+	if err != nil {
+		_ = execOKLink.Close()
+		_ = execLink.Close()
+		_ = execveatLink.Close()
+		_ = forkLink.Close()
 		_ = objs.Close()
 		return nil, fmt.Errorf("attach sys_enter_exit_group: %w", err)
 	}
@@ -214,8 +228,10 @@ func New(cfg Config) (*Observer, error) {
 	exitLink, err := link.Tracepoint("sched", "sched_process_exit", objs.HandleExit, nil)
 	if err != nil {
 		_ = exitGroupLink.Close()
+		_ = execOKLink.Close()
 		_ = execLink.Close()
 		_ = execveatLink.Close()
+		_ = forkLink.Close()
 		_ = objs.Close()
 		return nil, fmt.Errorf("attach sched_process_exit: %w", err)
 	}
@@ -224,8 +240,10 @@ func New(cfg Config) (*Observer, error) {
 	if err != nil {
 		_ = exitLink.Close()
 		_ = exitGroupLink.Close()
+		_ = execOKLink.Close()
 		_ = execLink.Close()
 		_ = execveatLink.Close()
+		_ = forkLink.Close()
 		_ = objs.Close()
 		return nil, fmt.Errorf("open ring buffer: %w", err)
 	}
@@ -234,6 +252,7 @@ func New(cfg Config) (*Observer, error) {
 		objs:          objs,
 		execLink:      execLink,
 		execveatLink:  execveatLink,
+		execOKLink:    execOKLink,
 		forkLink:      forkLink,
 		exitLink:      exitLink,
 		exitGroupLink: exitGroupLink,
@@ -367,6 +386,7 @@ func (o *Observer) Stop() error {
 		_ = o.forkLink.Close()
 		_ = o.execLink.Close()
 		_ = o.execveatLink.Close()
+		_ = o.execOKLink.Close()
 		_ = o.objs.Close()
 		close(o.events)
 	})
@@ -390,12 +410,59 @@ func (o *Observer) emitForkEdge(hdr *bpfEventHdr) {
 	}
 }
 
-// lastExec is what an exit record is joined to: the command line of the
-// latest exec read for the pid, and whether the probe cut it. The kernel
-// keeps only the header per process (P-19), so the join happens here.
-type lastExec struct {
+// execLine is an exec record's command line and whether the probe cut it.
+type execLine struct {
 	target    string
 	truncated bool
+}
+
+// joiner gives an exit record its command line. The kernel keeps only the
+// header per process (P-19), so the join happens here: an exit names the
+// image that exited, the last exec attempt that took effect for the process
+// (P-31). An attempt is remembered per thread, since a non-leader thread can
+// exec; a success record makes the thread's latest attempt the process's
+// image, and a failed attempt, which has no success record, changes nothing.
+type joiner struct {
+	attempts map[uint32]execLine // by tid: the thread's latest exec attempt
+	images   map[uint32]execLine // by tgid: the attempt that took effect last
+}
+
+func newJoiner() *joiner {
+	return &joiner{attempts: map[uint32]execLine{}, images: map[uint32]execLine{}}
+}
+
+// attempt remembers an exec attempt of thread tid. An attempt with no
+// command line is remembered as missing, so its success cannot take an
+// older attempt's command line.
+func (j *joiner) attempt(tid uint32, l execLine) {
+	if l.target == "" {
+		delete(j.attempts, tid)
+		return
+	}
+	j.attempts[tid] = l
+}
+
+// succeeded records that thread tid's latest attempt replaced the image of
+// process tgid. An attempt this reader never saw (a ring drop, counted)
+// leaves the process with no known image rather than the one it replaced.
+func (j *joiner) succeeded(tgid, tid uint32) {
+	l, ok := j.attempts[tid]
+	delete(j.attempts, tid)
+	if !ok {
+		delete(j.images, tgid)
+		return
+	}
+	j.images[tgid] = l
+}
+
+// exit returns the command line of the image process tgid exited as, and
+// forgets the process. False when no exec of the process took effect that
+// this reader saw.
+func (j *joiner) exit(tgid uint32) (execLine, bool) {
+	l, ok := j.images[tgid]
+	delete(j.images, tgid)
+	delete(j.attempts, tgid)
+	return l, ok
 }
 
 func (o *Observer) readLoop() {
@@ -404,7 +471,7 @@ func (o *Observer) readLoop() {
 	var hdr bpfEventHdr
 	hdrSize := binary.Size(hdr)
 	const filenameLen = 256 // Matches FILENAME_LEN in proc.bpf.c
-	execs := map[uint32]lastExec{}
+	join := newJoiner()
 
 	for {
 		record, err := o.reader.Read()
@@ -442,6 +509,11 @@ func (o *Observer) readLoop() {
 			}
 			o.emitForkEdge(&hdr)
 			continue
+		case kindExecOK:
+			// A header-only record: the attempt that took effect. It is no
+			// event of its own; it decides what the exit is joined to.
+			join.succeeded(hdr.Pid, hdr.Tid)
+			continue
 		default:
 			continue
 		}
@@ -449,16 +521,16 @@ func (o *Observer) readLoop() {
 		var target string
 		truncated := hdr.ArgsTruncated != 0
 		if actionType == models.ProcessExit {
-			// A header-only record: the command line is the exec's. An exit
-			// whose exec this reader never saw (the ring dropped it, which
-			// drop_count counted) has no command line and is not emitted,
-			// as before, when the kernel kept the exec record itself.
-			le, ok := execs[hdr.Pid]
-			delete(execs, hdr.Pid)
+			// A header-only record: the command line is that of the exec
+			// that took effect last (P-31). An exit whose exec this reader
+			// never saw (the ring dropped it, which drop_count counted) has
+			// no command line and is not emitted, as before, when the
+			// kernel kept the exec record itself.
+			l, ok := join.exit(hdr.Pid)
 			if !ok {
 				continue
 			}
-			target, truncated = le.target, le.truncated
+			target, truncated = l.target, l.truncated
 		} else {
 			// Extract filename and args from the payload
 			var fnBytes, argsBytes []byte
@@ -474,9 +546,7 @@ func (o *Observer) readLoop() {
 				}
 			}
 			target = commandLine(cString(fnBytes), argsBytes, hdr.Nargs)
-			if target != "" {
-				execs[hdr.Pid] = lastExec{target: target, truncated: truncated}
-			}
+			join.attempt(hdr.Tid, execLine{target: target, truncated: truncated})
 		}
 		if target == "" {
 			continue

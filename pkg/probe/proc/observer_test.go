@@ -1349,3 +1349,149 @@ func TestObserver_ExecveatWithAPathNamesIt(t *testing.T) {
 		}
 	}
 }
+
+// exitOf returns the one exit record of pid, failing the test on none or two.
+func exitOf(t *testing.T, byPID map[uint32][]models.GroundTruthEvent, pid uint32) *models.GroundTruthEvent {
+	t.Helper()
+	var exit *models.GroundTruthEvent
+	for i, e := range byPID[pid] {
+		if e.ActionType != models.ProcessExit {
+			continue
+		}
+		if exit != nil {
+			t.Errorf("a second exit record for %d: %+v", pid, e)
+		}
+		exit = &byPID[pid][i]
+	}
+	if exit == nil {
+		t.Errorf("no exit record for %d; its events: %+v", pid, byPID[pid])
+	}
+	return exit
+}
+
+// failThenExec attempts an exec of a program that does not exist, then, when
+// argv[2] says so, execs /bin/true; otherwise it exits 5 as python.
+const failThenExec = `
+import os, sys
+nonce, then = sys.argv[1], sys.argv[2]
+try:
+    os.execv("/nonexistent-" + nonce, ["x", nonce])
+except OSError:
+    pass
+if then == "exec":
+    os.execv("/bin/true", ["true", nonce])
+os._exit(5)
+`
+
+// A failed exec attempt is recorded (P-4) but does not become the process's
+// command line: the exit names the image that exited (P-31). The exit used
+// to carry the latest attempt, so a process that tried a missing binary
+// exited under its name.
+func TestObserver_FailedExecDoesNotNameTheExit(t *testing.T) {
+	skipUnprivileged(t)
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not installed")
+	}
+	nonce := fmt.Sprintf("agenttrace-failexec-%d", time.Now().UnixNano())
+	thenExec := exec.Command(python, "-c", failThenExec, nonce+"-a", "exec")
+	thenExit := exec.Command(python, "-c", failThenExec, nonce+"-b", "exit")
+	byPID := runTracked(t, []*exec.Cmd{thenExec, thenExit})
+	if code := thenExec.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("the exec case exited %d, want 0 from /bin/true", code)
+	}
+	if code := thenExit.ProcessState.ExitCode(); code != 5 {
+		t.Fatalf("the exit case exited %d, want 5", code)
+	}
+
+	for _, c := range []struct {
+		cmd    *exec.Cmd
+		nonce  string
+		want   string
+		code   int32
+		reason string
+	}{
+		{thenExec, nonce + "-a", "/bin/true " + nonce + "-a", 0, "the exec that took effect after the failed one"},
+		{thenExit, nonce + "-b", "", 5, "python, the image that exited"},
+	} {
+		pid := uint32(c.cmd.Process.Pid)
+		var attempt bool
+		for _, e := range byPID[pid] {
+			if e.ActionType == models.ProcessExec && e.Target == "/nonexistent-"+c.nonce+" "+c.nonce {
+				attempt = true
+			}
+		}
+		if !attempt {
+			t.Errorf("%s: no exec record of the failed attempt (P-4)", c.nonce)
+		}
+		exit := exitOf(t, byPID, pid)
+		if exit == nil {
+			continue
+		}
+		want := c.want
+		if want == "" {
+			want = python + " -c " + failThenExec + " " + c.nonce + " exit"
+		}
+		if exit.Target != want {
+			t.Errorf("%s: exit target %q, want %s %q", c.nonce, exit.Target, c.reason, want)
+		}
+		if exit.ExitCode == nil || *exit.ExitCode != c.code {
+			t.Errorf("%s: exit code %v, want %d", c.nonce, exit.ExitCode, c.code)
+		}
+	}
+}
+
+// A process that execs twice exits as its last image: a shell that execs a
+// shell that execs /bin/true is /bin/true when it exits (P-31). The first
+// exec record still names the first program.
+func TestObserver_ProcessThatExecsTwiceExitsAsItsLastImage(t *testing.T) {
+	skipUnprivileged(t)
+	nonce := fmt.Sprintf("agenttrace-twice-%d", time.Now().UnixNano())
+	inner := "exec /bin/true " + nonce
+	outer := "exec /bin/sh -c '" + inner + "'"
+	cmd := exec.Command("/bin/sh", "-c", outer)
+	byPID := runTracked(t, []*exec.Cmd{cmd})
+	pid := uint32(cmd.Process.Pid)
+
+	var execs []string
+	for _, e := range byPID[pid] {
+		if e.ActionType == models.ProcessExec {
+			execs = append(execs, e.Target)
+		}
+	}
+	wantExecs := []string{"/bin/sh -c " + inner, "/bin/true " + nonce}
+	if len(execs) != 3 || execs[0] != "/bin/sh -c "+outer || execs[1] != wantExecs[0] || execs[2] != wantExecs[1] {
+		t.Errorf("exec records %q, want the outer shell, the inner shell and /bin/true", execs)
+	}
+	if exit := exitOf(t, byPID, pid); exit != nil && exit.Target != "/bin/true "+nonce {
+		t.Errorf("exit target %q, want the last image %q", exit.Target, "/bin/true "+nonce)
+	}
+}
+
+// threadExec execs /bin/true from a thread that is not the leader. The kernel
+// gives the exec'ing thread the leader's pid, so the success record names the
+// thread's old pid, and the exit must still join that thread's attempt.
+const threadExec = `
+import os, sys, threading, time
+nonce = sys.argv[1]
+threading.Thread(target=lambda: os.execv("/bin/true", ["true", nonce])).start()
+time.sleep(10)
+os._exit(99)
+`
+
+func TestObserver_ExecByANonLeaderThreadNamesTheExit(t *testing.T) {
+	skipUnprivileged(t)
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not installed")
+	}
+	nonce := fmt.Sprintf("agenttrace-threadexec-%d", time.Now().UnixNano())
+	cmd := exec.Command(python, "-c", threadExec, nonce)
+	byPID := runTracked(t, []*exec.Cmd{cmd})
+	if code := cmd.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("exited %d, want 0 from /bin/true (99: the thread's exec did not happen)", code)
+	}
+	if exit := exitOf(t, byPID, uint32(cmd.Process.Pid)); exit != nil && exit.Target != "/bin/true "+nonce {
+		t.Errorf("exit target %q, want %q", exit.Target, "/bin/true "+nonce)
+	}
+}

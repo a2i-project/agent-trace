@@ -18,6 +18,7 @@ char LICENSE[] SEC("license") = "GPL";
 #define KIND_EXEC 0
 #define KIND_EXIT 1
 #define KIND_FORK 2 // a tracked process created a child; header only, no filename or args
+#define KIND_EXEC_OK 3 // an exec took effect; header only, tid names the thread whose attempt it was
 
 #define path_is(fn, literal) __extension__({ \
 	int _match = 1; \
@@ -47,6 +48,8 @@ struct event_hdr {
 	__u8  pad0;
 	__u32 filename_len;
 	__u32 args_size;
+	__u32 tid; // the thread that made the exec attempt (KIND_EXEC, KIND_EXEC_OK)
+	__u32 pad1;
 };
 
 struct exec_scratch {
@@ -179,10 +182,12 @@ static __always_inline struct exec_scratch *scratch(void)
 	return bpf_map_lookup_elem(&heap, &cpu);
 }
 
-// execs keeps, per tracked process, the header of its latest exec until it
-// exits: the exit code lands here and the exit record is this header. The
-// command line is not kept in the kernel (4096 entries of 256 KiB would be
-// 1 GiB preallocated); userspace joins the exit to the exec it already read.
+// execs keeps, per tracked process, a header from the latest exec that took
+// effect until it exits: the exit code lands here and the exit record is this
+// header. A process whose exec attempts all failed has no entry, as one that
+// never exec'd. The command line is not kept in the kernel (4096 entries of
+// 256 KiB would be 1 GiB preallocated); userspace joins the exit to the
+// attempt that took effect, which it already read (P-19, P-31).
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 4096);
@@ -211,6 +216,13 @@ struct sys_enter_execveat_ctx {
 	const char *const *argv;
 	const char *const *envp;
 	__s64 flags;
+};
+
+struct sched_process_exec_ctx {
+	__u64 pad;
+	__u32 filename_loc; // __data_loc char[]
+	__s32 pid;
+	__s32 old_pid; // the thread's pid before the exec; differs from pid when a non-leader thread exec'd
 };
 
 struct sched_process_exit_ctx {
@@ -291,22 +303,25 @@ static __always_inline int nul_at(const char *s, __u32 i)
 	return !bpf_probe_read_user(&c, 1, s + i) && c == '\0';
 }
 
-// record_exec records one exec attempt at syscall entry: the filename as
-// the kernel was asked for it (or "(fexecve)" for an exec through a
-// descriptor, which names no path), then argv. Shared by execve and execveat
-// (P-21).
+// record_exec records one exec attempt at syscall entry, whether it then
+// succeeds or not (P-4): the filename as the kernel was asked for it (or
+// "(fexecve)" for an exec through a descriptor, which names no path), then
+// argv. Shared by execve and execveat (P-21). handle_exec_ok says which
+// attempt took effect (P-31).
 static __always_inline int record_exec(const char *filename, const char *const *argv, int via_fd)
 {
-	__u32 pid = bpf_get_current_pid_tgid() >> 32;
+	__u64 pid_tgid = bpf_get_current_pid_tgid();
+	__u32 pid = pid_tgid >> 32;
 
 	struct exec_scratch *e = scratch();
 	if (!e)
 		return 0;
 
 	e->hdr.pid = pid;
+	e->hdr.tid = (__u32)pid_tgid;
+	e->hdr.pad1 = 0;
 	// The parent as the kernel sees it now, so it is correct whether or not
-	// tracked_pids is in use. An exit record is a copy of this exec record and
-	// keeps this value even if the process was reparented later.
+	// tracked_pids is in use.
 	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
 	e->hdr.ppid = BPF_CORE_READ(task, real_parent, tgid);
 	e->hdr.kind = KIND_EXEC;
@@ -399,9 +414,6 @@ static __always_inline int record_exec(const char *filename, const char *const *
 	e->hdr.args_size = args_size;
 	e->hdr.nargs = nargs;
 
-	if (bpf_map_update_elem(&execs, &pid, &e->hdr, BPF_ANY))
-		count_state_lost();
-
 	__u32 out_size = sizeof(struct event_hdr) + FILENAME_LEN + args_size;
 	if (out_size > sizeof(struct exec_scratch))
 		out_size = sizeof(struct exec_scratch);
@@ -429,6 +441,43 @@ int handle_execveat(struct sys_enter_execveat_ctx *ctx)
 	char first = 0;
 	int via_fd = bpf_probe_read_user(&first, 1, ctx->filename) || first == '\0';
 	return record_exec(ctx->filename, ctx->argv, via_fd);
+}
+
+// handle_exec_ok marks the exec that took effect (P-31). sched_process_exec
+// fires only for a successful exec, after the kernel replaced the image, so a
+// failed attempt never reaches it. The record names the attempting thread
+// (old_pid: a non-leader thread that execs takes the leader's pid), and
+// userspace joins it to that thread's latest attempt. The execs entry is
+// created or replaced here, so the exit record carries the image that exited.
+SEC("tracepoint/sched/sched_process_exec")
+int handle_exec_ok(struct sched_process_exec_ctx *ctx)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+
+	__u8 is_toplevel = 1;
+	if (get_use_pid_filter()) {
+		struct proc_info *p = bpf_map_lookup_elem(&tracked_pids, &tgid);
+		if (!p)
+			return 0;
+		is_toplevel = p->is_toplevel;
+	}
+
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	struct event_hdr h = {};
+	h.pid = tgid;
+	// The exit record is a copy of this header and keeps this parent even if
+	// the process is reparented later.
+	h.ppid = BPF_CORE_READ(task, real_parent, tgid);
+	h.kind = KIND_EXEC_OK;
+	h.ts_ns = bpf_ktime_get_ns();
+	h.is_toplevel = is_toplevel;
+	h.tid = ctx->old_pid;
+
+	if (bpf_map_update_elem(&execs, &tgid, &h, BPF_ANY))
+		count_state_lost();
+	if (bpf_ringbuf_output(&events, &h, sizeof(h), 0))
+		count_drop();
+	return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_exit_group")
@@ -473,8 +522,9 @@ int handle_exit(struct sched_process_exit_ctx *ctx)
 		return 0;
 
 	// A header-only record: userspace joins it to the command line of the
-	// exec record it read for this pid. Two threads exiting at once can both
-	// read live as zero; only the one whose delete succeeds emits.
+	// exec attempt that took effect last for this pid (P-31). Two threads
+	// exiting at once can both read live as zero; only the one whose delete
+	// succeeds emits.
 	struct event_hdr xh = *cached;
 	if (bpf_map_delete_elem(&execs, &tgid))
 		return 0;
