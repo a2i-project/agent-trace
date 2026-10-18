@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -210,6 +211,18 @@ type Observer struct {
 	// settleSnapshot/resolveSettled directly and want an immediate resolve.
 	settleDelay time.Duration
 
+	// identities remembers, by handleKey, the device, inode and birth time a
+	// file handle named (identify); bounded by identitiesSize.
+	identities map[string]identity
+
+	// self is the observer's own pid, set by assemble; zero in tests that
+	// build an Observer directly, where selfPID asks the kernel.
+	self int32
+
+	// openHandle opens the file a handle names; nil uses openByHandle. The
+	// benchmarks set it, since open_by_handle_at needs privilege.
+	openHandle handleOpener
+
 	// hashFile computes the content hash for a closed file. Defaults to
 	// content.SHA256File; overridable in tests to control the read's outcome.
 	hashFD func(int) (string, error)
@@ -289,15 +302,25 @@ func New(cfg Config) (*Observer, error) {
 		_ = unix.Close(fd)
 		return nil, err
 	}
-	mountFD := set.fds[pathID]
 	dirs := newDirCache(dirCacheSize, openRenameWatch(set.marked, unix.FAN_MARK_FILESYSTEM))
-
-	// Pipe for signaling the read loop to stop.
-	pipeFDs := [2]int{}
-	if err := unix.Pipe2(pipeFDs[:], unix.O_CLOEXEC); err != nil {
+	o, err := assemble(cfg, fd, set, set.fds[pathID], dirs)
+	if err != nil {
 		set.close()
 		dirs.close()
 		_ = unix.Close(fd)
+		return nil, err
+	}
+	return o, nil
+}
+
+// assemble builds an Observer around a marked fanotify group: fd, the marked
+// filesystems with their mount fds, the mount fd of Config.Path's filesystem
+// and the directory cache. The benchmarks build one around an inode-marked
+// group the same way.
+func assemble(cfg Config, fd int, set markedSet, mountFD int, dirs *dirCache) (*Observer, error) {
+	// Pipe for signaling the read loop to stop.
+	pipeFDs := [2]int{}
+	if err := unix.Pipe2(pipeFDs[:], unix.O_CLOEXEC); err != nil {
 		return nil, fmt.Errorf("pipe2: %w", err)
 	}
 
@@ -325,6 +348,7 @@ func New(cfg Config) (*Observer, error) {
 		settleDelay:         settleQuietWindow,
 		stopDrain:           stopDrainBudget,
 		hashFD:              content.SHA256FD,
+		self:                int32(os.Getpid()),
 	}, nil
 }
 
@@ -356,6 +380,23 @@ func (o *Observer) Scope() (marked []string, unmarked map[string]string) {
 		unmarked[k] = v
 	}
 	return marked, unmarked
+}
+
+// selfPID returns the observer's own pid, without a system call once
+// assemble has set it.
+func (o *Observer) selfPID() int32 {
+	if o.self != 0 {
+		return o.self
+	}
+	return int32(os.Getpid())
+}
+
+// open opens the file a handle names as an O_PATH fd (openHandle).
+func (o *Observer) open(mountFD int, handleType int32, handleData []byte) (int, error) {
+	if o.openHandle != nil {
+		return o.openHandle(mountFD, handleType, handleData)
+	}
+	return openByHandle(mountFD, handleType, handleData)
 }
 
 // mountFor returns the mount fd of the filesystem id, or -1.
@@ -463,17 +504,32 @@ func (o *Observer) Stop() error {
 	return nil
 }
 
-// settlePollMs bounds how long readLoop's poll ever blocks between settle
-// checks. readLoop must wake periodically to re-judge pending closes (see
-// resolveSettled) even when nothing new arrives on the fanotify fd, since a
-// close becomes eligible to hash purely by the passage of quiet time
-// (settleQuietWindow). Correctness does not depend on this value, but it
-// caps how much latency polling itself adds on top of settleQuietWindow
-// before a settled close's hash is actually published -- kept small so that
-// total latency (window + at most one poll period) stays comfortably under
-// the gap between an agent's distinct operations on a path (see
-// settleQuietWindow).
-const settlePollMs = 5
+// pollTimeout returns how long readLoop's poll may block, in milliseconds:
+// until the quiet window of the earliest pending close ends, when that close
+// becomes eligible to hash purely by the passage of quiet time
+// (settleQuietWindow), or without limit when no close is pending. The read
+// loop therefore wakes for a record, for a settle deadline or for the stop
+// signal, and not on a fixed period (P-29). A deadline that has passed gives
+// zero: a close registered in the batch just read is judged on the next
+// iteration, which its settle snapshot needs.
+func (o *Observer) pollTimeout() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.pendingCloses) == 0 {
+		return -1
+	}
+	var next time.Time
+	for path := range o.pendingCloses {
+		if d := o.lastWriteAt[path].Add(o.settleDelay); next.IsZero() || d.Before(next) {
+			next = d
+		}
+	}
+	wait := time.Until(next)
+	if wait <= 0 {
+		return 0
+	}
+	return int((wait + time.Millisecond - 1) / time.Millisecond)
+}
 
 // settleQuietWindow is the default settleDelay: a path must go this long
 // with no observed write-class event before a pending FileClose for it is
@@ -491,9 +547,10 @@ const settlePollMs = 5
 // yet stay well below the gap between an agent's distinct operations on a
 // path -- once a file is written, closed, then (say) renamed or deleted a
 // short time later, its content is only hashable in the interval between.
-// Together with settlePollMs, total publish latency is window + at most one
-// poll period (~25ms), clearing the sub-millisecond burst-gap bound by
-// ~1000x while leaving ample room under cmd/simagent's 50ms fixture gap (see
+// The read loop wakes at the end of the window (pollTimeout), so total
+// publish latency is the window plus at most a millisecond of rounding,
+// clearing the sub-millisecond burst-gap bound by ~1000x while leaving
+// ample room under cmd/simagent's 50ms fixture gap (see
 // TestObserver_CloseHashSurvivesQuickRename, the regression guard for this).
 const settleQuietWindow = 20 * time.Millisecond
 
@@ -507,7 +564,7 @@ func (o *Observer) readLoop() {
 	}
 
 	for {
-		_, err := unix.Poll(pollFDs, settlePollMs)
+		_, err := unix.Poll(pollFDs, o.pollTimeout())
 		if err != nil {
 			if err == unix.EINTR {
 				continue
@@ -567,7 +624,7 @@ const stopCountBudget = 250 * time.Millisecond
 // dropped. It is a lower bound: the count stops at stopCountBudget.
 func (o *Observer) drainAtStop(buf []byte) {
 	defer o.releaseHeld()
-	resolve := newKernelResolver(o.mounts)
+	resolve := newKernelResolver(o.mounts, o.openHandle)
 	deadline := time.Now().Add(o.stopDrain)
 	for time.Now().Before(deadline) {
 		n := o.readReady(buf)
@@ -616,7 +673,7 @@ func (o *Observer) readReady(buf []byte) int {
 // considered, without resolving their handles: not its own, and not excluded
 // by PIDFilter. An overflow record sets overflow and is not counted.
 func (o *Observer) countRecords(buf []byte, n int) uint64 {
-	self := int32(os.Getpid())
+	self := o.selfPID()
 	var count uint64
 	for offset := 0; offset+metadataSize <= n; {
 		meta := readMetadata(buf[offset:])
@@ -681,7 +738,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 		// (P-18). A batch is read in microseconds, so the offsets never reach
 		// the next batch's reading.
 		now := time.Now()
-		raw := parseEvents(buf, n, newKernelResolver(o.mounts), o.dirs)
+		raw := parseEvents(buf, n, newKernelResolver(o.mounts, o.openHandle), o.dirs)
 		for i := range raw {
 			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
 		}
@@ -713,7 +770,8 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	// read) is counted before the path filter, which it can never pass, so
 	// the count does not depend on the filter. The observer's own records
 	// are left out, as cmd/watch leaves them out of the capture.
-	if e.Path == "" && e.PID != int32(os.Getpid()) {
+	self := o.selfPID()
+	if e.Path == "" && e.PID != self {
 		o.unresolved.Add(uint64(len(maskToActionTypes(e.Mask))))
 	}
 
@@ -723,7 +781,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	}
 
 	o.mu.Lock()
-	if e.PID == int32(os.Getpid()) && e.Mask&unix.FAN_OPEN != 0 && o.pendingHashOpens[e.Path] > 0 {
+	if e.PID == self && e.Mask&unix.FAN_OPEN != 0 && o.pendingHashOpens[e.Path] > 0 {
 		o.pendingHashOpens[e.Path]--
 		if o.pendingHashOpens[e.Path] == 0 {
 			delete(o.pendingHashOpens, e.Path)
@@ -748,6 +806,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	// about writes that haven't happened yet -- which is why registerClose
 	// below carries the real guarantee for closes. The observer's own
 	// hash-read FAN_OPEN is already stripped above and never reaches here.
+	handle := handleKey(e.FSID, e.HandleType, e.HandleData)
 	if e.Mask&(unix.FAN_CREATE|unix.FAN_MODIFY|unix.FAN_CLOSE_WRITE|unix.FAN_OPEN) != 0 {
 		o.mu.Lock()
 		if o.pathGeneration == nil {
@@ -758,11 +817,11 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 		}
 		o.pathGeneration[e.Path]++
 		o.lastWriteAt[e.Path] = ts
-		if key := handleKey(e.FSID, e.HandleType, e.HandleData); key != "" {
+		if handle != "" {
 			if o.handleGeneration == nil {
 				o.handleGeneration = make(map[string]uint64)
 			}
-			o.handleGeneration[key]++
+			o.handleGeneration[handle]++
 		}
 		o.mu.Unlock()
 	}
@@ -784,7 +843,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 			continue
 		}
 		if actionType == models.FileClose {
-			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData, handleKey(e.FSID, e.HandleType, e.HandleData))
+			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData, handle)
 		} else {
 			event := models.GroundTruthEvent{
 				Timestamp:       ts,
@@ -796,7 +855,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 			if actionType == models.FileOpen {
 				// No hash at all when the probe never measured the file's
 				// content: a stamp would be compared as a measurement (P-22).
-				if hash, ok := o.inputHash(e.Path, o.mountFor(e.FSID), e.HandleType, e.HandleData); ok {
+				if hash, ok := o.inputHash(e.Path, o.mountFor(e.FSID), e.HandleType, e.HandleData, handle); ok {
 					event.InputHash = &hash
 				}
 			}
@@ -907,12 +966,12 @@ func (o *Observer) namedNow(e *rawEvent) bool {
 	if len(e.HandleData) == 0 || mountFD < 0 {
 		return false
 	}
-	fd, err := unix.OpenByHandleAt(mountFD, unix.NewFileHandle(e.HandleType, e.HandleData), unix.O_RDONLY|unix.O_PATH)
+	fd, err := o.open(mountFD, e.HandleType, e.HandleData)
 	if err != nil {
 		return false
 	}
 	defer func() { _ = unix.Close(fd) }()
-	p, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
+	p, err := os.Readlink(procFD(fd))
 	return err == nil && p == e.Path
 }
 
@@ -947,8 +1006,8 @@ const emptyFileHash = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4
 // false otherwise, for a file outside the walked directory that the probe never
 // hashed, and the open then carries no InputHash: a claimed input on it is
 // unverified, not compared against a stamp (P-22, V-29).
-func (o *Observer) inputHash(path string, mountFD int, handleType int32, handleData []byte) (string, bool) {
-	key, born, identified := identify(path, mountFD, handleType, handleData)
+func (o *Observer) inputHash(path string, mountFD int, handleType int32, handleData []byte, handle string) (string, bool) {
+	key, born, byHandle, identified := o.identify(path, mountFD, handleType, handleData, handle)
 	first := false
 	if identified {
 		o.mu.Lock()
@@ -959,7 +1018,7 @@ func (o *Observer) inputHash(path string, mountFD int, handleType int32, handleD
 		o.openedInodes[key] = true
 		o.mu.Unlock()
 	}
-	if h, ok := o.lookupShadowHash(path, mountFD, handleType, handleData); ok {
+	if h, ok := o.lookupShadowHash(path, key, identified && byHandle); ok {
 		return h, true
 	}
 	// Only the first open of a file born after Start is its creating open. A
@@ -971,60 +1030,91 @@ func (o *Observer) inputHash(path string, mountFD int, handleType int32, handleD
 }
 
 // identify resolves the file an event names to its device and inode and its
-// birth time, through the event's file handle when there is one and its path
-// otherwise. born is zero when the filesystem does not report a birth time.
-func identify(path string, mountFD int, handleType int32, handleData []byte) (key inodeKey, born time.Time, ok bool) {
+// birth time, through the event's file handle when there is one (byHandle)
+// and its path otherwise, with one open and one statx. born is zero when the
+// filesystem does not report a birth time. The key is the one fstat gives
+// (inodeKeyFromFD): statx reports the device as a major and minor number, and
+// unix.Mkdev encodes them as stat's st_dev does.
+//
+// What a handle identifies is remembered by its handleKey (identities): a
+// handle names one inode for its whole life, generation included, and an
+// inode's device, number and birth time never change, so the shared libraries
+// every command opens are identified once (P-29). A remembered file that has
+// since been deleted is still identified, by the inode its handle named.
+func (o *Observer) identify(path string, mountFD int, handleType int32, handleData []byte, handle string) (key inodeKey, born time.Time, byHandle, ok bool) {
 	var fd int
 	var err error
-	if handleData != nil && mountFD >= 0 {
-		fd, err = unix.OpenByHandleAt(mountFD, unix.NewFileHandle(handleType, handleData), unix.O_RDONLY|unix.O_PATH)
+	byHandle = handleData != nil && mountFD >= 0
+	if byHandle && handle != "" {
+		o.mu.Lock()
+		id, found := o.identities[handle]
+		o.mu.Unlock()
+		if found {
+			return id.key, id.born, true, true
+		}
+	}
+	defer func() {
+		if ok && byHandle && handle != "" {
+			o.mu.Lock()
+			if o.identities == nil || len(o.identities) >= identitiesSize {
+				o.identities = make(map[string]identity)
+			}
+			o.identities[handle] = identity{key: key, born: born}
+			o.mu.Unlock()
+		}
+	}()
+	if byHandle {
+		fd, err = o.open(mountFD, handleType, handleData)
 	} else {
 		fd, err = unix.Open(path, unix.O_RDONLY|unix.O_PATH|unix.O_NOFOLLOW, 0)
 	}
 	if err != nil {
-		return inodeKey{}, time.Time{}, false
+		return inodeKey{}, time.Time{}, byHandle, false
 	}
 	defer func() { _ = unix.Close(fd) }()
 	var st unix.Statx_t
 	if err := unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_INO|unix.STATX_BTIME, &st); err != nil {
-		return inodeKey{}, time.Time{}, false
+		return inodeKey{}, time.Time{}, byHandle, false
 	}
 	key = inodeKey{dev: unix.Mkdev(st.Dev_major, st.Dev_minor), ino: st.Ino}
 	if st.Mask&unix.STATX_BTIME != 0 {
 		born = time.Unix(st.Btime.Sec, int64(st.Btime.Nsec))
 	}
-	return key, born, true
+	return key, born, byHandle, true
 }
 
 // lookupShadowHash returns the settled hash of the file a FAN_OPEN on path
-// names, and false when the probe has none. It tries shadowHashesByInode via
-// the event's file handle first, then shadowHashes by path. The inode matters
-// across a rename: shadowHashes is keyed by the path a file had when it was
-// last hashed (at its FAN_CLOSE_WRITE settle), and the probe does not link a
-// FAN_MOVED_FROM to its FAN_MOVED_TO, so a rename orphans the path-keyed
-// entry. Device+inode identifies the file regardless of what it's currently named.
-func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, handleData []byte) (string, bool) {
+// names, and false when the probe has none. It tries shadowHashesByInode by
+// the file's device and inode first, when the event's file handle gave them
+// (byInode), then shadowHashes by path. The inode matters across a rename:
+// shadowHashes is keyed by the path a file had when it was last hashed (at
+// its FAN_CLOSE_WRITE settle), and the probe does not link a FAN_MOVED_FROM
+// to its FAN_MOVED_TO, so a rename orphans the path-keyed entry. Device+inode
+// identifies the file regardless of what it's currently named.
+func (o *Observer) lookupShadowHash(path string, key inodeKey, byInode bool) (string, bool) {
 	// The inode first: after an atomic replace the path names a new inode
 	// whose hash was settled under the temporary's name, while the path's
 	// own entry still holds the replaced file's hash. The path is the
 	// fallback for a handle that cannot be resolved (P-20).
-	if handleData != nil && mountFD >= 0 {
-		if key, ok := inodeKeyFromHandle(mountFD, handleType, handleData); ok {
-			o.mu.Lock()
-			h, ok := o.shadowHashesByInode[key]
-			if ok {
-				o.shadowHashes[path] = h
-			}
-			o.mu.Unlock()
-			if ok {
-				return h, true
-			}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if byInode {
+		if h, ok := o.shadowHashesByInode[key]; ok {
+			o.shadowHashes[path] = h
+			return h, true
 		}
 	}
-	o.mu.Lock()
 	h, ok := o.shadowHashes[path]
-	o.mu.Unlock()
 	return h, ok
+}
+
+// identitiesSize bounds the identities cache; a full cache starts over.
+const identitiesSize = 16384
+
+// identity is what identify found for a file handle.
+type identity struct {
+	key  inodeKey
+	born time.Time
 }
 
 // inodeKey identifies a file by device and inode number, stable across
@@ -1033,18 +1123,6 @@ func (o *Observer) lookupShadowHash(path string, mountFD int, handleType int32, 
 type inodeKey struct {
 	dev uint64
 	ino uint64
-}
-
-// inodeKeyFromHandle resolves a fanotify file handle to the (device, inode)
-// identifying the file it currently names, via a short-lived O_PATH fd.
-func inodeKeyFromHandle(mountFD int, handleType int32, handleData []byte) (inodeKey, bool) {
-	fh := unix.NewFileHandle(handleType, handleData)
-	fd, err := unix.OpenByHandleAt(mountFD, fh, unix.O_RDONLY|unix.O_PATH)
-	if err != nil {
-		return inodeKey{}, false
-	}
-	defer func() { _ = unix.Close(fd) }()
-	return inodeKeyFromFD(fd)
 }
 
 // inodeKeyFromFD reads the (device, inode) pair identifying the file behind
@@ -1066,7 +1144,15 @@ func handleKey(fsid fsID, handleType int32, handleData []byte) string {
 	if len(handleData) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%d:%d:%d:%x", fsid[0], fsid[1], handleType, handleData)
+	var buf [320]byte
+	b := buf[:0]
+	b = strconv.AppendInt(b, int64(fsid[0]), 10)
+	b = append(b, ':')
+	b = strconv.AppendInt(b, int64(fsid[1]), 10)
+	b = append(b, ':')
+	b = strconv.AppendInt(b, int64(handleType), 10)
+	b = append(b, ':')
+	return string(hex.AppendEncode(b, handleData))
 }
 
 // openForWriteBy reports whether process pid holds the file behind fd open
@@ -1139,8 +1225,10 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 	superseded, existed := o.pendingCloses[path]
 	pathFD := -1
 	if handleData != nil && mountFD >= 0 {
-		fh := unix.NewFileHandle(handleType, handleData)
-		pathFD, _ = unix.OpenByHandleAt(mountFD, fh, unix.O_RDONLY|unix.O_PATH)
+		var err error
+		if pathFD, err = o.open(mountFD, handleType, handleData); err != nil {
+			pathFD = -1
+		}
 	} else if o.mountFD == -1 {
 		pathFD, _ = unix.Open(path, unix.O_RDONLY|unix.O_PATH, 0)
 	}
@@ -1170,6 +1258,9 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 func (o *Observer) settleSnapshot() map[string]*pendingClose {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if len(o.pendingCloses) == 0 {
+		return nil
+	}
 	snap := make(map[string]*pendingClose, len(o.pendingCloses))
 	for path, entry := range o.pendingCloses {
 		snap[path] = entry
@@ -1290,7 +1381,7 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 	var suppressPath string
 
 	if pathFD >= 0 {
-		procPath := fmt.Sprintf("/proc/self/fd/%d", pathFD)
+		procPath := procFD(pathFD)
 		suppressPath, _ = os.Readlink(procPath)
 		// The read's own FAN_OPEN names the file by its directory and name
 		// (P-25), which carry no mark of a deletion.
@@ -1351,9 +1442,43 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 	return d, true
 }
 
+// actionBits are the mask bits maskToActionTypes reads, in the order of the
+// index into actionTable.
+var actionBits = [...]uint64{
+	unix.FAN_OPEN, unix.FAN_CREATE, unix.FAN_MODIFY, unix.FAN_CLOSE_WRITE,
+	unix.FAN_DELETE, unix.FAN_MOVED_FROM, unix.FAN_MOVED_TO,
+}
+
+// actionTable holds the expansion of every combination of actionBits, so
+// that maskToActionTypes allocates nothing per record.
+var actionTable = func() (t [1 << len(actionBits)][]models.ActionType) {
+	for i := range t {
+		var mask uint64
+		for b, bit := range actionBits {
+			if i&(1<<b) != 0 {
+				mask |= bit
+			}
+		}
+		t[i] = expandMask(mask)
+	}
+	return t
+}()
+
 // maskToActionTypes maps fanotify event mask bits to models.ActionType values.
-// If multiple bits map to the same ActionType, only one is emitted.
+// If multiple bits map to the same ActionType, only one is emitted. The
+// returned slice is shared and must not be modified.
 func maskToActionTypes(mask uint64) []models.ActionType {
+	i := 0
+	for b, bit := range actionBits {
+		if mask&bit != 0 {
+			i |= 1 << b
+		}
+	}
+	return actionTable[i]
+}
+
+// expandMask builds maskToActionTypes' answer for one mask.
+func expandMask(mask uint64) []models.ActionType {
 	seen := make(map[models.ActionType]bool, 4)
 	var types []models.ActionType
 

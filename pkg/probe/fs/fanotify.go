@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -254,19 +255,33 @@ func (m markedSet) close() {
 	}
 }
 
+// handleOpener opens the object a file handle names as an O_PATH fd, given
+// the mount fd of its filesystem: open_by_handle_at in the probe
+// (openByHandle), a lookup by path in the unprivileged benchmarks, since
+// open_by_handle_at needs CAP_DAC_READ_SEARCH.
+type handleOpener func(mountFD int, handleType int32, handleData []byte) (int, error)
+
+// openByHandle is the probe's handleOpener.
+func openByHandle(mountFD int, handleType int32, handleData []byte) (int, error) {
+	return unix.OpenByHandleAt(mountFD, unix.NewFileHandle(handleType, handleData), unix.O_RDONLY|unix.O_PATH)
+}
+
 // newKernelResolver returns a handleResolver that resolves file handles via
-// open_by_handle_at on the mount fd of the handle's filesystem. A removed
+// open (openByHandle unless open is set) on the mount fd of the handle's
+// filesystem. A removed
 // directory resolves to no path even when its handle still opens, since
 // readlink would name it with a " (deleted)" mark inside the path; the
 // directory cache names it instead (P-28).
-func newKernelResolver(mounts map[fsID]int) handleResolver {
+func newKernelResolver(mounts map[fsID]int, open handleOpener) handleResolver {
+	if open == nil {
+		open = openByHandle
+	}
 	return func(fsid fsID, handleType int32, handleData []byte) string {
 		mountFD, ok := mounts[fsid]
 		if !ok {
 			return ""
 		}
-		fh := unix.NewFileHandle(handleType, handleData)
-		fd, err := unix.OpenByHandleAt(mountFD, fh, unix.O_RDONLY|unix.O_PATH)
+		fd, err := open(mountFD, handleType, handleData)
 		if err != nil {
 			return ""
 		}
@@ -275,12 +290,17 @@ func newKernelResolver(mounts map[fsID]int) handleResolver {
 			return ""
 		}
 
-		path, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
+		path, err := os.Readlink(procFD(fd))
 		if err != nil {
 			return ""
 		}
 		return path
 	}
+}
+
+// procFD is the /proc/self/fd path of fd.
+func procFD(fd int) string {
+	return "/proc/self/fd/" + strconv.Itoa(fd)
 }
 
 // --- Pure parsing (no kernel interaction) ----------------------------------
@@ -303,8 +323,8 @@ func parseEvents(buf []byte, n int, resolve handleResolver, dirs *dirCache) []ra
 
 			infoStart := offset + int(meta.MetadataLen)
 			infoEnd := offset + int(meta.EventLen)
-			path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve, dirs)
-			fsid, handleType, handleData := extractFID(buf[infoStart:infoEnd])
+			path, ambiguous, fid := resolveEventPath(buf[infoStart:infoEnd], resolve, dirs)
+			fsid, handleType, handleData := extractFID(fid)
 
 			events = append(events, rawEvent{
 				Mask:       meta.Mask,
@@ -326,8 +346,8 @@ func parseEvents(buf []byte, n int, resolve handleResolver, dirs *dirCache) []ra
 		// Info records follow the metadata header.
 		infoStart := offset + int(meta.MetadataLen)
 		infoEnd := offset + int(meta.EventLen)
-		path, ambiguous := resolveEventPath(buf[infoStart:infoEnd], resolve, dirs)
-		fsid, handleType, handleData := extractFID(buf[infoStart:infoEnd])
+		path, ambiguous, fid := resolveEventPath(buf[infoStart:infoEnd], resolve, dirs)
+		fsid, handleType, handleData := extractFID(fid)
 
 		events = append(events, rawEvent{
 			Mask:       meta.Mask,
@@ -362,6 +382,11 @@ func readMetadata(buf []byte) eventMetadata {
 //  2. FID (type 1): file handle resolved directly via open_by_handle_at
 //  3. DFID (type 3): parent directory handle only (no filename)
 //
+// A record of a later case is resolved only when the earlier ones gave no
+// path: each resolution is an open_by_handle_at, an fstat, a readlink and a
+// close, and with reportFlags the DFID_NAME record names nearly every event
+// (P-29).
+//
 // The kernel takes the name in a DFID_NAME record when the event happens, so
 // case 1 names the entry as it was then; a FID record resolves to wherever
 // the file is when the record is read. With reportFlags every record carries
@@ -377,9 +402,10 @@ func readMetadata(buf []byte) eventMetadata {
 // FID resolved a specific path. Callers use this to restrict the "directory
 // covers any file inside it" matching leniency to genuinely coarse-resolution
 // events, not to every ground-truth event whose target happens to be a
-// directory.
-func resolveEventPath(infoData []byte, resolve handleResolver, dirs *dirCache) (path string, ambiguous bool) {
-	var fidPath, dfidNamePath, dfidPath string
+// directory. The third is the FID record, nil when there is none, for
+// extractFID.
+func resolveEventPath(infoData []byte, resolve handleResolver, dirs *dirCache) (path string, ambiguous bool, fid []byte) {
+	var dfidName, dfid []byte
 
 	offset := 0
 	for offset+4 <= len(infoData) {
@@ -392,23 +418,30 @@ func resolveEventPath(infoData []byte, resolve handleResolver, dirs *dirCache) (
 		record := infoData[offset : offset+infoLen]
 		switch infoType {
 		case fanEventInfoTypeDfidName:
-			dfidNamePath = parseDfidName(record, resolve, dirs)
+			dfidName = record
 		case fanEventInfoTypeFid:
-			fidPath = parseHandleToPath(record, resolve)
+			fid = record
 		case fanEventInfoTypeDfid:
-			dfidPath = parseHandleToPath(record, resolve)
+			dfid = record
 		}
 
 		offset += infoLen
 	}
 
-	if dfidNamePath != "" {
-		return dfidNamePath, false
+	if dfidName != nil {
+		if p := parseDfidName(dfidName, resolve, dirs); p != "" {
+			return p, false, fid
+		}
 	}
-	if fidPath != "" {
-		return fidPath, false
+	if fid != nil {
+		if p := parseHandleToPath(fid, resolve); p != "" {
+			return p, false, fid
+		}
 	}
-	return dfidPath, true
+	if dfid != nil {
+		return parseHandleToPath(dfid, resolve), true, fid
+	}
+	return "", true, fid
 }
 
 // parseDfidName extracts a directory file handle and entry name from a
@@ -442,8 +475,8 @@ func parseDfidName(record []byte, resolve handleResolver, dirs *dirCache) string
 		return ""
 	}
 
-	handleData := make([]byte, handleBytes)
-	copy(handleData, record[20:handleDataEnd])
+	// The resolver and the cache copy what they keep.
+	handleData := record[20:handleDataEnd]
 
 	// Entry name follows the handle data, null-terminated with possible padding.
 	var name string
@@ -457,11 +490,14 @@ func parseDfidName(record []byte, resolve handleResolver, dirs *dirCache) string
 	}
 
 	fsid := recordFSID(record)
-	dirPath := resolve(fsid, handleType, handleData)
-	if dirPath != "" {
-		dirs.fill(fsid, handleType, handleData, dirPath)
-	} else if cached, ok := dirs.lookup(fsid, handleType, handleData); ok {
-		dirPath = cached
+	dirPath, ok := dirs.hit(fsid, handleType, handleData)
+	if !ok {
+		dirPath = resolve(fsid, handleType, handleData)
+		if dirPath != "" {
+			dirs.fill(fsid, handleType, handleData, dirPath)
+		} else if cached, ok := dirs.lookup(fsid, handleType, handleData); ok {
+			dirPath = cached
+		}
 	}
 
 	// An unresolved directory yields no path, not the bare entry name: a
@@ -473,7 +509,18 @@ func parseDfidName(record []byte, resolve handleResolver, dirs *dirCache) string
 	if name == "" {
 		return dirPath
 	}
-	return filepath.Join(dirPath, name)
+	return joinEntry(dirPath, name)
+}
+
+// joinEntry joins a directory's path and an entry's name as filepath.Join
+// does, without its cleaning pass in the usual case: a path from readlink or
+// the start walk is clean and absolute, and a name the kernel reports is one
+// component.
+func joinEntry(dir, name string) string {
+	if !strings.HasPrefix(dir, "/") || strings.HasSuffix(dir, "/") || strings.Contains(name, "/") || name == "." || name == ".." {
+		return filepath.Join(dir, name)
+	}
+	return dir + "/" + name
 }
 
 // parseHandleToPath extracts a file handle from an info record (FID or DFID)
@@ -500,10 +547,7 @@ func parseHandleToPath(record []byte, resolve handleResolver) string {
 		return ""
 	}
 
-	handleData := make([]byte, handleBytes)
-	copy(handleData, record[20:handleDataEnd])
-
-	return resolve(recordFSID(record), handleType, handleData)
+	return resolve(recordFSID(record), handleType, record[20:handleDataEnd])
 }
 
 // recordFSID reads the filesystem id at bytes 4 to 12 of an info record.
@@ -511,30 +555,18 @@ func recordFSID(record []byte) fsID {
 	return fsID{int32(binary.LittleEndian.Uint32(record[4:8])), int32(binary.LittleEndian.Uint32(record[8:12]))}
 }
 
-// extractFID extracts the FID (type 1) handle and its filesystem id from the
-// info records.
-func extractFID(infoData []byte) (fsID, int32, []byte) {
-	offset := 0
-	for offset+4 <= len(infoData) {
-		infoType := infoData[offset]
-		infoLen := int(binary.LittleEndian.Uint16(infoData[offset+2 : offset+4]))
-		if infoLen < 4 || offset+infoLen > len(infoData) {
-			break
-		}
-
-		if infoType == fanEventInfoTypeFid {
-			record := infoData[offset : offset+infoLen]
-			if len(record) >= 20 {
-				handleBytes := int(binary.LittleEndian.Uint32(record[12:16]))
-				handleType := int32(binary.LittleEndian.Uint32(record[16:20]))
-				if 20+handleBytes <= len(record) {
-					handleData := make([]byte, handleBytes)
-					copy(handleData, record[20:20+handleBytes])
-					return recordFSID(record), handleType, handleData
-				}
-			}
-		}
-		offset += infoLen
+// extractFID extracts the handle and its filesystem id from a FID (type 1)
+// info record, or nothing from a nil or short one.
+func extractFID(record []byte) (fsID, int32, []byte) {
+	if len(record) < 20 {
+		return fsID{}, 0, nil
 	}
-	return fsID{}, 0, nil
+	handleBytes := int(binary.LittleEndian.Uint32(record[12:16]))
+	handleType := int32(binary.LittleEndian.Uint32(record[16:20]))
+	if 20+handleBytes > len(record) {
+		return fsID{}, 0, nil
+	}
+	handleData := make([]byte, handleBytes)
+	copy(handleData, record[20:20+handleBytes])
+	return recordFSID(record), handleType, handleData
 }

@@ -340,3 +340,106 @@ func TestDrainNonBlocking_StampsRecordsByBatchPosition(t *testing.T) {
 		}
 	}
 }
+
+// A content record's FID record is resolved only when its DFID_NAME record
+// gives no path: each resolution is four system calls, and the DFID_NAME
+// record names nearly every event (P-29). Its handle is extracted either way.
+func TestResolveEventPath_ResolvesTheFileHandleOnlyAsAFallback(t *testing.T) {
+	info := append(buildDfidNameInfo(1, []byte("dir123"), "test.txt"), buildFidInfo(1, []byte("file123"))...)
+	calls := 0
+	counting := func(fsid fsID, handleType int32, handleData []byte) string {
+		calls++
+		return mockResolver(fsid, handleType, handleData)
+	}
+	path, ambiguous, fid := resolveEventPath(info, counting, nil)
+	if path != "/mock/dir/test.txt" || ambiguous || calls != 1 {
+		t.Errorf("path %q ambiguous %v after %d resolutions, want the DFID_NAME path after 1", path, ambiguous, calls)
+	}
+	if _, _, h := extractFID(fid); string(h) != "file123" {
+		t.Errorf("FID handle = %q", h)
+	}
+
+	calls = 0
+	info = append(buildDfidNameInfo(1, []byte("gone"), "test.txt"), buildFidInfo(1, []byte("file123"))...)
+	if path, _, _ := resolveEventPath(info, counting, nil); path != "/mock/file.txt" || calls != 2 {
+		t.Errorf("path %q after %d resolutions, want the FID path after 2", path, calls)
+	}
+}
+
+// The expansion table answers as the expansion itself for every combination
+// of the bits it reads.
+func TestMaskToActionTypes_TableMatchesTheExpansion(t *testing.T) {
+	for i := 0; i < 1<<len(actionBits); i++ {
+		var mask uint64
+		for b, bit := range actionBits {
+			if i&(1<<b) != 0 {
+				mask |= bit
+			}
+		}
+		got, want := maskToActionTypes(mask|unix.FAN_ONDIR), expandMask(mask)
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("mask %#x: %v, want %v", mask, got, want)
+		}
+	}
+}
+
+// identify keys a file by the device and inode statx reports, which must be
+// the key fstat gives (inodeKeyFromFD), since the settled hashes are stored
+// under the latter and looked up under the former.
+func TestIdentifyKeyMatchesFstat(t *testing.T) {
+	tmp := t.TempDir() + "/f"
+	if err := os.WriteFile(tmp, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The temporary directory is usually a tmpfs, whose device has major 0;
+	// a system binary is usually on a block device.
+	for _, path := range []string{tmp, "/usr/bin/env", "/bin/sh"} {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		key, _, byHandle, ok := (&Observer{}).identify(path, -1, 0, nil, "")
+		if !ok || byHandle {
+			t.Fatalf("identify %s: ok %v byHandle %v", path, ok, byHandle)
+		}
+		fd, err := unix.Open(path, unix.O_RDONLY|unix.O_PATH|unix.O_NOFOLLOW, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want, ok := inodeKeyFromFD(fd); !ok || key != want {
+			t.Errorf("%s: identify key %+v, fstat key %+v", path, key, want)
+		}
+		_ = unix.Close(fd)
+	}
+}
+
+// A file handle is identified once: the device, inode and birth time it names
+// never change, so a later open of the same file costs no open_by_handle_at
+// and no statx (P-29). A handle never seen is identified afresh.
+func TestIdentifyRemembersAHandle(t *testing.T) {
+	dir := t.TempDir()
+	paths := map[string]string{"a": dir + "/a", "b": dir + "/b"}
+	for _, p := range paths {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opens := 0
+	obs := &Observer{openHandle: func(_ int, _ int32, h []byte) (int, error) {
+		opens++
+		return unix.Open(paths[string(h)], unix.O_RDONLY|unix.O_PATH, 0)
+	}}
+	idOf := func(h string) inodeKey {
+		key, _, byHandle, ok := obs.identify("", 0, 1, []byte(h), handleKey(fsID{}, 1, []byte(h)))
+		if !ok || !byHandle {
+			t.Fatalf("identify %s: ok %v byHandle %v", h, ok, byHandle)
+		}
+		return key
+	}
+	a1, a2, b := idOf("a"), idOf("a"), idOf("b")
+	if opens != 2 {
+		t.Errorf("%d opens for two handles, want 2", opens)
+	}
+	if a1 != a2 || a1 == b {
+		t.Errorf("keys a %+v, a again %+v, b %+v", a1, a2, b)
+	}
+}

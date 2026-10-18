@@ -254,7 +254,7 @@ func TestObserverIgnoresHashReadOpen(t *testing.T) {
 // seam, so those get real, inert pipe fds -- never written to, so poll on
 // them always reports "nothing ready" -- rather than the zero value (fd 0,
 // i.e. stdin, whose poll behavior isn't something a test should depend on).
-func newHashSeamObserver(t *testing.T, dir string, hashFD func(int) (string, error)) *Observer {
+func newHashSeamObserver(t testing.TB, dir string, hashFD func(int) (string, error)) *Observer {
 	t.Helper()
 	var pipeFDs [2]int
 	if err := unix.Pipe2(pipeFDs[:], unix.O_CLOEXEC); err != nil {
@@ -935,7 +935,7 @@ func TestDiag_RawFanotify(t *testing.T) {
 		}
 
 		// Try path resolution.
-		path, ambiguous := resolveEventPath(infoData, newKernelResolver(mountsOf(mountFD)), nil)
+		path, ambiguous, _ := resolveEventPath(infoData, newKernelResolver(mountsOf(mountFD), nil), nil)
 		t.Logf("  resolved path: %q (ambiguous=%v)", path, ambiguous)
 
 		// Detailed handle resolution debugging for each info record.
@@ -1387,7 +1387,7 @@ func TestInputHashIsStatedOnlyWhenMeasured(t *testing.T) {
 	obs.startedAt = time.Now()
 	time.Sleep(10 * time.Millisecond)
 
-	if h, ok := obs.inputHash(before, -1, 0, nil); ok {
+	if h, ok := obs.inputHash(before, -1, 0, nil, ""); ok {
 		t.Errorf("a pre-existing file the probe never hashed carries %s, want no input hash", h)
 	}
 
@@ -1395,21 +1395,21 @@ func TestInputHashIsStatedOnlyWhenMeasured(t *testing.T) {
 	if err := os.WriteFile(born, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, b, ok := identify(born, -1, 0, nil); !ok || b.IsZero() {
+	if _, b, _, ok := (&Observer{}).identify(born, -1, 0, nil, ""); !ok || b.IsZero() {
 		t.Skip("this filesystem reports no birth time; a born-here file then gets no input hash, which is the conservative reading")
 	}
-	if h, ok := obs.inputHash(born, -1, 0, nil); !ok || h != emptyFileHash {
+	if h, ok := obs.inputHash(born, -1, 0, nil, ""); !ok || h != emptyFileHash {
 		t.Errorf("the first open of a file born after Start = %q, %v, want the empty-content hash", h, ok)
 	}
-	if h, ok := obs.inputHash(born, -1, 0, nil); ok {
+	if h, ok := obs.inputHash(born, -1, 0, nil, ""); ok {
 		t.Errorf("a second open of a born-here file the probe never hashed carries %s, want none: its content may have changed", h)
 	}
 
 	obs.shadowHashes[before] = "sha256:real"
-	if h, ok := obs.inputHash(before, -1, 0, nil); !ok || h != "sha256:real" {
+	if h, ok := obs.inputHash(before, -1, 0, nil, ""); !ok || h != "sha256:real" {
 		t.Errorf("a hashed file = %q, %v, want its settled digest", h, ok)
 	}
-	if _, ok := obs.inputHash(filepath.Join(dir, "missing"), -1, 0, nil); ok {
+	if _, ok := obs.inputHash(filepath.Join(dir, "missing"), -1, 0, nil, ""); ok {
 		t.Error("a file that cannot be identified carries an input hash")
 	}
 }

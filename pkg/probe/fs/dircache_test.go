@@ -17,7 +17,7 @@ import (
 
 // pipeWatch returns a rename watch that reads the records a test writes to
 // the returned descriptor, guarding the given filesystems.
-func pipeWatch(t *testing.T, guarded ...fsID) (*renameWatch, int) {
+func pipeWatch(t testing.TB, guarded ...fsID) (*renameWatch, int) {
 	t.Helper()
 	var p [2]int
 	if err := unix.Pipe2(p[:], unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
@@ -146,8 +146,55 @@ func TestParseEvents_RemovedDirectoryIsNamedFromTheCache(t *testing.T) {
 	if len(ev) == 2 && ev[1].Path != "" {
 		t.Errorf("delete in a directory never resolved = %q, want no path", ev[1].Path)
 	}
-	if got := dirs.snapshot().Resolved; got != 1 {
-		t.Errorf("Resolved = %d, want 1", got)
+	if st := dirs.snapshot(); st.Hits != 1 || st.Resolved != 0 {
+		t.Errorf("stats = %+v, want the removed directory named from its resolved entry", st)
+	}
+}
+
+// A directory the probe resolved once is named from the cache afterwards
+// without resolving its handle again (P-29); an entry of the start walk is
+// used only once the handle no longer resolves, since the walk's path can
+// name the directory through another alias.
+func TestParseEvents_ResolvedDirectoryIsNotResolvedAgain(t *testing.T) {
+	w, _ := pipeWatch(t, fsID{})
+	dirs := newDirCache(16, w)
+	live := map[string]string{"dir123": "/mock/dir", "walked": "/mock/alias"}
+	calls := map[string]int{}
+	resolve := func(_ fsID, _ int32, h []byte) string {
+		calls[string(h)]++
+		return live[string(h)]
+	}
+	record := func(mask uint64, dir, name string) []byte {
+		info := buildDfidNameInfo(1, []byte(dir), name)
+		return append(buildMetadata(mask, 1, uint16(len(info))), info...)
+	}
+	dirs.put(fsID{}, 1, []byte("walked"), "/mock/walked", false)
+
+	var buf []byte
+	for _, name := range []string{"a", "b", "c"} {
+		buf = append(buf, record(unix.FAN_CREATE, "dir123", name)...)
+		buf = append(buf, record(unix.FAN_CREATE, "walked", name)...)
+	}
+	ev := parseEvents(buf, len(buf), resolve, dirs)
+	if len(ev) != 6 || ev[4].Path != "/mock/dir/c" || ev[5].Path != "/mock/alias/c" {
+		t.Fatalf("paths = %+v", ev)
+	}
+	if calls["dir123"] != 1 || calls["walked"] != 1 {
+		t.Errorf("resolutions = %v, want one per directory", calls)
+	}
+	if st := dirs.snapshot(); st.Hits != 4 || st.Resolved != 0 {
+		t.Errorf("stats = %+v, want 4 hits", st)
+	}
+
+	// A walk entry for a directory no record resolved names it once it is
+	// gone.
+	dirs.put(fsID{}, 1, []byte("gone"), "/mock/gone", false)
+	buf = record(unix.FAN_DELETE, "gone", "x")
+	if ev := parseEvents(buf, len(buf), resolve, dirs); ev[0].Path != "/mock/gone/x" {
+		t.Errorf("delete in a walked, removed directory = %q", ev[0].Path)
+	}
+	if st := dirs.snapshot(); st.Resolved != 1 {
+		t.Errorf("stats = %+v, want 1 resolved", st)
 	}
 }
 
@@ -251,8 +298,8 @@ func TestKernelDeleteInARemovedDirectoryIsNamedFromTheCache(t *testing.T) {
 	if got := k.deletes(); strings.Join(got, "|") != "fswatch-probe-X/probe" {
 		t.Errorf("deletes = %q, want the file named through the cache", got)
 	}
-	if s := k.dirs.snapshot(); s.Resolved != 1 {
-		t.Errorf("stats = %+v, want 1 resolved", s)
+	if s := k.dirs.snapshot(); s.Resolved+s.Hits == 0 {
+		t.Errorf("stats = %+v, want the delete named from the cache", s)
 	}
 }
 
@@ -326,8 +373,8 @@ func TestKernelDirectoryNeverResolvedStaysUnresolved(t *testing.T) {
 	if got := obs.CaptureCoverage().UnresolvedPaths; got == 0 {
 		t.Error("UnresolvedPaths = 0")
 	}
-	if s := k.dirs.snapshot(); s.Resolved != 0 {
-		t.Errorf("stats = %+v, want nothing resolved", s)
+	if s := k.dirs.snapshot(); s.Resolved != 0 || s.Hits != 0 {
+		t.Errorf("stats = %+v, want nothing named from the cache", s)
 	}
 }
 

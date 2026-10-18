@@ -26,8 +26,12 @@ type DirCacheStats struct {
 	// filesystem. Without it no record is resolved through the cache.
 	Watching bool
 	// Resolved counts the records whose directory no longer resolved and
-	// whose path was named through the cache instead.
+	// whose path was named through an entry of the start walk instead.
 	Resolved uint64
+	// Hits counts the records whose directory was named from an entry the
+	// probe's own resolution filled, without resolving its handle again
+	// (P-29); a directory removed since is among them.
+	Hits uint64
 	// Evicted counts the entries dropped because the cache was full.
 	Evicted uint64
 	// Invalidated counts the entries dropped because a directory on their
@@ -65,6 +69,10 @@ type dirEntry struct {
 	key  string
 	fsid fsID
 	path string
+	// resolved is set when the path came from resolving the handle, as the
+	// probe names a live directory, and not from the start walk, whose path
+	// can name the directory through another mount or alias.
+	resolved bool
 }
 
 // newDirCache returns a cache of at most max entries guarded by watch, which
@@ -84,6 +92,12 @@ func dirKey(fsid fsID, handleType int32, handleData []byte) string {
 
 // fill records that the directory handle resolved to path.
 func (c *dirCache) fill(fsid fsID, handleType int32, handleData []byte, path string) {
+	c.put(fsid, handleType, handleData, path, true)
+}
+
+// put caches path for the directory handle; resolved says whether path came
+// from resolving the handle (fill) or from the start walk (fillPath).
+func (c *dirCache) put(fsid fsID, handleType int32, handleData []byte, path string, resolved bool) {
 	if c == nil || path == "" {
 		return
 	}
@@ -91,11 +105,14 @@ func (c *dirCache) fill(fsid fsID, handleType int32, handleData []byte, path str
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.entries[key]; ok {
-		el.Value.(*dirEntry).path = path
+		e := el.Value.(*dirEntry)
+		if resolved || !e.resolved {
+			e.path, e.resolved = path, resolved
+		}
 		c.lru.MoveToFront(el)
 		return
 	}
-	c.entries[key] = c.lru.PushFront(&dirEntry{key: key, fsid: fsid, path: path})
+	c.entries[key] = c.lru.PushFront(&dirEntry{key: key, fsid: fsid, path: path, resolved: resolved})
 	for c.lru.Len() > c.max {
 		back := c.lru.Back()
 		c.lru.Remove(back)
@@ -119,7 +136,38 @@ func (c *dirCache) fillPath(path string) {
 	if err != nil {
 		return
 	}
-	c.fill(id, fh.Type(), fh.Bytes(), path)
+	c.put(id, fh.Type(), fh.Bytes(), path, false)
+}
+
+// hit returns the path of a directory handle the probe resolved before, when
+// the rename watch guards its filesystem, so that the record is named without
+// resolving the handle again (P-29). The caller has read the rename watch
+// (sync) after reading the records it names: every event in them happened
+// before that read, and every directory rename completed before it has
+// dropped its filesystem's entries, so the path is the one resolving the
+// handle would give, except for a rename that completes after that read,
+// which resolving would see and the event predates. A directory removed since
+// keeps its entry, as for lookup.
+func (c *dirCache) hit(fsid fsID, handleType int32, handleData []byte) (string, bool) {
+	if c == nil || c.watch == nil {
+		return "", false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.watch.guards(fsid) {
+		return "", false
+	}
+	el, ok := c.entries[dirKey(fsid, handleType, handleData)]
+	if !ok {
+		return "", false
+	}
+	e := el.Value.(*dirEntry)
+	if !e.resolved {
+		return "", false
+	}
+	c.lru.MoveToFront(el)
+	c.stats.Hits++
+	return e.path, true
 }
 
 // lookup returns the cached path of a directory handle that no longer
