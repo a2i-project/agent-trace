@@ -48,6 +48,7 @@ PAGE_OF = [
     ("scripts/capture-claude-code.sh", "docs/architecture/40_tools.md"),
     ("scripts/make-capture-fixture.py", "docs/architecture/40_tools.md"),
     ("scripts/bench-overhead.sh", "docs/architecture/40_tools.md"),
+    ("scripts/compare/", "docs/architecture/40_tools.md"),
     ("Makefile", "docs/architecture/40_tools.md"),
     ("scripts/check-docs.py", "docs/methodology/dev_workflow.md"),
     ("scripts/hooks/", "docs/methodology/dev_workflow.md"),
