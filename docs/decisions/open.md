@@ -86,6 +86,14 @@ Options: Not yet designed beyond `ProcessModel.Containerized` and `Normalize`.
 Current behaviour: No translation. Both supported agents are host-native.
 Blocked by: An integrated containerized agent.
 
+### O-31: A file reached through more than one mount
+Status: Open.
+Date: raised 2026-10-18, with P-30.
+Question: A bind mount gives one file several paths, and a fanotify record does not say which one the process used. The fs probe names it through one mount per filesystem (P-30), and matching compares cleaned path strings, so a claim naming another alias is unmatched. Which alias should an event carry, or should matching accept any alias?
+Options: (a) resolve the workspace's filesystem through the mount that holds the workspace; (b) record each filesystem's mounts in `fs_scope` and let matching accept any alias; (c) emit every alias.
+Current behaviour: The first mount of the filesystem in `/proc/self/mountinfo` names every file; an honest agent in a bind-mounted workspace whose path differs has its file claims unmatched.
+Blocked by: Nothing; a choice.
+
 ### O-11: Degraded verification for persistent-shell agents
 Status: Open.
 Date: raised 2026-09 (in the archived integration design, before 2026-09-19), with D7.
