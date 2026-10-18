@@ -49,6 +49,8 @@ PAGE_OF = [
     ("scripts/make-capture-fixture.py", "docs/architecture/40_tools.md"),
     ("scripts/bench-overhead.sh", "docs/architecture/40_tools.md"),
     ("scripts/compare/", "docs/architecture/40_tools.md"),
+    ("scripts/capture-campaign.sh", "docs/architecture/40_tools.md"),
+    ("scripts/seed/", "docs/architecture/40_tools.md"),
     ("Makefile", "docs/architecture/40_tools.md"),
     ("scripts/check-docs.py", "docs/methodology/dev_workflow.md"),
     ("scripts/hooks/", "docs/methodology/dev_workflow.md"),
