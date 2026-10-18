@@ -23,7 +23,7 @@ func (c *Cache) Lookup(buildID string) *Target {
 	if buildID == "" {
 		return nil
 	}
-	
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -53,7 +53,7 @@ func (c *Cache) Store(buildID string, target Target) error {
 	defer c.mu.Unlock()
 
 	targets := make(map[string]Target)
-	
+
 	// Read existing targets so we don't overwrite others
 	if data, err := os.ReadFile(c.path); err == nil {
 		_ = json.Unmarshal(data, &targets)

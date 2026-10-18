@@ -1,6 +1,6 @@
 # Network probe
 
-Checked against commit 2900394 on 2026-10-18.
+Checked against commit 9fe54fe on 2026-10-18.
 
 ## Objective
 
