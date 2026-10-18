@@ -325,6 +325,57 @@ func TestNormalizedErrors(t *testing.T) {
 	}
 }
 
+// A net_response is attestation (N-29): the text report counts and lists it
+// under its own label, apart from listeners and sockets, and in the
+// command's own group. The JSON report keeps it in the capability lists.
+func TestResponsesHaveTheirOwnLabel(t *testing.T) {
+	dir := t.TempDir()
+	const root, sh = 100, 200
+	ev := func(ms int, typ models.ActionType, target string, pid, ppid uint32) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: t0.Add(time.Duration(ms) * time.Millisecond), ActionType: typ, Target: target, PID: pid, PPID: ppid}
+	}
+	resp := ev(3, models.NetResponse, "GET api.example:443/v1", sh, 0)
+	resp.Response = &models.ResponseAttestation{Status: 200, BodyBytes: 2, End: t0.Add(4 * time.Millisecond), Complete: true, Paired: true}
+	g := models.GroundTruthFile{RootPID: root, Coverage: completeCov(), Workspace: "/w", Events: models.GroundTruth{
+		ev(0, models.ProcessFork, "200", sh, root),
+		ev(1, models.ProcessExec, "/bin/sh -c fetch", sh, root),
+		ev(2, models.NetUnixConnect, "unix:/run/x.sock", sh, 0),
+		resp,
+	}}
+	tr := models.Trajectory{{Timestamp: t0, ActionType: models.ProcessExec, Target: "/bin/sh -c fetch"}}
+	jsonOut := filepath.Join(dir, "report.json")
+	code, out, errOut := verify(t, "--trajectory", writeJSON(t, dir, "t.json", tr), "--ground-truth", writeJSON(t, dir, "g.json", g), "--json", jsonOut, "--ignore-exits")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	for _, want := range []string{
+		"Capability:   1  (listeners and sockets observed",
+		"Responses:    1  (HTTP responses read over TLS, attested only",
+		"\nCapability:\n  " + t0.Add(2*time.Millisecond).Format(time.RFC3339Nano) + " net_unix_connect unix:/run/x.sock\n",
+		"\nResponses:\n  " + t0.Add(3*time.Millisecond).Format(time.RFC3339Nano) + " net_response   GET api.example:443/v1\n",
+		"    responses (1): GET api.example:443/v1\n",
+		"    unix sockets (1): unix:/run/x.sock\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report lacks %q\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "unix sockets (2)") {
+		t.Errorf("the response is grouped with the unix sockets\n%s", out)
+	}
+	data, err := os.ReadFile(jsonOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep jsonReport
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Capability) != 2 || len(rep.Commands) != 1 || len(rep.Commands[0].Capability) != 2 {
+		t.Errorf("JSON capability = %d, command capability = %+v, want both events in each", len(rep.Capability), rep.Commands)
+	}
+}
+
 // The forensic view: what a claimed command did beneath it is listed per
 // command in the text report and in full in the JSON report, and none of it
 // is a finding (D3).

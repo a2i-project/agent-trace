@@ -17,8 +17,9 @@ type Completeness struct {
 	Reasons []string
 	// Notes lists content-level gaps that do not make the event set
 	// incomplete (unreadable SSL payloads, content capture that never
-	// attached). They limit what content checks can say, not whether events
-	// were lost.
+	// attached, response data the capture missed). They limit what content
+	// checks and response attestation can say, not whether events were
+	// lost.
 	Notes []string
 }
 
@@ -81,6 +82,15 @@ func Assess(cov *models.Coverage) Completeness {
 		}
 		if p.HelloFaults > 0 {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d ClientHello read(s) faulted, so a connection may be reported by address instead of hostname", name, p.HelloFaults))
+		}
+		// Responses are attestation that no claim depends on (N-29), so
+		// their gaps and an inactive response capture are notes. A failed
+		// request capture already has its note and implies this one.
+		if p.Responses == models.ContentAttachFailed && p.Content != models.ContentAttachFailed {
+			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: response capture did not attach or never validated, so no response is attested", name))
+		}
+		if p.ResponseGaps > 0 {
+			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d response gap(s) (SSL_read data faulted, discarded, truncated or unparsed), so some responses are missing or attested incompletely; no claim depends on a response (N-29)", name, p.ResponseGaps))
 		}
 	}
 	c.Complete = len(c.Reasons) == 0

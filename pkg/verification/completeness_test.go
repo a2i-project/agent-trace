@@ -39,6 +39,11 @@ func TestAssess(t *testing.T) {
 		{name: "counters on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, RingbufDrops: 9}}), wantComplete: true},
 		{name: "faulted reads are a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, FaultedReads: 4}}), wantComplete: true, wantNotes: 1},
 		{name: "attach failure is a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},
+		{name: "response gaps are a note, not a loss (N-29)", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentActive, Responses: models.ContentActive, ResponseGaps: 3}}), wantComplete: true, wantNotes: 1},
+		{name: "response gaps on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, ResponseGaps: 3}}), wantComplete: true},
+		{name: "inactive response capture is a note", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentActive, Responses: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},
+		{name: "inactive response capture after a failed request capture is one note", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentAttachFailed, Responses: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},
+		{name: "responses identity only, or unrecorded in an older capture, is not a note", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentIdentityOnly, Responses: models.ContentIdentityOnly}, "net2": {Ran: true, Content: models.ContentActive}}), wantComplete: true},
 		{name: "identity only is not a note", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentIdentityOnly}}), wantComplete: true},
 	}
 	for _, tc := range tests {
@@ -82,6 +87,20 @@ func TestAssess_HashlessClosesAreANote(t *testing.T) {
 	c := Assess(cov(map[string]models.ProbeCoverage{"fs": {Ran: true, HashlessCloses: 2}}))
 	if !c.Complete || len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "2 file close(s)") {
 		t.Errorf("Assess = %+v, want complete with one note", c)
+	}
+}
+
+// The response notes name their count and say no claim depends on them.
+func TestAssess_ResponseNotes(t *testing.T) {
+	c := Assess(cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentActive, Responses: models.ContentAttachFailed, ResponseGaps: 2}}))
+	if !c.Complete || len(c.Notes) != 2 {
+		t.Fatalf("Assess = %+v, want complete with two notes", c)
+	}
+	if !strings.Contains(c.Notes[0], "response capture did not attach or never validated") {
+		t.Errorf("first note = %q, want the inactive response capture", c.Notes[0])
+	}
+	if !strings.Contains(c.Notes[1], "2 response gap(s)") || !strings.Contains(c.Notes[1], "no claim depends on a response") {
+		t.Errorf("second note = %q, want the gap count", c.Notes[1])
 	}
 }
 

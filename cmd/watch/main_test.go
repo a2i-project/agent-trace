@@ -12,6 +12,7 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/probe"
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
+	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
@@ -574,5 +575,16 @@ func TestScopeFSEvents_CountsARealUnresolvedEventOfTheTree(t *testing.T) {
 	}
 	if _, _, n := scopeFSEvents(g, agent+1_000_000, ws); n != 0 {
 		t.Errorf("rooted at another process, %d event(s) were counted as the tree's", n)
+	}
+}
+
+// The response diagnostic names the capture's state and every response
+// counter, each by its own key.
+func TestResponseLine(t *testing.T) {
+	nc := probenet.Coverage{Responses: 1, ResponsesUnpaired: 2, ResponsesUnattributed: 3, ResponsesIncomplete: 4, ResponsesTruncated: 5,
+		ResponsesUnparsed: 6, SSEEvents: 7, ReadsUnvalidated: 8, ReadFaults: 9, ReadDrops: 10}
+	want := "net probe responses: state=active responses=1 unpaired=2 unattributed=3 incomplete=4 truncated=5 unparsed=6 sseEvents=7 readsUnvalidated=8 readFaults=9 readDrops=10"
+	if got := responseLine(models.ContentActive, nc); got != want {
+		t.Errorf("responseLine = %q\nwant %q", got, want)
 	}
 }

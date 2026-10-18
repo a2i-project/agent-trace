@@ -270,7 +270,11 @@ func report(w io.Writer, r reportInput) {
 	p("  Quiet forks:                    %d (forked, never exec'd, nothing observed: nothing to explain)\n", len(c.Quiet))
 	p("  Outside the agent's tree:       %d events (reported, not the agent's)\n", len(c.Outside))
 	p("  Unplaced (no pid):              %d events\n", len(c.Unknown))
-	p("Capability:   %d  (listeners and sockets observed, never claimable, not part of the verdict)\n", len(v.Capability))
+	capability, responses := splitResponses(v.Capability)
+	p("Capability:   %d  (listeners and sockets observed, never claimable, not part of the verdict)\n", len(capability))
+	if len(responses) > 0 {
+		p("Responses:    %d  (HTTP responses read over TLS, attested only: never claimable, not part of the verdict)\n", len(responses))
+	}
 
 	printEntries(w, "Unwitnessed", v.Unwitnessed)
 	printEvents(w, "Unrecorded", v.Unrecorded)
@@ -288,7 +292,8 @@ func report(w io.Writer, r reportInput) {
 	printSensitive(w, "Other sensitive changes (report-only)", v.UnexplainedSensitiveOther)
 	printSensitive(w, "Sensitive changes not checked", v.SensitiveCheck.Unchecked)
 	printImplied(w, v.HarnessImplied)
-	printEvents(w, "Capability", v.Capability)
+	printEvents(w, "Capability", capability)
+	printEvents(w, "Responses", responses)
 	printCommands(w, v.Commands)
 	printCompleteness(w, v.Completeness)
 
@@ -361,6 +366,20 @@ func printEntries(w io.Writer, label string, entries []models.TrajectoryEntry) {
 	for _, e := range entries {
 		_, _ = fmt.Fprintf(w, "  %s %-14s %s\n", e.Timestamp.Format(time.RFC3339Nano), e.ActionType, e.Target)
 	}
+}
+
+// splitResponses separates the net_response events, which attest what a
+// request received (N-29), from the other capability events, so the text
+// report counts and lists them under their own label.
+func splitResponses(events []models.GroundTruthEvent) (capability, responses []models.GroundTruthEvent) {
+	for _, e := range events {
+		if e.ActionType == models.NetResponse {
+			responses = append(responses, e)
+		} else {
+			capability = append(capability, e)
+		}
+	}
+	return capability, responses
 }
 
 func printEvents(w io.Writer, label string, events []models.GroundTruthEvent) {
@@ -638,11 +657,15 @@ func printCommands(w io.Writer, cmds []*verification.Command) {
 				add("dns", e.Target)
 			case models.NetDial:
 				add("dials (nothing sent)", e.Target)
-			default:
+			case models.NetUnixConnect:
 				add("unix sockets", e.Target)
+			case models.NetResponse:
+				add("responses", e.Target)
+			default:
+				add(string(e.ActionType), e.Target)
 			}
 		}
-		order := []string{"programs run", "files written", "files opened", "files renamed", "files deleted", "connections", "requests", "listeners", "unix sockets", "dns", "dials (nothing sent)"}
+		order := []string{"programs run", "files written", "files opened", "files renamed", "files deleted", "connections", "requests", "responses", "listeners", "unix sockets", "dns", "dials (nothing sent)"}
 		for name := range groups {
 			seen := false
 			for _, o := range order {

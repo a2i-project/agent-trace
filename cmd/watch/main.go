@@ -126,6 +126,14 @@ var probeBuilders = map[string]builderFunc{
 	},
 }
 
+// responseLine is the net probe's response capture diagnostic (N-29): the
+// capture's state, one of the models.Content* constants, and the
+// correlator's response counters.
+func responseLine(state string, nc probenet.Coverage) string {
+	return fmt.Sprintf("net probe responses: state=%s responses=%d unpaired=%d unattributed=%d incomplete=%d truncated=%d unparsed=%d sseEvents=%d readsUnvalidated=%d readFaults=%d readDrops=%d",
+		state, nc.Responses, nc.ResponsesUnpaired, nc.ResponsesUnattributed, nc.ResponsesIncomplete, nc.ResponsesTruncated, nc.ResponsesUnparsed, nc.SSEEvents, nc.ReadsUnvalidated, nc.ReadFaults, nc.ReadDrops)
+}
+
 // buildCoverage assembles the per-probe loss record written next to the
 // events. Every known probe gets an entry: one that was not selected is
 // recorded with Ran=false, so the file shows what was not watched instead of
@@ -721,6 +729,10 @@ func runWatch(opts watchOptions) error {
 		if err := netObs.TLSAttachError(); err != nil {
 			log.Printf("net probe TLS attach warning: %v", err)
 		}
+		fmt.Println(responseLine(netObs.CaptureCoverage().Responses, nc))
+		if err := netObs.ResponseAttachError(); err != nil {
+			log.Printf("net probe response capture warning: %v", err)
+		}
 	}
 
 	cov := buildCoverage(reporters)
@@ -768,8 +780,8 @@ func runWatch(opts watchOptions) error {
 			fmt.Printf("%s probe: not run\n", name)
 			continue
 		}
-		fmt.Printf("%s probe loss: ringbufDrops=%d untrackedChildren=%d stateMapFull=%d channelDrops=%d faultedReads=%d queueOverflow=%v hashlessCloses=%d ioUringNetOps=%d undrainedRecords=%d unresolvedPaths=%d unresolvedInTree=%d\n",
-			name, p.RingbufDrops, p.UntrackedChildren, p.StateMapFull, p.ChannelDrops, p.FaultedReads, p.QueueOverflow, p.HashlessCloses, p.IOURingNetOps, p.UndrainedRecords, p.UnresolvedPaths, p.UnresolvedInTree)
+		fmt.Printf("%s probe loss: ringbufDrops=%d untrackedChildren=%d stateMapFull=%d channelDrops=%d faultedReads=%d queueOverflow=%v hashlessCloses=%d ioUringNetOps=%d undrainedRecords=%d unresolvedPaths=%d unresolvedInTree=%d responseGaps=%d\n",
+			name, p.RingbufDrops, p.UntrackedChildren, p.StateMapFull, p.ChannelDrops, p.FaultedReads, p.QueueOverflow, p.HashlessCloses, p.IOURingNetOps, p.UndrainedRecords, p.UnresolvedPaths, p.UnresolvedInTree, p.ResponseGaps)
 	}
 	if c := verification.Assess(&cov); !c.Complete {
 		log.Printf("WARNING: %s is incomplete and a verdict built on it is unreliable:", opts.out)

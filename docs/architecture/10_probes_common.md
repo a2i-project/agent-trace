@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 4c56a31 on 2026-10-17.
+Checked against commit 50312cd on 2026-10-18.
 
 ## Objective
 
@@ -102,8 +102,8 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `FaultedReads` | `faulted_reads` | net (TLS) | `SSL_write` plaintext read faulted | Note (content gap) |
 | `Content` | `content` | net | `active`, `identity_only` or `attach_failed` | `attach_failed` is a Note |
 | `HelloFaults` | `hello_faults` | net | the read of a connection's first bytes faulted; the connection is recorded and counts as written, its hostname may be missing (an upper bound on the connections affected) | Note (content gap) |
-| `Responses` | `responses` | net | response capture (`SSL_read`, N-29): `active` once a read validated the offset, `identity_only` without `ExePath`, `attach_failed` otherwise; absent in a capture written before it | not read |
-| `ResponseGaps` | `response_gaps` | net | response data the capture may be missing: faulted or ring-dropped `SSL_read` buffers, truncated responses, read streams that stopped parsing, responses with no host to name; a content gap on attestation, no claim depends on it | not read |
+| `Responses` | `responses` | net | response capture (`SSL_read`, N-29): `active` once a read validated the offset, `identity_only` without `ExePath`, `attach_failed` otherwise; absent in a capture written before it | `attach_failed` is a Note, unless `Content` is `attach_failed`, whose Note covers it |
+| `ResponseGaps` | `response_gaps` | net | response data the capture may be missing: faulted or ring-dropped `SSL_read` buffers, truncated responses, read streams that stopped parsing, responses with no host to name; a content gap on attestation, no claim depends on it | Note (content gap on attestation, N-29) |
 
 Any Reason makes `Assess` return `Complete=false`, and the verifier then reports INCONCLUSIVE instead of FAITHFUL. Notes limit what content checks can say but do not make the event set incomplete. A nil coverage record (legacy file) is itself a Reason.
 
