@@ -257,12 +257,23 @@ func TestAlign_OneSidedLanes(t *testing.T) {
 	}
 }
 
+// lowerMaxCells sets the alignment's budget for one test.
+func lowerMaxCells(t *testing.T, cells int) {
+	old := maxCells
+	maxCells = cells
+	t.Cleanup(func() { maxCells = old })
+}
+
+// Every claim disagrees with every event, so a minimum-cost path may wander
+// across the whole table and the band (V-42) cannot narrow it below the
+// budget, here lowered to keep the test fast.
 func TestAlign_RefusesALaneTooLargeToAlign(t *testing.T) {
+	lowerMaxCells(t, 1<<16)
 	var c models.Trajectory
 	var o models.GroundTruth
-	for i := 0; i < 5000; i++ {
-		c = append(c, claim(models.FileOpen, "/w/a"))
-		o = append(o, obs(models.FileOpen, "/w/a"))
+	for i := 0; i < 400; i++ {
+		c = append(c, claim(models.FileOpen, fmt.Sprintf("/w/c%d", i)))
+		o = append(o, obs(models.FileOpen, fmt.Sprintf("/w/e%d", i)))
 	}
 	if _, err := Align(c, o, Options{}); err != ErrTooLarge {
 		t.Errorf("err = %v, want ErrTooLarge", err)

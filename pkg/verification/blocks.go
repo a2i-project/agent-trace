@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -67,19 +68,24 @@ func blockSegments(lane Lane, claims models.Trajectory, ci []int) ([][]int, []st
 // keeps it on the optimum, which is a bug.
 var errTraceback = errors.New("alignment traceback lost the optimum")
 
-// alignBlocks is the alignment of a lane whose claims hold at least one
-// parallel block (V-32) or a harness-implied claim (V-33). It is the program
-// of alignLane over states instead of claim prefixes: a state is a segment s
-// and the set (a bitmask) of the members of s already consumed, with "every
-// member of s consumed" written as the next segment with none. Members are
-// consumed by pairing them, in the order of the events they pair with; the
-// members of a segment left unpaired are inserted together, once the segment's
-// pairs are done (a flush). Every pairing has exactly one such path among the
-// minimum-cost alignments: an unpaired ordinary member and an unpaired event
-// inside the same segment's span would pair more cheaply (V-10), so a
-// minimum-cost alignment has no choice of where to put either. So the count
-// is of pairings, and a lane of single-claim segments is exactly alignLane's
-// program.
+// bandSlack is how far above the lane's lower bound the first band reaches
+// (V-42): four unpaired entries, two columns either side of the narrowest
+// band. A lane whose minimum is dearer widens it.
+const bandSlack = 4 * costIndel
+
+// alignBlocks aligns one lane (alignLane calls it for every lane). It is a
+// dynamic program over states instead of claim prefixes: a state is a segment
+// s and the set (a bitmask) of the members of s already consumed, with "every
+// member of s consumed" written as the next segment with none. A segment is a
+// parallel block (V-32) or one claim. Members are consumed by pairing them, in
+// the order of the events they pair with; the members of a segment left
+// unpaired are inserted together, once the segment's pairs are done (a
+// flush). Every pairing has exactly one such path among the minimum-cost
+// alignments: an unpaired ordinary member and an unpaired event inside the
+// same segment's span would pair more cheaply (V-10), so a minimum-cost
+// alignment has no choice of where to put either. So the count is of
+// pairings, and with one-claim segments the program is the ordered alignment
+// of V4 and V-31: a pair is the diagonal step, a flush the insertion.
 //
 // A harness-implied member costs nothing unpaired and may be refused a pair
 // (V-33), so an unpaired one and an unpaired event can share a span, and a
@@ -90,11 +96,28 @@ var errTraceback = errors.New("alignment traceback lost the optimum")
 // A lane without one has a single layer and is the program above, step for
 // step.
 //
-// Bounds: a segment of k claims has 2^k - 1 states, k <= maxBlock, and the
-// table holds (states + 1) * (m + 1) cells of 12 bytes per layer, refused
-// above maxCells. A cell looks at most k pair predecessors and one deletion,
-// and the first state of a segment also at most 2^k - 1 flush predecessors,
-// so the work is O(cells * maxBlock).
+// Bounds: a segment of k claims has 2^k - 1 states, k <= maxBlock. The program
+// runs only over a band of cells (V-42). A cell whose state has decided c
+// claims, co of them ordinary, after j events lies on no path cheaper than
+// lowerBound(c, co, j): pairs cost at least nothing, and at least the surplus
+// of events over claims on either side of the cell, and of ordinary claims
+// over events, is left unpaired. Given an upper bound U on the minimum cost,
+// a cell whose bound exceeds U lies on no minimum-cost path. Every cell of
+// every minimum-cost path, and every path a minimum-cost path's prefix could
+// take instead, is kept, so the minimum, the fewest interval violations, the
+// count and every traceback step are those of the whole table; a cell left
+// out reads as unreachable and only ever raises a value off the optimum. The
+// first band takes U as the lane's own bound plus bandSlack; while the
+// minimum found exceeds U, U grows to that minimum or to twice its slack,
+// whichever is smaller, and the program runs again, so the band that ends it
+// holds every minimum-cost path. The bound is convex in j, so each state's
+// cells are one interval of columns. A band of more than maxCells cells per
+// layer is refused with ErrTooLarge. An honest lane's band is a few columns
+// wider than the surplus of events over claims, so the cells grow with the
+// states times that surplus and the findings, not with states times events.
+// A cell looks at most k pair predecessors and one deletion, and the first
+// state of a segment also at most 2^k - 1 flush predecessors, so the work is
+// O(cells * maxBlock) per run of the program.
 func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.GroundTruth, ci, ei []int, segs [][]int, opts Options) (LaneAlignment, error) {
 	n, m := len(ci), len(ei)
 	K := len(segs)
@@ -103,19 +126,21 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 		off[s+1] = off[s] + (1 << len(seg)) - 1
 	}
 	states := off[K] + 1 // the last is the final state, segment K with mask 0
-	w := m + 1
+	if states > maxCells {
+		return la, ErrTooLarge
+	}
 	// fl is the layer a flush writes: 0 when no member is harness-implied, so
 	// the program has one layer and reads as before V-33.
 	fl, layers := 0, 1
 	ins := make([]int32, n)
+	ordinaryClaims := 0
 	for p := range ci {
 		ins[p] = int32(insertCost(claims[ci[p]]))
 		if implied(claims[ci[p]]) {
 			fl, layers = 1, 2
+		} else {
+			ordinaryClaims++
 		}
-	}
-	if states > maxCells/w/layers {
-		return la, ErrTooLarge
 	}
 
 	const inf = math.MaxInt32 / 4
@@ -125,26 +150,6 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 			return satur
 		}
 		return a + b
-	}
-	// pair holds the cost of pairing claim position p with event j, or -1
-	// when the pair is refused (a harness-implied claim, V-33).
-	pair := make([]int8, n*m)
-	for p := 0; p < n; p++ {
-		for j := 0; j < m; j++ {
-			pc, ok := pairCostOf(claims[ci[p]], observed[ei[j]], opts)
-			if !ok {
-				pc = -1
-			}
-			pair[p*m+j] = int8(pc)
-		}
-	}
-	// outside reports whether pairing claim position p with event j (1-based)
-	// puts the event outside the claim's interval.
-	outside := func(p, j int) int32 {
-		if outsideInterval(claims[ci[p]], observed[ei[j-1]], opts.IntervalSlack) {
-			return 1
-		}
-		return 0
 	}
 	size := func(s int) int { return len(segs[s]) }
 	full := func(s int) int { return 1<<size(s) - 1 }
@@ -157,6 +162,144 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 			}
 		}
 		return c
+	}
+
+	// decided[x] is the number of claims state x has decided (paired or
+	// inserted), ordinary[x] how many of them are not harness-implied.
+	decided := make([]int32, states)
+	ordinary := make([]int32, states)
+	before, beforeOrdinary := 0, 0
+	for s, seg := range segs {
+		for mask := 0; mask < full(s); mask++ {
+			c, co := before, beforeOrdinary
+			for t, p := range seg {
+				if mask&(1<<t) != 0 {
+					c++
+					if !implied(claims[ci[p]]) {
+						co++
+					}
+				}
+			}
+			decided[off[s]+mask], ordinary[off[s]+mask] = int32(c), int32(co)
+		}
+		before += len(seg)
+		for _, p := range seg {
+			if !implied(claims[ci[p]]) {
+				beforeOrdinary++
+			}
+		}
+	}
+	decided[off[K]], ordinary[off[K]] = int32(n), int32(ordinaryClaims)
+	// lowerBound is the least cost of any path through state x after j
+	// events: of the j events at most min(j, c) are paired, and of the m - j
+	// after it at most min(m - j, n - c), and every other event, and every
+	// ordinary claim beyond the pairs on its side, costs costIndel.
+	lowerBound := func(x, j int) int {
+		c, co := int(decided[x]), int(ordinary[x])
+		p := min(j, c)
+		q := min(m-j, n-c)
+		return costIndel * ((j - p) + max(0, co-p) + (m - j - q) + max(0, ordinaryClaims-co-q))
+	}
+
+	// band is the set of cells one run of the program fills: for each state
+	// the columns lo..hi (none when hi < lo), stored from base.
+	type band struct {
+		lo, hi []int32
+		base   []int
+		cells  int
+		full   bool
+	}
+	at := func(bd *band, x, j int) int {
+		if j < int(bd.lo[x]) || j > int(bd.hi[x]) {
+			return -1
+		}
+		return bd.base[x] + j - int(bd.lo[x])
+	}
+	// makeBand keeps the cells whose bound is at most u. The bound is convex
+	// in j, so they are an interval around its minimum.
+	makeBand := func(u int) (*band, bool) {
+		bd := &band{lo: make([]int32, states), hi: make([]int32, states), base: make([]int, states), full: true}
+		for x := 0; x < states; x++ {
+			jm := sort.Search(m, func(j int) bool { return lowerBound(x, j+1) >= lowerBound(x, j) })
+			lo, hi := 1, 0
+			if lowerBound(x, jm) <= u {
+				lo = sort.Search(jm, func(j int) bool { return lowerBound(x, j) <= u })
+				hi = jm + sort.Search(m-jm, func(k int) bool { return lowerBound(x, jm+k+1) > u })
+			}
+			bd.lo[x], bd.hi[x], bd.base[x] = int32(lo), int32(hi), bd.cells
+			if hi >= lo {
+				bd.cells += hi - lo + 1
+			}
+			if lo != 0 || hi != m {
+				bd.full = false
+			}
+			if bd.cells > maxCells/layers {
+				return nil, false
+			}
+		}
+		return bd, true
+	}
+
+	// pair holds, for the events e the band can pair claim position p with
+	// (those of the columns of its segment's states and of the state after
+	// them), the pair's code: -1 when the pair is refused (a harness-implied
+	// claim, V-33), else its cost plus pairOutside when the event falls
+	// outside the claim's interval.
+	const pairOutside = 4
+	var pair []int8
+	var pairLo, pairHi, pairBase []int
+	pairCode := func(p, e int) int8 {
+		pc, ok := pairCostOf(claims[ci[p]], observed[ei[e]], opts)
+		if !ok {
+			return -1
+		}
+		if outsideInterval(claims[ci[p]], observed[ei[e]], opts.IntervalSlack) {
+			pc += pairOutside
+		}
+		return int8(pc)
+	}
+	pairsFor := func(bd *band) bool {
+		total := 0
+		lo, hi, base := make([]int, n), make([]int, n), make([]int, n)
+		for s, seg := range segs {
+			first, last := m, -1
+			for x := off[s]; x <= off[s+1]; x++ {
+				if bd.hi[x] >= bd.lo[x] {
+					first, last = min(first, max(0, int(bd.lo[x])-1)), max(last, int(bd.hi[x])-1)
+				}
+			}
+			for _, p := range seg {
+				lo[p], hi[p], base[p] = first, last, total
+				if last >= first {
+					total += last - first + 1
+				}
+			}
+		}
+		if total > maxCells {
+			return false
+		}
+		// A wider band keeps the codes the previous one computed.
+		next := make([]int8, total)
+		for p := 0; p < n; p++ {
+			for e := lo[p]; e <= hi[p]; e++ {
+				if pair != nil && e >= pairLo[p] && e <= pairHi[p] {
+					next[base[p]+e-lo[p]] = pair[pairBase[p]+e-pairLo[p]]
+				} else {
+					next[base[p]+e-lo[p]] = pairCode(p, e)
+				}
+			}
+		}
+		pair, pairLo, pairHi, pairBase = next, lo, hi, base
+		return true
+	}
+	// pairAt is the code of pairing p with event e. The band never asks
+	// outside the range pairsFor filled; the fallback keeps it exact if it
+	// did.
+	pairAt := func(p, e int) int8 {
+		if e < pairLo[p] || e > pairHi[p] {
+			return pairCode(p, e)
+		}
+		return pair[pairBase[p]+e-pairLo[p]]
 	}
 
 	// twins[s][t] is the set of members of segment s before t that are
@@ -179,15 +322,19 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 		}
 	}
 
-	// table holds one layer of the program per cell.
+	// table holds one layer of the program per cell of the band.
 	type table struct {
 		cost, viol []int32
 		ways       []uint32
 	}
 	// best reads a cell over every layer: the minimum cost, the fewest
 	// violations among the paths of that cost, and their count. Layers hold
-	// disjoint paths (by their last move), so the counts add.
+	// disjoint paths (by their last move), so the counts add. A cell outside
+	// the band (y < 0) is unreachable.
 	best := func(tb []table, y int) (int32, int32, uint32) {
+		if y < 0 {
+			return inf, math.MaxInt32, 0
+		}
 		c, v, wy := tb[0].cost[y], tb[0].viol[y], tb[0].ways[y]
 		for l := 1; l < len(tb); l++ {
 			switch lc := tb[l].cost[y]; {
@@ -202,21 +349,58 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 		return c, v, wy
 	}
 
-	// fill runs the program. With canonical set, a member pairs only after
-	// its interchangeable predecessors, so ways counts readings up to
-	// exchange; viol is then meaningless.
-	fill := func(canonical bool) []table {
-		tb := make([]table, layers)
-		for l := range tb {
-			tb[l] = table{make([]int32, states*w), make([]int32, states*w), make([]uint32, states*w)}
-			for x := range tb[l].cost {
-				tb[l].cost[x] = inf
-			}
-		}
-		tb[0].cost[0], tb[0].ways[0] = 0, 1
+	// fill runs the program over the band. With canonical set, a member
+	// pairs only after its interchangeable predecessors, so ways counts
+	// readings up to exchange; viol is then meaningless.
+	// A move into a state: a pair of claim position p, a member of the
+	// segment of state from, with the next event, or a flush from state from
+	// that inserts the members it left at cost flush.
+	type move struct {
+		from, p int
+		flush   int32
+	}
+	// movesInto lists the moves into state x (segment s, mask): the pairs
+	// that consume one member of the mask, or, for a segment's first state,
+	// that consume the previous segment's last member, and that segment's
+	// flushes. With canonical set, a member pairs only after its
+	// interchangeable predecessors.
+	movesInto := func(s, mask int, canonical bool, pairs, flushes []move) ([]move, []move) {
+		pairs, flushes = pairs[:0], flushes[:0]
 		allowed := func(s, t, before int) bool {
 			return !canonical || before&twins[s][t] == twins[s][t]
 		}
+		if mask != 0 {
+			for t := 0; t < size(s); t++ {
+				if before := mask &^ (1 << t); mask&(1<<t) != 0 && allowed(s, t, before) {
+					pairs = append(pairs, move{from: off[s] + before, p: segs[s][t]})
+				}
+			}
+		} else if s > 0 {
+			for t := 0; t < size(s-1); t++ {
+				if before := full(s-1) &^ (1 << t); allowed(s-1, t, before) {
+					pairs = append(pairs, move{from: off[s-1] + before, p: segs[s-1][t]})
+				}
+			}
+			for pm := 0; pm < full(s-1); pm++ {
+				flushes = append(flushes, move{from: off[s-1] + pm, flush: flushCost(s-1, pm)})
+			}
+		}
+		return pairs, flushes
+	}
+
+	// fill runs the program over the band. With canonical set, a member
+	// pairs only after its interchangeable predecessors, so ways counts
+	// readings up to exchange; viol is then meaningless.
+	fill := func(bd *band, canonical bool) []table {
+		tb := make([]table, layers)
+		for l := range tb {
+			tb[l] = table{make([]int32, bd.cells), make([]int32, bd.cells), make([]uint32, bd.cells)}
+			for y := range tb[l].cost {
+				tb[l].cost[y] = inf
+			}
+		}
+		origin := at(bd, 0, 0)
+		tb[0].cost[origin], tb[0].ways[origin] = 0, 1
 		type acc struct {
 			c, v int32
 			wy   uint32
@@ -231,6 +415,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 				a.wy = add(a.wy, wy)
 			}
 		}
+		var pairs, flushes []move
 		for s := 0; s <= K; s++ {
 			masks := 1
 			if s < K {
@@ -238,63 +423,45 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 			}
 			for mask := 0; mask < masks; mask++ {
 				x := off[s] + mask
-				for j := 0; j <= m; j++ {
+				pairs, flushes = movesInto(s, mask, canonical, pairs, flushes)
+				for j := int(bd.lo[x]); j <= int(bd.hi[x]); j++ {
 					if x == 0 && j == 0 {
 						continue
 					}
-					var a [2]acc
-					for l := range a {
-						a[l] = acc{c: inf, v: math.MaxInt32}
-					}
-					pairFrom := func(ps, t, base int) {
-						p := segs[ps][t]
-						pc := pair[p*m+j-1]
-						if pc < 0 {
-							return
-						}
-						y := (off[ps]+base)*w + j - 1
-						c, v, wy := best(tb, y)
-						if c >= inf {
-							return
-						}
-						consider(&a[0], c+int32(pc), v+outside(p, j), wy)
-					}
+					a := [2]acc{{c: inf, v: math.MaxInt32}, {c: inf, v: math.MaxInt32}}
 					if j > 0 {
 						// Pair a member with event j.
-						if mask != 0 {
-							for t := 0; t < size(s); t++ {
-								if before := mask &^ (1 << t); mask&(1<<t) != 0 && allowed(s, t, before) {
-									pairFrom(s, t, before)
-								}
+						for _, mv := range pairs {
+							code := pairAt(mv.p, j-1)
+							if code < 0 {
+								continue
 							}
-						} else if s > 0 {
-							for t := 0; t < size(s-1); t++ {
-								if before := full(s-1) &^ (1 << t); allowed(s-1, t, before) {
-									pairFrom(s-1, t, before)
-								}
-							}
-						}
-					}
-					if mask == 0 && s > 0 {
-						// Flush: the members of the previous segment left
-						// unconsumed are inserted.
-						for pm := 0; pm < full(s-1); pm++ {
-							y := (off[s-1]+pm)*w + j
-							c, v, wy := best(tb, y)
+							c, v, wy := best(tb, at(bd, mv.from, j-1))
 							if c >= inf {
 								continue
 							}
-							consider(&a[fl], c+flushCost(s-1, pm), v, wy)
+							consider(&a[0], c+int32(code%pairOutside), v+int32(code/pairOutside), wy)
 						}
+					}
+					// Flush: the members of the previous segment left
+					// unconsumed are inserted.
+					for _, mv := range flushes {
+						c, v, wy := best(tb, at(bd, mv.from, j))
+						if c >= inf {
+							continue
+						}
+						consider(&a[fl], c+mv.flush, v, wy)
 					}
 					if j > 0 {
 						// Event j unpaired: a deletion, never straight after a
 						// flush (layer 0 only).
-						y := x*w + j - 1
-						consider(&a[0], tb[0].cost[y]+costIndel, tb[0].viol[y], tb[0].ways[y])
+						if y := at(bd, x, j-1); y >= 0 {
+							consider(&a[0], tb[0].cost[y]+costIndel, tb[0].viol[y], tb[0].ways[y])
+						}
 					}
+					y := at(bd, x, j)
 					for l := 0; l < layers; l++ {
-						tb[l].cost[x*w+j], tb[l].viol[x*w+j], tb[l].ways[x*w+j] = a[l].c, a[l].v, a[l].wy
+						tb[l].cost[y], tb[l].viol[y], tb[l].ways[y] = a[l].c, a[l].v, a[l].wy
 					}
 				}
 			}
@@ -303,14 +470,29 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	}
 
 	final := off[K]
-	if hasTwins {
-		_, _, ways := best(fill(true), final*w+m)
-		la.Optimal = ways
+	floor := lowerBound(0, 0)
+	u := floor + bandSlack
+	var bd *band
+	var tb []table
+	for {
+		var ok bool
+		if bd, ok = makeBand(u); !ok || !pairsFor(bd) {
+			return la, ErrTooLarge
+		}
+		tb = fill(bd, false)
+		c, _, _ := best(tb, at(bd, final, m))
+		if int(c) <= u || bd.full {
+			break
+		}
+		next := floor + 2*(u-floor)
+		if c < inf {
+			next = min(next, int(c))
+		}
+		u = next
 	}
-	tb := fill(false)
-	if !hasTwins {
-		_, _, ways := best(tb, final*w+m)
-		la.Optimal = ways
+	_, _, la.Optimal = best(tb, at(bd, final, m))
+	if hasTwins {
+		_, _, la.Optimal = best(fill(bd, true), at(bd, final, m))
 	}
 	la.Ambiguous = la.Optimal > 1
 
@@ -335,9 +517,13 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	afterDeletion := false
 	for s > 0 || mask != 0 || j > 0 {
 		x := off[s] + mask
-		here, hv, _ := best(tb, x*w+j)
+		cell := at(bd, x, j)
+		if cell < 0 {
+			return la, errTraceback
+		}
+		here, hv, _ := best(tb, cell)
 		if afterDeletion {
-			here, hv = tb[0].cost[x*w+j], tb[0].viol[x*w+j]
+			here, hv = tb[0].cost[cell], tb[0].viol[cell]
 		}
 		moved := false
 		if j > 0 {
@@ -354,13 +540,12 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 						continue
 					}
 					pm := base &^ (1 << t)
-					y := (off[ps]+pm)*w + j - 1
 					p := segs[ps][t]
-					pc := pair[p*m+j-1]
-					if pc < 0 {
+					code := pairAt(p, j-1)
+					if code < 0 {
 						continue
 					}
-					if c, v, _ := best(tb, y); c < inf && here == c+int32(pc) && hv == v+outside(p, j) {
+					if c, v, _ := best(tb, at(bd, off[ps]+pm, j-1)); c < inf && here == c+int32(code%pairOutside) && hv == v+int32(code/pairOutside) {
 						emitPair(p, j)
 						s, mask, j = ps, pm, j-1
 						moved, afterDeletion = true, false
@@ -370,8 +555,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 		}
 		if !moved && mask == 0 && s > 0 && (!afterDeletion || fl == 0) {
 			for pm := full(s-1) - 1; pm >= 0 && !moved; pm-- {
-				y := (off[s-1]+pm)*w + j
-				if c, v, _ := best(tb, y); c < inf && here == c+flushCost(s-1, pm) && hv == v {
+				if c, v, _ := best(tb, at(bd, off[s-1]+pm, j)); c < inf && here == c+flushCost(s-1, pm) && hv == v {
 					for t := size(s-1) - 1; t >= 0; t-- {
 						if pm&(1<<t) == 0 {
 							p := segs[s-1][t]
@@ -384,8 +568,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 			}
 		}
 		if !moved && j > 0 {
-			y := x*w + j - 1
-			if here == tb[0].cost[y]+costIndel && hv == tb[0].viol[y] {
+			if y := at(bd, x, j-1); y >= 0 && here == tb[0].cost[y]+costIndel && hv == tb[0].viol[y] {
 				rev = append(rev, Edit{Kind: EditDeletion, ClaimIndex: -1, EventIndex: ei[j-1], Event: &observed[ei[j-1]]})
 				j--
 				moved, afterDeletion = true, true

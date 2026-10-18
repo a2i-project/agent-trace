@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -712,12 +713,15 @@ func TestOutcomeExitCodes(t *testing.T) {
 }
 
 func TestVerify_TooLargeToAlignIsInconclusive(t *testing.T) {
-	const n = 4200 // n*n exceeds the alignment budget
+	// Every claim disagrees with every event, so the band (V-42) is the
+	// whole table, and n*n exceeds the alignment budget, lowered here.
+	lowerMaxCells(t, 1<<16)
+	const n = 400
 	var g models.GroundTruth
 	var tr models.Trajectory
 	for i := 0; i < n; i++ {
-		g = append(g, agentEv(i, models.FileWrite, "/w/a"))
-		tr = append(tr, claimAt(i, models.FileWrite, "/w/a"))
+		g = append(g, agentEv(i, models.FileWrite, fmt.Sprintf("/w/e%d", i)))
+		tr = append(tr, claimAt(i, models.FileWrite, fmt.Sprintf("/w/c%d", i)))
 	}
 	v := run(tr, g)
 	wantOutcome(t, v, OutcomeInconclusive)

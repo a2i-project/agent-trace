@@ -2,7 +2,6 @@ package verification
 
 import (
 	"errors"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -203,14 +202,31 @@ func pairCostOf(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Option
 	if implied(c) {
 		return 0, impliedPairs(c, e, opts)
 	}
-	pc, _ := pairCost(c, e, opts.Expresses)
-	return pc, true
+	return pairCostOnly(c, e, opts.Expresses), true
+}
+
+// pairCostOnly is pairCost's cost without its list of diffs, which the
+// program does not need for a cell and would allocate for every pair that
+// differs.
+func pairCostOnly(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses) int {
+	if c.ActionType != e.ActionType {
+		return costSubType
+	}
+	// Equal targets match whatever the normalization; the test spares the
+	// path cleaning for the common pair.
+	if c.Target != e.Target && !matching.TargetsMatch(c, e) && !truncatedPrefix(c, e) || len(contentDiffs(c, e, ex)) > 0 {
+		return costSubSame
+	}
+	return 0
 }
 
 // ErrTooLarge is returned when a lane is too large to align in bounded memory.
 var ErrTooLarge = errors.New("lane too large to align")
 
-const maxCells = 16 << 20
+// maxCells bounds the cells of one lane's program per layer (V-42): about
+// 192 MiB of tables per layer at the limit. A variable only so that tests can
+// reach the limit with a small lane.
+var maxCells = 16 << 20
 
 // Edit costs, doubled so no tie exists between a substitution and an adjacent
 // insertion plus deletion. A same-type substitution is cheaper than the pair,
@@ -304,129 +320,14 @@ func targetAndContentDiffs(c models.TrajectoryEntry, e models.GroundTruthEvent, 
 	return diffs
 }
 
+// alignLane aligns one lane: its claims are cut into segments (a parallel
+// block or one claim) and aligned by alignBlocks, which with one-claim
+// segments is the ordered alignment.
 func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth, ci, ei []int, opts Options) (LaneAlignment, error) {
-	n, m := len(ci), len(ei)
 	la := LaneAlignment{Lane: lane}
-	if n*m > maxCells || n+1 > maxCells || m+1 > maxCells {
-		return la, ErrTooLarge
-	}
 	segs, degr := blockSegments(lane, claims, ci)
 	la.Degradations = degr
-	for _, s := range segs {
-		if len(s) > 1 {
-			return alignBlocks(la, claims, observed, ci, ei, segs, opts)
-		}
-	}
-	// A harness-implied claim (V-33) needs the block program's handling of an
-	// unpaired claim that costs nothing; a lane without one keeps this program.
-	for _, i := range ci {
-		if implied(claims[i]) {
-			return alignBlocks(la, claims, observed, ci, ei, segs, opts)
-		}
-	}
-
-	w := m + 1
-	cost := make([]int32, (n+1)*w)
-	// viol is the secondary cost: the fewest pairs outside their claim's
-	// interval among the minimum-cost alignments of the prefix (V-31). It
-	// only chooses between readings that cost the same, so time never makes
-	// a reading with a worse content cost win.
-	viol := make([]int32, (n+1)*w)
-	ways := make([]uint32, (n+1)*w)
-	const satur = 1 << 30
-	add := func(a, b uint32) uint32 {
-		if a+b > satur || a+b < a {
-			return satur
-		}
-		return a + b
-	}
-	ways[0] = 1
-	for i := 1; i <= n; i++ {
-		cost[i*w] = int32(i * costIndel)
-		ways[i*w] = 1
-	}
-	for j := 1; j <= m; j++ {
-		cost[j] = int32(j * costIndel)
-		ways[j] = 1
-	}
-	pair := make([]int, n*m) // cost of pairing claim i with event j
-	outside := func(i, j int) int32 {
-		if outsideInterval(claims[ci[i-1]], observed[ei[j-1]], opts.IntervalSlack) {
-			return 1
-		}
-		return 0
-	}
-	for i := 1; i <= n; i++ {
-		for j := 1; j <= m; j++ {
-			pc, _ := pairCost(claims[ci[i-1]], observed[ei[j-1]], opts.Expresses)
-			pair[(i-1)*m+(j-1)] = pc
-			diag := cost[(i-1)*w+(j-1)] + int32(pc)
-			up := cost[(i-1)*w+j] + costIndel   // claim i unpaired: insertion
-			left := cost[i*w+(j-1)] + costIndel // event j unpaired: deletion
-			best := diag
-			if up < best {
-				best = up
-			}
-			if left < best {
-				best = left
-			}
-			// The count and the secondary cost run over the predecessors
-			// that reach the minimum primary cost only.
-			var count uint32
-			bestViol := int32(math.MaxInt32)
-			if diag == best {
-				count = add(count, ways[(i-1)*w+(j-1)])
-				bestViol = min(bestViol, viol[(i-1)*w+(j-1)]+outside(i, j))
-			}
-			if up == best {
-				count = add(count, ways[(i-1)*w+j])
-				bestViol = min(bestViol, viol[(i-1)*w+j])
-			}
-			if left == best {
-				count = add(count, ways[i*w+(j-1)])
-				bestViol = min(bestViol, viol[i*w+(j-1)])
-			}
-			cost[i*w+j] = best
-			viol[i*w+j] = bestViol
-			ways[i*w+j] = count
-		}
-	}
-	la.Optimal = ways[n*w+m]
-	la.Ambiguous = la.Optimal > 1
-
-	// Trace back through a minimum-cost alignment with the fewest interval
-	// violations; among those, a fixed preference: pair, then insertion,
-	// then deletion. A step is taken only when it keeps both costs on the
-	// optimum, so the reading shown is minimal in both, primary first.
-	var rev []Edit
-	i, j := n, m
-	for i > 0 || j > 0 {
-		here, hv := cost[i*w+j], viol[i*w+j]
-		switch {
-		case i > 0 && j > 0 && here == cost[(i-1)*w+(j-1)]+int32(pair[(i-1)*m+(j-1)]) && hv == viol[(i-1)*w+(j-1)]+outside(i, j):
-			c, e := claims[ci[i-1]], observed[ei[j-1]]
-			_, diffs := pairCost(c, e, opts.Expresses)
-			ed := Edit{Kind: EditMatch, ClaimIndex: ci[i-1], EventIndex: ei[j-1], Claim: &claims[ci[i-1]], Event: &observed[ei[j-1]]}
-			if len(diffs) > 0 {
-				ed.Kind, ed.Diffs = EditSubstitution, diffs
-			}
-			ed.OutsideInterval = outsideInterval(c, e, opts.IntervalSlack)
-			ed.Unverified = unverifiedFields(c, e)
-			rev = append(rev, ed)
-			i--
-			j--
-		case i > 0 && here == cost[(i-1)*w+j]+costIndel && hv == viol[(i-1)*w+j]:
-			rev = append(rev, Edit{Kind: EditInsertion, ClaimIndex: ci[i-1], EventIndex: -1, Claim: &claims[ci[i-1]]})
-			i--
-		default:
-			rev = append(rev, Edit{Kind: EditDeletion, ClaimIndex: -1, EventIndex: ei[j-1], Event: &observed[ei[j-1]]})
-			j--
-		}
-	}
-	for k := len(rev) - 1; k >= 0; k-- {
-		la.Edits = append(la.Edits, rev[k])
-	}
-	return la, nil
+	return alignBlocks(la, claims, observed, ci, ei, segs, opts)
 }
 
 // truncatedPrefix reports whether the observed target is a truncated record
