@@ -466,3 +466,35 @@ func TestObserver_RenamedThenRemovedDirectoryIsNotNamedByItsOldPath(t *testing.T
 	}
 	t.Logf("dir cache %+v, unresolved %d", obs.DirCache(), obs.CaptureCoverage().UnresolvedPaths)
 }
+
+// The start walk caches a directory under the name resolving its handle
+// gives, which every record of the directory carries, and not under the path
+// the walk reached it by, which can be another mount's (P-30). Only a handle
+// that does not resolve keeps the walk's path, for a removed directory alone.
+func TestDirCache_TheStartWalkCachesTheResolvedName(t *testing.T) {
+	dir := t.TempDir()
+	id, err := fsidOf(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fh, _, err := unix.NameToHandleAt(unix.AT_FDCWD, dir, 0)
+	if err != nil {
+		t.Skipf("name_to_handle_at: %v", err)
+	}
+	w, _ := pipeWatch(t, id)
+
+	c := newDirCache(16, w)
+	c.fillPath(dir, func(fsID, int32, []byte) string { return "/through/the/probe/mount" })
+	if p, ok := c.hit(id, fh.Type(), fh.Bytes()); !ok || p != "/through/the/probe/mount" {
+		t.Errorf("hit = %q, %v, want the resolved name", p, ok)
+	}
+
+	c = newDirCache(16, w)
+	c.fillPath(dir, func(fsID, int32, []byte) string { return "" })
+	if p, ok := c.hit(id, fh.Type(), fh.Bytes()); ok {
+		t.Errorf("an unresolved walk entry named a record without resolving: %q", p)
+	}
+	if p, ok := c.lookup(id, fh.Type(), fh.Bytes()); !ok || p != dir {
+		t.Errorf("lookup = %q, %v, want the walk's path %q", p, ok, dir)
+	}
+}

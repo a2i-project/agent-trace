@@ -123,8 +123,12 @@ func (c *dirCache) put(fsid fsID, handleType int32, handleData []byte, path stri
 
 // fillPath caches the directory at path by its handle, as the start walk
 // sees it. The handle name_to_handle_at gives a directory is the one fanotify
-// reports for it.
-func (c *dirCache) fillPath(path string) {
+// reports for it. The entry holds the path resolve gives the handle, the name
+// every record of the directory carries, so that a record read after the
+// directory is removed names it the same way even when the walk reached it
+// through another mount (P-30); the walk's own path is kept only when the
+// handle does not resolve.
+func (c *dirCache) fillPath(path string, resolve handleResolver) {
 	if c == nil || c.watch == nil {
 		return
 	}
@@ -135,6 +139,12 @@ func (c *dirCache) fillPath(path string) {
 	id, err := fsidOf(path)
 	if err != nil {
 		return
+	}
+	if resolve != nil {
+		if p := resolve(id, fh.Type(), fh.Bytes()); p != "" {
+			c.fill(id, fh.Type(), fh.Bytes(), p)
+			return
+		}
 	}
 	c.put(id, fh.Type(), fh.Bytes(), path, false)
 }

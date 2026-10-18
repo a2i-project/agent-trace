@@ -457,9 +457,10 @@ func (o *Observer) Start() {
 		walk = o.cfg.Path
 	}
 	if walk != "" {
+		resolve := newKernelResolver(o.mounts, o.openHandle)
 		_ = filepath.Walk(walk, func(path string, info os.FileInfo, err error) error {
 			if err == nil && info.IsDir() {
-				o.dirs.fillPath(path)
+				o.dirs.fillPath(path, resolve)
 			}
 			if err == nil && info.Mode().IsRegular() {
 				if h, err := content.SHA256File(path); err == nil {
