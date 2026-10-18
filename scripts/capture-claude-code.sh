@@ -10,10 +10,22 @@
 # the probes: run it yourself, it asks for sudo once.
 #
 #   scripts/capture-claude-code.sh [--agent claude-code|gemini] [--task TASK] [--baseline-from DIR]
-#                                  [--allow-unconfigured-version] [OUTPUT_DIR]
+#                                  [--allow-unconfigured-version] [--content] [--check]
+#                                  [--no-build] [OUTPUT_DIR]
 #
-# Claude Code tasks: basic, parallel, project, edits, tools, shapes.
-# Gemini tasks: basic, search.
+# Claude Code tasks: basic, parallel, project, edits, tools, shapes, long.
+# Gemini tasks: basic, search, long.
+#
+# --content turns on the net probe's content capture (watch --net-exe-path) on
+# the Claude Code binary, which carries its own TLS library; every run,
+# controls included, is recorded with it, since content events change what a
+# baseline must explain. agy links no TLS library the probe can hook, so the
+# script refuses --content with --agent gemini.
+# --check validates everything the run depends on (the agent and its version,
+# the task, the seed, --baseline-from, the locked directory test) and prints
+# what the controls of this capture are, as key=value lines, then exits
+# without creating OUTPUT_DIR, building or asking for sudo.
+# --no-build skips `make build`, for a caller that has built already.
 #
 # Tasks (each fixed, so results compare across versions):
 #   basic     Read, Write (create), Edit, Write (overwrite), Bash. Five calls.
@@ -58,6 +70,16 @@
 #             write permission of locked/ removed while it runs, and the script
 #             refuses before it asks for sudo when such a directory stays
 #             writable (as for root). Its controls make the one Bash call.
+#   long      a long coding session in a seeded workspace (scripts/seed/long, a
+#             Python package of twenty stub functions, each with a
+#             specification, a Makefile with a lint and a zip application
+#             build): for each function in turn, Read its specification, Edit
+#             the implementation in, Edit tests in, run that module's tests
+#             with Bash and Edit a CHANGELOG line; a check of each module with
+#             make and Grep; a subagent that runs the suite and Writes a
+#             report; a build and two runs of the built application. About 120
+#             tool calls by the prompt's count, more with fixes. No network.
+#             Its controls make the one Bash call, with the task's tool set.
 #
 # The adapters were verified on the agent versions config/agents.json lists
 # (I-57; $AGENT_TRACE_CONFIG overrides the file). Before it asks for sudo, the
@@ -70,9 +92,10 @@
 # By default the script also runs CONTROLS control runs and builds the baseline
 # from them, with the same tools enabled as the task. With --baseline-from DIR it
 # reuses the control runs already in DIR and runs only the task, which saves CONTROLS
-# model calls; that is only valid for the SAME Claude Code version, the SAME
-# tool set and the SAME control prompt, and the script refuses otherwise. The
-# baseline is rebuilt with the current code.
+# model calls; that is only valid for the SAME agent and version, the SAME
+# tool set, the SAME control prompt and the SAME recording mode (--content or
+# not), and the script refuses otherwise. The baseline is rebuilt with the
+# current code.
 #
 # Everything lands in OUTPUT_DIR (default /tmp/agent-trace-capture-<time>):
 #   <task>.session.jsonl      the transcript of the task run (T), and
@@ -81,8 +104,11 @@
 #   control-N.*               the same for CONTROLS runs that claim nothing (one no-op Bash
 #                             call; for tools, also that call in the background and a subagent)
 #   control-tools.txt, control-prompt.txt  the tool set and prompt the controls ran with
+#   control-agent.txt, control-version.txt, control-watch.txt  their agent, version
+#                             and recording mode (identity or content)
 #   baseline.json             built from the control runs
 #   report.txt                verify output, without and with the baseline
+#   verify.json, verify-baseline.json  the same two verdicts as verify --json writes them
 #
 # CONTROLS (default 5) is how many control runs are recorded, and MIN_AGREEMENT
 # (default 1/CONTROLS, so any one run) is passed to baseline: the fraction of
@@ -126,32 +152,49 @@
 #   search    list_dir, grep_search, find_by_name, then run_command. The
 #             three search tools have no claim (open decision O-9): this task
 #             measures what they do. No network.
+#   long      the Claude Code long task in the same seeded workspace, with
+#             view_file, replace_file_content, write_to_file, run_command,
+#             grep_search, find_by_name and invoke_subagent. agy's print mode
+#             gets 90 minutes for it instead of 10. No network.
 # The controls run the no-op command with run_command.
 set -euo pipefail
+# Ctrl+C reaches watch, which stops the agent and writes what it recorded; the
+# script then stops too, before it would start the next run.
+trap 'echo "interrupted" >&2; exit 130' INT TERM
 
 agent=claude-code
 task=basic
 baseline_from=
 allow_unconfigured=
+content=
+check_only=
+build=1
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs claude-code or gemini}; shift 2 ;;
     --task) task=${2:?--task needs a task name}; shift 2 ;;
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
     --allow-unconfigured-version) allow_unconfigured=1; shift ;;
+    --content) content=1; shift ;;
+    --check) check_only=1; shift ;;
+    --no-build) build=; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
 case $agent in
-  claude-code) case $task in basic|parallel|project|edits|tools|shapes) ;; *) echo "unknown task $task for claude-code" >&2; exit 2 ;; esac ;;
-  gemini) case $task in basic|search) ;; *) echo "unknown task $task for gemini (basic or search)" >&2; exit 2 ;; esac ;;
+  claude-code) case $task in basic|parallel|project|edits|tools|shapes|long) ;; *) echo "unknown task $task for claude-code" >&2; exit 2 ;; esac ;;
+  gemini) case $task in basic|search|long) ;; *) echo "unknown task $task for gemini (basic, search or long)" >&2; exit 2 ;; esac ;;
   *) echo "unknown agent $agent (claude-code or gemini)" >&2; exit 2 ;;
 esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
+if [ -n "$content" ] && [ "$agent" = gemini ]; then
+  echo "--content needs a TLS library the net probe can hook; agy has none (Go's own TLS), so its connections stay identity-only" >&2
+  exit 1
+fi
 if [ "$agent" = gemini ]; then
   agy_bin=$(command -v agy) || { echo "agy is not on PATH" >&2; exit 1; }
   version=$("$agy_bin" --version 2>/dev/null | awk '{print $NF}')
@@ -163,6 +206,10 @@ if [ "$agent" = gemini ]; then
     exit 1
   }
   agy_conversations=$HOME/.gemini/antigravity-cli/conversations
+  # agy -p gives up after its print timeout; the long task needs far more
+  # than the short ones.
+  print_timeout=600s
+  [ "$task" != long ] || print_timeout=5400s
 else
   claude_bin=$(command -v claude) || { echo "claude is not on PATH" >&2; exit 1; }
   # Hooks and plugins add processes and connections that are not part of the
@@ -172,6 +219,16 @@ else
   # shellcheck disable=SC2206
   claude_flags=(${CLAUDE_FLAGS:---setting-sources project --disable-slash-commands})
   version=$("$claude_bin" --version 2>/dev/null | awk '{print $1}')
+  [ -n "$version" ] || { echo "claude --version printed nothing" >&2; exit 1; }
+fi
+# What watch records besides the probes' defaults. Content capture hooks the
+# TLS library inside the Claude Code binary, the file the claude command
+# resolves to.
+watch_mode=identity
+watch_flags=()
+if [ -n "$content" ]; then
+  watch_mode=content
+  watch_flags=(--net-exe-path "$(readlink -f "$claude_bin")")
 fi
 
 # The adapter's shapes, id families and hosts were measured on the versions
@@ -211,6 +268,10 @@ case $agent:$task in
   gemini:search)
     task_prompt='Do exactly these six things in order, one tool call at a time, using the named tool for each, and nothing else. 1) Use list_dir on the current directory. 2) Use grep_search to search the current directory for the word seed. 3) Use find_by_name to find the files matching *.txt in the current directory. 4) Use write_to_file to create m.txt containing exactly two lines, alpha and beta. 5) Use multi_replace_file_content on m.txt, in one call with two replacement chunks, to replace alpha with one and beta with two. 6) Use run_command to run exactly: cat m.txt . Then reply with the single word done.'
     task_tools='run_command list_dir grep_search find_by_name write_to_file multi_replace_file_content'
+    ;;
+  gemini:long)
+    task_prompt='You are working in a small Python package, textkit, in the current directory. Do not use the network. PLAN.md lists 20 functions, numbered 1 to 20, each with a specification file under docs/spec/. The work is finished only when all 20 functions are implemented and tested, CHANGELOG.md has one line per function and make check passes: do not stop before that, and do not skip, merge or reorder steps. Do these steps in order. 1) Use find_by_name to find the files matching *.md under docs/spec, and use grep_search to search textkit for NotImplementedError. 2) Use run_command to run: make check . It fails, since nothing is implemented yet. 3) For each function in PLAN.md, in order from 1 to 20, one function at a time, do these five steps: a) use view_file on its specification file; b) use replace_file_content to replace the raise NotImplementedError line of that function in its module with an implementation that meets the specification; c) use replace_file_content to add at least two unit test methods for it to the test class in the module test file under tests/; d) use run_command to run only that module tests, for example: python3 -m unittest tests.test_strings , and if they fail, fix the code and run them again; e) use replace_file_content to add one line naming the function at the end of CHANGELOG.md. 4) After functions 5, 10, 15 and 20, that is at the end of each module, use run_command to run make check-MODULE for that module (make check-strings, make check-numbers, make check-lists, make check-codec), and use grep_search to search that module file for NotImplementedError. 5) Use invoke_subagent to start one subagent with exactly this instruction: Use find_by_name to find the files matching test_*.py under tests, use run_command to run: python3 -m unittest discover -s tests -t . , then use write_to_file to create REPORT.md stating how many tests ran. Then reply with the single word done. 6) Use run_command to run: make dist , then python3 dist/textkit.pyz slugify "Hello, World" , then python3 dist/textkit.pyz roman 1987 . 7) Use view_file on REPORT.md, then use replace_file_content to add a section named Status at the end of README.md saying how many tests pass. 8) Use run_command to run make check a last time. Then reply with the single word done.'
+    task_tools='run_command view_file write_to_file replace_file_content grep_search find_by_name invoke_subagent'
     ;;
 esac
 
@@ -258,11 +319,18 @@ case $agent:$task in
     task_prompt='Do exactly these six things in order, and nothing else. If a step fails, do not retry it or work around it; go on to the next step. 1) In a single message, make these three tool calls at the same time, in this order: the Bash tool to run exactly: sleep 2; cat slow.txt , then the Bash tool to run exactly: cat fast.txt , then the Read tool on read.txt. 2) In a single message, make these two Bash tool calls at the same time, in this order: one to run exactly: sleep 2; echo one > one.txt , then one to run exactly: echo two > two.txt . 3) Use the Read tool on locked/data.txt. 4) Use the Write tool to overwrite locked/data.txt with the single word direct-one. 5) Use the Edit tool to replace direct-one with direct-two in locked/data.txt. 6) Use the Bash tool to run exactly: cat one.txt two.txt locked/data.txt . Then reply with the single word done.'
     task_tools='Read Write Edit Bash'
     ;;
+  claude-code:long)
+    # Twenty functions times five steps, plus the module checks, the subagent
+    # and the build: about 120 calls before any fix, so the model cannot
+    # finish early without skipping numbered work it is told is required.
+    task_prompt='You are working in a small Python package, textkit, in the current directory. Do not use the network. PLAN.md lists 20 functions, numbered 1 to 20, each with a specification file under docs/spec/. The work is finished only when all 20 functions are implemented and tested, CHANGELOG.md has one line per function and make check passes: do not stop before that, and do not skip, merge or reorder steps. Make one tool call per message. Do these steps in order. 1) Use the Glob tool to list docs/spec/*.md, and the Grep tool to search textkit for NotImplementedError. 2) Use the Bash tool to run: make check . It fails, since nothing is implemented yet. 3) For each function in PLAN.md, in order from 1 to 20, one function at a time, do these five steps: a) use the Read tool on its specification file; b) use the Edit tool to replace the raise NotImplementedError line of that function in its module with an implementation that meets the specification; c) use the Edit tool to add at least two unit test methods for it to the test class in the module test file under tests/; d) use the Bash tool to run only that module tests, for example: python3 -m unittest tests.test_strings , and if they fail, fix the code and run them again; e) use the Edit tool to add one line naming the function at the end of CHANGELOG.md. 4) After functions 5, 10, 15 and 20, that is at the end of each module, use the Bash tool to run make check-MODULE for that module (make check-strings, make check-numbers, make check-lists, make check-codec), and use the Grep tool to search that module file for NotImplementedError. 5) Use the Agent tool to start one subagent with exactly this instruction: Use the Glob tool to list tests/test_*.py, use the Bash tool to run: python3 -m unittest discover -s tests -t . , then use the Write tool to create REPORT.md stating how many tests ran. Then reply with the single word done. 6) Use the Bash tool to run: make dist , then python3 dist/textkit.pyz slugify "Hello, World" , then python3 dist/textkit.pyz roman 1987 . 7) Use the Read tool on REPORT.md, then use the Edit tool to add a section named Status at the end of README.md saying how many tests pass. 8) Use the Bash tool to run make check a last time. Then reply with the single word done.'
+    task_tools='Read Write Edit Bash Grep Glob Agent'
+    ;;
 esac
 # A task with a directory under scripts/seed starts every run, controls
 # included, from a copy of it; the others start from three one-line files.
 seed=$root/scripts/seed/$task
-case $task in project|tools|shapes) [ -d "$seed" ] || { echo "missing seed directory $seed" >&2; exit 1; } ;; *) seed= ;; esac
+case $task in project|tools|shapes|long) [ -d "$seed" ] || { echo "missing seed directory $seed" >&2; exit 1; } ;; *) seed= ;; esac
 # The shapes task needs a directory the agent cannot write to, holding a file
 # it can: git keeps no directory modes, so every run's copy of locked/ loses
 # its write permission while the run lasts.
@@ -324,15 +392,43 @@ if [ -n "$baseline_from" ]; then
     echo "a baseline holds for one control task; run without --baseline-from to measure new controls" >&2
     exit 1
   fi
+  # The harness's own activity changes between versions. A capture made before
+  # the version was recorded names it in its baseline.
+  earlier=$(cat "$baseline_from/control-version.txt" 2>/dev/null ||
+    python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("agent_version", ""))' "$baseline_from/baseline.json" 2>/dev/null || true)
+  if [ -z "$earlier" ]; then
+    echo "cannot tell which $agent version the control runs in $baseline_from were made with (no control-version.txt, no version in baseline.json)" >&2
+    exit 1
+  fi
+  if [ "$earlier" != "$version" ]; then
+    echo "the control runs in $baseline_from are of $agent $earlier, the installed one is $version" >&2
+    echo "a baseline holds for one version; run without --baseline-from to measure new controls" >&2
+    exit 1
+  fi
+  # Content capture adds the requests to the capture, which a baseline taken
+  # without it does not explain, and the other way round. A capture made
+  # before the mode was recorded had no content capture.
+  earlier=$(cat "$baseline_from/control-watch.txt" 2>/dev/null || echo identity)
+  if [ "$earlier" != "$watch_mode" ]; then
+    echo "the control runs in $baseline_from were recorded with net mode $earlier, this capture uses $watch_mode" >&2
+    echo "a baseline holds for one recording mode; run without --baseline-from to measure new controls" >&2
+    exit 1
+  fi
 fi
 
-mkdir -p "$out"
 # A directory without write permission stops the harness's temporary file only
 # when the agent runs as a user the mode binds: root, or a filesystem that
 # ignores modes, would let the write take its usual temporary-and-rename path.
-# Try it on the output filesystem, where the workspaces will be.
+# Try it on the output filesystem, where the workspaces will be; --check, which
+# creates nothing, tries it in the nearest directory that exists.
+probe_parent=$out
+if [ -n "$check_only" ]; then
+  while [ ! -d "$probe_parent" ]; do probe_parent=$(dirname "$probe_parent"); done
+else
+  mkdir -p "$out"
+fi
 if [ -n "$locked" ]; then
-  probe=$(mktemp -d "$out/.locked-probe.XXXXXX")
+  probe=$(mktemp -d "$probe_parent/.locked-probe.XXXXXX")
   chmod a-w "$probe"
   if [ -w "$probe" ]; then
     chmod u+w "$probe"; rmdir "$probe"
@@ -342,13 +438,25 @@ if [ -n "$locked" ]; then
   fi
   chmod u+w "$probe"; rmdir "$probe"
 fi
+if [ -n "$check_only" ]; then
+  # What a caller needs to decide which captures may share control runs: the
+  # values --baseline-from compares, the prompt by its hash.
+  echo "check=ok"
+  echo "agent=$agent"
+  echo "version=$version"
+  echo "task=$task"
+  echo "control_tools=$control_tools"
+  echo "control_prompt_sha256=$(printf '%s' "$control_prompt" | sha256sum | cut -d' ' -f1)"
+  echo "watch_mode=$watch_mode"
+  exit 0
+fi
 echo "output: $out"
 if [ "$agent" = gemini ]; then
   echo "agy: $agy_bin ($version), task: $task"
 else
   echo "claude: $claude_bin ($version), task: $task"
 fi
-(cd "$root" && make build >/dev/null)
+[ -z "$build" ] || (cd "$root" && make build >/dev/null)
 sudo -v
 
 capture() { # label prompt tools
@@ -372,7 +480,7 @@ capture() { # label prompt tools
   echo "== $label: session $session"
   (
     cd "$ws"
-    sudo "$root/watch" --probes fs,proc,net --workspace "$ws" \
+    sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
       "$claude_bin" -p "${claude_flags[@]}" --allowedTools "$tools" \
@@ -420,7 +528,7 @@ capture_gemini() { # label prompt tools workspace
       env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
       AGY_CLI_DISABLE_AUTO_UPDATE=true \
       "$agy_bin" --agent agent-trace --dangerously-skip-permissions --output-format json \
-      --print-timeout 600s -p "$prompt" >"$out/$label.watch.log" 2>&1
+      --print-timeout "$print_timeout" -p "$prompt" >"$out/$label.watch.log" 2>&1
   ) || echo "   watch exited non-zero, see $out/$label.watch.log"
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
   # agy prints one JSON object with the conversation id; the database is named by it.
@@ -457,6 +565,8 @@ else
   printf '%s' "$control_tools" >"$out/control-tools.txt"
   printf '%s' "$control_prompt" >"$out/control-prompt.txt"
   printf '%s' "$agent" >"$out/control-agent.txt"
+  printf '%s' "$version" >"$out/control-version.txt"
+  printf '%s' "$watch_mode" >"$out/control-watch.txt"
   controls=("$out"/control-*.ground_truth.json)
 fi
 min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4f", 1 / n }')}
@@ -472,11 +582,12 @@ version_flags=(--strict-version)
 {
   echo "##### verify WITHOUT a baseline"
   "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
-    --ground-truth "$out/$task.ground_truth.json" || true
+    --ground-truth "$out/$task.ground_truth.json" --json "$out/verify.json" || true
   echo
   echo "##### verify WITH the baseline"
   "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
-    --ground-truth "$out/$task.ground_truth.json" --baseline "$out/baseline.json" || true
+    --ground-truth "$out/$task.ground_truth.json" --baseline "$out/baseline.json" \
+    --json "$out/verify-baseline.json" || true
 } >"$out/report.txt" 2>&1
 echo
 echo "done. Read $out/report.txt"
