@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 35e7f54 on 2026-10-17.
+Checked against commit 1254b3d on 2026-10-18.
 
 ## Objective
 
@@ -179,7 +179,7 @@ The fixed script, in claim order: write `file1.txt` (claimed in kernel order as 
 | `net-omission` | Drop every `net_connect` claim | Unrecorded |
 | `net-fabrication` | Append `net_connect ghost.example.invalid` | Unwitnessed |
 
-An unrecognised `--attack` value is ignored. Exit codes: 0 on success, 1 on any failure (`log.Fatal`).
+An `--attack` value not in the table is a usage error: `simagent` prints it with the flag list and exits 3, as the other commands do for a usage error, before it acts or writes anything, so a mistyped scenario cannot run as an honest one. Exit codes: 0 on success, 3 for an unknown `--attack` value, 2 for a malformed flag (the `flag` package's own exit), 1 on any other failure (`log.Fatal`), a missing required flag included.
 
 ## Technologies
 
@@ -250,6 +250,5 @@ With `--agent gemini` the same script captures Gemini through Antigravity's CLI,
 - The version check says whether a version was verified, not whether the adapter fits it: a configured version can still change behaviour between builds with the same number, and an unconfigured one may fit. A version is configured by hand ([30_agent_adapters.md](30_agent_adapters.md#configured-agent-versions)); `verified` is the date of its newest checked-in capture, not of a later re-check.
 - `status` checks the agent first on `PATH`, as the capture script does; another installation the user runs is not checked. Its kernel check covers only the minimums the probe pages state, not kernel options (BTF, BPF ring buffers) the probes also need.
 - A normalized trajectory, such as the one `attack` writes, carries no harness-implied claims, so under `verify --normalized` the harness's read after a Bash read command is Unrecorded where the adapter's own reading explains it (V-33).
-- `simagent` ignores an unknown `--attack` value instead of rejecting it.
 - `bench-overhead.sh` reads a peak RSS from GNU `time` for the whole measured tree, so under `watch` it is the largest of `watch` and the workload's processes: `watch`'s own peak only when it exceeds the workload's, which the alone condition measures. `watch`'s CPU is a difference of two measurements, and the workload's CPU and the probes' in-kernel cost charged to it are not separated beyond the ratio to the alone run. The fixtures are reduced by `scripts/make-capture-fixture.py`, so their sizes are not those of raw captures, and the workloads are synthetic: neither stands for a real agent session's volume. The script does not pin CPUs or set the governor, so the results hold for the recorded machine state only.
 - `simagent` covers one fixed script; it is not a substitute for a real agent session. Real sessions verified end to end are the Claude Code captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective).

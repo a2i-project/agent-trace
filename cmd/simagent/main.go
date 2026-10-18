@@ -70,6 +70,27 @@ func resolveSingleIPv4(host string) (string, error) {
 	return "", fmt.Errorf("no IPv4 address found for %s", host)
 }
 
+// attacks are the --attack values the switch at the end of main applies.
+var attacks = []string{"omission", "fabrication", "substitution-exit", "substitution-hash", "substitution-cmd", "net-omission", "net-fabrication"}
+
+// exitUsage is the exit status for an unknown --attack value, the usage-error
+// code of the other commands.
+const exitUsage = 3
+
+// checkAttack rejects an --attack value the switch would not apply, so a
+// mistyped scenario cannot run as an honest one. Empty means no attack.
+func checkAttack(name string) error {
+	if name == "" {
+		return nil
+	}
+	for _, a := range attacks {
+		if a == name {
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown --attack %q (want one of %s)", name, strings.Join(attacks, ", "))
+}
+
 func main() {
 	var workspace string
 	var trajectoryOut string
@@ -82,7 +103,7 @@ func main() {
 	flag.StringVar(&trajectoryOut, "trajectory-out", "", "Path to write the trajectory JSON")
 	flag.IntVar(&dropEntry, "drop-entry", -1, "Zero-based index of a trajectory entry to omit before writing (simulates an omission attack for manual testing; -1 disables)")
 	flag.BoolVar(&fileOnly, "file-only", false, "Skip the subprocess step, producing a trajectory with only filesystem actions (for Tier 1, where no process probe runs)")
-	flag.StringVar(&attack, "attack", "", "Simulate an attack scenario: 'omission', 'fabrication', 'substitution-exit', 'substitution-hash', 'substitution-cmd', 'net-omission', 'net-fabrication'")
+	flag.StringVar(&attack, "attack", "", "Simulate an attack scenario: "+strings.Join(attacks, ", "))
 	flag.StringVar(&fetchURL, "fetch-url", "", "If set, run `curl -s -o /dev/null -m 10 <url>` and record a NetConnect trajectory entry for the host")
 	var shellCmd string
 	flag.StringVar(&shellCmd, "shell-cmd", "", "Run this script through a child /bin/sh -c and claim only the shell invocation, not what the script spawns. {ws} in the script expands to the workspace path. Gives the process tree a level 1 (the shell) and level 2 (its children), see docs/architecture/40_tools.md")
@@ -96,6 +117,11 @@ func main() {
 
 	flag.Parse()
 
+	if err := checkAttack(attack); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "simagent: %v\n", err)
+		flag.Usage()
+		os.Exit(exitUsage)
+	}
 	if workspace == "" || trajectoryOut == "" {
 		log.Fatal("--workspace and --trajectory-out are required")
 	}
