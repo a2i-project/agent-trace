@@ -1533,7 +1533,9 @@ exit 0`, okRuns, nonce, failRuns, nonce, nonce)
 	execs := map[string]int{}
 	exits := map[string]int{}
 	for _, e := range collect(obs) {
-		if !strings.Contains(e.Target, nonce+"-") {
+		// The shell's own exec and exit name the nonce through its script;
+		// only its children are counted.
+		if !strings.Contains(e.Target, nonce+"-") || strings.HasPrefix(e.Target, "/bin/sh ") {
 			continue
 		}
 		switch e.ActionType {
