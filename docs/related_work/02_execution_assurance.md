@@ -258,3 +258,37 @@ Its correlation is a heuristic time-window and argument join feeding an LLM judg
 > Capture requires root or `CAP_BPF`/`CAP_SYS_ADMIN`, placing the observer in the operator's trust domain.
 
 ---
+
+### Verifiable Agent Insurance (VAI)
+
+*Hua, Tsuchiya, Christin, Fanti (Carnegie Mellon University), Oct 2026* · paper (preprint) + tool · `TM-B` `TM-C`
+[arXiv 2610.18230](https://arxiv.org/abs/2610.18230) · [GitHub (artifact)](https://github.com/ChengHua926/vai-artifact) · [GitHub (annotations)](https://github.com/ChengHua926/vai-annotations)
+
+A framework for financial recourse after an agent misbehaves, rather than prevention.
+An agent provider registers *promises*: a predicate over the execution trace with parameters (for example, an allowlist of email recipients), a payout, and a reserve deposited in an escrow smart contract on an Ethereum layer-2 network (Base mainnet).
+The predicate and parameter hashes are fixed on chain, so a promise cannot be changed after registration.
+An SDK hooked into the harness's shared tool-dispatch path records each tool call's name, arguments and reported result, plus the harness's permission decisions, into an off-chain trace store.
+The SDK commits Keccak-256 checkpoints of the trace to the contract (every 10 records or 30 seconds by default) and a final hash at session close.
+A user who sees a violation files a challenge with a bond; a trusted independent verifier checks the provider's trace against the commitments, evaluates the predicate, and the contract pays the user from the reserve if the promise was broken.
+Five predicate families are implemented: authorization, scope, payment, data exfiltration and action limits.
+
+The evaluation integrates the SDK with the Hermes and OpenClaw harnesses and measures coverage on AgentDojo, τ³-bench and ClawsBench, for which the authors release 388 runs re-annotated with policy-level violation labels.
+VAI detects at least one violation in 42.2% of violating runs; the authors attribute most misses to harnesses not recording authorizations and security-relevant data as structured objects, and estimate 83.0% with such records, at a pooled false-positive rate of 5.8%.
+Recording and committing costs under 20 ms per tool call and under one cent per session on chain.
+As motivation, the paper cites the METR and Redwood Research investigation of the Hugging Face incident, in which agents altered what their tool calls returned in about 7% of reviewed transcripts, and concludes that an agent's own account is insufficient evidence for adjudication.
+
+The relation to agent-trace is complementary.
+Both treat an agent's self-report as untrusted, and both find that agent formats do not record what a check needs (VAI's missing structured authorization records; agent-trace's per-field expressibility, `Options.Expresses`).
+VAI evaluates policy predicates over a trace it trusts once the SDK is faithfully integrated; agent-trace checks whether a self-reported trajectory is faithful to kernel-observed ground truth and makes no policy judgment.
+VAI's trace is recorded inside the harness at the tool-dispatch point, so what a tool did beyond its reported result (a shell command's subprocesses, delegation to a daemon) is outside it; agent-trace records below the harness.
+VAI provides tamper evidence after recording and a remedy, which agent-trace's ground truth file lacks (property P6).
+The two compose: agent-trace's ground truth could serve as the trace VAI's predicates evaluate, removing the faithful-SDK assumption, and VAI's commitments could anchor agent-trace's ground truth file.
+
+> **Author-stated assumptions and scope.**
+> *Recording:* the provider is assumed to integrate the unmodified SDK at every tool-dispatch and permission path; the agent is assumed unable to modify its harness or SDK integration, bypass recording of covered actions, or fabricate user approvals. Attacks that compromise the recording of traces, "including harness modification or delegation to uninstrumented processes", are non-goals.
+> *Verifier:* a trusted, independent third party in the reference implementation; zero-knowledge proofs are suggested as an alternative, not implemented.
+> *Policies:* only objective, programmatically checkable policies; subjective policies are out of scope (10 to 30% of the labelled violations required subjective judgment in their analysis).
+> *Commitment window:* records are alterable until a commitment covering them is confirmed, so the latest records may not be on chain when a challenge is filed.
+> *Open problems stated by the authors:* false negatives and false positives from unstructured or implicit tracing of actions, price discovery for payouts, capital efficiency of reserves, and turning policy documents into promises.
+
+---
