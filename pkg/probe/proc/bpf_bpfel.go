@@ -48,21 +48,22 @@ type bpfProcInfo struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	bpfMapConfigMap        = "config_map"
-	bpfMapDropCount        = "drop_count"
-	bpfMapEvents           = "events"
-	bpfMapExecs            = "execs"
-	bpfMapHeap             = "heap"
-	bpfMapRootPidMap       = "root_pid_map"
-	bpfMapStateLostCount   = "state_lost_count"
-	bpfMapTrackedPids      = "tracked_pids"
-	bpfMapUntrackedCount   = "untracked_count"
-	bpfProgHandleExecOk    = "handle_exec_ok"
-	bpfProgHandleExecve    = "handle_execve"
-	bpfProgHandleExecveat  = "handle_execveat"
-	bpfProgHandleExit      = "handle_exit"
-	bpfProgHandleExitGroup = "handle_exit_group"
-	bpfProgHandleFork      = "handle_fork"
+	bpfMapConfigMap       = "config_map"
+	bpfMapDropCount       = "drop_count"
+	bpfMapEvents          = "events"
+	bpfMapExecs           = "execs"
+	bpfMapHeap            = "heap"
+	bpfMapRootPidMap      = "root_pid_map"
+	bpfMapStateLostCount  = "state_lost_count"
+	bpfMapSysEnterProgs   = "sys_enter_progs"
+	bpfMapTrackedPids     = "tracked_pids"
+	bpfMapUntrackedCount  = "untracked_count"
+	bpfProgHandleExecOk   = "handle_exec_ok"
+	bpfProgHandleExecve   = "handle_execve"
+	bpfProgHandleExecveat = "handle_execveat"
+	bpfProgHandleExit     = "handle_exit"
+	bpfProgHandleFork     = "handle_fork"
+	bpfProgTraceSysEnter  = "trace_sys_enter"
 )
 
 // loadBpf returns the embedded CollectionSpec for bpf.
@@ -107,12 +108,12 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	HandleExecOk    *ebpf.ProgramSpec `ebpf:"handle_exec_ok"`
-	HandleExecve    *ebpf.ProgramSpec `ebpf:"handle_execve"`
-	HandleExecveat  *ebpf.ProgramSpec `ebpf:"handle_execveat"`
-	HandleExit      *ebpf.ProgramSpec `ebpf:"handle_exit"`
-	HandleExitGroup *ebpf.ProgramSpec `ebpf:"handle_exit_group"`
-	HandleFork      *ebpf.ProgramSpec `ebpf:"handle_fork"`
+	HandleExecOk   *ebpf.ProgramSpec `ebpf:"handle_exec_ok"`
+	HandleExecve   *ebpf.ProgramSpec `ebpf:"handle_execve"`
+	HandleExecveat *ebpf.ProgramSpec `ebpf:"handle_execveat"`
+	HandleExit     *ebpf.ProgramSpec `ebpf:"handle_exit"`
+	HandleFork     *ebpf.ProgramSpec `ebpf:"handle_fork"`
+	TraceSysEnter  *ebpf.ProgramSpec `ebpf:"trace_sys_enter"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
@@ -126,6 +127,7 @@ type bpfMapSpecs struct {
 	Heap           *ebpf.MapSpec `ebpf:"heap"`
 	RootPidMap     *ebpf.MapSpec `ebpf:"root_pid_map"`
 	StateLostCount *ebpf.MapSpec `ebpf:"state_lost_count"`
+	SysEnterProgs  *ebpf.MapSpec `ebpf:"sys_enter_progs"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
@@ -163,6 +165,7 @@ type bpfMaps struct {
 	Heap           *ebpf.Map `ebpf:"heap"`
 	RootPidMap     *ebpf.Map `ebpf:"root_pid_map"`
 	StateLostCount *ebpf.Map `ebpf:"state_lost_count"`
+	SysEnterProgs  *ebpf.Map `ebpf:"sys_enter_progs"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
 	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
@@ -176,6 +179,7 @@ func (m *bpfMaps) Close() error {
 		m.Heap,
 		m.RootPidMap,
 		m.StateLostCount,
+		m.SysEnterProgs,
 		m.TrackedPids,
 		m.UntrackedCount,
 	)
@@ -191,12 +195,12 @@ type bpfVariables struct {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	HandleExecOk    *ebpf.Program `ebpf:"handle_exec_ok"`
-	HandleExecve    *ebpf.Program `ebpf:"handle_execve"`
-	HandleExecveat  *ebpf.Program `ebpf:"handle_execveat"`
-	HandleExit      *ebpf.Program `ebpf:"handle_exit"`
-	HandleExitGroup *ebpf.Program `ebpf:"handle_exit_group"`
-	HandleFork      *ebpf.Program `ebpf:"handle_fork"`
+	HandleExecOk   *ebpf.Program `ebpf:"handle_exec_ok"`
+	HandleExecve   *ebpf.Program `ebpf:"handle_execve"`
+	HandleExecveat *ebpf.Program `ebpf:"handle_execveat"`
+	HandleExit     *ebpf.Program `ebpf:"handle_exit"`
+	HandleFork     *ebpf.Program `ebpf:"handle_fork"`
+	TraceSysEnter  *ebpf.Program `ebpf:"trace_sys_enter"`
 }
 
 func (p *bpfPrograms) Close() error {
@@ -205,8 +209,8 @@ func (p *bpfPrograms) Close() error {
 		p.HandleExecve,
 		p.HandleExecveat,
 		p.HandleExit,
-		p.HandleExitGroup,
 		p.HandleFork,
+		p.TraceSysEnter,
 	)
 }
 

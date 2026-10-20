@@ -167,8 +167,8 @@ static __always_inline void count_state_lost(void)
 // the natural map, but the kernel caps a per-CPU value at 32 KiB and the
 // 128 KiB command line needs 256 KiB (P-19), so this is a plain array with
 // one entry per possible CPU, sized by userspace at load and indexed by the
-// running CPU: a tracepoint program cannot migrate while it runs, so the
-// slot is private to it.
+// running CPU: record_exec runs under the sys_enter raw tracepoint, which
+// calls it with preemption disabled, so the slot is private to it.
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(max_entries, 1); // overridden at load to the possible CPU count
@@ -195,62 +195,12 @@ struct {
 	__type(value, struct event_hdr);
 } execs SEC(".maps");
 
-struct sys_enter_execve_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	const char *filename;
-	const char *const *argv;
-	const char *const *envp;
-};
-
-// execveat(2): fd, pathname, argv, envp, flags. With AT_EMPTY_PATH and an
-// empty pathname fd is the file (glibc's fexecve); otherwise a relative
-// pathname is relative to fd, which this program cannot resolve.
-struct sys_enter_execveat_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__s64 fd;
-	const char *filename;
-	const char *const *argv;
-	const char *const *envp;
-	__s64 flags;
-};
-
-struct sched_process_exec_ctx {
-	__u64 pad;
-	__u32 filename_loc; // __data_loc char[]
-	__s32 pid;
-	__s32 old_pid; // the thread's pid before the exec; differs from pid when a non-leader thread exec'd
-};
-
-struct sched_process_exit_ctx {
-	__u64 pad;
-	char comm[16];
-	__s32 pid;
-	__s32 prio;
-};
-
-struct sys_enter_exit_group_ctx {
-	__u64 pad;
-	__s32 syscall_nr;
-	__u32 pad2;
-	__u64 error_code;
-};
-
-struct task_newtask_ctx {
-	__u64 pad;
-	__s32 pid;
-	char comm[16];
-	__u64 clone_flags;
-	__s16 oom_score_adj;
-};
-
 #define CLONE_THREAD 0x10000
 
-SEC("tracepoint/task/task_newtask")
-int handle_fork(struct task_newtask_ctx *ctx)
+// task_newtask(struct task_struct *task, u64 clone_flags) fires in the
+// parent.
+SEC("raw_tracepoint/task_newtask")
+int handle_fork(struct bpf_raw_tracepoint_args *ctx)
 {
 	if (!get_use_pid_filter())
 		return 0;
@@ -259,11 +209,12 @@ int handle_fork(struct task_newtask_ctx *ctx)
 	// tid is not a tgid and handle_exit only deletes on tid == tgid, so
 	// inserting it would leak an entry per thread and, once the number is
 	// recycled as an unrelated process's pid, track a stranger.
-	if (ctx->clone_flags & CLONE_THREAD)
+	if (ctx->args[1] & CLONE_THREAD)
 		return 0;
 
 	__u32 parent_pid = bpf_get_current_pid_tgid() >> 32;
-	__u32 child_pid = ctx->pid;
+	struct task_struct *child_task = (struct task_struct *)ctx->args[0];
+	__u32 child_pid = BPF_CORE_READ(child_task, pid);
 
 	struct proc_info *p = bpf_map_lookup_elem(&tracked_pids, &parent_pid);
 	if (!p)
@@ -423,15 +374,71 @@ static __always_inline int record_exec(const char *filename, const char *const *
 	return 0;
 }
 
-SEC("tracepoint/syscalls/sys_enter_execve")
-int handle_execve(struct sys_enter_execve_ctx *ctx)
+// --- syscall hooks (P-32) ---------------------------------------------------
+//
+// The syscall hooks are one raw tracepoint on sys_enter, as in the net probe
+// (N-32). Since Linux 7.0 the perf-event syscall tracepoints of execve and
+// execveat copy the user filename into the event before they run the
+// program, and on the CI runner the program ran for 5 of 9 execs, with no
+// count of the others; a raw tracepoint runs before any of that. The
+// dispatcher switches on the syscall number before anything else, since
+// sys_enter fires for every syscall on the host, handles exit_group itself,
+// and tail-calls one program per exec syscall: record_exec is too large to
+// inline twice in one program. The numbers and the argument registers are
+// those of x86_64 (rdi, rsi, rdx, r10, r8). A 32-bit (ia32) syscall has other
+// numbers; like the per-syscall tracepoints, which ignore compat syscalls on
+// x86_64, the dispatcher skips it. An x32 number carries bit 30 and matches
+// nothing.
+
+#define NR_execve     59
+#define NR_exit_group 231
+#define NR_execveat   322
+
+// Slots of sys_enter_progs. sysEnterPrograms in observer.go fills them in
+// this order.
+enum sys_slot {
+	SLOT_EXECVE,
+	SLOT_EXECVEAT,
+	SLOT_COUNT,
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__uint(max_entries, SLOT_COUNT);
+	__type(key, __u32);
+	__type(value, __u32);
+} sys_enter_progs SEC(".maps");
+
+#define TS_COMPAT 0x0002 // thread_info.status: a 32-bit syscall is running
+
+static __always_inline struct pt_regs *sys_regs(struct bpf_raw_tracepoint_args *ctx)
 {
-	return record_exec(ctx->filename, ctx->argv, 0);
+	return (struct pt_regs *)ctx->args[0];
 }
 
-SEC("tracepoint/syscalls/sys_enter_execveat")
-int handle_execveat(struct sys_enter_execveat_ctx *ctx)
+#define SYS_ARG1(regs) BPF_CORE_READ(regs, di)
+#define SYS_ARG2(regs) BPF_CORE_READ(regs, si)
+#define SYS_ARG3(regs) BPF_CORE_READ(regs, dx)
+
+// execve(2): filename, argv, envp.
+SEC("raw_tracepoint/sys_enter")
+int handle_execve(struct bpf_raw_tracepoint_args *ctx)
 {
+	struct pt_regs *regs = sys_regs(ctx);
+	const char *filename = (const char *)SYS_ARG1(regs);
+	const char *const *argv = (const char *const *)SYS_ARG2(regs);
+	return record_exec(filename, argv, 0);
+}
+
+// execveat(2): fd, pathname, argv, envp, flags. With AT_EMPTY_PATH and an
+// empty pathname fd is the file (glibc's fexecve); otherwise a relative
+// pathname is relative to fd, which this program cannot resolve.
+SEC("raw_tracepoint/sys_enter")
+int handle_execveat(struct bpf_raw_tracepoint_args *ctx)
+{
+	struct pt_regs *regs = sys_regs(ctx);
+	const char *filename = (const char *)SYS_ARG2(regs);
+	const char *const *argv = (const char *const *)SYS_ARG3(regs);
 	// AT_EMPTY_PATH execs the descriptor itself only when the pathname is
 	// empty: there is no path to record. With a pathname the kernel looks it
 	// up as usual whatever the flags, so it is recorded as given; one
@@ -439,8 +446,58 @@ int handle_execveat(struct sys_enter_execveat_ctx *ctx)
 	// without the flag fails, and an unreadable one too; both are recorded
 	// as an exec through the descriptor, as before (P-21).
 	char first = 0;
-	int via_fd = bpf_probe_read_user(&first, 1, ctx->filename) || first == '\0';
-	return record_exec(ctx->filename, ctx->argv, via_fd);
+	int via_fd = bpf_probe_read_user(&first, 1, filename) || first == '\0';
+	return record_exec(filename, argv, via_fd);
+}
+
+// handle_exit_group stores the exit code of a process that calls
+// exit_group(2) in its execs entry; handle_exit emits it.
+static __always_inline void handle_exit_group(struct pt_regs *regs)
+{
+	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+
+	struct event_hdr *cached = bpf_map_lookup_elem(&execs, &tgid);
+	if (!cached)
+		return;
+
+	// The parent's wait sees only the low 8 bits: _exit(256) is status 0
+	// and _exit(-1) is 255. Record that status, which is what a shell or a
+	// harness reports, not the raw argument.
+	cached->exit_code = (__s32)(SYS_ARG1(regs) & 0xff);
+	cached->has_exit_code = 1;
+}
+
+// sys_enter(struct pt_regs *regs, long id) fires in the calling task.
+SEC("raw_tracepoint/sys_enter")
+int trace_sys_enter(struct bpf_raw_tracepoint_args *ctx)
+{
+	__u32 slot;
+	switch (ctx->args[1]) {
+	case NR_execve:     slot = SLOT_EXECVE; break;
+	case NR_execveat:   slot = SLOT_EXECVEAT; break;
+	case NR_exit_group: slot = SLOT_COUNT; break;
+	default:
+		return 0;
+	}
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	if (BPF_CORE_READ(task, thread_info.status) & TS_COMPAT)
+		return 0;
+	if (slot == SLOT_COUNT) {
+		handle_exit_group(sys_regs(ctx));
+		return 0;
+	}
+	// An untracked process's exec is not recorded in filtered mode;
+	// record_exec checks again, since it needs the entry.
+	if (get_use_pid_filter()) {
+		__u32 tgid = bpf_get_current_pid_tgid() >> 32;
+		if (!bpf_map_lookup_elem(&tracked_pids, &tgid))
+			return 0;
+	}
+	bpf_tail_call(ctx, &sys_enter_progs, slot);
+	// Reached only when the slot is empty, which New rules out: the exec
+	// attempt went unrecorded, so it is counted as event loss.
+	count_drop();
+	return 0;
 }
 
 // handle_exec_ok marks the exec that took effect (P-31). sched_process_exec
@@ -449,8 +506,10 @@ int handle_execveat(struct sys_enter_execveat_ctx *ctx)
 // (old_pid: a non-leader thread that execs takes the leader's pid), and
 // userspace joins it to that thread's latest attempt. The execs entry is
 // created or replaced here, so the exit record carries the image that exited.
-SEC("tracepoint/sched/sched_process_exec")
-int handle_exec_ok(struct sched_process_exec_ctx *ctx)
+// sched_process_exec(struct task_struct *p, pid_t old_pid, struct
+// linux_binprm *bprm) fires in the task that exec'd.
+SEC("raw_tracepoint/sched_process_exec")
+int handle_exec_ok(struct bpf_raw_tracepoint_args *ctx)
 {
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 
@@ -471,7 +530,7 @@ int handle_exec_ok(struct sched_process_exec_ctx *ctx)
 	h.kind = KIND_EXEC_OK;
 	h.ts_ns = bpf_ktime_get_ns();
 	h.is_toplevel = is_toplevel;
-	h.tid = ctx->old_pid;
+	h.tid = (__u32)ctx->args[1];
 
 	if (bpf_map_update_elem(&execs, &tgid, &h, BPF_ANY))
 		count_state_lost();
@@ -480,25 +539,10 @@ int handle_exec_ok(struct sched_process_exec_ctx *ctx)
 	return 0;
 }
 
-SEC("tracepoint/syscalls/sys_enter_exit_group")
-int handle_exit_group(struct sys_enter_exit_group_ctx *ctx)
-{
-	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
-
-	struct event_hdr *cached = bpf_map_lookup_elem(&execs, &tgid);
-	if (!cached)
-		return 0;
-
-	// The parent's wait sees only the low 8 bits: _exit(256) is status 0
-	// and _exit(-1) is 255. Record that status, which is what a shell or a
-	// harness reports, not the raw argument.
-	cached->exit_code = (__s32)(ctx->error_code & 0xff);
-	cached->has_exit_code = 1;
-	return 0;
-}
-
-SEC("tracepoint/sched/sched_process_exit")
-int handle_exit(struct sched_process_exit_ctx *ctx)
+// sched_process_exit(struct task_struct *p, ...) fires in the exiting task;
+// the program reads only the current task.
+SEC("raw_tracepoint/sched_process_exit")
+int handle_exit(struct bpf_raw_tracepoint_args *ctx)
 {
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 

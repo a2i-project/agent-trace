@@ -1,5 +1,5 @@
-// Package proc is the Tier 2 process probe. It attaches eBPF tracepoints to
-// execve and process exit and emits models.GroundTruthEvent values that an
+// Package proc is the Tier 2 process probe. It attaches eBPF raw tracepoints
+// to exec, fork and process exit and emits models.GroundTruthEvent values that an
 // independent verifier can compare against an agent's self-reported trajectory.
 package proc
 
@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,19 +87,14 @@ type Config struct {
 
 // Observer watches process spawns via eBPF and emits GroundTruthEvents.
 type Observer struct {
-	objs          bpfObjects
-	execLink      link.Link
-	execveatLink  link.Link
-	execOKLink    link.Link
-	forkLink      link.Link
-	exitLink      link.Link
-	exitGroupLink link.Link
-	reader        *ringbuf.Reader
-	events        chan models.GroundTruthEvent
-	stopped       chan struct{}
-	cfg           Config
-	dropped       atomic.Uint64
-	stopOnce      sync.Once
+	objs     bpfObjects
+	links    []link.Link // in attach order
+	reader   *ringbuf.Reader
+	events   chan models.GroundTruthEvent
+	stopped  chan struct{}
+	cfg      Config
+	dropped  atomic.Uint64
+	stopOnce sync.Once
 
 	// finalRingbufDrops is the kernel drop counter as Stop last read it,
 	// before closing the map. ringbufDropsFinal is raised after it is set.
@@ -187,81 +183,78 @@ func New(cfg Config) (*Observer, error) {
 		}
 	}
 
-	forkLink, err := link.Tracepoint("task", "task_newtask", objs.HandleFork, nil)
-	if err != nil {
+	var links []link.Link
+	closeAll := func() {
+		closeLinksReverse(links)
 		_ = objs.Close()
-		return nil, fmt.Errorf("attach task_newtask: %w", err)
 	}
-
-	execLink, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.HandleExecve, nil)
-	if err != nil {
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_execve: %w", err)
+	// The dispatcher's slots are filled before it is attached, so no exec
+	// reaches an empty slot.
+	for slot, prog := range sysEnterPrograms(&objs) {
+		if err := objs.SysEnterProgs.Update(uint32(slot), prog, ebpf.UpdateAny); err != nil {
+			closeAll()
+			return nil, fmt.Errorf("fill sys_enter slot %d: %w", slot, err)
+		}
 	}
-	execveatLink, err := link.Tracepoint("syscalls", "sys_enter_execveat", objs.HandleExecveat, nil)
-	if err != nil {
-		_ = execLink.Close()
-		_ = forkLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_execveat: %w", err)
-	}
-
-	execOKLink, err := link.Tracepoint("sched", "sched_process_exec", objs.HandleExecOk, nil)
-	if err != nil {
-		_ = execLink.Close()
-		_ = execveatLink.Close()
-		_ = forkLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sched_process_exec: %w", err)
-	}
-
-	exitGroupLink, err := link.Tracepoint("syscalls", "sys_enter_exit_group", objs.HandleExitGroup, nil)
-	if err != nil {
-		_ = execOKLink.Close()
-		_ = execLink.Close()
-		_ = execveatLink.Close()
-		_ = forkLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sys_enter_exit_group: %w", err)
-	}
-
-	exitLink, err := link.Tracepoint("sched", "sched_process_exit", objs.HandleExit, nil)
-	if err != nil {
-		_ = exitGroupLink.Close()
-		_ = execOKLink.Close()
-		_ = execLink.Close()
-		_ = execveatLink.Close()
-		_ = forkLink.Close()
-		_ = objs.Close()
-		return nil, fmt.Errorf("attach sched_process_exit: %w", err)
+	for _, tp := range procRawTracepoints(&objs) {
+		l, err := link.AttachRawTracepoint(link.RawTracepointOptions{Name: tp.name, Program: tp.prog})
+		if err != nil {
+			closeAll()
+			return nil, fmt.Errorf("attach %s: %w", tp.name, err)
+		}
+		links = append(links, l)
 	}
 
 	reader, err := ringbuf.NewReader(objs.Events)
 	if err != nil {
-		_ = exitLink.Close()
-		_ = exitGroupLink.Close()
-		_ = execOKLink.Close()
-		_ = execLink.Close()
-		_ = execveatLink.Close()
-		_ = forkLink.Close()
-		_ = objs.Close()
+		closeAll()
 		return nil, fmt.Errorf("open ring buffer: %w", err)
 	}
 
 	return &Observer{
-		objs:          objs,
-		execLink:      execLink,
-		execveatLink:  execveatLink,
-		execOKLink:    execOKLink,
-		forkLink:      forkLink,
-		exitLink:      exitLink,
-		exitGroupLink: exitGroupLink,
-		reader:        reader,
-		events:        make(chan models.GroundTruthEvent, cfg.EventBufSize),
-		stopped:       make(chan struct{}),
-		cfg:           cfg,
-		bootOffsetNs:  bootOffsetNs,
+		objs:         objs,
+		links:        links,
+		reader:       reader,
+		events:       make(chan models.GroundTruthEvent, cfg.EventBufSize),
+		stopped:      make(chan struct{}),
+		cfg:          cfg,
+		bootOffsetNs: bootOffsetNs,
 	}, nil
+}
+
+// rawTracepoint is one program and the raw tracepoint it attaches to.
+type rawTracepoint struct {
+	name string
+	prog *ebpf.Program
+}
+
+// procRawTracepoints lists the proc.bpf.c programs New attaches, in attach
+// order. Every hook is a raw tracepoint (P-32): the syscall hooks sit behind
+// the one sys_enter dispatcher, and a raw tracepoint's detach does not wait
+// for a grace period the way a perf-event tracepoint's does (N-32).
+func procRawTracepoints(objs *bpfObjects) []rawTracepoint {
+	return []rawTracepoint{
+		{"task_newtask", objs.HandleFork},
+		{"sched_process_exec", objs.HandleExecOk},
+		{"sched_process_exit", objs.HandleExit},
+		{"sys_enter", objs.TraceSysEnter},
+	}
+}
+
+// sysEnterPrograms lists the programs the sys_enter dispatcher tail-calls,
+// indexed by their slot (enum sys_slot in proc.bpf.c, same order).
+func sysEnterPrograms(objs *bpfObjects) []*ebpf.Program {
+	return []*ebpf.Program{
+		objs.HandleExecve,
+		objs.HandleExecveat,
+	}
+}
+
+// closeLinksReverse closes links in the reverse of attach order.
+func closeLinksReverse(ls []link.Link) {
+	for i := len(ls) - 1; i >= 0; i-- {
+		_ = ls[i].Close()
+	}
 }
 
 // computeBootOffsetNs pairs a CLOCK_MONOTONIC read with a wall-clock read
@@ -362,11 +355,17 @@ func (o *Observer) Start() {
 	go o.readLoop()
 }
 
-// Stop unblocks the read loop, waits for it, and releases all resources.
-// The events channel is closed after Stop returns. Safe to call once.
+// Stop detaches the hooks, lets the read loop drain the ring buffer, waits
+// for it, and releases all resources. The hooks go first, so every record
+// committed before the detach is read rather than dropped (P-32): the flush
+// makes readLoop read with a deadline of now, which returns what the ring
+// holds and then ends the loop at the first empty read. The events channel
+// is closed after Stop returns. Safe to call more than once.
 func (o *Observer) Stop() error {
 	o.stopOnce.Do(func() {
-		_ = o.reader.Close() // unblocks readLoop's Read with ErrClosed
+		closeLinksReverse(o.links)
+		o.links = nil
+		_ = o.reader.Flush() // readLoop drains the ring and returns
 		<-o.stopped
 		// Snapshot the counter before objs.Close releases its map.
 		if v, err := sumPerCPU(o.objs.DropCount); err == nil {
@@ -381,12 +380,7 @@ func (o *Observer) Stop() error {
 			o.finalStateFull.Store(v)
 		}
 		o.stateFullIsFinal.Store(true)
-		_ = o.exitLink.Close()
-		_ = o.exitGroupLink.Close()
-		_ = o.forkLink.Close()
-		_ = o.execLink.Close()
-		_ = o.execveatLink.Close()
-		_ = o.execOKLink.Close()
+		_ = o.reader.Close()
 		_ = o.objs.Close()
 		close(o.events)
 	})
@@ -476,7 +470,7 @@ func (o *Observer) readLoop() {
 	for {
 		record, err := o.reader.Read()
 		if err != nil {
-			if errors.Is(err, ringbuf.ErrClosed) {
+			if drainRead(o.reader, err) {
 				return
 			}
 			continue
@@ -576,6 +570,26 @@ func (o *Observer) readLoop() {
 			o.dropped.Add(1)
 		}
 	}
+}
+
+// deadliner is the part of ringbuf.Reader that drainRead needs.
+type deadliner interface {
+	SetDeadline(time.Time)
+}
+
+// drainRead classifies a ring-buffer read error for readLoop, which drains
+// the ring at Stop (P-32, as N-32 does for the net probe). A flush starts
+// the drain: the reader's deadline becomes now, so further reads return what
+// the ring holds and then os.ErrDeadlineExceeded, which ends the loop, as
+// does a closed reader. Any other error is retried.
+func drainRead(r deadliner, err error) (stop bool) {
+	switch {
+	case errors.Is(err, ringbuf.ErrClosed), errors.Is(err, os.ErrDeadlineExceeded):
+		return true
+	case errors.Is(err, ringbuf.ErrFlushed):
+		r.SetDeadline(time.Now())
+	}
+	return false
 }
 
 // commandLine builds the ground-truth command identity for an exec/exit

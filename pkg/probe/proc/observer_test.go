@@ -1495,3 +1495,86 @@ func TestObserver_ExecByANonLeaderThreadNamesTheExit(t *testing.T) {
 		t.Errorf("exit target %q, want %q", exit.Target, "/bin/true "+nonce)
 	}
 }
+
+// Every exec attempt of a tracked tree has its record, and every exec that
+// took effect its exit, with no loss counted (P-32). On kernel 7.0 the
+// perf-event sys_enter_execve tracepoint skipped the program for some execs
+// without a count, so a shell's children went missing; the raw tracepoint
+// dispatcher must see them all. Stop runs as soon as the shell has exited,
+// with no sleep, so the records still in the ring at Stop must be drained.
+func TestObserver_EveryExecAttemptIsRecorded(t *testing.T) {
+	skipUnprivileged(t)
+	const okRuns, failRuns = 200, 50
+	nonce := fmt.Sprintf("agenttrace-many-%d", time.Now().UnixNano())
+
+	obs, err := New(Config{EventBufSize: 8192, DeferRootPID: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := obs.SetRootPID(int32(os.Getpid())); err != nil {
+		t.Fatalf("SetRootPID: %v", err)
+	}
+	obs.Start()
+	time.Sleep(150 * time.Millisecond)
+
+	script := fmt.Sprintf(`i=0
+while [ $i -lt %d ]; do /bin/true %s-ok-$i; i=$((i+1)); done
+i=0
+while [ $i -lt %d ]; do /nonexistent-%s %s-fail-$i 2>/dev/null; i=$((i+1)); done
+exit 0`, okRuns, nonce, failRuns, nonce, nonce)
+	if err := exec.Command("/bin/sh", "-c", script).Run(); err != nil {
+		_ = obs.Stop()
+		t.Fatalf("run shell: %v", err)
+	}
+	if err := obs.Stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	execs := map[string]int{}
+	exits := map[string]int{}
+	for _, e := range collect(obs) {
+		if !strings.Contains(e.Target, nonce+"-") {
+			continue
+		}
+		switch e.ActionType {
+		case models.ProcessExec:
+			execs[e.Target]++
+		case models.ProcessExit:
+			exits[e.Target]++
+			if e.ExitCode == nil || *e.ExitCode != 0 {
+				t.Errorf("exit of %q has code %v, want 0", e.Target, e.ExitCode)
+			}
+		}
+	}
+	var okExecs, failExecs, okExits int
+	for i := 0; i < okRuns; i++ {
+		target := fmt.Sprintf("/bin/true %s-ok-%d", nonce, i)
+		if execs[target] != 1 {
+			t.Errorf("%d exec records of %q, want 1", execs[target], target)
+		}
+		if exits[target] != 1 {
+			t.Errorf("%d exit records of %q, want 1", exits[target], target)
+		}
+		okExecs += execs[target]
+		okExits += exits[target]
+	}
+	for i := 0; i < failRuns; i++ {
+		target := fmt.Sprintf("/nonexistent-%s %s-fail-%d", nonce, nonce, i)
+		if execs[target] != 1 {
+			t.Errorf("%d exec records of the failed attempt %q, want 1 (P-4)", execs[target], target)
+		}
+		failExecs += execs[target]
+	}
+	var total int
+	for _, n := range execs {
+		total += n
+	}
+	if total != okRuns+failRuns {
+		t.Errorf("%d exec records name the nonce, want %d successful plus %d failed attempts", total, okRuns, failRuns)
+	}
+	cov := obs.CaptureCoverage()
+	if cov.RingbufDrops != 0 || cov.ChannelDrops != 0 || cov.UntrackedChildren != 0 || cov.StateMapFull != 0 {
+		t.Errorf("loss counted: %+v", cov)
+	}
+	t.Logf("exec records: %d of %d successful, %d of %d failed; exits %d of %d", okExecs, okRuns, failExecs, failRuns, okExits, okRuns)
+}
