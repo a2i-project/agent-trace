@@ -24,6 +24,13 @@
             "pkg/agent/claudecode/testdata/paired-2.1.296-tools",
             "pkg/agent/claudecode/testdata/paired-2.1.296-tools-named"
           ]
+        },
+        {
+          "version": "2.1.306",
+          "verified": "2026-10-24",
+          "fixtures": [
+            "pkg/agent/claudecode/testdata/paired-2.1.306-tools"
+          ]
         }
       ]
     },

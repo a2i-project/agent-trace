@@ -29,10 +29,12 @@ import (
 // agents, three agent versions and one machine. See
 // docs/methodology/being_data_driven.md before quoting a rate.
 //
-// The two tools captures of 2.1.296 are evaluated and reported, not gated
-// (E-5): their numbers are logged, and what would fail a gated capture is
-// logged as "not gated" instead, until the mislocated fabrications and
-// substitutions on them are explained.
+// The three tools captures, two of 2.1.296 and one of 2.1.306, are evaluated
+// and reported, not gated (E-5): their numbers are logged, and what would fail
+// a gated capture is logged as "not gated" instead, until the mislocated
+// fabrications and substitutions on them are explained. On the 2.1.306 one the
+// honest control is also NOT FAITHFUL at full agreement, on the harness's
+// package-manager probe that one control did not run (O-30, I-63).
 
 // diagnostics names a file to write the E-5 diagnostics to, as JSON: every
 // run of TestAttacksAreDetectedClassifiedAndLocated whose alignment is
@@ -86,6 +88,11 @@ var captures = existing([]capture{
 	// are detected but not always located; the diagnostics record why.
 	claude("tools", "paired-2.1.296-tools", "tools", false),
 	claude("tools-named", "paired-2.1.296-tools-named", "tools", false),
+	// The same task on 2.1.306, the first version that copies API requests
+	// into the transcript (I-62): reported, not gated, like the tools
+	// captures of 2.1.296 (E-5), and its honest control fails at full
+	// agreement on an occasional harness command (I-63).
+	claude("tools-2.1.306", "paired-2.1.306-tools", "tools", false),
 	// The two paired captures of agy 1.3.4: the first scored on an agent other
 	// than Claude Code, gated since they met every acceptance check.
 	gem("agy-basic", "paired-agy-1.3.4-basic", "basic", true),

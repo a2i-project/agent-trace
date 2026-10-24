@@ -172,16 +172,23 @@ func TestPairedBaselineCommandDoesNotExplainAnInjectedSubtree(t *testing.T) {
 // beneath them in the task as in the controls once their per-run ids are
 // canonicalised, so the records add no finding to an honest run.
 func TestSubtreeRecordsAddNoFindingToAnHonestFixture(t *testing.T) {
-	fixtures := []struct{ dir, task string }{
-		{"testdata/paired-2.1.286", "task"},
-		{"testdata/paired-2.1.286-p17", "basic"},
-		{"testdata/paired-2.1.286-parallel", "parallel"},
-		{"testdata/paired-2.1.286-project", "project"},
-		{"testdata/paired-2.1.286-project-heredoc", "project"},
-		{"testdata/paired-2.1.296-edits", "edits"},
-		{"testdata/paired-2.1.296-shapes", "shapes"},
-		{"testdata/paired-2.1.296-tools", "tools"},
-		{"testdata/paired-2.1.296-tools-named", "tools"},
+	fixtures := []struct {
+		dir, task string
+		// atFull is the findings the honest task has at full agreement:
+		// on the 2.1.306 tools capture the harness's package-manager probe,
+		// which one control did not run, and its subtree (O-30).
+		atFull int
+	}{
+		{"testdata/paired-2.1.286", "task", 0},
+		{"testdata/paired-2.1.286-p17", "basic", 0},
+		{"testdata/paired-2.1.286-parallel", "parallel", 0},
+		{"testdata/paired-2.1.286-project", "project", 0},
+		{"testdata/paired-2.1.286-project-heredoc", "project", 0},
+		{"testdata/paired-2.1.296-edits", "edits", 0},
+		{"testdata/paired-2.1.296-shapes", "shapes", 0},
+		{"testdata/paired-2.1.296-tools", "tools", 0},
+		{"testdata/paired-2.1.296-tools-named", "tools", 0},
+		{"testdata/paired-2.1.306-tools", "tools", 2},
 	}
 	load := func(t *testing.T, path string) models.GroundTruthFile {
 		data, err := os.ReadFile(path)
@@ -220,8 +227,12 @@ func TestSubtreeRecordsAddNoFindingToAnHonestFixture(t *testing.T) {
 					t.Errorf("agreement %d/%d: with records %s, %d finding(s), %d baselined; without %s, %d, %d",
 						k, len(runs), with.Outcome, with.Findings(), with.Coverage.Baselined, without.Outcome, without.Findings(), without.Coverage.Baselined)
 				}
-				if with.Findings() != 0 {
-					t.Errorf("agreement %d/%d: the honest task has %d finding(s)", k, len(runs), with.Findings())
+				want := 0
+				if k == len(runs) {
+					want = fx.atFull
+				}
+				if with.Findings() != want {
+					t.Errorf("agreement %d/%d: the honest task has %d finding(s), want %d", k, len(runs), with.Findings(), want)
 				}
 			}
 		})

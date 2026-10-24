@@ -30,13 +30,16 @@ import (
 //     --context 3) and the flags of a fixed list.
 //
 // The same parser, but for whether cat, nl and bat number their output, is
-// in 2.1.284 and 2.1.286, and the call is made under the same conditions.
+// in 2.1.284 and 2.1.286, and the call is made under the same conditions. In
+// 2.1.306 the parser, the shell splitter it uses, the function that reads the
+// files and its call after a Bash call are those of 2.1.296 but for the
+// minifier's names (I-63).
 // readCommandFiles implements a subset of it: where it is unsure (shell
 // syntax it does not read itself, a flag outside its list), it names no file,
 // so the adapter derives nothing.
 
 // harnessReadVersions are the versions whose binary was read for the rule.
-var harnessReadVersions = map[string]bool{"2.1.284": true, "2.1.286": true, "2.1.296": true}
+var harnessReadVersions = map[string]bool{"2.1.284": true, "2.1.286": true, "2.1.296": true, "2.1.306": true}
 
 // harnessRead is one file the harness reads after a Bash call.
 type harnessRead struct {

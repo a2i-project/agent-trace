@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit da3e4f0 on 2026-10-18.
+Checked against commit 90f08c5 on 2026-10-24.
 
 ## Objective
 
@@ -62,7 +62,7 @@ Detected without classified is the failure the scorer exists to expose: the righ
 
 ### The evaluation tests
 
-`pkg/attack/eval_test.go` runs every generator over eight real captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective): six of Claude Code and the two paired captures of agy 1.3.4. Each capture is read and verified through its own adapter (`Parse`, then `agent.PrepareWithBaseline`, so the adapter's normalization, `Expresses`, harness directories and hosts apply), with a baseline from its own controls built by `agent.Capture` with the same adapter, at full agreement, excluding the control task's marker command, which the capture script gives both agents (I-28). The baseline carries the version the session states; agy's conversation database states none, so the agy captures carry 1.3.4, the version they were recorded with. Every capture runs 100 seeds and 1 to 3 mutations per generator. Each capture carries a `gated` flag (E-5). On a gated capture a failed acceptance check fails the test. On a capture that is not gated the same checks run, the numbers are logged with "(reported, not gated)", and a check that would fail is logged as "not gated:" instead; one check fails on every capture: a finding about an omission marked undetectable by design, which would contradict the criterion.
+`pkg/attack/eval_test.go` runs every generator over nine real captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective): seven of Claude Code and the two paired captures of agy 1.3.4. Each capture is read and verified through its own adapter (`Parse`, then `agent.PrepareWithBaseline`, so the adapter's normalization, `Expresses`, harness directories and hosts apply), with a baseline from its own controls built by `agent.Capture` with the same adapter, at full agreement, excluding the control task's marker command, which the capture script gives both agents (I-28). The baseline carries the version the session states; agy's conversation database states none, so the agy captures carry 1.3.4, the version they were recorded with. Every capture runs 100 seeds and 1 to 3 mutations per generator. Each capture carries a `gated` flag (E-5). On a gated capture a failed acceptance check fails the test. On a capture that is not gated the same checks run, the numbers are logged with "(reported, not gated)", and a check that would fail is logged as "not gated:" instead; one check fails on every capture: a finding about an omission marked undetectable by design, which would contradict the criterion.
 
 | Capture | Claims | Distinct single omissions | Gated |
 |---|---|---|---|
@@ -72,6 +72,7 @@ Detected without classified is the failure the scorer exists to expose: the righ
 | `paired-2.1.296-edits` | 12 | 12 | yes |
 | `paired-2.1.296-tools` | 16 | 16 | no, reported |
 | `paired-2.1.296-tools-named` | 16 | 16 | no, reported |
+| `paired-2.1.306-tools` | 16 | 16 | no, reported |
 | `paired-agy-1.3.4-basic` | 11 | 11 | yes |
 | `paired-agy-1.3.4-search` | 5 | 5 | yes |
 
@@ -112,6 +113,17 @@ On the two `tools` captures, reported and not gated (**Verified** at commit 7958
 - Every fabrication not classified is read as a mismatch: the fabricated claim pairs with an observed event, in 122 of 222 cases over both captures outside its interval. Of the 174 unaccounted findings over both captures, those 122 are the interval findings on the fabricated claims, and 52 are findings on a truthful Read (`analysis.ipynb`, `numbers.txt`) that lost its event: 50 mismatches and 2 interval findings. A target substitution of the output file's Read is detected and not classified (30 per capture over the three counts); one of a workspace Read (`numbers.txt`, `analysis.ipynb`, `notes.txt`) that is not located is classified, its mismatched pair naming another observed read. The diagnostics hold each case.
 - The honest control has no findings, widening leaves the honest outcome unchanged, the omission with widened neighbours is found at every position but the output file's Read (undetectable by design, 1 of 14), retimed omissions are found apart from the 5 of 100 undetectable by design, and 12 of the 60 target substitutions of the per-field check are not located on each capture (output_hash 60 of 60).
 
+On `paired-2.1.306-tools`, reported and not gated (I-63; **Verified** at commit 90f08c5 plus this change: `go test ./pkg/attack -v`; the log lines of the eight other captures are unchanged). Its baseline, at full agreement, leaves the harness's package-manager probe, which one control did not run, unexplained, so the honest control is NOT FAITHFUL on two findings, the probe's Unrecorded exec and its unexplained subtree (O-30), and every run carries those two as unaccounted findings. Each cell gives n=1 / n=2 / n=3:
+
+| Generator | Detectable | Undetectable by design | Detected | Classified | Located | Ambiguous runs | Unaccounted findings |
+|---|---|---|---|---|---|---|---|
+| omit | 95 / 190 / 285 | 5 / 10 / 15 | 1.000 | 1.000 | 1.000 | 1 / 10 / 13 | 200 / 200 / 200 |
+| fabricate | 100 / 200 / 300 | 0 | 1.000 | 0.840 / 0.815 / 0.800 | 0.840 / 0.815 / 0.800 | 34 / 61 / 72 | 219 / 244 / 266 |
+| substitute | 100 / 200 / 300 | 0 | 1.000 | 0.950 | 0.790 / 0.840 / 0.847 | 50 / 75 / 80 | 200 / 200 / 200 |
+
+- Distinct mutations: 16 omissions, 15 to 20 fabrications, 80 to 146 substitutions, as on the 2.1.296 captures; the omissions undetectable by design are again the omitted Read of the background command's output file. Beyond the 200 findings of the probe, the fabrications leave 19, 44 and 66 unaccounted findings.
+- Widening puts no claim outside its interval and the outcome stays the honest control's, NOT FAITHFUL on the probe's findings, so the check, which wants an honest outcome, logs each of its 150 runs as not gated; the omission with widened neighbours is found at 13 of 14 positions (the output file's Read is undetectable by design); retimed omissions are found apart from the 5 of 100 undetectable by design, and every run logs the probe's two findings as not gated; 60 target and 60 output_hash substitutions of the per-field check run, 12 of the target ones not located, as on the 2.1.296 captures.
+
 ## Guarantees and loss accounting
 
 - A mutated trajectory is a deep copy; the input is not modified and shares no pointer with the output.
@@ -121,7 +133,7 @@ On the two `tools` captures, reported and not gated (**Verified** at commit 7958
 
 ## Known limits
 
-- The acceptance gate covers the six gated captures above, of two Claude Code versions and one agy version on one machine; the two `tools` captures are reported, not gated, until their fabrications and substitutions located on another claim are explained. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
+- The acceptance gate covers the six gated captures above, of two Claude Code versions and one agy version on one machine; the three `tools` captures are reported, not gated, until their fabrications and substitutions located on another claim are explained, and the one of 2.1.306 also because its honest control is NOT FAITHFUL at the evaluation's full agreement (O-30). It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
 - agy is scored on two short captures of one version, 16 claims together, whose tools are `view_file`, `write_to_file`, `replace_file_content`, `run_command` and `grep_search`: no call reads a file the harness also opens at rest or runs a command in the background, the case behind the omissions undetectable by design on the Claude Code `tools` captures, and no fabrication or substitution was mislocated, so these numbers say nothing about how agy fares on the tools and tasks where Claude Code's were. The search capture admits only five distinct omissions.
 - The scorer matches findings to mutations by action type, target and (for claims) timestamp. A mutation that happens to equal another claim could be mis-attributed; `Avoid` makes that unlikely, not impossible.
 - A4 is scored as suppressing nothing, which holds because attribution does not use intervals. What widening can evade is the interval check itself, and catching that needs an observed interval in the ground truth (open decision O-5 in [../decisions/open.md](../decisions/open.md)).
