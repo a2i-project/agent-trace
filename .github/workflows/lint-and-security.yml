@@ -36,4 +36,4 @@ jobs:
           # advisories fixed since it (nine on 2026-10-09 at 1.26.6, all fixed
           # in 1.26.9). Bump it when the check fails on standard-library
           # findings that the module's own code did not introduce.
-          go-version-input: '1.26.9'
+          go-version-input: '1.26.10'
