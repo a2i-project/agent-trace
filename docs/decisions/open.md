@@ -76,7 +76,7 @@ Date: 2026-10-13 (the process part of O-25, whose network part is decided as V-3
 Question: V-24 and V-34 set apart unexplained level-0 file events under the harness's own directories and level-0 connections to its declared hosts. How should a command the harness itself starts only sometimes be treated, when no control showed it?
 Options: (a) leave it to the agreement threshold (current); (b) an adapter-declared set of harness commands whose unexplained occurrence is reported apart and INCONCLUSIVE, with the rules of V-34 (exact, never a command the agent's claims name, never a baseline rule); (c) more control runs only.
 Current behaviour: (a). A harness command is a level-1 subtree; one no rule explains is an Unrecorded exec and an unexplained subtree, two findings. Measured on 2026-10-13 (**Verified**): Claude Code's package-manager probe (`sh -c uname -s ... for c in npm yarn pnpm`) ran in 30 of 33 controls of 2.1.286 and 2.1.296 and in none of 9 task runs, so it is a rule at every agreement below full and never a finding in a kept run; no run of Claude Code or agy has an unexplained subtree at any agreement. agy's auto-updater, started only when its last check is more than 15 minutes old, would read as an unexplained command (**Verified** under `strace` only, I-47); no capture under the probes shows it.
-Blocked by: A capture in which an occasional harness command is a finding.
+Blocked by: Nothing since 2026-10-24: in `paired-2.1.306-tools` the package-manager probe ran in the task run and four of five controls, so at full agreement (five in five) it is an Unrecorded exec and an unexplained subtree, two findings on an honest run (I-63). A choice between the options is now due.
 
 ### O-10: Containers and PID namespace translation
 Status: Open.
