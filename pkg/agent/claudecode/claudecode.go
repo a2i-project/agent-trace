@@ -299,6 +299,10 @@ type record struct {
 	} `json:"message"`
 }
 
+// claimBlock is, per record type, the one block type the adapter reads from
+// it (I-62). A record of any other type states no call.
+var claimBlock = map[string]string{"assistant": "tool_use", "user": "tool_result"}
+
 type block struct {
 	Type      string          `json:"type"`
 	ID        string          `json:"id"`
@@ -409,6 +413,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	var rep agent.Report
 	var uses []toolUse
 	results := map[string]toolResult{}
+	// seen holds the tool_use and tool_result ids read so far, across the
+	// main transcript and its subagents.
+	seen := map[string]bool{}
 
 	read := func(file, thread string) error {
 		f, err := os.Open(file)
@@ -429,7 +436,13 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			if rep.AgentVersion == "" && r.Version != "" && thread == "" {
 				rep.AgentVersion = r.Version
 			}
-			if r.Message == nil || len(r.Message.Content) == 0 || r.Message.Content[0] != '[' {
+			// Only the assistant's record states a call and only the user's
+			// record its result (I-62). Other record types are ignored: from
+			// 2.1.306 an api-request-blob record copies an API request whose
+			// content repeats earlier calls and results under the same ids,
+			// with no timestamp and no structured result.
+			want := claimBlock[r.Type]
+			if want == "" || r.Message == nil || len(r.Message.Content) == 0 || r.Message.Content[0] != '[' {
 				continue
 			}
 			var blocks []block
@@ -444,6 +457,22 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 				}
 			}
 			for _, b := range blocks {
+				if b.Type != want {
+					continue
+				}
+				// A call or a result stated twice is never claimed twice: the
+				// first stands and the repeat is a parse error (I-62).
+				id := b.ID
+				if b.Type == "tool_result" {
+					id = b.ToolUseID
+				}
+				if id != "" {
+					if seen[b.Type+"\x00"+id] {
+						rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: %s %s repeated; the first is kept", filepath.Base(file), line, b.Type, id))
+						continue
+					}
+					seen[b.Type+"\x00"+id] = true
+				}
 				switch b.Type {
 				case "tool_use":
 					uses = append(uses, toolUse{id: b.ID, name: b.Name, input: b.Input, ts: r.Timestamp, messageID: r.Message.ID, thread: thread, cwd: r.Cwd, seq: len(uses)})

@@ -15,6 +15,17 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
     I-37), a Read's structured result (I-40, below), and any other structured
     result's type. A call's input is kept whole, so a Read's offset and limit
     stay;
+  * only assistant and user records state calls and results (I-62). A record
+    of another type that repeats some, such as the api-request-blob of
+    2.1.306, a copy of a whole API request, is cut to its type, the zero
+    session id and its tool_use and tool_result blocks, each result's text
+    elided, so the fixture still shows the adapter the repeats it must not
+    claim. Every other record of another type (api-request,
+    api-request-shape, atis-latch, cost-state and the older ones) is left out
+    and counted on the output. The script refuses the fixture when a copy
+    holds a call or a result that no assistant or user record states, or a
+    call input field that the stated call lacks or holds otherwise (the copy
+    may leave a field out: 2.1.306 drops an Edit's replace_all when false);
   * a Read's structured result keeps type, file.filePath, file.startLine,
     file.numLines, file.totalLines and file.truncatedByTokenCap, so the
     adapter decides as on the raw capture whether the Read was of the whole
@@ -241,17 +252,69 @@ def result_text(content):
 BASH_FIELDS = ("interrupted", "isImage", "backgroundTaskId", "returnCodeInterpretation")
 
 
+# The record types that state a call (assistant) and its result (user), the
+# only ones the adapter reads them from (I-62).
+CLAIM_TYPES = ("assistant", "user")
+
+
+def copy_record(o, blocks):
+    """A record of another type that repeats calls or results, such as the
+    api-request-blob of 2.1.306, which holds a whole API request: only its
+    type and its tool blocks are kept, each result's text elided, so the
+    fixture shows the adapter the repeats it must not claim."""
+    slim = []
+    for b in blocks:
+        if b["type"] == "tool_use":
+            slim.append({"type": "tool_use", "id": b["id"], "name": b["name"], "input": b["input"]})
+        else:
+            slim.append({"type": "tool_result", "tool_use_id": b["tool_use_id"], "content": "(elided)"})
+    return {"type": o["type"], "sessionId": ZERO_UUID, "message": {"role": o["message"].get("role", ""), "content": slim}}
+
+
+def check_copies(kept, src):
+    """Every call or result a copy holds is one an assistant or user record
+    states, each field of a copied call's input is the stated call's (the
+    API copy of 2.1.306 leaves out an Edit's replace_all when false), and a
+    copy holds nothing else: refuse the fixture otherwise."""
+    stated = {}
+    for r in kept:
+        if r["type"] in CLAIM_TYPES:
+            for b in r["message"]["content"]:
+                stated[(b["type"], b.get("id") or b.get("tool_use_id"))] = b.get("input")
+    for r in kept:
+        if r["type"] in CLAIM_TYPES:
+            continue
+        if set(r) != {"type", "sessionId", "message"} or set(r["message"]) != {"role", "content"}:
+            sys.exit("%s: a copied %s record holds more than its tool blocks" % (src, r["type"]))
+        for b in r["message"]["content"]:
+            key = (b["type"], b.get("id") or b.get("tool_use_id"))
+            same = key in stated and (b["type"] != "tool_use" or (
+                isinstance(b["input"], dict) and isinstance(stated[key], dict)
+                and all(k in stated[key] and stated[key][k] == v for k, v in b["input"].items())))
+            if not same:
+                shutil.rmtree(out)
+                sys.exit("%s: a %s record holds %s %s, which no %s record states as it does; refusing to keep it"
+                         % (src, r["type"], key[0], key[1], " or ".join(CLAIM_TYPES)))
+
+
 def reduce_transcript(src, dst):
     kept = []
     names = {}  # tool_use id -> tool name, from the calls read so far
     inputs = {}  # tool_use id -> the call's input
+    dropped = {}  # record type -> records of another type left out
     with open(src) as f:
         for line in f:
             o = json.loads(line)
             m = o.get("message")
-            if not isinstance(m, dict) or not isinstance(m.get("content"), list):
+            blocks = []
+            if isinstance(m, dict) and isinstance(m.get("content"), list):
+                blocks = [b for b in m["content"] if b.get("type") in ("tool_use", "tool_result")]
+            if o.get("type") not in CLAIM_TYPES:
+                if blocks:
+                    kept.append(json.loads(rewrite(json.dumps(copy_record(o, blocks)), task)))
+                else:
+                    dropped[o.get("type")] = dropped.get(o.get("type"), 0) + 1
                 continue
-            blocks = [b for b in m["content"] if b.get("type") in ("tool_use", "tool_result")]
             if not blocks:
                 continue
             slim = []
@@ -303,6 +366,9 @@ def reduce_transcript(src, dst):
             if content is not None:
                 rec["toolUseResult"]["file"]["content"] = content
             kept.append(rec)
+    check_copies(kept, src)
+    if dropped:
+        print("%s: left out records of other types: %s" % (os.path.basename(src), ", ".join("%s %d" % (t, n) for t, n in sorted(dropped.items(), key=lambda x: str(x[0])))))
     os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
     with open(dst, "w") as f:
         for r in kept:
