@@ -21,8 +21,8 @@
 #
 #   claude-code long 3 content
 #   claude-code project 3
-#   gemini long 2 model=gemini-3.8-flash-high
-#   gemini heldout:subagent 15 split
+#   gemini long 2
+#   gemini heldout:subagent 15 split model=gemini-3.8-flash-medium
 #
 # AGENT is claude-code or gemini, TASK one of the capture script's tasks for
 # that agent or heldout:NAME, REPETITIONS how many task runs to record, and
@@ -31,9 +31,12 @@
 #   split     takes the controls 2 before and 3 after the task run instead of
 #             after it (D11), as the task `long` always does;
 #   model=ID  the model of the entry's runs (D7). Claude Code defaults to
-#             claude-sonnet-5-5. agy has no default: give model=ID or --agy-model
-#             ID, the id `agy models` lists (gemini-3.8-flash-high is the one the
-#             existing captures recorded), or the script refuses.
+#             claude-sonnet-5-5 and agy to gemini-3.8-flash-high (the id the
+#             existing captures recorded); --agy-model ID changes agy's default
+#             for the plan, and model=ID one entry's. After every run the
+#             model the transcript or conversation records must equal the
+#             pinned one, so an id the agent does not run under stops the
+#             campaign at the first run (MODEL MISMATCH).
 # heldout:NAME is a held-out task (D8): its prompt.txt, tools.txt and optional
 # seed/ come from --heldout-dir DIR/NAME, a directory outside the repository,
 # which the script refuses inside it and never copies; the manifest holds only
@@ -112,15 +115,39 @@
 #   probes        each probe's coverage record from the ground truth (ring
 #                 buffer drops, untracked children, state map full, channel
 #                 drops, content and response state)
-#   net           the net probe's coverage counters from watch's log
-#                 (connections, with hostname, with content, unsupported,
-#                 dials, ...) and content_fraction, with_content over
-#                 connections less unsupported (null when that is zero)
+#   net           the net probe's coverage counters (connections, with
+#                 hostname, with content, h2 offered, dials, ...) and
+#                 content_fraction, with_content over connections less
+#                 content_unsupported (null when that is zero), read from the
+#                 ground truth's net_content (coverage schema 2); only a
+#                 schema 1 capture falls back to watch's log, and net.source
+#                 says which
+#   diagnostics   from the ground truth (schema 2): per probe, each ring
+#                 buffer's size, peak occupancy, records and drops, and each
+#                 tracked_pids map's capacity, peak and entries at stop, with
+#                 the peak as a fraction of the size; a schema 1 capture has
+#                 none (not measured)
 #   events        the ground truth's events by type, and requests and
 #                 connections by target
 #   processes     the peak number of processes of the agent's tree alive at
 #                 once, counted from the fork and exit events
+# Per run, besides the scale record:
+#   cost          (control_cost for each control run) what scripts/measure-watch.py
+#                 measured around each watch: start-up, drain, watch's own CPU
+#                 and peak RSS (cmd/analyze H4b reads startup_s, drain_s,
+#                 watch_cpu_s and watch_maxrss_kb); a field it could not
+#                 measure is null
+#   watch_exit    watch's exit status of the task run and of each control run
 # summary.txt is a table of the same, one line per run.
+#
+# annotations.json (in OUTPUT_DIR, the file cmd/analyze reads for what the
+# manifest cannot show): the runner writes x4 for a task run that completed but
+# whose watch exited non-zero (the agent exited with an error, or watch failed;
+# the ground truth and the transcript exist, so the manifest reads the run as
+# ok). Entries it wrote are listed under "auto" and rewritten when the slot is
+# recorded again. scripts/annotate-run.sh records what only the operator knows
+# (task completion for X5, a user intervention for X6, other X4 causes) and
+# takes those fields over from the runner.
 set -euo pipefail
 
 die() { echo "capture-campaign: $*" >&2; exit 1; }
@@ -335,7 +362,23 @@ def versions_in(out, agent, version):
             print(os.path.basename(d))
 
 
-def net_counters(log):
+# The net probe's log line names its counters in camelCase; the ground truth's
+# net_content (coverage schema 2) names them as the record does. The fallback
+# maps the logged ones onto those names.
+LOG_NET = {"connections": "connections", "withHostname": "with_hostname", "withContent": "with_content",
+           "unattributed": "frames_unattributed", "unsupported": "content_unsupported", "dns": "dns",
+           "addressProbes": "address_probes", "openAtStop": "open_at_stop", "replaced": "replaced",
+           "dials": "dials"}
+
+
+def content_fraction(c):
+    denom = c.get("connections", 0) - c.get("content_unsupported", 0)
+    return round(c.get("with_content", 0) / denom, 4) if denom > 0 else None
+
+
+def net_from_log(log):
+    """The counters of watch's `net probe coverage:` line, for a capture whose
+    ground truth has no diagnostics (coverage schema 1)."""
     try:
         text = open(log, encoding="utf-8", errors="replace").read()
     except OSError:
@@ -343,10 +386,35 @@ def net_counters(log):
     m = re.search(r"^net probe coverage: (.*)$", text, re.M)
     if not m:
         return None
-    c = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", m.group(1))}
-    denom = c.get("connections", 0) - c.get("unsupported", 0)
-    c["content_fraction"] = round(c.get("withContent", 0) / denom, 4) if denom > 0 else None
+    c = {LOG_NET[k]: int(v) for k, v in re.findall(r"(\w+)=(\d+)", m.group(1)) if k in LOG_NET}
+    c["source"] = "watch log (coverage schema 1 fallback)"
+    c["content_fraction"] = content_fraction(c)
     return c
+
+
+def frac(num, den):
+    return round(num / den, 4) if den else None
+
+
+def diagnostics_of(cov):
+    """Per probe, the rings and tracked sets the ground truth's diagnostics hold,
+    each with its peak as a fraction of its size. Schema 1 and a probe that
+    keeps none (fs) have nothing: not measured."""
+    schema = cov.get("schema")
+    out = {"source": "ground_truth" if isinstance(schema, int) and schema >= 2 else None,
+           "coverage_schema": schema, "probes": {}}
+    for name, p in sorted((cov.get("probes") or {}).items()):
+        d = (p or {}).get("diagnostics")
+        if not d:
+            continue
+        rings = {}
+        for k, r in sorted((d.get("rings") or {}).items()):
+            rings[k] = dict(r, peak_fraction=frac(r.get("peak_bytes", 0), r.get("size_bytes", 0)))
+        sets = {}
+        for k, t in sorted((d.get("tracked_sets") or {}).items()):
+            sets[k] = dict(t, peak_fraction=frac(t.get("peak", 0), t.get("capacity", 0)))
+        out["probes"][name] = {"rings": rings, "tracked_sets": sets}
+    return out
 
 
 def peak_processes(events, root):
@@ -371,10 +439,22 @@ def scale(gt_path, log_path):
     by_type = collections.Counter(e.get("action_type") for e in events)
     def targets(kind):
         return dict(collections.Counter(e.get("target", "") for e in events if e.get("action_type") == kind).most_common())
+    cov = g.get("coverage") or {}
+    probes = {n: {k: v for k, v in (p or {}).items() if k != "diagnostics"} for n, p in (cov.get("probes") or {}).items()} or None
+    diag = diagnostics_of(cov)
+    nc = (((cov.get("probes") or {}).get("net") or {}).get("diagnostics") or {}).get("net_content")
+    if nc:
+        net = dict(nc, source="ground truth net_content (coverage schema %s)" % cov.get("schema"))
+        net["content_fraction"] = content_fraction(net)
+    elif diag["source"] is None:
+        net = net_from_log(log_path)
+    else:
+        net = None  # schema 2 and the net probe kept no counters: it did not run
     return {
         "ground_truth": gt_path,
-        "probes": (g.get("coverage") or {}).get("probes"),
-        "net": net_counters(log_path),
+        "probes": probes,
+        "diagnostics": diag,
+        "net": net,
         "events": {"total": len(events), "by_type": dict(sorted(by_type.items())),
                    "net_connect_by_target": targets("net_connect"),
                    "net_request_by_target": targets("net_request")},
@@ -413,7 +493,9 @@ def read_order(run_dir):
         if len(f) < 6:
             continue
         m = re.fullmatch(r"model_check=([^;]*);(?:observed=([^;]*);subagents=(.*))?", f[5])
+        wx = re.fullmatch(r"watch_exit=(\d+)", f[6]) if len(f) > 6 else None
         rows.append({"seq": int(f[0]), "label": f[1], "role": f[2], "start": f[3], "end": f[4],
+                     "watch_exit": int(wx.group(1)) if wx else None,
                      "model_check": CHECKS.get(m.group(1), m.group(1)) if m else "unknown",
                      "model_observed": [x for x in (m.group(2) or "").split(",") if x] if m else [],
                      "subagent_models": [x for x in (m.group(3) or "").split(",") if x] if m else []})
@@ -449,6 +531,63 @@ def classify(exit_status, log, version, version_after):
     if "watch exited non-zero" in log:
         return {"rule": "X4", "reason": "watch-failed"}
     return {"rule": "X4", "reason": "harness-error"}
+
+
+COST_FIELDS = ("startup_s", "drain_s", "watch_cpu_s", "watch_maxrss_kb")
+
+
+def read_cost(path):
+    """The measurements scripts/measure-watch.py wrote for one watch. The four
+    fields cmd/analyze reads come first; a field that was not measured is null.
+    None when there is no file (the measurement did not run)."""
+    c = load(path)
+    if not isinstance(c, dict):
+        return None
+    out = {k: c.get(k) for k in COST_FIELDS}
+    for k in ("agent_s", "wall_s", "tree_cpu_s", "tree_maxrss_kb", "watch_maxrss_is_lower_bound", "interval_ms",
+              "samples", "method", "notes"):
+        if k in c:
+            out[k] = c[k]
+    return out
+
+
+def update_annotations(out, rid, auto):
+    """Rewrite the runner's own fields of annotations.json for one run. The
+    entry lists them under "auto"; fields the operator set (annotate-run.sh
+    removes a field from "auto") are never touched."""
+    path = os.path.join(out, "annotations.json")
+    doc = load(path) if os.path.exists(path) else {}
+    if not isinstance(doc, dict):
+        # The run is recorded; a damaged operator file is reported, never overwritten.
+        print("capture-campaign: %s is not a JSON object; not updated, fix or remove it" % path, file=sys.stderr)
+        return
+    runs = doc.setdefault("runs", {})
+    entry = runs.get(rid) or {}
+    for k in entry.get("auto", []):
+        entry.pop(k, None)
+    entry.pop("auto", None)
+    entry.update(auto)
+    if auto:
+        entry["auto"] = sorted(auto)
+    if entry:
+        runs[rid] = entry
+    else:
+        runs.pop(rid, None)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp, path)
+
+
+def watch_failure(run_dir, lab, code):
+    """The reason for an x4 annotation: what watch's log says about a non-zero exit."""
+    try:
+        text = open(os.path.join(run_dir, f"{lab}.watch.log"), encoding="utf-8", errors="replace").read()
+    except OSError:
+        text = ""
+    what = "the agent exited with an error" if "agent exited with error" in text else "watch failed"
+    return f"watch exited {code} for the task run ({what}); the capture and the transcript exist"
 
 
 def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status, seed, position, total,
@@ -506,12 +645,30 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
         "scale": scale(os.path.join(run_dir, f"{lab}.ground_truth.json"), os.path.join(run_dir, f"{lab}.watch.log")),
         "control_scale": control_scale,
     }
+    cost = read_cost(os.path.join(run_dir, f"{lab}.cost.json"))
+    if cost is not None:
+        r["cost"] = cost
+    control_cost = []
+    for cs in control_scale:
+        c = read_cost(os.path.join(run_dir, cs["label"] + ".cost.json"))
+        if c is not None:
+            control_cost.append(dict(c, label=cs["label"]))
+    if control_cost:
+        r["control_cost"] = control_cost
+    r["watch_exit"] = {"task": task_row["watch_exit"] if task_row else None,
+                       "controls": {o["label"]: o["watch_exit"] for o in order if o["role"] == "control"}}
     exclusion = None if ok else classify(exit_status, log, version, version_after)
     if exclusion:
         r["exclusion"] = exclusion
     with open(os.path.join(run_dir, "run.json"), "w", encoding="utf-8") as fh:
         json.dump(r, fh, indent=2)
         fh.write("\n")
+    out_root = os.path.dirname(os.path.dirname(os.path.dirname(run_dir.rstrip("/"))))
+    wx = r["watch_exit"]["task"]
+    auto = {}
+    if ok and wx:
+        auto["x4"] = watch_failure(run_dir, lab, wx)
+    update_annotations(out_root, os.path.relpath(run_dir, out_root), auto)
     print("\t".join([r["status"], exclusion["rule"] if exclusion else "-", exclusion["reason"] if exclusion else "-"]))
 
 
@@ -578,22 +735,29 @@ def manifest(out, plan_path, commit, dirty, seed):
                 return None
             d = d.get(k)
         return d
+    def peak(s, probe, kind):
+        """The highest peak fraction among a probe's rings or tracked sets, as a percentage."""
+        d = g(s, "diagnostics", "probes", probe, kind)
+        v = [x.get("peak_fraction") for x in (d or {}).values() if x.get("peak_fraction") is not None]
+        return "-" if not v else "%.1f" % (100 * max(v))
     rows = [("run", "status", "verdict", "with baseline", "calls", "claims", "drops f/p/n",
-             "untracked p/n", "peak procs", "content", "model", "seconds")]
+             "untracked p/n", "ring peak% p/n", "tracked peak% p/n", "peak procs", "content", "model", "seconds")]
     for r in runs:
         s = r.get("scale") or {}
         probes = s.get("probes") or {}
         drops = "/".join(str(g(probes, p, "ringbuf_drops")) for p in ("fs", "proc", "net"))
         untracked = "/".join(str(g(probes, p, "untracked_children")) for p in ("proc", "net"))
         net = s.get("net") or {}
-        content = "-" if not net else f"{net.get('withContent')}/{net.get('connections')}-{net.get('unsupported')}"
+        content = "-" if not net else f"{net.get('with_content')}/{net.get('connections')}-{net.get('content_unsupported')}"
+        rings = "/".join(peak(s, p, "rings") for p in ("proc", "net"))
+        tracked = "/".join(peak(s, p, "tracked_sets") for p in ("proc", "net"))
         st = r["status"] + ("" if r["status"] == "ok" else f" {g(r, 'exclusion', 'rule')} {g(r, 'exclusion', 'reason')}")
         rows.append((os.path.relpath(r["dir"], out), st,
                      str(g(r, "verdict", "without_baseline", "outcome")),
                      str(g(r, "verdict", "with_baseline", "outcome")),
                      str(g(r, "verdict", "without_baseline", "tool_calls")),
                      str(g(r, "verdict", "without_baseline", "claims")),
-                     drops, untracked, str(g(s, "processes", "peak_alive")), content,
+                     drops, untracked, rings, tracked, str(g(s, "processes", "peak_alive")), content,
                      f"{r.get('model')} {r.get('model_check')}", str(r.get("duration_s"))))
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
     with open(os.path.join(out, "summary.txt"), "w", encoding="utf-8") as fh:
@@ -695,10 +859,8 @@ echo "output: $out"
 while IFS=$'\t' read -r agent task reps mode split model; do
   [ "$model" != - ] || model=
   if [ -z "$model" ]; then
-    if [ "$agent" = gemini ]; then model=$agy_model; else model=claude-sonnet-5-5; fi
+    if [ "$agent" = gemini ]; then model=${agy_model:-gemini-3.8-flash-high}; else model=claude-sonnet-5-5; fi
   fi
-  [ "$agent" != gemini ] || [ -n "$model" ] ||
-    die "gemini $task: agy has no default model here; give model=ID in the plan or --agy-model ID (an id \`agy models\` lists, e.g. gemini-3.8-flash-high)"
   before=$(before_of "$split")
   if ! info=$(check "$agent" "$task" "$mode" "$model" "$before"); then
     die "$agent $task ($mode): capture-claude-code.sh --check refused, see above"

@@ -20,13 +20,14 @@
 # (below).
 #
 # --model ID pins the model of every run, controls included (D7): Claude Code
-# gets --model ID (default claude-sonnet-5-5), agy gets --model ID and has no
-# default, since the id it accepts is one of those `agy models` lists
-# (gemini-3.8-flash-high, -medium, -low); the script refuses without it. After
-# each run the script reads the model the transcript records (the model of every
-# assistant message of a Claude Code transcript; the executor model of an agy
-# conversation database) and stops with MODEL MISMATCH, exit 1, when it is not
-# the pinned one. The result of each check is in order.tsv.
+# gets --model ID (default claude-sonnet-5-5), agy gets --model ID (default
+# gemini-3.8-flash-high, the id the existing captures recorded; `agy models`
+# lists it with -medium and -low). After each run the script reads the model
+# the transcript records (the model of every assistant message of a Claude Code
+# transcript; the executor model of an agy conversation database) and stops
+# with MODEL MISMATCH, exit 1, when it is not the pinned one, so a default the
+# agent does not accept as that id fails the first run, not silently. The
+# result of each check is in order.tsv.
 # --controls-before N records N of the CONTROLS control runs before the task and
 # the rest after it (D11; default 0, the task first); the order is written to
 # control-order.txt and order.tsv. It cannot be combined with --baseline-from.
@@ -135,7 +136,11 @@
 #   task-meta.txt             the task, the SHA-256 of its prompt and seed, its tools, the model
 #   order.tsv                 each run in the order it was recorded: number, label, role
 #                             (task or control), start, end, the model check and the models
-#                             the transcript recorded
+#                             the transcript recorded, and watch's exit status
+#   <label>.cost.json         what scripts/measure-watch.py measured around that run's watch
+#                             (start-up, drain, watch's CPU and peak RSS; H4b), and
+#   <label>.watch.exit        watch's exit status (non-zero when the agent exited with an
+#                             error or watch failed)
 #   baseline.json             built from the control runs
 #   report.txt                verify output, without and with the baseline
 #   verify.json, verify-baseline.json  the same two verdicts as verify --json writes them
@@ -250,12 +255,11 @@ if [ "$agent" = gemini ]; then
     exit 1
   }
   agy_conversations=$HOME/.gemini/antigravity-cli/conversations
-  # The model is pinned (D7). agy has no default for it here: the id it accepts
-  # is one `agy models` lists, and the campaign must name it.
-  [ -n "$model" ] || {
-    echo "agy needs --model ID: the model of a campaign is pinned (D7), and the id is one of those \`agy models\` lists (gemini-3.8-flash-high, -medium, -low)" >&2
-    exit 1
-  }
+  # The model is pinned (D7), by default to the id the existing captures
+  # recorded (the user's decision of 2026-10-26); --model overrides it. The
+  # check after each run reads the conversation record, so an id agy does not
+  # run under fails the run as MODEL MISMATCH.
+  model=${model:-gemini-3.8-flash-high}
   # agy -p gives up after its print timeout; the long task needs far more
   # than the short ones.
   print_timeout=600s
@@ -577,6 +581,16 @@ fi
 [ -z "$build" ] || (cd "$root" && make build >/dev/null)
 sudo -v
 
+# measured LABEL COMMAND...: run the sudo'd watch command under
+# scripts/measure-watch.py, which writes LABEL.cost.json (H4b: start-up, drain,
+# watch's CPU and peak RSS) and passes the command's exit status through. The
+# measurement never decides the run: if it cannot run, the command still does.
+measured() { # label command...
+  local label=$1; shift
+  python3 "$root/scripts/measure-watch.py" --gt "$out/$label.ground_truth.json" \
+    --out "$out/$label.cost.json" -- "$@"
+}
+
 capture_one() { # label prompt tools
   local label=$1 prompt=$2 tools=$3
   local ws="$out/ws-$label" session
@@ -598,15 +612,18 @@ capture_one() { # label prompt tools
     return
   fi
   echo "== $label: session $session"
+  local wrc=0
   (
     cd "$ws"
-    sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
+    measured "$label" sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
       env DISABLE_UPDATES=1 \
       "$claude_bin" -p "${claude_flags[@]}" --model "$model" --allowedTools "$tools" \
       --session-id "$session" "$prompt" >"$out/$label.watch.log" 2>&1
-  ) || echo "   watch exited non-zero, see $out/$label.watch.log"
+  ) || wrc=$?
+  printf '%s\n' "$wrc" >"$out/$label.watch.exit"
+  [ "$wrc" -eq 0 ] || echo "   watch exited non-zero, see $out/$label.watch.log (exit $wrc)"
   # Recording has ended: give the permission back so the output can be removed.
   [ -z "$locked" ] || chmod u+w "$ws/$locked"
   local found
@@ -641,16 +658,19 @@ capture_gemini() { # label prompt tools workspace
   # The databases that exist before the run: any other one after it is the
   # run's own or a subagent's (I-55).
   before=$(ls "$agy_conversations" 2>/dev/null | grep '\.db$' || true)
+  local wrc=0
   (
     cd "$ws"
-    sudo "$root/watch" --probes fs,proc,net --workspace "$ws" \
+    measured "$label" sudo "$root/watch" --probes fs,proc,net --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
       env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
       AGY_CLI_DISABLE_AUTO_UPDATE=true \
       "$agy_bin" --agent agent-trace --model "$model" --dangerously-skip-permissions --output-format json \
       --print-timeout "$print_timeout" -p "$prompt" >"$out/$label.watch.log" 2>&1
-  ) || echo "   watch exited non-zero, see $out/$label.watch.log"
+  ) || wrc=$?
+  printf '%s\n' "$wrc" >"$out/$label.watch.exit"
+  [ "$wrc" -eq 0 ] || echo "   watch exited non-zero, see $out/$label.watch.log (exit $wrc)"
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
   # agy prints one JSON object with the conversation id; the database is named by it.
   id=$(grep -o '"conversation_id":"[0-9a-f-]*"' "$out/$label.watch.log" | head -1 | cut -d'"' -f4 || true)
@@ -749,7 +769,7 @@ capture() {
   else
     mrc=-
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(($(wc -l <"$out/order.tsv" 2>/dev/null || echo 0) + 1))" "$label" "$role" "$started" "$ended" "model_check=$mrc;$seen" >>"$out/order.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(($(wc -l <"$out/order.tsv" 2>/dev/null || echo 0) + 1))" "$label" "$role" "$started" "$ended" "model_check=$mrc;$seen" "watch_exit=$(tr -d '\n' <"$out/$label.watch.exit" 2>/dev/null || echo -)" >>"$out/order.tsv"
   [ "$rc" -eq 0 ] || return "$rc"
   case $mrc in
     0) ;;
