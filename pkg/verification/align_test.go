@@ -300,7 +300,7 @@ func bruteForce(c models.Trajectory, o models.GroundTruth) (best int, count int)
 			return
 		}
 		if i < len(c) && j < len(o) {
-			pc, _ := pairCost(c[i], o[j], nil)
+			pc, _ := pairCost(c[i], o[j], nil, nil)
 			rec(i+1, j+1, cost+pc)
 		}
 		if i < len(c) {
@@ -359,7 +359,7 @@ func TestAlign_AgreesWithBruteForceOnRandomSequences(t *testing.T) {
 			case EditInsertion, EditDeletion:
 				cost += costIndel
 			default:
-				pc, _ := pairCost(*e.Claim, *e.Event, nil)
+				pc, _ := pairCost(*e.Claim, *e.Event, nil, nil)
 				cost += pc
 			}
 		}
@@ -452,7 +452,7 @@ func bruteForceTimed(c models.Trajectory, o models.GroundTruth) (best, count, be
 			return
 		}
 		if i < len(c) && j < len(o) {
-			pc, _ := pairCost(c[i], o[j], nil)
+			pc, _ := pairCost(c[i], o[j], nil, nil)
 			v := 0
 			if outsideInterval(c[i], o[j], 0) {
 				v = 1
@@ -500,7 +500,7 @@ func TestAlign_IntervalTieBreakAgreesWithBruteForce(t *testing.T) {
 			case EditInsertion, EditDeletion:
 				cost += costIndel
 			default:
-				pc, _ := pairCost(*e.Claim, *e.Event, nil)
+				pc, _ := pairCost(*e.Claim, *e.Event, nil, nil)
 				cost += pc
 				if e.OutsideInterval {
 					viol++

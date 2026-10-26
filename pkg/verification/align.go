@@ -167,6 +167,12 @@ type Options struct {
 	// from the process tree. Nil, as when Align is called on its own, leaves
 	// only the other conditions of impliedPairs.
 	impliedWitness func(c models.TrajectoryEntry, e models.GroundTruthEvent) bool
+	// mounts is the capture's mount table read for matching (V-46): a file
+	// claim also pairs with an event the probe named through another mount
+	// when the table proves both reach the same file. Verify sets it from
+	// Input.FSScope; nil, as when Align is called on its own, matches by
+	// path only.
+	mounts *matching.Mounts
 }
 
 // implied reports whether a claim is harness-implied (V-33): marked by an
@@ -194,7 +200,7 @@ func insertCost(c models.TrajectoryEntry) int {
 // harness-implied claim is never Mismatched, never outside its interval and
 // never unverified.
 func impliedPairs(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Options) bool {
-	if e.ActionType != models.FileOpen || e.Target != c.Target || e.PathIsAmbiguous || e.TargetTruncated {
+	if e.ActionType != models.FileOpen || !samePath(c.Target, e.Target, opts.mounts) || e.PathIsAmbiguous || e.TargetTruncated {
 		return false
 	}
 	if len(contentDiffs(c, e, opts.Expresses)) > 0 || len(unverifiedFields(c, e)) > 0 {
@@ -213,19 +219,30 @@ func pairCostOf(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Option
 	if implied(c) {
 		return 0, impliedPairs(c, e, opts)
 	}
-	return pairCostOnly(c, e, opts.Expresses), true
+	return pairCostOnly(c, e, opts.Expresses, opts.mounts), true
+}
+
+// samePath reports whether a claimed path is exactly an observed name, or,
+// through the capture's mount table, the name the probe gives the file the
+// claimed path reaches (V-46).
+func samePath(claimed, observed string, m *matching.Mounts) bool {
+	if claimed == observed {
+		return true
+	}
+	n, ok := m.Canonical(claimed)
+	return ok && n == observed
 }
 
 // pairCostOnly is pairCost's cost without its list of diffs, which the
 // program does not need for a cell and would allocate for every pair that
 // differs.
-func pairCostOnly(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses) int {
+func pairCostOnly(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses, m *matching.Mounts) int {
 	if c.ActionType != e.ActionType {
 		return costSubType
 	}
 	// Equal targets match whatever the normalization; the test spares the
 	// path cleaning for the common pair.
-	if c.Target != e.Target && !matching.TargetsMatch(c, e) && !truncatedPrefix(c, e) || len(contentDiffs(c, e, ex)) > 0 {
+	if c.Target != e.Target && !m.TargetsMatch(c, e) && !truncatedPrefix(c, e) || len(contentDiffs(c, e, ex)) > 0 {
 		return costSubSame
 	}
 	return 0
@@ -309,20 +326,20 @@ func Align(claims models.Trajectory, observed models.GroundTruth, opts Options) 
 // pairCost returns the cost of aligning claim c with event e, and the fields
 // that differ. Any two entries of one lane can be paired: a different action
 // type costs more but is still a substitution.
-func pairCost(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses) (cost int, diffs []string) {
+func pairCost(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses, m *matching.Mounts) (cost int, diffs []string) {
 	if c.ActionType != e.ActionType {
-		return costSubType, append([]string{DiffType}, targetAndContentDiffs(c, e, ex)...)
+		return costSubType, append([]string{DiffType}, targetAndContentDiffs(c, e, ex, m)...)
 	}
-	diffs = targetAndContentDiffs(c, e, ex)
+	diffs = targetAndContentDiffs(c, e, ex, m)
 	if len(diffs) == 0 {
 		return 0, nil
 	}
 	return costSubSame, diffs
 }
 
-func targetAndContentDiffs(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses) []string {
+func targetAndContentDiffs(c models.TrajectoryEntry, e models.GroundTruthEvent, ex Expresses, m *matching.Mounts) []string {
 	var diffs []string
-	if !matching.TargetsMatch(c, e) && !truncatedPrefix(c, e) {
+	if !m.TargetsMatch(c, e) && !truncatedPrefix(c, e) {
 		diffs = append(diffs, DiffTarget)
 	}
 	if c.ActionType == e.ActionType {

@@ -1,6 +1,6 @@
 # Process probe
 
-Checked against commit 1960d43 on 2026-10-26.
+Checked against commit 14c2b7b on 2026-10-26.
 
 ## Objective
 
@@ -86,7 +86,7 @@ All four are event loss ([10_probes_common.md](10_probes_common.md#probecoverage
 ## Known limits
 
 - A process that never execs produces no `process_exit`, because exit records are copies of an `execs` entry; nor does one whose exec attempts all failed, such as the child of a spawn helper (Go, Python, libuv) that exits with a code of its own after a failed exec (P-31).
-- The exit names the last exec that took effect, so a process that exec'd twice (a shell that execs its last simple command) exits under its second program, while the verifier aligns its first exec with its exit. Under `Generic` and `simagent`, which claim exits, an exit claim naming the command the agent ran then reads as a substitution of the target; the real adapters do not claim exits (I-15).
+- The exit names the last exec that took effect, so a process that exec'd twice (a shell that execs its last simple command) exits under its second program. The verifier compares an exit claim with the exit of the process its aligned exec started, under that exec's command line (V-44), so this is no finding on an honest exit claim; the record itself keeps the program that exited.
 - A lost exec-success record leaves the exit joined to the image before it, or to none; the loss is counted in `drop_count`.
 - A process killed by a signal never calls `exit_group`, so its exit has no `ExitCode`; nor does one whose last thread ends with a plain `exit` rather than `exit_group`.
 - Filename and argv are read from user memory at syscall entry, so another thread can change them before the kernel copies them.
