@@ -41,6 +41,113 @@ def fixture_paths(name):
             "ground_truth": os.path.join(base, label + ".ground_truth.json")}
 
 
+class Subject:
+    """One capture the sweep attacks: a checked-in fixture or a campaign run.
+
+    name          the identifier written to the rows' `fixture` field: the
+                  fixture's name, or a campaign run's directory relative to
+                  the campaign (the identifier cmd/analyze gives the run)
+    agent         the adapter that reads the session (claude-code or gemini)
+    session       the transcript or conversation database
+    ground_truth  the capture's ground truth
+    label         the run's label (the task's), used in scratch paths
+    task          the task, which names the seed of its workspace
+    ws            the workspace path as the transcript and the capture name it
+    heldout_seed  the seed directory of a held-out task (outside the repo)
+    """
+
+    def __init__(self, name, agent, session, ground_truth, label, task, ws, heldout_seed=None):
+        self.name, self.agent, self.session, self.ground_truth = name, agent, session, ground_truth
+        self.label, self.task, self.ws, self.heldout_seed = label, task, ws, heldout_seed
+
+
+def fixture_subject(name):
+    fx = fixture_paths(name)
+    return Subject(name, "claude-code", fx["session"], fx["ground_truth"], fx["label"], name,
+                   "/ws/" + fx["label"])
+
+
+def as_subject(x):
+    return x if isinstance(x, Subject) else fixture_subject(x)
+
+
+def run_id(campaign, rec):
+    """A run's identifier, as cmd/analyze names it: its directory under the
+    campaign. The manifest records the path of the machine that wrote it, so
+    the last three components, <agent>-<version>/<task>/run-NN, are what count."""
+    return "/".join(rec["dir"].rstrip("/").split("/")[-3:])
+
+
+def campaign_subjects(campaign, kept=None, heldout_dir=None):
+    """The runs of a campaign directory that the sweep attacks.
+
+    kept: a set of run identifiers (from cmd/analyze's results.json), or None
+    for the manifest's own reading of a kept run: status ok, no version change,
+    no recorded exclusion, no loss counter on the task run, no annotation of
+    X4 or X6. Returns (subjects, skipped), skipped as (identifier, reason)."""
+    manifest = json.load(open(os.path.join(campaign, "manifest.json")))
+    ann = {}
+    p = os.path.join(campaign, "annotations.json")
+    if os.path.exists(p):
+        ann = json.load(open(p)).get("runs", {})
+    subjects, skipped = [], []
+    for rec in manifest.get("runs", []):
+        rid = run_id(campaign, rec)
+        why = None
+        if kept is not None:
+            if rid not in kept:
+                why = "not a kept run in the analysis"
+        else:
+            why = unkept_reason(rec, ann.get(rid, {}))
+        if why:
+            skipped.append((rid, why))
+            continue
+        d = os.path.join(campaign, *rid.split("/"))
+        paths = rec.get("paths") or {}
+        traj = os.path.basename(paths.get("trajectory") or "")
+        gt = os.path.basename(paths.get("ground_truth") or "")
+        if not traj or not gt:
+            skipped.append((rid, "the manifest names no trajectory or ground truth"))
+            continue
+        g = json.load(open(os.path.join(d, gt)))
+        label = rec["task"].replace(":", "-")
+        seed = None
+        if rec["task"].startswith("heldout:") and heldout_dir:
+            c = os.path.join(heldout_dir, rec["task"][len("heldout:"):], "seed")
+            seed = c if os.path.isdir(c) else None
+        subjects.append(Subject(rid, rec["agent"], os.path.join(d, traj), os.path.join(d, gt), label,
+                                rec["task"], g.get("workspace") or "", seed))
+    return subjects, skipped
+
+
+LOSS_COUNTERS = ("ringbuf_drops", "untracked_children", "state_map_full", "channel_drops", "queue_overflow",
+                 "undrained_records", "unresolved_in_tree", "response_gaps")
+
+
+def unkept_reason(rec, ann):
+    """Why the manifest alone says a run is not kept, or None. An approximation
+    of cmd/analyze's exclusion rules (X1, X3, X4, X6): the analysis's own list
+    (--kept-from) is the registered one."""
+    if rec.get("status") != "ok":
+        return "status %s" % rec.get("status")
+    if rec.get("version_after") and rec["version_after"] != rec.get("version"):
+        return "X3: the version changed"
+    if rec.get("exclusion"):
+        return "excluded by the runner: %s" % (rec["exclusion"].get("rule"),)
+    if ann.get("x4") or ann.get("x6"):
+        return "annotated X4 or X6"
+    probes = ((rec.get("scale") or {}).get("probes")) or {}
+    for name, p in probes.items():
+        if not p.get("ran", True):
+            continue
+        for k in LOSS_COUNTERS:
+            if p.get(k):
+                return "X1: %s %s=%s" % (name, k, p[k])
+    if not probes:
+        return "X1: no coverage record"
+    return None
+
+
 class Tools:
     """The layout setup.sh writes into TOOLS_DIR."""
 
@@ -94,33 +201,54 @@ def build_attack(out_dir):
     return path
 
 
-def attack(binary, fixture, kind, seed, n, out_prefix):
-    """Run cmd/attack on a fixture's session, with the capture's ground truth
-    avoided as in the evaluation. Returns (claims, record) or (None, error)."""
-    fx = fixture_paths(fixture)
+def attack(binary, subject, kind, seed, n, out_prefix, select=None, field=None, retime=False):
+    """Run cmd/attack on a subject's session. Fabrication and substitution get
+    the capture's ground truth to avoid, as in the evaluation; the other two
+    generators ignore it, so it is not parsed for them. Returns (claims, record)
+    or (None, error)."""
+    subject = as_subject(subject)
     out, rec = out_prefix + ".json", out_prefix + ".rec.json"
-    p = run([binary, "--kind", kind, "--seed", str(seed), "--n", str(n),
-             "--trajectory", fx["session"], "--agent", "claude-code",
-             "--avoid-ground-truth", fx["ground_truth"], "--out", out, "--record", rec])
+    cmd = [binary, "--kind", kind, "--seed", str(seed), "--n", str(n),
+           "--trajectory", subject.session, "--agent", subject.agent, "--out", out, "--record", rec]
+    if kind in ("fabrication", "substitution"):
+        cmd += ["--avoid-ground-truth", subject.ground_truth]
+    if select:
+        cmd += ["--select", select]
+    if field:
+        cmd += ["--field", field]
+    if retime:
+        cmd += ["--retime"]
+    p = run(cmd)
     if p.returncode != 0:
         return None, p.stderr.strip()
     return json.load(open(out)), json.load(open(rec))
 
 
-def honest_claims(binary, fixture, out_prefix):
+def honest_claims(binary, subject, out_prefix):
     """The honest normalized trajectory as cmd/attack sees it: an omission with
     its dropped entry put back. Two seeds must give the same list."""
+    subject = as_subject(subject)
     lists = []
     for seed in (0, 1):
-        claims, rec = attack(binary, fixture, "omission", seed, 1, "%s.s%d" % (out_prefix, seed))
+        claims, rec = attack(binary, subject, "omission", seed, 1, "%s.s%d" % (out_prefix, seed))
         if claims is None:
-            raise SystemExit("attack on %s: %s" % (fixture, rec))
+            raise SystemExit("attack on %s: %s" % (subject.name, rec))
         m = rec["mutations"][0]
         claims.insert(m["original_index"], m["before"])
         lists.append(claims)
     if lists[0] != lists[1]:
-        raise SystemExit("%s: the honest trajectory differs between seeds" % fixture)
+        raise SystemExit("%s: the honest trajectory differs between seeds" % subject.name)
     return lists[0]
+
+
+def omission_at(honest, i):
+    """Attack A1 at position i, as pkg/attack.Omit with Indices: [i] writes it
+    (seed 0, nothing retimed), for the exhaustive n=1 omissions of the H2 sweep,
+    which cmd/attack has no flag for. Returns (claims, record)."""
+    claims = honest[:i] + honest[i + 1:]
+    rec = {"kind": "omission", "seed": 0,
+           "mutations": [{"kind": "omission", "original_index": i, "index": -1, "before": honest[i]}]}
+    return claims, rec
 
 
 def mutation_key(record):

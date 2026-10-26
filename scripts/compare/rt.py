@@ -129,8 +129,11 @@ def map_claims(records, claims):
     uses = tool_uses(records)
     out = []
     for c in claims:
+        # A raw transcript has records with no timestamp (a call inside a
+        # progress record, say); such a call cannot be matched to a claim.
         cands = [it for i, it in uses
-                 if it["name"] == c.get("tool") and same_instant(records[i]["timestamp"], c["timestamp"])
+                 if it["name"] == c.get("tool") and records[i].get("timestamp")
+                 and same_instant(records[i]["timestamp"], c["timestamp"])
                  and consistent(c, it)]
         out.append(cands[0]["id"] if len(cands) == 1 else None)
     return out
@@ -138,10 +141,15 @@ def map_claims(records, claims):
 
 # ---- repository reconstruction -------------------------------------------
 
-def parent_state(fixture):
-    seed = os.path.join(common.REPO, "scripts", "seed", fixture)
+def parent_state(subject):
+    """The workspace before the session. A held-out task's seed lives outside
+    the repository (the sweep's --heldout-dir); one without a seed directory
+    starts, like the capture script's, from b.txt, c.txt and d.txt."""
+    seed = subject.heldout_seed or os.path.join(common.REPO, "scripts", "seed", subject.task)
+    if subject.task.startswith("heldout:") and not subject.heldout_seed:
+        seed = None
     state = {}
-    if os.path.isdir(seed):
+    if seed and os.path.isdir(seed):
         for root, _, files in os.walk(seed):
             for f in files:
                 p = os.path.join(root, f)
@@ -172,13 +180,14 @@ def replay(state, records, ws):
     return state
 
 
-def check_against_capture(fixture, parent, final, label):
+def check_against_capture(subject, parent, final):
     """Every parent file the agent opened must hash as first observed, and
     every file the agent wrote must hash to a content the capture observed
     for that path or one of its temporary siblings."""
-    g = json.load(open(common.fixture_paths(fixture)["ground_truth"]))
+    fixture = subject.name
+    g = json.load(open(subject.ground_truth))
     first_open, seen = {}, {}
-    prefix = "/ws/%s/" % label
+    prefix = subject.ws + "/"
     for e in g["events"]:
         t = e.get("target", "")
         if not t.startswith(prefix):
@@ -201,17 +210,17 @@ def check_against_capture(fixture, parent, final, label):
 
 
 class Harness:
-    def __init__(self, tools, home, fixture, honest, netns):
+    def __init__(self, tools, home, subject, honest, netns):
         self.t = tools
         self.home = home
-        self.fixture = fixture
-        self.fx = common.fixture_paths(fixture)
-        self.label = self.fx["label"]
+        self.subject = common.as_subject(subject)
+        self.fixture = self.subject.name
+        self.label = self.subject.label
         self.netns = netns
-        self.raw = load_records(self.fx["session"])
+        self.raw = load_records(self.subject.session)
         self.mapping = map_claims(self.raw, honest)
         self.honest = honest
-        self.parent = parent_state(fixture)
+        self.parent = parent_state(self.subject)
 
     def env(self):
         return common.scratch_env(self.home)
@@ -227,7 +236,9 @@ class Harness:
         return p.stdout
 
     def transcript(self, ws):
-        s = json.dumps(self.raw).replace('"/ws/%s/' % self.label, '"%s/' % ws).replace("/ws/%s" % self.label, ws)
+        # The workspace path, as the transcript writes it inside JSON strings.
+        old = json.dumps(self.subject.ws)[1:-1]
+        s = json.dumps(self.raw).replace(old, json.dumps(ws)[1:-1])
         recs = json.loads(s)
         for r in recs:
             r["cwd"] = ws
@@ -246,7 +257,7 @@ class Harness:
         open(traj, "w").close()
         recs = self.transcript(ws)
         final = replay(self.parent, recs, ws)
-        check_against_capture(self.fixture, self.parent, final, self.label)
+        check_against_capture(self.subject, self.parent, final)
         self.git(ws, "init", "-q", "-b", "main")
         for rel, content in self.parent.items():
             os.makedirs(os.path.dirname(os.path.join(ws, rel)), exist_ok=True)
@@ -301,7 +312,7 @@ class Harness:
             return tid
 
         def rewrite(target):
-            return target.replace("/ws/%s" % self.label, ws)
+            return target.replace(self.subject.ws, ws)
 
         fabricated = sorted(m["index"] for m in record["mutations"] if m["kind"] == "fabrication")
         for k, m in enumerate(record["mutations"]):
@@ -471,7 +482,8 @@ def rt_rows(r, mode):
     overall = {False: "detected", True: "accepted", None: "inapplicable"}[r["execution_reproducible"]]
     return [dict(base, condition="edit-criterion", outcome=edit, status=r["edit"], detail=r["edit_files"]),
             dict(base, condition="command-criterion", outcome=cmd, status=r["command"], detail=r["commands"]),
-            dict(base, condition="overall", outcome=overall, status=r["execution_reproducible"])]
+            # A string: cmd/analyze reads status as one, and a JSON boolean fails the whole file.
+            dict(base, condition="overall", outcome=overall, status=str(r["execution_reproducible"]))]
 
 
 def not_representable_rows(reason):
