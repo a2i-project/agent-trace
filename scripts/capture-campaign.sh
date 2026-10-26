@@ -14,6 +14,7 @@
 #                               [--heldout-dir DIR] [--agy-model ID]
 #                               [--allow-unconfigured-version] [--new-version-stratum]
 #                               [--stop-after-failures N] PLAN OUTPUT_DIR
+#   scripts/capture-campaign.sh --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR
 #
 # PLAN is a text file with one entry per line, # starting a comment:
 #
@@ -65,11 +66,25 @@
 #
 # Otherwise it builds the binaries once, asks for sudo once and keeps the
 # credential fresh while it runs. With --validate it then validates the
-# instrument (protocol 9.4): simagent under watch must verify FAITHFUL, and
-# with --drop-entry 0 NOT FAITHFUL with the one Unrecorded finding; a failure
-# stops the invocation before any run (protocol 10.2), the result is written to
-# OUTPUT_DIR/validation/. --validate-e2e also runs `sudo go test ./tests/e2e`
-# there, which is slow, so it is opt-in. Then it records the plan's slots in a
+# instrument (protocol 9.4, I-67), in seconds: under watch (fs,proc, the agent
+# run as the user) it runs simagent --null three times as control runs,
+# simagent's script once, and the script with --drop-entry 0 once, in the order
+# null, honest, null, dropped, null, every run writing its trajectory to the
+# same path, which is moved aside after the run. It builds a baseline
+# (cmd/baseline --agent generic) from the null runs at an agreement of one run
+# in three, so an event of simagent's own start-up and exit that only some
+# runs show is still explained. It fails closed when a watch exits non-zero, a
+# null run claims anything, the baseline names the workspace, holds a command,
+# or explains any action the honest run claims (the dropped entry would then
+# be hidden), when the honest run does not verify FAITHFUL against it, or when
+# the dropped run does not verify NOT FAITHFUL with exactly one finding, an
+# Unrecorded one that is the dropped entry. A failure stops the invocation
+# before any run (protocol 10.2); the result is written to
+# OUTPUT_DIR/validation/, the runs beside it. --validate-e2e also runs `sudo go
+# test ./tests/e2e` there, which is slow, so it is opt-in. --validate-only takes
+# no PLAN: it builds, asks for sudo, validates and exits (0 when the validation
+# passed, 1 otherwise), recording no agent session and writing no manifest.
+# Then it records the plan's slots in a
 # permutation fixed by --seed (protocol 6.6): the slots are ordered by the
 # SHA-256 of seed and slot, so a resumed invocation with the same seed keeps
 # the order of the slots that remain. Without --seed the seed of the output
@@ -159,6 +174,7 @@ stop_after=4
 seed=
 validate=
 validate_e2e=
+validate_only=
 heldout_dir=
 agy_model=
 new_stratum=
@@ -169,6 +185,7 @@ while [ $# -gt 0 ]; do
     --seed) seed=${2:?--seed needs a number}; shift 2 ;;
     --validate) validate=1; shift ;;
     --validate-e2e) validate=1; validate_e2e=1; shift ;;
+    --validate-only) validate=1; validate_only=1; shift ;;
     --heldout-dir) heldout_dir=${2:?--heldout-dir needs a directory}; shift 2 ;;
     --agy-model) agy_model=${2:?--agy-model needs a model id}; shift 2 ;;
     --allow-unconfigured-version) allow_unconfigured=1; shift ;;
@@ -179,13 +196,24 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-[ $# -eq 2 ] || { echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--agy-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] PLAN OUTPUT_DIR" >&2; exit 2; }
-plan=$1
-out=$2
+usage() {
+  echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--agy-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] PLAN OUTPUT_DIR" >&2
+  echo "       $0 --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR" >&2
+  exit 2
+}
+if [ -n "$validate_only" ]; then
+  [ $# -eq 1 ] || usage
+  plan=
+  out=$1
+else
+  [ $# -eq 2 ] || usage
+  plan=$1
+  out=$2
+fi
 case $controls in ''|*[!0-9]*|0) die "--controls must be a positive number" ;; esac
 case $stop_after in ''|*[!0-9]*|0) die "--stop-after-failures must be a positive number" ;; esac
 case $seed in *[!0-9]*) die "--seed must be a number" ;; esac
-[ -f "$plan" ] || die "no plan file $plan"
+[ -n "$validate_only" ] || [ -f "$plan" ] || die "no plan file $plan"
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 capture=$root/scripts/capture-claude-code.sh
@@ -797,41 +825,229 @@ def invocation(out, seed, commit, dirty, plan_path, controls, validate, e2e, sto
         fh.write(json.dumps(rec) + "\n")
 
 
-def judge(kind, path, rc):
-    """Judge one known-answer verify run (protocol 9.4); print ok or the reason."""
+def templated(target, ws):
+    """target with the workspace as cmd/baseline writes it in a rule (I-24, I-29)."""
+    if len(ws) < 2:
+        return target
+    return target.replace(ws, "{workspace}").replace(ws.replace("/", "-"), "{workspace-}")
+
+
+def events_text(events, limit=5):
+    shown = ", ".join(f"{e.get('action_type')} {e.get('target')}" for e in events[:limit])
+    return shown + (f" and {len(events) - limit} more" if len(events) > limit else "")
+
+
+def null_check(*paths):
+    """Each null control must have written a trajectory of no claims (I-67)."""
+    bad = []
+    for p in paths:
+        t = load(p)
+        if t != []:
+            bad.append(f"{os.path.basename(p)}: " + ("missing or unreadable" if t is None else f"{len(t) if isinstance(t, list) else 'not a list of'} claim(s)"))
+    print("ok" if not bad else "a null control did not write an empty trajectory: " + "; ".join(bad))
+
+
+def power(baseline, honest_traj, honest_ws):
+    """The baseline built from the null controls must explain none of the known
+    answer's actions, or the dropped entry would be hidden (I-67). A rule that
+    names the workspace, a command rule or a subtree record means a null control
+    did something simagent --null never does: the check fails closed."""
+    b = load(baseline)
+    if b is None:
+        print(f"no baseline at {baseline}")
+        return
+    rules = b.get("rules") or []
+    problems = []
+    ws_rules = [r for r in rules if "{workspace" in r.get("target", "")]
+    if ws_rules:
+        problems.append(f"{len(ws_rules)} rule(s) name the workspace ({events_text(ws_rules, 3)})")
+    cmd_rules = [r for r in rules if r.get("action_type", "").startswith("process_")]
+    if cmd_rules or b.get("subtrees"):
+        problems.append(f"{len(cmd_rules)} command rule(s) and {len(b.get('subtrees') or [])} subtree record(s), though a null control runs no command ({events_text(cmd_rules, 3)})")
+    t = load(honest_traj)
+    if not isinstance(t, list) or not t:
+        problems.append(f"no honest trajectory at {honest_traj} to check the rules against")
+    else:
+        have = {(r.get("action_type"), r.get("target")) for r in rules}
+        hidden = [e for e in t if (e.get("action_type"), templated(e.get("target", ""), honest_ws)) in have]
+        if hidden:
+            problems.append(f"the baseline explains {len(hidden)} of the known answer's {len(t)} action(s) ({events_text(hidden, 3)})")
+    if problems:
+        print("the baseline from the null controls would hide what the known answer must show: " + "; ".join(problems))
+    else:
+        print("ok")
+
+
+def judge(kind, path, rc, honest_traj="", honest_ws="", dropped_ws=""):
+    """Judge one known-answer verify run against the null baseline (protocol 9.4,
+    I-67); print ok or the reason."""
     v = load(path)
     if v is None:
-        print(f"no verify JSON at {path}")
+        print(f"{kind}: no verify JSON at {path}")
         return
     want = {"honest": ("FAITHFUL", 0), "dropped": ("NOT FAITHFUL", 1)}[kind]
     got = (v.get("outcome"), int(rc))
+    al = v.get("alignment") or {}
+    unrecorded = al.get("unrecorded") or []
     if got != want:
-        print(f"{kind}: verify said {got[0]} (exit {got[1]}), wanted {want[0]} (exit {want[1]})")
+        why = f"{kind}: verify said {got[0]} (exit {got[1]}), wanted {want[0]} (exit {want[1]})"
+        if kind == "honest" and unrecorded:
+            why += f"; {len(unrecorded)} Unrecorded event(s) no null control explains: {events_text(unrecorded)}"
+        print(why)
         return
     if kind == "dropped":
-        unrecorded = len((v.get("alignment") or {}).get("unrecorded") or [])
-        if v.get("findings") != 1 or unrecorded != 1:
-            print(f"dropped: wanted exactly one finding, an Unrecorded one; got {v.get('findings')} finding(s), {unrecorded} Unrecorded")
+        if v.get("findings") != 1 or len(unrecorded) != 1:
+            print(f"dropped: wanted exactly one finding, an Unrecorded one; got {v.get('findings')} finding(s), {len(unrecorded)} Unrecorded" + (f": {events_text(unrecorded)}" if unrecorded else ""))
+            return
+        t = load(honest_traj)
+        if not isinstance(t, list) or not t:
+            print(f"dropped: no honest trajectory at {honest_traj} to name the dropped entry")
+            return
+        e0 = t[0]
+        expect = (e0.get("action_type"), templated(e0.get("target", ""), honest_ws))
+        seen = (unrecorded[0].get("action_type"), templated(unrecorded[0].get("target", ""), dropped_ws))
+        if seen != expect:
+            print(f"dropped: the Unrecorded event is {seen[0]} {seen[1]}, not the dropped entry {expect[0]} {expect[1]}")
             return
     print("ok")
 
 
-def validation_write(path, commit, honest, dropped, e2e):
+def validation_write(path, commit, honest, dropped, e2e, controls="not-run", baseline="not-run", power_="not-run", nulls="0", rules=""):
+    checks = [honest, dropped, controls, baseline, power_]
     rec = {"time": datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "commit": commit,
+           "method": "verify against a baseline of simagent --null control runs (I-67)",
+           "null_controls": int(nulls), "null_controls_check": controls, "baseline": baseline,
+           "baseline_rules": int(rules) if rules.isdigit() else None, "baseline_hides_nothing": power_,
            "known_answer_honest": honest, "known_answer_dropped": dropped, "e2e": e2e,
-           "passed": honest == "ok" and dropped == "ok" and e2e in ("ok", "not-run")}
+           "passed": all(c == "ok" for c in checks) and e2e in ("ok", "not-run")}
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(rec, fh, indent=2)
         fh.write("\n")
+
+
+def baseline_rules(path):
+    b = load(path)
+    print(len(b.get("rules") or []) if isinstance(b, dict) else "")
 
 
 cmd = sys.argv[1]
 args = sys.argv[2:]
 {"plan": plan, "slot-state": slot_state, "permute": permute, "seed": seed_of, "versions": versions_in,
  "summarize": summarize, "manifest": manifest, "estimate": estimate, "invocation": invocation,
- "judge": judge, "validation-write": validation_write}[cmd](*args)
+ "judge": judge, "validation-write": validation_write, "null-check": null_check, "power": power,
+ "baseline-rules": baseline_rules}[cmd](*args)
 PY
 helper() { python3 "$helper" "$@"; }
+
+# start_privileged: build once, ask for sudo once and keep the credential
+# fresh for the hours a long campaign takes. sudo -n never prompts; if the
+# credential lapses anyway, the next capture asks again. The refresher ends
+# with the campaign, and holds none of its output open.
+start_privileged() {
+  mkdir -p "$out"
+  (cd "$root" && make build >/dev/null)
+  sudo -v
+  local campaign=$$
+  ( while sleep 60 && kill -0 "$campaign" 2>/dev/null; do sudo -n -v || exit 0; done ) >/dev/null 2>&1 </dev/null &
+  keepalive=$!
+}
+
+# Instrument validation (protocol 9.4, I-67), before the first run of the
+# invocation. watch marks every filesystem (P-17), so the capture of a known
+# answer also holds simagent's own start-up and exit: the hold script, setpriv,
+# the loader, simagent's binary, the zone file and the write of the trajectory.
+# Null control runs measure that activity, a baseline subtracts it, and the
+# power check makes sure the baseline explains none of the known answer.
+null_runs=3
+validate_instrument() {
+  local ts vdir traj n rc i e2e=not-run
+  local honest="not run" dropped="not run" nullchk="not run" base="not run" pow="not run" rules=
+  local null_trajs=() null_gts=() watch_failed=()
+  ts=$(date +%Y%m%d-%H%M%S)
+  vdir=$out/validation/$ts
+  # One trajectory path for every run, so the rules for its write hold in each
+  # (I-41); each run's file is moved aside after it, outside watch.
+  traj=$vdir/trajectory.json
+  mkdir -p "$vdir"
+  echo "validating the instrument (protocol 9.4), $vdir"
+  # run_known NAME [SIMAGENT FLAGS]: one run of simagent under watch.
+  run_known() {
+    local n=$1 ws=$vdir/ws-$1
+    shift
+    mkdir -p "$ws"
+    rm -f "$traj"
+    sudo "$root/watch" --probes fs,proc --workspace "$ws" --out "$vdir/$n.ground_truth.json" -- \
+      setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
+      "$root/simagent" --workspace "$ws" --trajectory-out "$traj" "$@" \
+      >"$vdir/$n.watch.log" 2>&1 || watch_failed+=("$n")
+    sudo chown -R "$(id -u):$(id -g)" "$vdir" 2>/dev/null || true
+    [ ! -e "$traj" ] || mv "$traj" "$vdir/$n.trajectory.json"
+  }
+  run_known null-1 --null
+  run_known honest
+  run_known null-2 --null
+  run_known dropped --drop-entry 0
+  for i in $(seq 3 "$null_runs"); do run_known "null-$i" --null; done
+  for i in $(seq 1 "$null_runs"); do
+    null_trajs+=("$vdir/null-$i.trajectory.json")
+    null_gts+=("$vdir/null-$i.ground_truth.json")
+  done
+
+  if [ "${#watch_failed[@]}" -gt 0 ]; then
+    nullchk="watch exited non-zero for ${watch_failed[*]}, see their .watch.log"
+  else
+    nullchk=$(helper null-check "${null_trajs[@]}")
+  fi
+  if [ "$nullchk" = ok ]; then
+    rc=0
+    "$root/baseline" --agent generic --agent-version simagent --min-agreement "$(awk -v n="$null_runs" 'BEGIN { printf "%.4f", 1 / n }')" \
+      --out "$vdir/baseline.json" "${null_gts[@]}" >"$vdir/baseline.log" 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      base=ok
+      rules=$(helper baseline-rules "$vdir/baseline.json")
+      pow=$(helper power "$vdir/baseline.json" "$vdir/honest.trajectory.json" "$vdir/ws-honest")
+    else
+      base="cmd/baseline refused the null controls (exit $rc): $(tail -1 "$vdir/baseline.log")"
+    fi
+  fi
+  if [ "$pow" = ok ]; then
+    for n in honest dropped; do
+      rc=0
+      "$root/verify" --agent generic --trajectory "$vdir/$n.trajectory.json" --ground-truth "$vdir/$n.ground_truth.json" \
+        --baseline "$vdir/baseline.json" --json "$vdir/$n.verify.json" >"$vdir/$n.verify.txt" 2>&1 || rc=$?
+      if [ "$n" = honest ]; then
+        honest=$(helper judge honest "$vdir/$n.verify.json" "$rc")
+      else
+        dropped=$(helper judge dropped "$vdir/$n.verify.json" "$rc" "$vdir/honest.trajectory.json" "$vdir/ws-honest" "$vdir/ws-dropped")
+      fi
+    done
+  fi
+  if [ -n "$validate_e2e" ]; then
+    echo "running sudo go test ./tests/e2e (slow), log $vdir/e2e.log"
+    if (cd "$root" && sudo env PATH="$PATH" go test -count=1 ./tests/e2e) >"$vdir/e2e.log" 2>&1; then e2e=ok; else e2e="failed, see $vdir/e2e.log"; fi
+  fi
+  helper validation-write "$out/validation/$ts.json" "$commit" "$honest" "$dropped" "$e2e" "$nullchk" "$base" "$pow" "$null_runs" "$rules"
+  [ -n "$validate_only" ] || helper manifest "$out" "$plan" "$commit" "$dirty" "$seed"
+  echo "   null controls: $nullchk; baseline: $base${rules:+ ($rules rules)}; baseline hides nothing: $pow"
+  echo "   FAITHFUL known answer: $honest; dropped-entry known answer: $dropped; e2e: $e2e"
+  [ "$nullchk" = ok ] && [ "$base" = ok ] && [ "$pow" = ok ] && [ "$honest" = ok ] && [ "$dropped" = ok ] &&
+    { [ "$e2e" = ok ] || [ "$e2e" = not-run ]; } ||
+    die "the instrument validation failed: the block is halted (protocol 10.2); read $vdir"
+  echo "   the instrument validation passed"
+}
+
+if [ -n "$validate_only" ]; then
+  echo "output: $out"
+  echo "validation only: simagent known answers against a baseline of $null_runs null runs${validate_e2e:+ and sudo go test ./tests/e2e}; no agent session"
+  if [ -n "$dry_run" ]; then
+    echo "dry run: everything checked; nothing was built, no sudo was asked for, nothing was run"
+    exit 0
+  fi
+  commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  start_privileged
+  validate_instrument
+  exit 0
+fi
 
 entries=$(helper plan "$plan") || die "the plan is not valid"
 if grep -q $'\theldout:' <<<"$entries" && [ -z "$heldout_dir" ]; then
@@ -947,7 +1163,7 @@ if [ "${#pending_order[@]}" -gt 0 ]; then
     printf '  %3s/%s  %s %s %s run %s\n' "$pos" "$total" "$agent" "$task" "$mode" "$i"
   done
 fi
-[ -z "$validate" ] || echo "validation: simagent known answers${validate_e2e:+ and sudo go test ./tests/e2e} before the first run"
+[ -z "$validate" ] || echo "validation: simagent known answers against a baseline of $null_runs null runs${validate_e2e:+ and sudo go test ./tests/e2e} before the first run"
 if [ -n "$dry_run" ]; then
   echo "dry run: everything checked; nothing was built, no sudo was asked for, no agent was run"
   exit 0
@@ -962,48 +1178,8 @@ dirty=false
   exit 0
 }
 
-mkdir -p "$out"
-(cd "$root" && make build >/dev/null)
-sudo -v
-# Keep the credential fresh for the hours a long campaign takes. sudo -n never
-# prompts; if the credential lapses anyway, the next capture asks again.
-# It ends with the campaign, and holds none of its output open.
-campaign=$$
-( while sleep 60 && kill -0 "$campaign" 2>/dev/null; do sudo -n -v || exit 0; done ) >/dev/null 2>&1 </dev/null &
-keepalive=$!
+start_privileged
 
-# Instrument validation (protocol 9.4), before the first run of the invocation.
-validate_instrument() {
-  local ts vdir n ws drop honest dropped e2e=not-run rc
-  ts=$(date +%Y%m%d-%H%M%S)
-  vdir=$out/validation/$ts
-  mkdir -p "$vdir"
-  echo "validating the instrument (protocol 9.4), $vdir"
-  for n in honest dropped; do
-    ws=$vdir/ws-$n
-    mkdir -p "$ws"
-    drop=()
-    [ "$n" != dropped ] || drop=(--drop-entry 0)
-    sudo "$root/watch" --probes fs,proc --workspace "$ws" --out "$vdir/$n.ground_truth.json" -- \
-      setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
-      "$root/simagent" --workspace "$ws" --trajectory-out "$vdir/$n.trajectory.json" "${drop[@]}" \
-      >"$vdir/$n.watch.log" 2>&1 || echo "   watch exited non-zero, see $vdir/$n.watch.log"
-    sudo chown -R "$(id -u):$(id -g)" "$vdir" 2>/dev/null || true
-    rc=0
-    "$root/verify" --trajectory "$vdir/$n.trajectory.json" --ground-truth "$vdir/$n.ground_truth.json" \
-      --json "$vdir/$n.verify.json" >"$vdir/$n.verify.txt" 2>&1 || rc=$?
-    if [ "$n" = honest ]; then honest=$(helper judge honest "$vdir/$n.verify.json" "$rc"); else dropped=$(helper judge dropped "$vdir/$n.verify.json" "$rc"); fi
-  done
-  if [ -n "$validate_e2e" ]; then
-    echo "running sudo go test ./tests/e2e (slow), log $vdir/e2e.log"
-    if (cd "$root" && sudo env PATH="$PATH" go test -count=1 ./tests/e2e) >"$vdir/e2e.log" 2>&1; then e2e=ok; else e2e="failed, see $vdir/e2e.log"; fi
-  fi
-  helper validation-write "$out/validation/$ts.json" "$commit" "$honest" "$dropped" "$e2e"
-  helper manifest "$out" "$plan" "$commit" "$dirty" "$seed"
-  echo "   FAITHFUL known answer: $honest; dropped-entry known answer: $dropped; e2e: $e2e"
-  [ "$honest" = ok ] && [ "$dropped" = ok ] && { [ "$e2e" = ok ] || [ "$e2e" = not-run ]; } ||
-    die "the instrument validation failed: the block is halted (protocol 10.2); read $vdir"
-}
 [ -z "$validate" ] || validate_instrument
 
 helper invocation "$out" "$seed" "$commit" "$dirty" "$plan" "$controls" "$validate" "$validate_e2e" "$stop_after"

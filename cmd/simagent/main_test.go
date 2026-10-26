@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
 // TestMain runs main itself when the test binary is re-executed with
@@ -87,5 +89,87 @@ func TestListedAttacksAreAccepted(t *testing.T) {
 				t.Errorf("no trajectory written: %v", err)
 			}
 		})
+	}
+}
+
+// TestNullWritesAnEmptyTrajectory checks that --null acts on nothing in the
+// workspace and writes a trajectory of no claims that the generic adapter
+// reads (I-67).
+func TestNullWritesAnEmptyTrajectory(t *testing.T) {
+	ws := t.TempDir()
+	traj := filepath.Join(t.TempDir(), "trajectory.json")
+	code, out := runSimagent(t, "--workspace", ws, "--trajectory-out", traj, "--null")
+	if code != 0 {
+		t.Fatalf("exit code %d, want 0\n%s", code, out)
+	}
+	data, err := os.ReadFile(traj)
+	if err != nil {
+		t.Fatalf("no trajectory written: %v", err)
+	}
+	if string(data) != "[]" {
+		t.Errorf("trajectory %q, want []", data)
+	}
+	got, err := models.ParseTrajectory(data)
+	if err != nil || len(got) != 0 {
+		t.Errorf("ParseTrajectory = %d entries, %v; want 0, nil", len(got), err)
+	}
+	if entries, _ := os.ReadDir(ws); len(entries) != 0 {
+		t.Errorf("--null touched the workspace: %d entries", len(entries))
+	}
+}
+
+// TestNullRefusesActionFlags checks that --null beside any flag that acts or
+// tampers is a usage error before anything is done or written, so a control
+// run cannot do part of the script.
+func TestNullRefusesActionFlags(t *testing.T) {
+	extra := map[string][]string{
+		"drop-entry":       {"--drop-entry", "0"},
+		"file-only":        {"--file-only"},
+		"attack":           {"--attack", "omission"},
+		"fetch-url":        {"--fetch-url", "https://example.invalid/"},
+		"shell-cmd":        {"--shell-cmd", "true"},
+		"fetch-method":     {"--fetch-method", "POST"},
+		"fetch-body":       {"--fetch-body", "x"},
+		"emit-net-request": {"--emit-net-request"},
+		"fetch-via-curl":   {"--fetch-via-curl"},
+	}
+	if len(extra) != len(actionFlags) {
+		t.Fatalf("the test covers %d flags, actionFlags lists %d", len(extra), len(actionFlags))
+	}
+	for _, name := range actionFlags {
+		args, ok := extra[name]
+		if !ok {
+			t.Fatalf("no test arguments for --%s", name)
+		}
+		t.Run(name, func(t *testing.T) {
+			ws := t.TempDir()
+			traj := filepath.Join(t.TempDir(), "trajectory.json")
+			code, out := runSimagent(t, append([]string{"--workspace", ws, "--trajectory-out", traj, "--null"}, args...)...)
+			if code != exitUsage {
+				t.Fatalf("exit code %d, want %d\n%s", code, exitUsage, out)
+			}
+			if !strings.Contains(out, "--null does nothing") || !strings.Contains(out, "--"+name) {
+				t.Errorf("output lacks the refusal naming --%s:\n%s", name, out)
+			}
+			if _, err := os.Stat(traj); !os.IsNotExist(err) {
+				t.Errorf("trajectory written despite the refusal (stat: %v)", err)
+			}
+			if entries, _ := os.ReadDir(ws); len(entries) != 0 {
+				t.Errorf("workspace touched despite the refusal: %d entries", len(entries))
+			}
+		})
+	}
+}
+
+func TestCheckNull(t *testing.T) {
+	if err := checkNull(false, map[string]bool{"drop-entry": true}); err != nil {
+		t.Errorf("without --null: %v, want nil", err)
+	}
+	if err := checkNull(true, map[string]bool{"workspace": true, "trajectory-out": true, "null": true}); err != nil {
+		t.Errorf("--null alone: %v, want nil", err)
+	}
+	err := checkNull(true, map[string]bool{"attack": true, "drop-entry": true})
+	if err == nil || !strings.Contains(err.Error(), "--drop-entry, --attack") {
+		t.Errorf("--null with two action flags: %v, want both named in actionFlags order", err)
 	}
 }

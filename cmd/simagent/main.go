@@ -91,6 +91,40 @@ func checkAttack(name string) error {
 	return fmt.Errorf("unknown --attack %q (want one of %s)", name, strings.Join(attacks, ", "))
 }
 
+// actionFlags are the flags that make simagent act or tamper with its
+// trajectory; --null refuses every one of them.
+var actionFlags = []string{"drop-entry", "file-only", "attack", "fetch-url", "shell-cmd", "fetch-method", "fetch-body", "emit-net-request", "fetch-via-curl"}
+
+// checkNull rejects --null beside a flag in set that acts or tampers, so a
+// control run cannot silently do part of the script (I-67).
+func checkNull(null bool, set map[string]bool) error {
+	if !null {
+		return nil
+	}
+	var bad []string
+	for _, f := range actionFlags {
+		if set[f] {
+			bad = append(bad, "--"+f)
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("--null does nothing and claims nothing, so it cannot be combined with %s", strings.Join(bad, ", "))
+	}
+	return nil
+}
+
+// writeTrajectory writes the claims as indented JSON, the one write every
+// mode makes.
+func writeTrajectory(path string, trajectory models.Trajectory) {
+	b, err := json.MarshalIndent(trajectory, "", "  ")
+	if err != nil {
+		log.Fatalf("failed to marshal trajectory: %v", err)
+	}
+	if err := os.WriteFile(path, b, 0644); err != nil {
+		log.Fatalf("failed to write trajectory: %v", err)
+	}
+}
+
 func main() {
 	var workspace string
 	var trajectoryOut string
@@ -114,19 +148,36 @@ func main() {
 	flag.StringVar(&fetchBody, "fetch-body", "", "HTTP body to send (for POST/PUT)")
 	flag.BoolVar(&emitNetRequest, "emit-net-request", false, "Also emit a NetRequest entry with RequestHash after the NetConnect (in-process fetch only; a curl subprocess's requests are never claimed)")
 	flag.BoolVar(&fetchViaCurl, "fetch-via-curl", false, "Use curl subprocess instead of net/http for network request")
+	var null bool
+	flag.BoolVar(&null, "null", false, "Act on nothing and write an empty trajectory: a control run whose capture holds only simagent's own start-up and exit, for a baseline (I-67). Refused beside a flag that acts or tampers")
 
 	flag.Parse()
 
-	if err := checkAttack(attack); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "simagent: %v\n", err)
-		flag.Usage()
-		os.Exit(exitUsage)
+	set := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	for _, err := range []error{checkAttack(attack), checkNull(null, set)} {
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "simagent: %v\n", err)
+			flag.Usage()
+			os.Exit(exitUsage)
+		}
 	}
 	if workspace == "" || trajectoryOut == "" {
 		log.Fatal("--workspace and --trajectory-out are required")
 	}
 	if emitNetRequest && fetchViaCurl {
 		log.Fatal("--emit-net-request cannot be combined with --fetch-via-curl: the request is made by curl's subtree, which no claim can corroborate (D3)")
+	}
+
+	if null {
+		// The script's own runs load the local time zone when they format
+		// their first timestamp, which opens the zone file; an empty
+		// trajectory formats none. Load it here, so a null run's capture
+		// holds the same start-up and exit as the script's and a baseline
+		// built from null runs explains exactly that (I-67).
+		_, _ = time.Now().Zone()
+		writeTrajectory(trajectoryOut, models.Trajectory{})
+		return
 	}
 
 	var trajectory models.Trajectory
@@ -481,11 +532,5 @@ func main() {
 		})
 	}
 
-	b, err := json.MarshalIndent(trajectory, "", "  ")
-	if err != nil {
-		log.Fatalf("failed to marshal trajectory: %v", err)
-	}
-	if err := os.WriteFile(trajectoryOut, b, 0644); err != nil {
-		log.Fatalf("failed to write trajectory: %v", err)
-	}
+	writeTrajectory(trajectoryOut, trajectory)
 }
