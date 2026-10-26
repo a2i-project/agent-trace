@@ -273,6 +273,22 @@ func TestRunWatch_RecordsLossInCoverage(t *testing.T) {
 	if verification.Assess(file.Coverage).Complete {
 		t.Error("Assess reported a capture with ring buffer drops as complete")
 	}
+	// The file carries the diagnostics (P-34): the forced ring, its drops,
+	// and a tracked set that held the agent and at least one child.
+	if file.Coverage.Schema != models.CoverageSchema {
+		t.Errorf("coverage schema = %d, want %d", file.Coverage.Schema, models.CoverageSchema)
+	}
+	d := file.Coverage.Probes["proc"].Diagnostics
+	if d == nil {
+		t.Fatal("proc probe wrote no diagnostics")
+	}
+	ring := d.Rings["events"]
+	if ring.SizeBytes != 4096 || ring.Drops != file.Coverage.Probes["proc"].RingbufDrops || ring.PeakBytes > ring.SizeBytes {
+		t.Errorf("events ring = %+v, want size 4096, the probe's drops and a mark within the ring", ring)
+	}
+	if set := d.TrackedSets["proc"]; set.Peak < 2 || set.Capacity != 16384 {
+		t.Errorf("tracked set = %+v, want a peak of at least the agent and one child", set)
+	}
 }
 
 // Events from one batch share a timestamp, and the verifier aligns by
@@ -586,5 +602,55 @@ func TestResponseLine(t *testing.T) {
 	want := "net probe responses: state=active responses=1 unpaired=2 unattributed=3 incomplete=4 truncated=5 unparsed=6 sseEvents=7 readsUnvalidated=8 readFaults=9 readDrops=10"
 	if got := responseLine(models.ContentActive, nc); got != want {
 		t.Errorf("responseLine = %q\nwant %q", got, want)
+	}
+}
+
+// The diagnostics line lists every ring and tracked set in name order, the
+// TLS read drops where they exist, and the net content counters.
+func TestDiagnosticsLine(t *testing.T) {
+	if got := diagnosticsLine("fs", nil); got != "" {
+		t.Errorf("no diagnostics: %q, want empty", got)
+	}
+	readDrops := uint64(2)
+	d := &models.ProbeDiagnostics{
+		Rings: map[string]models.RingStats{
+			"ssl_events": {SizeBytes: 4194304, PeakBytes: 900, Records: 4, Drops: 1, ReadDrops: &readDrops},
+			"net_events": {SizeBytes: 1048576, PeakBytes: 300, Records: 7},
+		},
+		TrackedSets: map[string]models.TrackedSetStats{"tls": {Capacity: 4096, Peak: 3, AtStop: 1}, "net": {Capacity: 4096, Peak: 3, AtStop: 1}},
+		NetContent:  &models.NetContentCounts{Connections: 5, WithHostname: 4, WithContent: 2, ContentUnsupported: 1, H2Preface: 1, FramesH2: 6, Dials: 1, Responses: 2},
+	}
+	want := "net probe diagnostics: ring net_events size=1048576 peak=300 records=7 drops=0; ring ssl_events size=4194304 peak=900 records=4 drops=1 readDrops=2;" +
+		" tracked net capacity=4096 peak=3 atStop=1; tracked tls capacity=4096 peak=3 atStop=1;" +
+		" content connections=5 withHostname=4 withContent=2 contentUnsupported=1 h2Preface=1 h2PrefaceUnvalidated=0 framesH2=6 framesUnattributed=0 framesTruncated=0 dials=1 responses=2"
+	if got := diagnosticsLine("net", d); got != want {
+		t.Errorf("diagnosticsLine =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// Diagnostics are measurement only: a record with them, however close to
+// its limits, gets the same reasons and notes from Assess as without them.
+func TestDiagnosticsDoNotChangeAssess(t *testing.T) {
+	readDrops := uint64(9)
+	full := &models.ProbeDiagnostics{
+		Rings:       map[string]models.RingStats{"events": {SizeBytes: 4096, PeakBytes: 4096, Records: 1, Drops: 5, ReadDrops: &readDrops}},
+		TrackedSets: map[string]models.TrackedSetStats{"proc": {Capacity: 4, Peak: 4, AtStop: 4}},
+		NetContent:  &models.NetContentCounts{Connections: 9, ContentUnsupported: 9, H2Preface: 9, H2PrefaceUnvalidated: 9, FramesUnattributed: 9},
+	}
+	for _, pc := range []models.ProbeCoverage{
+		{Ran: true},
+		{Ran: true, RingbufDrops: 5, UntrackedChildren: 1, ResponseGaps: 3, Content: models.ContentAttachFailed},
+		{Ran: false},
+	} {
+		plain := models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"proc": pc, "net": pc}}
+		withD := models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{}}
+		for name, p := range plain.Probes {
+			p.Diagnostics = full
+			withD.Probes[name] = p
+		}
+		a, b := verification.Assess(&plain), verification.Assess(&withD)
+		if fmt.Sprint(a) != fmt.Sprint(b) {
+			t.Errorf("Assess changed with diagnostics:\n%+v\n%+v", a, b)
+		}
 	}
 }

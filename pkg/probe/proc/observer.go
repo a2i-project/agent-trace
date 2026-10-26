@@ -109,6 +109,12 @@ type Observer struct {
 	finalStateFull   atomic.Uint64
 	stateFullIsFinal atomic.Bool
 
+	// ring is the events ring's high-water mark, ringSize its size, and
+	// tracked counts tracked_pids (P-34).
+	ring     ringMeter
+	ringSize uint64
+	tracked  *trackedCounter
+
 	// bootOffsetNs converts a bpf_ktime_get_ns() reading (ns since boot) to a
 	// wall-clock UnixNano. Computed once at New() from a matched pair of
 	// CLOCK_MONOTONIC and wall-clock reads, so it drifts slowly with NTP
@@ -155,6 +161,7 @@ func New(cfg Config) (*Observer, error) {
 	if err := spec.LoadAndAssign(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
+	tracked := &trackedCounter{stat: objs.TrackedStat, seededMap: objs.TrackedSeeded, capacity: objs.TrackedPids.MaxEntries()}
 
 	if cfg.PIDFilter > 0 || cfg.DeferRootPID {
 		zero := uint32(0)
@@ -177,7 +184,7 @@ func New(cfg Config) (*Observer, error) {
 		// "parent is on the top-level shell chain" rule propagates from it.
 		// The root is exempt from per-execve is_shell re-evaluation (Fix 3b).
 		info := bpfProcInfo{IsShell: 1, IsToplevel: 1}
-		if err := objs.TrackedPids.Update(&pid, &info, ebpf.UpdateAny); err != nil {
+		if err := tracked.seed(objs.TrackedPids, &pid, &info); err != nil {
 			_ = objs.Close()
 			return nil, fmt.Errorf("update tracked_pids: %w", err)
 		}
@@ -219,6 +226,8 @@ func New(cfg Config) (*Observer, error) {
 		stopped:      make(chan struct{}),
 		cfg:          cfg,
 		bootOffsetNs: bootOffsetNs,
+		ringSize:     uint64(objs.Events.MaxEntries()),
+		tracked:      tracked,
 	}, nil
 }
 
@@ -333,14 +342,22 @@ func sumPerCPU(m *ebpf.Map) (uint64, error) {
 	return sum, nil
 }
 
-// CaptureCoverage reports the loss counters for this capture. Call after Stop.
+// CaptureCoverage reports the loss counters for this capture, and the
+// occupancy diagnostics (P-34). Call after Stop.
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
+	drops := o.RingbufDrops()
 	return models.ProbeCoverage{
 		Ran:               true,
-		RingbufDrops:      o.RingbufDrops(),
+		RingbufDrops:      drops,
 		ChannelDrops:      o.Dropped(),
 		UntrackedChildren: o.UntrackedChildren(),
 		StateMapFull:      o.StateMapFull(),
+		Diagnostics: &models.ProbeDiagnostics{
+			Rings: map[string]models.RingStats{"events": {
+				SizeBytes: o.ringSize, PeakBytes: o.ring.peak.Load(), Records: o.ring.records.Load(), Drops: drops,
+			}},
+			TrackedSets: map[string]models.TrackedSetStats{"proc": o.tracked.stats()},
+		},
 	}
 }
 
@@ -380,6 +397,7 @@ func (o *Observer) Stop() error {
 			o.finalStateFull.Store(v)
 		}
 		o.stateFullIsFinal.Store(true)
+		o.tracked.snapshot()
 		_ = o.reader.Close()
 		_ = o.objs.Close()
 		close(o.events)
@@ -475,6 +493,7 @@ func (o *Observer) readLoop() {
 			}
 			continue
 		}
+		o.ring.observe(&record)
 		if len(record.RawSample) < hdrSize {
 			continue
 		}
@@ -663,7 +682,7 @@ func (o *Observer) SetRootPID(pid int32) error {
 	// are verification-grade, is_toplevel=1 so handle_fork's shell-chain
 	// rule propagates from it. Exempt from per-execve is_shell re-eval (3b).
 	info := bpfProcInfo{IsShell: 1, IsToplevel: 1}
-	if err := o.objs.TrackedPids.Update(&p, &info, ebpf.UpdateAny); err != nil {
+	if err := o.tracked.seed(o.objs.TrackedPids, &p, &info); err != nil {
 		return fmt.Errorf("update tracked_pids: %w", err)
 	}
 	o.cfg.PIDFilter = pid

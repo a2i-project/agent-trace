@@ -513,6 +513,11 @@ func TestObserver_CountsUntrackedChildren(t *testing.T) {
 	if cov.UntrackedChildren == 0 {
 		t.Error("CaptureCoverage().UntrackedChildren = 0, want the overflow reported")
 	}
+	// The root and the children that fit fill the map: its peak is its
+	// capacity (P-34).
+	if got := cov.Diagnostics.TrackedSets["proc"]; got.Peak != capacity || got.Capacity != capacity {
+		t.Errorf("tracked set = %+v, want a peak at the capacity %d", got, capacity)
+	}
 	for range obs.Events() {
 	}
 }
