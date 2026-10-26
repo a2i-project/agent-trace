@@ -40,9 +40,10 @@ func TestE2E_AnExitClaimOfAShellThatExecsItsLastCommand(t *testing.T) {
 	fsObs.Start()
 	time.Sleep(200 * time.Millisecond)
 
-	// /bin/true is the script's last simple command: a shell that execs it
-	// replaces itself, so its pid runs two programs and exits under the second.
-	cmd := exec.Command(bin, "--workspace", ws, "--trajectory-out", trajectoryPath, "--file-only", "--shell-cmd", "/bin/echo hi > {ws}/hi.txt; /bin/true")
+	// The script ends in an explicit exec, since dash does not always exec a
+	// list's last command on its own: the shell replaces itself, so its pid
+	// runs two programs and exits under the second.
+	cmd := exec.Command(bin, "--workspace", ws, "--trajectory-out", trajectoryPath, "--file-only", "--shell-cmd", "/bin/echo hi > {ws}/hi.txt; exec /bin/true")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start simagent: %v", err)
 	}
