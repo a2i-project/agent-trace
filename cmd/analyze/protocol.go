@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/attack"
@@ -64,12 +65,14 @@ type Agreement struct {
 // capture script's own verify runs use.
 const IntervalSlack = 500 * time.Millisecond
 
-// HeldOut lists the held-out tasks (decision D8); every other task is
-// development. The held-out stratum is reported apart.
-var HeldOut = map[string]map[string]bool{
-	AgentClaudeCode: {"long": true},
-	AgentGemini:     {"long": true, "subagent": true},
-}
+// HeldOutPrefix marks a held-out task (decision D8): the campaign runner
+// names a task the user wrote outside the repository heldout:NAME. Every
+// other task is development, the lane-written `long` included (D8: pilot and
+// development only). The held-out stratum is reported apart.
+const HeldOutPrefix = "heldout:"
+
+// IsHeldOut says whether a task is held out (D8).
+func IsHeldOut(task string) bool { return strings.HasPrefix(task, HeldOutPrefix) }
 
 // ToolHeavy lists, per agent, the tasks whose claims include harness-shared
 // reads (background-command output Reads, V-36), the named subgroup of
@@ -78,6 +81,13 @@ var HeldOut = map[string]map[string]bool{
 var ToolHeavy = map[string]map[string]bool{
 	AgentClaudeCode: {"tools": true, "long": true},
 	AgentGemini:     {"long": true},
+}
+
+// IsToolHeavy says whether a task is in the tool-heavy subgroup. A held-out
+// task counts by its name after the prefix, so the user's heldout:long, which
+// meets the `long` requirements of protocol 6.3, is tool-heavy.
+func IsToolHeavy(agentName, task string) bool {
+	return ToolHeavy[agentName][strings.TrimPrefix(task, HeldOutPrefix)]
 }
 
 // Exclusion rule names, protocol 10.1.

@@ -46,8 +46,8 @@ func TestH3CellAppliesTheExclusionRulesAndKeepsTheThreeCounts(t *testing.T) {
 	runs = append(runs, synthRun(8, av.Agent, av.Version, "edits", nil, Exclusion{X4, "failed"}))
 	runs = append(runs, synthRun(9, av.Agent, av.Version, "edits", faithfulRun(), Exclusion{X6, "I typed"}))
 	runs = append(runs, synthRun(10, av.Agent, av.Version, "edits", faithfulRun(), Exclusion{X3, "version changed"}))
-	// A held-out task.
-	runs = append(runs, synthRun(11, av.Agent, av.Version, "long", inconclusiveRun(harnessFileReason)))
+	// A held-out task (D8): the runner names it heldout:NAME.
+	runs = append(runs, synthRun(11, av.Agent, av.Version, "heldout:long", inconclusiveRun(harnessFileReason)))
 
 	all := BuildH3Cell(runs, av, ScopeAll, SettingPrimary)
 	// Considered: all 12. Kept: 6 faithful + 1 finding + 1 long = 8.
@@ -89,7 +89,7 @@ func TestH3CellAppliesTheExclusionRulesAndKeepsTheThreeCounts(t *testing.T) {
 	}
 	heavy := BuildH3Cell(runs, av, ScopeToolHeavy, SettingPrimary)
 	if heavy.RunFP.Considered != 1 {
-		t.Errorf("the tool-heavy subgroup holds `long`: %+v", heavy.RunFP)
+		t.Errorf("the tool-heavy subgroup holds heldout:long: %+v", heavy.RunFP)
 	}
 	task := BuildH3Cell(runs, av, ScopeTaskPrefix+"edits", SettingPrimary)
 	if task.RunFP.Considered != 11 {
@@ -257,6 +257,12 @@ func TestExclusionRulesOfProtocol101(t *testing.T) {
 		{"X4 annotated watch failure", RunFacts{Status: "ok", Annotation: Annotation{X4: "watch log: attach failed"}}, []string{X4}, false, false},
 		{"X6 user intervened", RunFacts{Status: "ok", Annotation: Annotation{X6: "typed into the session"}}, []string{X6}, false, false},
 		{"loss and failure", RunFacts{Status: "failed", LossReasons: []string{"x"}}, []string{X1, X4}, false, false},
+		// The runner's own classification (manifest schema 2) names the rule.
+		{"X6 recorded by the runner", RunFacts{Status: "interrupted", Recorded: &RecordedExclude{X6, "interrupted"}}, []string{X6}, false, false},
+		{"X3 recorded by the runner", RunFacts{Status: "failed", ManifestVersion: "2.1.306", VersionAfter: "2.1.307", Recorded: &RecordedExclude{X3, "version changed"}}, []string{X3}, false, false},
+		{"X4 recorded by the runner", RunFacts{Status: "failed", Recorded: &RecordedExclude{X4, "quota"}}, []string{X4}, false, false},
+		{"an unclassified failure is X4", RunFacts{Status: "failed", Recorded: &RecordedExclude{"unclassified", "no run.json"}}, []string{X4}, false, false},
+		{"version read after the run differs", RunFacts{Status: "ok", ManifestVersion: "1.3.4", VersionAfter: "1.3.5"}, []string{X3}, false, false},
 		// X5: not completed is never an exclusion from H3.
 		{"X5 not completed", RunFacts{Status: "ok", Annotation: Annotation{Completed: new(bool)}}, nil, true, true},
 	}
@@ -305,6 +311,26 @@ func TestSlotsReportTheFailedShare(t *testing.T) {
 	c.Manifest.Runs[1].Status = "failed"
 	if got := Slots(c); !got[0].OverLimit {
 		t.Errorf("2 of 10 is over the line: %+v", got)
+	}
+	// A run the runner classified X6 or X3 is excluded, not a failed slot.
+	c.Manifest.Runs[1].Status = "interrupted"
+	c.Manifest.Runs[1].Exclusion = &RecordedExclude{X6, "interrupted"}
+	if got := Slots(c); got[0].FailedSlots != 1 {
+		t.Errorf("an X6 run is not a harness error: %+v", got)
+	}
+}
+
+// D8: the held-out tasks are the user's heldout:NAME tasks; the lane-written
+// `long` is development.
+func TestHeldOutIsTheRunnersHeldOutPrefix(t *testing.T) {
+	if !IsHeldOut("heldout:long") || !IsHeldOut("heldout:subagent") {
+		t.Error("heldout:NAME is held out")
+	}
+	if IsHeldOut("long") || IsHeldOut("subagent") || IsHeldOut("edits") {
+		t.Error("a task the lanes wrote is development (D8)")
+	}
+	if !IsToolHeavy(AgentClaudeCode, "heldout:long") || !IsToolHeavy(AgentClaudeCode, "tools") || IsToolHeavy(AgentClaudeCode, "edits") {
+		t.Error("tool-heavy: tools, long and heldout:long")
 	}
 }
 

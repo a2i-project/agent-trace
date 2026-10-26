@@ -158,7 +158,7 @@ func LoadSession(c *Campaign, r RunRecord) (*Session, error) {
 
 // Facts gathers what the exclusion rules read.
 func (s *Session) Facts(ann Annotation, loadErr error) RunFacts {
-	f := RunFacts{Status: s.Rec.Status, ManifestVersion: s.Rec.Version, Annotation: ann, Claims: len(s.Claims)}
+	f := RunFacts{Status: s.Rec.Status, ManifestVersion: s.Rec.Version, VersionAfter: s.Rec.VersionAfter, Recorded: s.Rec.Exclusion, Annotation: ann, Claims: len(s.Claims)}
 	if loadErr != nil {
 		f.ParseError = loadErr.Error()
 		return f

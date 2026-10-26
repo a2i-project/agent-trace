@@ -270,8 +270,7 @@ func BuildH2(runs []RunOutput, lastSeed uint64) *H2Results {
 			t := t
 			r.Mislocation = append(r.Mislocation, buildMislocation(runs, a, H2ScopeTask+t, func(o RunOutput) bool { return o.Task == t }))
 		}
-		heavy := ToolHeavy[a]
-		r.Mislocation = append(r.Mislocation, buildMislocation(runs, a, ScopeToolHeavy, func(o RunOutput) bool { return heavy[o.Task] }))
+		r.Mislocation = append(r.Mislocation, buildMislocation(runs, a, ScopeToolHeavy, func(o RunOutput) bool { return IsToolHeavy(a, o.Task) }))
 	}
 	return r
 }
@@ -380,7 +379,7 @@ func PrimaryPooled(runs []RunOutput, agentName string, excludeToolHeavy bool) Ta
 		if (agentName != "" && o.Agent != agentName) || o.Attack == nil {
 			continue
 		}
-		if excludeToolHeavy && ToolHeavy[o.Agent][o.Task] {
+		if excludeToolHeavy && IsToolHeavy(o.Agent, o.Task) {
 			continue
 		}
 		for _, tl := range o.Attack.Tallies {
