@@ -146,3 +146,31 @@ func (p Partition) DropExits() Partition {
 	}
 	return out
 }
+
+// ExitsByProcess identifies each command's own exit in the aligned sequence by
+// its process rather than by its program: the exit takes its target and
+// truncation flag from the command's own exec, the one an exec claim aligns
+// with (V-44). The proc probe names an exit by the last exec that took effect
+// (P-31), so a shell that execs its last command exits under that command's
+// image, and an exit claim naming what the agent ran would otherwise read as
+// a substitution. Exit codes, level-0 exits, the exit of a command that never
+// exec'd, and Command.Exit itself are unchanged.
+func (p Partition) ExitsByProcess() Partition {
+	out := p
+	out.Observed = nil
+	for i, e := range p.Observed {
+		if c := p.Owner[i]; c != nil && c.Exec != nil && e.ActionType == models.ProcessExit &&
+			(e.Target != c.Exec.Target || e.TargetTruncated != c.Exec.TargetTruncated) {
+			if out.Observed == nil {
+				out.Observed = make(models.GroundTruth, len(p.Observed))
+				copy(out.Observed, p.Observed)
+			}
+			out.Observed[i].Target = c.Exec.Target
+			out.Observed[i].TargetTruncated = c.Exec.TargetTruncated
+		}
+	}
+	if out.Observed == nil {
+		out.Observed = p.Observed
+	}
+	return out
+}

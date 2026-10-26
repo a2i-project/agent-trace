@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 4487bf7 on 2026-10-26.
+Checked against commit d84afc0 on 2026-10-26.
 
 ## Objective
 
@@ -126,7 +126,7 @@ What each lost property costs:
 - Declared hosts (V-34). The harness's own connection (`downloads.claude.ai`, `oauth2.googleapis.com`) is an unrecorded finding, not unexplained harness network activity.
 - Declared harness commands (V-43). `Generic` declares none, so Claude Code's package-manager probe, when no rule explains it, is an unrecorded command and an unexplained subtree, not an unexplained harness command.
 - Sensitive files (I-59, I-60). `Generic` declares none, so a capture's snapshot is never checked (V-40). No fixture holds a snapshot, so the fixtures do not measure it.
-- Exit claims (I-15). `Generic` claims exits and a converted session states none, so every exit of a command that no baseline rule explains is unrecorded. A converted trajectory that did claim exits would meet the proc probe's join of an exit to the latest exec read for its process ([11_probe_proc.md](11_probe_proc.md), known limits), which can read as a false substitution.
+- Exit claims (I-15). `Generic` claims exits and a converted session states none, so every exit of a command that no baseline rule explains is unrecorded. A converted trajectory that did claim exits would have each exit compared as the exit of the process its aligned exec started, whatever program the process last ran (V-44).
 - The control's own command (I-28). `Capture` excludes it by its normalized target, which `Generic` never produces, so the exclusion matches nothing: agy's wrapper of the marker command is the same in every control and becomes a rule.
 - Version configuration (I-57). `Generic` states no harness version and `cmd/verify` does not check one: the report prints no warning, the JSON report says `not applicable`, and `--strict-version` leaves the verdict as it is. A baseline's version is not compared either.
 
