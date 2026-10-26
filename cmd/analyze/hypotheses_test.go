@@ -621,6 +621,21 @@ func TestH4aLimitsAgainstD3(t *testing.T) {
 			t.Errorf("%s at its limit must hold: %+v", id, l)
 		}
 	}
+	// Both limits are read on the median: one repetition above the limit
+	// out of five holds, and the maximum is shown beside it.
+	spiky := benchDoc(1.0, 1.0, 83*1024, 2.0, false)
+	for _, smp := range spiky["samples"].([]map[string]any) {
+		if smp["condition"] == "all" && smp["size"] == 100 && smp["rep"] == 2 {
+			smp["tree_maxrss_kb"], smp["startup_s"] = 300.0*1024, 9.5
+		}
+	}
+	sp, _ := LoadBench("x", writeBench(t, spiky))
+	if l := limit(sp, "H4a-rss"); l.Result != Holds || !strings.Contains(l.Detail, "median 83.0 MiB") || !strings.Contains(l.Detail, "single repetition 300.0 MiB") {
+		t.Errorf("rss on the median: %+v", l)
+	}
+	if l := limit(sp, "H4a-fixed-cost"); l.Result != Holds || !strings.Contains(l.Detail, "single repetition 10.000 s") {
+		t.Errorf("fixed cost on the median: %+v", l)
+	}
 	// A benchmark without the named workloads is not evaluated.
 	doc := benchDoc(1, 1, 1, 1, false)
 	doc["samples"] = []map[string]any{}
