@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 10561eb on 2026-10-26.
+Checked against commit d08df6e on 2026-10-26.
 
 ## Objective
 
@@ -28,7 +28,7 @@ All three observers satisfy both interfaces. `proc.Observer` adds `SetRootPID`, 
 
 ### Per-object tracked set
 
-The proc eBPF object (`proc.bpf.c`), the net object (`net.bpf.c`) and the TLS object (`tls.bpf.c`) each declare their own `tracked_pids` hash map. None is pinned or shared. Each object follows descendants itself: its `task_newtask` program (`handle_fork`) inserts the child's pid when the parent's tgid is in its map, and skips the event when `clone_flags` has `CLONE_THREAD`, since a thread shares an already tracked tgid. Each object's `sched_process_exit` program removes a tgid whether or not the process ever exec'd: the proc object when the last thread of the process exits, the net and TLS objects when the thread group leader exits. The proc object also counts its map's entries (`tracked_stat`, `tracked_seeded`, P-34) for the diagnostics below. The fs probe has no tracked set; it reports every event on the marked filesystems with the causing PID and leaves attribution to the verifier's forest. `cmd/watch` applies the scope rule afterwards ([step 10 below](#how-cmdwatch-builds-and-starts-probes)).
+The proc eBPF object (`proc.bpf.c`), the net object (`net.bpf.c`) and the TLS object (`tls.bpf.c`) each declare their own `tracked_pids` hash map. None is pinned or shared. Each object follows descendants itself: its `task_newtask` program (`handle_fork`) inserts the child's pid when the parent's tgid is in its map, and skips the event when `clone_flags` has `CLONE_THREAD`, since a thread shares an already tracked tgid. Each object's `sched_process_exit` program removes a tgid whether or not the process ever exec'd: the proc object when the last thread of the process exits, the net and TLS objects when the thread group leader exits. Each object also counts its map's entries (`tracked_stat`, `tracked_seeded`, P-34, N-33) for the diagnostics below. The fs probe has no tracked set; it reports every event on the marked filesystems with the causing PID and leaves attribution to the verifier's forest. `cmd/watch` applies the scope rule afterwards ([step 10 below](#how-cmdwatch-builds-and-starts-probes)).
 
 Each eBPF object also keeps its loss counters in one-slot `BPF_MAP_TYPE_PERCPU_ARRAY` maps: `drop_count` (ring buffer output failed), `untracked_count` (`tracked_pids` update failed) and, in proc and net, `state_lost_count` (a per-process or per-connection state map update failed). `net.bpf.c` adds `iouring_net_count` (io_uring network operations by tracked processes, N-25), two io_uring diagnostics and `hello_fault_count` (a hello read faulted, a content gap), and `tls.bpf.c` adds `faulted_reads`. Userspace sums the per-CPU slots (`sumPerCPU`) and snapshots them in `Stop()` before it closes the maps.
 
@@ -105,7 +105,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `HelloFaults` | `hello_faults` | net | the read of a connection's first bytes faulted; the connection is recorded and counts as written, its hostname may be missing (an upper bound on the connections affected) | Note (content gap) |
 | `Responses` | `responses` | net | response capture (`SSL_read`, N-29): `active` once a read validated the offset, `identity_only` without `ExePath`, `attach_failed` otherwise; absent in a capture written before it | `attach_failed` is a Note, unless `Content` is `attach_failed`, whose Note covers it |
 | `ResponseGaps` | `response_gaps` | net | response data the capture may be missing: faulted or ring-dropped `SSL_read` buffers, truncated responses, read streams that stopped parsing, responses with no host to name; a content gap on attestation, no claim depends on it | Note (content gap on attestation, N-29) |
-| `Diagnostics` | `diagnostics` | proc | occupancy counters, below; nil (absent) means not measured | not read |
+| `Diagnostics` | `diagnostics` | proc, net | occupancy and content counters, below; nil (absent) means not measured | not read |
 
 Any Reason makes `Assess` return `Complete=false`, and the verifier then reports INCONCLUSIVE instead of FAITHFUL. Notes limit what content checks can say but do not make the event set incomplete. A nil coverage record (legacy file) is itself a Reason.
 
@@ -115,8 +115,9 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 
 | Field | JSON | Meaning |
 |---|---|---|
-| `Rings` | `rings` | per kernel ring buffer, by map name (proc: `events`): `size_bytes`; `peak_bytes`, the highest occupancy the reader saw, sampled at each record it read (the bytes not yet consumed, the record and its 8-byte header included), a lower bound short of the true peak by at most one record; `records`, the records read; `drops`, the records the kernel discarded because the ring was full |
-| `TrackedSets` | `tracked_sets` | per eBPF object's `tracked_pids` map (proc: `proc`): `capacity`; `peak`, the highest number of entries, counted by the kernel at each insert plus the pids userspace seeded; `at_stop`, the entries when the probe stopped. A `peak` equal to `capacity` means a further insert may have failed, which `UntrackedChildren` counts |
+| `Rings` | `rings` | per kernel ring buffer, by map name (proc: `events`; net: `net_events`, and `ssl_events` with content capture): `size_bytes`; `peak_bytes`, the highest occupancy the reader saw, sampled at each record it read (the bytes not yet consumed, the record and its 8-byte header included), a lower bound short of the true peak by at most one record; `records`, the records read; `drops`, the records the kernel discarded because the ring was full (on `ssl_events`, write frames; `RingbufDrops` is the sum over the probe's rings); `read_drops`, on `ssl_events` only, the `SSL_read` frames discarded (part of `ResponseGaps`) |
+| `TrackedSets` | `tracked_sets` | per eBPF object's `tracked_pids` map (proc: `proc`; net: `net`, and `tls` with content capture): `capacity`; `peak`, the highest number of entries, counted by the kernel at each insert plus the pids userspace seeded; `at_stop`, the entries when the probe stopped. A `peak` equal to `capacity` means a further insert may have failed, which `UntrackedChildren` counts |
+| `NetContent` | `net_content` | net only: the correlator's counters, connections, hostnames, requests with content, h2 offered (`content_unsupported`) and seen (`h2_preface`, `h2_preface_unvalidated`, `frames_h2`), unattributed and truncated frames, dials, DNS, datagrams and the response counts ([13_probe_net.md](13_probe_net.md), N-33) |
 
 ### ground_truth.json
 

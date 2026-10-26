@@ -213,7 +213,8 @@ func TestObserver_UntrackedProcessIsInvisible(t *testing.T) {
 func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	o := &Observer{coverage: Coverage{Connections: 4, WithContent: 2}}
 	o.finalFaulted.Store(3)
-	o.finalRingbufDrops.Store(7)
+	o.finalNetDrops.Store(4)
+	o.finalTLSDrops.Store(3)
 	o.finalUntracked.Store(5)
 	o.finalStateFull.Store(6)
 	o.finalIOURingNet.Store(8)
@@ -223,7 +224,7 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	o.kernelCountersFinal.Store(true)
 
 	got := o.Coverage()
-	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, UntrackedChildren: 5, StateMapFull: 6,
+	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, NetRingDrops: 4, TLSRingDrops: 3, UntrackedChildren: 5, StateMapFull: 6,
 		IOURingNetOps: 8, IOURingOps: 9, IOURingRings: 1, HelloFaults: 2}
 	if got != want {
 		t.Errorf("Coverage() = %+v, want %+v", got, want)
@@ -248,7 +249,7 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 // counters are kept (N-26). One that tracked a pid reports Ran=true.
 func TestCaptureCoverage_NothingTrackedIsNotRan(t *testing.T) {
 	o := &Observer{}
-	o.finalRingbufDrops.Store(4)
+	o.finalNetDrops.Store(4)
 	o.kernelCountersFinal.Store(true)
 	pc := o.CaptureCoverage()
 	if pc.Ran {
@@ -362,6 +363,11 @@ func TestObserver_CountsUntrackedChildren(t *testing.T) {
 	}
 	if got := obs.CaptureCoverage().UntrackedChildren; got == 0 {
 		t.Error("CaptureCoverage().UntrackedChildren = 0, want the overflow reported")
+	}
+	// The root and the children that fit fill the map: its peak is its
+	// capacity (N-33).
+	if got := obs.CaptureCoverage().Diagnostics.TrackedSets["net"]; got.Peak != capacity || got.Capacity != capacity {
+		t.Errorf("tracked set = %+v, want a peak at the capacity %d", got, capacity)
 	}
 	for range obs.Events() {
 	}
