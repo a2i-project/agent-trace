@@ -757,6 +757,30 @@ func TestVerify_QuietForkIsNotAFinding(t *testing.T) {
 	}
 }
 
+// A process whose parent was never seen is listed as an orphan, the top of
+// its broken chain only, and changes nothing else: its events are outside
+// the tree, and the verdict stays FAITHFUL.
+func TestVerify_OrphansAreReportedAndAreNoFinding(t *testing.T) {
+	g := models.GroundTruth{
+		agentEv(1, models.FileWrite, "/w/a"),
+		fork(2, 900, 800), // 800 was never seen
+		execEv(3, 900, 800, "/usr/bin/other"),
+		fork(4, 901, 900),
+		{Timestamp: at(5), ActionType: models.FileOpen, Target: "/etc/hosts", PID: 901},
+	}
+	v := run(models.Trajectory{claimAt(1, models.FileWrite, "/w/a")}, g)
+	wantOutcome(t, v, OutcomeFaithful)
+	if o := v.Coverage.Orphans; len(o) != 1 || o[0].PID != 900 || o[0].PPID != 800 || o[0].Exec == nil || o[0].Exec.Target != "/usr/bin/other" {
+		t.Errorf("orphans = %+v, want pid 900 (parent 800) with its exec only", o)
+	}
+	if v.Findings() != 0 || len(v.Coverage.Outside) != 2 { // the exec of 900 and the open of 901
+		t.Errorf("findings = %d, outside = %d, want 0 and 2", v.Findings(), len(v.Coverage.Outside))
+	}
+	if o := run(models.Trajectory{claimAt(1, models.FileWrite, "/w/a")}, g[:1]).Coverage.Orphans; o != nil {
+		t.Errorf("control without the orphan: orphans = %+v, want none", o)
+	}
+}
+
 // Quiet is decided by what the subtree did, not by the first process alone: a
 // fork that never execs but whose descendant runs a command is not quiet.
 func TestVerify_ForkWhoseDescendantActsIsNotQuiet(t *testing.T) {

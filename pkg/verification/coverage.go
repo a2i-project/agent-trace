@@ -156,6 +156,12 @@ type Coverage struct {
 	// reported and do not make coverage incomplete: they are not the agent's, as
 	// far as the tree can tell.
 	Outside models.GroundTruth
+	// Orphans are the processes whose recorded parent the capture never saw
+	// (Forest.Orphans), each the top of a chain that does not reach the
+	// agent. A note, not a finding: a lost fork record is one cause, a process
+	// that is not the agent's another. Verify sets it; CheckCoverage leaves
+	// it nil.
+	Orphans []*Process
 	// Complete is true when nothing is unexplained and nothing is unplaced.
 	Complete bool
 }

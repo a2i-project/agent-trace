@@ -539,6 +539,7 @@ func Verify(in Input) Verdict {
 	v.Coverage = CheckCoverage(part, alignments)
 	v.Coverage.UnexplainedActions = withoutExplainedLevelZero(v.Coverage.UnexplainedActions, in.Baseline, in.Options.HarnessOwned, hosts)
 	v.Coverage.BaselinedLevelZero = baselinedLevelZero
+	v.Coverage.Orphans = forest.Orphans()
 	v.Commands = part.Commands
 	v.OutsideWrites = outsideWrites(v.Coverage.Outside, in.Workspace)
 	v.UnexplainedSensitiveChanges, v.UnexplainedSensitiveOther, v.SensitiveCheck = checkSensitive(in.Sensitive, in.Claims, part.Commands)

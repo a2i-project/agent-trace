@@ -64,6 +64,7 @@ func TestForest_ZonesOfNonSubtreeEvents(t *testing.T) {
 	g := models.GroundTruth{
 		fork(1, 200, agentPID),
 		fork(2, 900, 800), // 800 was never seen: someone else's process
+		fork(3, 901, 900), // outside too, but its parent was seen
 	}
 	f := BuildForest(g, agentPID)
 	tests := []struct {
@@ -83,7 +84,7 @@ func TestForest_ZonesOfNonSubtreeEvents(t *testing.T) {
 		}
 	}
 	if o := f.Orphans(); len(o) != 1 || o[0].PID != 900 {
-		t.Errorf("Orphans() = %v, want pid 900 only", o)
+		t.Errorf("Orphans() = %v, want pid 900 only: 901's parent was seen", o)
 	}
 }
 

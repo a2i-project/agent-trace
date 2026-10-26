@@ -274,6 +274,9 @@ func report(w io.Writer, r reportInput) {
 	p("  Quiet forks:                    %d (forked, never exec'd, nothing observed: nothing to explain)\n", len(c.Quiet))
 	p("  Outside the agent's tree:       %d events (reported, not the agent's)\n", len(c.Outside))
 	p("  Unplaced (no pid):              %d events\n", len(c.Unknown))
+	if len(c.Orphans) > 0 {
+		p("  Orphaned processes:             %d (parent never seen, so outside the tree: a lost fork record, or not the agent's; a note, not a finding)\n", len(c.Orphans))
+	}
 	capability, responses := splitResponses(v.Capability)
 	printServerCalls(w, v.ServerCalls)
 	p("Capability:   %d  (listeners and sockets observed, never claimable, not part of the verdict)\n", len(capability))
@@ -284,6 +287,7 @@ func report(w io.Writer, r reportInput) {
 	printEntries(w, "Unwitnessed", v.Unwitnessed)
 	printEvents(w, "Unrecorded", v.Unrecorded)
 	printSubtrees(w, c.UnexplainedSubtrees)
+	printOrphans(w, c.Orphans)
 	printPairs(w, "Mismatched", v.Mismatched)
 	printShared(w, v.CorroboratedHarnessShared)
 	printPairs(w, "Outside interval", v.OutsideInterval)
@@ -418,6 +422,22 @@ func printEvents(w io.Writer, label string, events []models.GroundTruthEvent) {
 	_, _ = fmt.Fprintf(w, "\n%s:\n", label)
 	for _, e := range events {
 		_, _ = fmt.Fprintf(w, "  %s %-14s %s\n", e.Timestamp.Format(time.RFC3339Nano), e.ActionType, e.Target)
+	}
+}
+
+// printOrphans lists the processes whose parent the capture never saw, each
+// with its first exec or, when it never exec'd, its fork.
+func printOrphans(w io.Writer, orphans []*verification.Process) {
+	if len(orphans) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "\nOrphaned processes (parent never seen):")
+	for _, o := range orphans {
+		target := "(forked and never exec'd)"
+		if o.Exec != nil {
+			target = o.Exec.Target
+		}
+		_, _ = fmt.Fprintf(w, "  %s pid %d, parent %d: %s\n", o.Start.Format(time.RFC3339Nano), o.PID, o.PPID, target)
 	}
 }
 
@@ -857,7 +877,18 @@ type jsonCoverage struct {
 	Quiet               []uint32           `json:"quiet"`
 	Outside             models.GroundTruth `json:"outside"`
 	Unknown             models.GroundTruth `json:"unknown"`
-	Complete            bool               `json:"complete"`
+	// Orphans is present only when some process's parent was never seen.
+	Orphans  []jsonOrphan `json:"orphans,omitempty"`
+	Complete bool         `json:"complete"`
+}
+
+// jsonOrphan is a process whose recorded parent the capture never saw, with
+// its first exec when it exec'd.
+type jsonOrphan struct {
+	PID   uint32                   `json:"pid"`
+	PPID  uint32                   `json:"ppid"`
+	Start time.Time                `json:"start"`
+	Exec  *models.GroundTruthEvent `json:"exec,omitempty"`
 }
 
 func writeJSONReport(path string, r reportInput) error {
@@ -906,6 +937,9 @@ func writeJSONReport(path string, r reportInput) error {
 	}
 	for _, c := range v.Coverage.Quiet {
 		rep.Coverage.Quiet = append(rep.Coverage.Quiet, c.Process.PID)
+	}
+	for _, o := range v.Coverage.Orphans {
+		rep.Coverage.Orphans = append(rep.Coverage.Orphans, jsonOrphan{PID: o.PID, PPID: o.PPID, Start: o.Start, Exec: o.Exec})
 	}
 	for _, c := range v.Commands {
 		rep.Commands = append(rep.Commands, jsonCommand{
