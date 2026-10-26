@@ -18,6 +18,11 @@ type RunFacts struct {
 	// the one the session states ("" when the format states none).
 	ManifestVersion string
 	SessionVersion  string
+	// VersionAfter is the version the runner read after the run, "" when it
+	// did not record one.
+	VersionAfter string
+	// Recorded is the runner's own rule for a run that did not complete.
+	Recorded *RecordedExclude
 	// LossReasons are the completeness reasons of the task run's capture, one
 	// per loss counter set; a capture with no coverage record gives one.
 	LossReasons []string
@@ -46,8 +51,19 @@ func Exclusions(f RunFacts) []Exclusion {
 	if f.ManifestVersion != "" && f.SessionVersion != "" && f.ManifestVersion != f.SessionVersion {
 		out = append(out, Exclusion{X3, fmt.Sprintf("the manifest records version %s, the session states %s", f.ManifestVersion, f.SessionVersion)})
 	}
+	if f.ManifestVersion != "" && f.VersionAfter != "" && f.ManifestVersion != f.VersionAfter {
+		out = append(out, Exclusion{X3, fmt.Sprintf("the runner read version %s before the run and %s after it", f.ManifestVersion, f.VersionAfter)})
+	}
 	if f.Status != "ok" {
-		out = append(out, Exclusion{X4, "the runner's status for the run is " + quoteOr(f.Status, "absent")})
+		// The runner's own classification wins where it gives one of the
+		// rules a non-completed run can have; anything else is X4.
+		rule, reason := X4, "the runner's status for the run is "+quoteOr(f.Status, "absent")
+		if r := f.Recorded; r != nil && (r.Rule == X3 || r.Rule == X4 || r.Rule == X6) {
+			rule, reason = r.Rule, fmt.Sprintf("the runner recorded %s: %s", r.Rule, quoteOr(r.Reason, "no reason"))
+		}
+		if rule != X3 || !hasRule(out, X3) {
+			out = append(out, Exclusion{rule, reason})
+		}
 	}
 	if f.ParseError != "" {
 		out = append(out, Exclusion{X4, f.ParseError})
@@ -58,6 +74,7 @@ func Exclusions(f RunFacts) []Exclusion {
 	if f.Annotation.X6 != "" {
 		out = append(out, Exclusion{X6, "annotated: " + f.Annotation.X6})
 	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Rule < out[j].Rule })
 	return out
 }
 
@@ -125,7 +142,9 @@ func Slots(c *Campaign) []SlotReport {
 		}
 		s.Slots++
 		s.MovedAside += c.FailedAttempts[c.ID(r)]
-		if r.Status != "ok" {
+		// X4's line counts harness errors; a run the runner classified X3
+		// or X6 is excluded but is not a failed slot.
+		if r.Status != "ok" && (r.Exclusion == nil || (r.Exclusion.Rule != X3 && r.Exclusion.Rule != X6)) {
 			s.FailedSlots++
 			s.FailedSlotID = append(s.FailedSlotID, c.ID(r))
 		}

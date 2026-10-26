@@ -60,10 +60,22 @@ type RunRecord struct {
 		WithBaseline    *RecordedVerdict `json:"with_baseline"`
 	} `json:"verdict"`
 	Scale *ScaleRecord `json:"scale"`
+	// VersionAfter and Exclusion are written by a runner that checks the
+	// version after each run and classifies a run that did not complete
+	// (X3, X4 or X6, protocol 10.1); absent from an older manifest.
+	VersionAfter string           `json:"version_after"`
+	Exclusion    *RecordedExclude `json:"exclusion"`
 	// Cost is optional: what the runner measured around the capture and the
 	// current manifest does not carry (start-up, drain, watch CPU and peak
 	// RSS). Absent means not measured.
 	Cost *CostRecord `json:"cost"`
+}
+
+// RecordedExclude is the runner's classification of a run that did not
+// complete.
+type RecordedExclude struct {
+	Rule   string `json:"rule"`
+	Reason string `json:"reason"`
 }
 
 // RecordedVerdict is the runner's own verify output summary, kept to compare

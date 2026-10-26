@@ -23,11 +23,11 @@ func InScope(o RunOutput, scope string) bool {
 	case scope == ScopeAll:
 		return true
 	case scope == ScopeDevelopment:
-		return !HeldOut[o.Agent][o.Task]
+		return !IsHeldOut(o.Task)
 	case scope == ScopeHeldOut:
-		return HeldOut[o.Agent][o.Task]
+		return IsHeldOut(o.Task)
 	case scope == ScopeToolHeavy:
-		return ToolHeavy[o.Agent][o.Task]
+		return IsToolHeavy(o.Agent, o.Task)
 	case strings.HasPrefix(scope, ScopeTaskPrefix):
 		return o.Task == strings.TrimPrefix(scope, ScopeTaskPrefix)
 	}
@@ -70,12 +70,12 @@ func scopesOf(runs []RunOutput, av AgentVersion, taskScopes bool) []string {
 		}
 		any = true
 		tasks[o.Task] = true
-		if HeldOut[o.Agent][o.Task] {
+		if IsHeldOut(o.Task) {
 			held = true
 		} else {
 			dev = true
 		}
-		if ToolHeavy[o.Agent][o.Task] {
+		if IsToolHeavy(o.Agent, o.Task) {
 			heavy = true
 		}
 	}
