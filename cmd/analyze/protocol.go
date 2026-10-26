@@ -133,8 +133,15 @@ type GenSpec struct {
 	Exhaustive bool `json:"exhaustive,omitempty"`
 }
 
-// Primary says whether the row counts toward the registered verdicts.
+// Primary says whether the row has the primary (uniform) selection; the
+// sensitive rows are secondary (protocol 5.3).
 func (g GenSpec) Primary() bool { return g.Select == SelUniform }
+
+// InVerdict says whether the row counts toward the H2a to H2c verdicts: a
+// primary row that is not a retimed omission. Retimed omissions are reported
+// apart, with the runs they push outside their interval (protocol 4, H2 "also
+// reported"; the user's reading of 2026-10-26).
+func (g GenSpec) InVerdict() bool { return g.Primary() && !g.Retime }
 
 // SubstituteFields are the fields of the per-field runs (protocol 5.3):
 // one run of seeds for each field the agent's claims carry.
