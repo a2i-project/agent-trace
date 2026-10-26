@@ -174,18 +174,9 @@ func New(cfg Config) (*Observer, error) {
 	}
 
 	if cfg.PIDFilter > 0 {
-		zero := uint32(0)
 		pid := uint32(cfg.PIDFilter)
-		if err := objs.RootPidMap.Update(&zero, &pid, ebpf.UpdateAny); err != nil {
-			_ = objs.Close()
-			return nil, fmt.Errorf("update root_pid_map: %w", err)
-		}
-		// Seed the root as a top-level shell: is_shell=1 so its direct
-		// children are verification-grade, is_toplevel=1 so handle_fork's
-		// "parent is on the top-level shell chain" rule propagates from it.
-		// The root is exempt from per-execve is_shell re-evaluation (Fix 3b).
-		info := bpfProcInfo{IsShell: 1, IsToplevel: 1}
-		if err := tracked.seed(objs.TrackedPids, &pid, &info); err != nil {
+		one := uint8(1)
+		if err := tracked.seed(objs.TrackedPids, &pid, &one); err != nil {
 			_ = objs.Close()
 			return nil, fmt.Errorf("update tracked_pids: %w", err)
 		}
@@ -569,13 +560,11 @@ func (o *Observer) readLoop() {
 			continue
 		}
 
-		isTopLevel := hdr.IsToplevel == 1
 		event := models.GroundTruthEvent{
 			Timestamp:       time.Unix(0, hdr.TsNs+o.bootOffsetNs),
 			ActionType:      actionType,
 			Target:          target,
 			TargetTruncated: truncated,
-			IsTopLevel:      &isTopLevel,
 			PID:             hdr.Pid,
 			PPID:            hdr.Ppid,
 		}
@@ -676,14 +665,7 @@ func (o *Observer) SetRootPID(pid int32) error {
 		return fmt.Errorf("update config_map: %w", err)
 	}
 	p := uint32(pid)
-	if err := o.objs.RootPidMap.Update(&zero, &p, ebpf.UpdateAny); err != nil {
-		return fmt.Errorf("update root_pid_map: %w", err)
-	}
-	// Seed the root as a top-level shell: is_shell=1 so its direct children
-	// are verification-grade, is_toplevel=1 so handle_fork's shell-chain
-	// rule propagates from it. Exempt from per-execve is_shell re-eval (3b).
-	info := bpfProcInfo{IsShell: 1, IsToplevel: 1}
-	if err := o.tracked.seed(o.objs.TrackedPids, &p, &info); err != nil {
+	if err := o.tracked.seed(o.objs.TrackedPids, &p, &one); err != nil {
 		return fmt.Errorf("update tracked_pids: %w", err)
 	}
 	o.cfg.PIDFilter = pid

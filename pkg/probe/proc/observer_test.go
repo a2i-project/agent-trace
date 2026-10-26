@@ -234,14 +234,11 @@ func TestObserver_ResistsArgv0Spoofing(t *testing.T) {
 	}
 }
 
-// TestObserver_ShellChainStaysTopLevel is the live-kernel proof for Fix 3b:
-// a chain of pure shell re-execs must keep its payload verification-grade,
-// not demote it to forensic-only at a depth-1 cutoff. The test process is
-// the ancestry root. The outer shell forks (`& wait`) an inner shell, so
-// the final `/bin/echo` is a genuine grandchild reached across a fork
-// through a shell -- exactly what a depth-1 rule would demote. Under 3b it
-// must still be IsTopLevel.
-func TestObserver_ShellChainStaysTopLevel(t *testing.T) {
+// TestObserver_TracksGrandchildAcrossShellFork checks that filtered mode
+// follows descendants below level 1: the outer shell forks (`& wait`) an
+// inner shell, so the final `/bin/echo` is a grandchild of the root reached
+// across a fork, and its exec must be recorded.
+func TestObserver_TracksGrandchildAcrossShellFork(t *testing.T) {
 	skipUnprivileged(t)
 
 	nonce := fmt.Sprintf("agenttrace-shellchain-%d", time.Now().UnixNano())
@@ -269,32 +266,19 @@ func TestObserver_ShellChainStaysTopLevel(t *testing.T) {
 	}
 
 	got := collect(obs)
-	var sawEcho bool
 	for _, e := range got {
-		if e.ActionType != models.ProcessExec || !strings.HasPrefix(e.Target, "/bin/echo ") {
-			continue
-		}
-		if !strings.Contains(e.Target, nonce) {
-			continue
-		}
-		sawEcho = true
-		if e.IsTopLevel == nil || !*e.IsTopLevel {
-			t.Errorf("nested-shell echo should be top-level, got IsTopLevel=%v (target %q)",
-				e.IsTopLevel, e.Target)
+		if e.ActionType == models.ProcessExec && strings.HasPrefix(e.Target, "/bin/echo ") && strings.Contains(e.Target, nonce) {
+			return
 		}
 	}
-	if !sawEcho {
-		t.Fatalf("no /bin/echo exec event for the nested-shell chain; got %d events: %v", len(got), got)
-	}
+	t.Fatalf("no /bin/echo exec event for the nested-shell chain; got %d events: %v", len(got), got)
 }
 
-// TestObserver_NonShellIntermediateDemotesChildren is the contrast to
-// TestObserver_ShellChainStaysTopLevel: once the chain hits a real
-// (non-shell) binary, that binary is still top-level itself but its own
-// children go back to forensic-only. Here `xargs` (spawned by a shell) is
-// the non-shell intermediate and the `/bin/echo <nonce>` it forks must be
-// IsTopLevel=false. This is the make->cc false-positive fix, preserved.
-func TestObserver_NonShellIntermediateDemotesChildren(t *testing.T) {
+// TestObserver_TracksChildOfNonShell checks that a process a non-shell
+// program forks is tracked like any other descendant: `xargs`, started by a
+// shell, forks `/bin/echo <nonce>`, whose exec must be recorded with xargs as
+// its parent.
+func TestObserver_TracksChildOfNonShell(t *testing.T) {
 	skipUnprivileged(t)
 
 	nonce := fmt.Sprintf("agenttrace-nonshell-%d", time.Now().UnixNano())
@@ -324,29 +308,26 @@ func TestObserver_NonShellIntermediateDemotesChildren(t *testing.T) {
 	}
 
 	got := collect(obs)
-	var sawLeaf, sawXargs bool
-	for _, e := range got {
+	var xargs, leaf *models.GroundTruthEvent
+	for i, e := range got {
 		if e.ActionType != models.ProcessExec || !strings.Contains(e.Target, nonce) {
 			continue
 		}
 		switch {
 		case strings.HasPrefix(e.Target, "/usr/bin/xargs "):
-			sawXargs = true
-			if e.IsTopLevel == nil || !*e.IsTopLevel {
-				t.Errorf("xargs (direct child of the shell) should be top-level, got %v", e.IsTopLevel)
-			}
+			xargs = &got[i]
 		case strings.HasPrefix(e.Target, "/bin/echo "):
-			sawLeaf = true
-			if e.IsTopLevel != nil && *e.IsTopLevel {
-				t.Errorf("echo forked by xargs should be forensic-only, got IsTopLevel=true (target %q)", e.Target)
-			}
+			leaf = &got[i]
 		}
 	}
-	if !sawXargs {
+	if xargs == nil {
 		t.Fatalf("no exec event for xargs; got %d events: %v", len(got), got)
 	}
-	if !sawLeaf {
+	if leaf == nil {
 		t.Fatalf("no /bin/echo exec event forked by xargs; got %d events: %v", len(got), got)
+	}
+	if leaf.PPID != xargs.PID {
+		t.Errorf("echo's ppid = %d, want xargs's pid %d", leaf.PPID, xargs.PID)
 	}
 }
 
@@ -447,7 +428,7 @@ func trackedKeys(t *testing.T, obs *Observer) map[uint32]bool {
 	t.Helper()
 	keys := map[uint32]bool{}
 	var k uint32
-	var v bpfProcInfo
+	var v uint8
 	it := obs.objs.TrackedPids.Iterate()
 	for it.Next(&k, &v) {
 		keys[k] = true
@@ -886,8 +867,8 @@ func TestObserver_ProcessThatNeverExecsLeavesTheTrackedSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subshell pid %q: %v", out, err)
 	}
-	var info bpfProcInfo
-	lookupErr := obs.objs.TrackedPids.Lookup(uint32(sub), &info)
+	var tracked uint8
+	lookupErr := obs.objs.TrackedPids.Lookup(uint32(sub), &tracked)
 	if err := obs.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}

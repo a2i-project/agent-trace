@@ -434,9 +434,6 @@ func TestEmitListener(t *testing.T) {
 				if e.PID != 777 {
 					t.Errorf("PID = %d, want the causing tgid 777", e.PID)
 				}
-				if e.IsTopLevel != nil {
-					t.Errorf("IsTopLevel = %v, want nil: the net probe assigns no level", *e.IsTopLevel)
-				}
 			default:
 				t.Fatal("no event emitted")
 			}

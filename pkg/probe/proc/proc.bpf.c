@@ -20,21 +20,6 @@ char LICENSE[] SEC("license") = "GPL";
 #define KIND_FORK 2 // a tracked process created a child; header only, no filename or args
 #define KIND_EXEC_OK 3 // an exec took effect; header only, tid names the thread whose attempt it was
 
-#define path_is(fn, literal) __extension__({ \
-	int _match = 1; \
-	_Pragma("clang loop unroll(full)") \
-	for (unsigned _i = 0; _i < sizeof(literal); _i++) \
-		_match &= ((fn)[_i] == (literal)[_i]); \
-	_match; \
-})
-
-static __always_inline int filename_is_shell(const char *fn) {
-	return path_is(fn, "/bin/sh")   || path_is(fn, "/usr/bin/sh")   ||
-	       path_is(fn, "/bin/bash") || path_is(fn, "/usr/bin/bash") ||
-	       path_is(fn, "/bin/dash") || path_is(fn, "/usr/bin/dash") ||
-	       path_is(fn, "/bin/zsh")  || path_is(fn, "/usr/bin/zsh");
-}
-
 struct event_hdr {
 	__u32 pid;
 	__u32 ppid; // parent tgid when the process exec'd, from the task struct
@@ -43,9 +28,8 @@ struct event_hdr {
 	__s64 ts_ns;
 	__s32 exit_code;
 	__u8  has_exit_code;
-	__u8  is_toplevel;
 	__u8  args_truncated; // the filename or the arguments did not fit
-	__u8  pad0;
+	__u16 pad0;
 	__u32 filename_len;
 	__u32 args_size;
 	__u32 tid; // the thread that made the exec attempt (KIND_EXEC, KIND_EXEC_OK)
@@ -58,16 +42,14 @@ struct exec_scratch {
 	char args[MAX_ARGS_BYTES * 2]; // Padded to satisfy verifier worst-case offset+size bounds
 };
 
-struct proc_info {
-	__u8 is_shell;
-	__u8 is_toplevel;
-};
-
+// tracked_pids holds the tgids of the root and its descendants in filtered
+// mode. The value carries nothing: the verifier places each process by the
+// fork and exec records (V1).
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 16384);
 	__type(key, __u32);
-	__type(value, struct proc_info);
+	__type(value, __u8);
 } tracked_pids SEC(".maps");
 
 struct {
@@ -80,19 +62,6 @@ struct {
 static __always_inline __u8 get_use_pid_filter() {
 	__u32 zero = 0;
 	__u8 *val = bpf_map_lookup_elem(&config_map, &zero);
-	return val ? *val : 0;
-}
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
-	__type(key, __u32);
-	__type(value, __u32);
-} root_pid_map SEC(".maps");
-
-static __always_inline __u32 get_root_pid() {
-	__u32 zero = 0;
-	__u32 *val = bpf_map_lookup_elem(&root_pid_map, &zero);
 	return val ? *val : 0;
 }
 
@@ -274,8 +243,7 @@ int handle_fork(struct bpf_raw_tracepoint_args *ctx)
 	struct task_struct *child_task = (struct task_struct *)ctx->args[0];
 	__u32 child_pid = BPF_CORE_READ(child_task, pid);
 
-	struct proc_info *p = bpf_map_lookup_elem(&tracked_pids, &parent_pid);
-	if (!p)
+	if (!bpf_map_lookup_elem(&tracked_pids, &parent_pid))
 		return 0;
 
 	// Record the edge parent -> child. An exec record only exists for a child
@@ -290,18 +258,12 @@ int handle_fork(struct bpf_raw_tracepoint_args *ctx)
 	if (bpf_ringbuf_output(&events, &fh, sizeof(fh), 0))
 		count_drop();
 
-	struct proc_info child = {0};
-	if (p->is_shell && p->is_toplevel) {
-		child.is_toplevel = 1;
-	} else {
-		child.is_toplevel = 0;
-	}
-
 	// An entry left for the pid (none should be, since handle_exit deletes
 	// it) is replaced as before, without counting a second entry.
-	long err = bpf_map_update_elem(&tracked_pids, &child_pid, &child, BPF_NOEXIST);
+	__u8 one = 1;
+	long err = bpf_map_update_elem(&tracked_pids, &child_pid, &one, BPF_NOEXIST);
 	if (err == -EEXIST)
-		err = bpf_map_update_elem(&tracked_pids, &child_pid, &child, BPF_ANY);
+		err = bpf_map_update_elem(&tracked_pids, &child_pid, &one, BPF_ANY);
 	else if (!err)
 		tracked_inserted();
 	if (err)
@@ -363,18 +325,6 @@ static __always_inline int record_exec(const char *filename, const char *const *
 	// succeeded and the string provably ended inside the buffer.
 	if (!via_fd && (fn_len <= 0 || (fn_len >= FILENAME_LEN && !nul_at(filename, FILENAME_LEN - 1))))
 		e->hdr.args_truncated = 1;
-
-	if (get_use_pid_filter()) {
-		struct proc_info *p = bpf_map_lookup_elem(&tracked_pids, &pid);
-		if (!p)
-			return 0;
-		e->hdr.is_toplevel = p->is_toplevel;
-		__u32 root = get_root_pid();
-		if (root && pid != root)
-			p->is_shell = filename_is_shell(e->filename) ? 1 : 0;
-	} else {
-		e->hdr.is_toplevel = 1;
-	}
 
 	__u32 args_size = 0;
 	__u32 nargs = 0;
@@ -551,8 +501,9 @@ int trace_sys_enter(struct bpf_raw_tracepoint_args *ctx)
 		handle_exit_group(sys_regs(ctx));
 		return 0;
 	}
-	// An untracked process's exec is not recorded in filtered mode;
-	// record_exec checks again, since it needs the entry.
+	// An untracked process's exec is not recorded in filtered mode. The
+	// exec programs are reached only through this tail call, so this is
+	// their only filter.
 	if (get_use_pid_filter()) {
 		__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 		if (!bpf_map_lookup_elem(&tracked_pids, &tgid))
@@ -578,13 +529,8 @@ int handle_exec_ok(struct bpf_raw_tracepoint_args *ctx)
 {
 	__u32 tgid = bpf_get_current_pid_tgid() >> 32;
 
-	__u8 is_toplevel = 1;
-	if (get_use_pid_filter()) {
-		struct proc_info *p = bpf_map_lookup_elem(&tracked_pids, &tgid);
-		if (!p)
-			return 0;
-		is_toplevel = p->is_toplevel;
-	}
+	if (get_use_pid_filter() && !bpf_map_lookup_elem(&tracked_pids, &tgid))
+		return 0;
 
 	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
 	struct event_hdr h = {};
@@ -594,7 +540,6 @@ int handle_exec_ok(struct bpf_raw_tracepoint_args *ctx)
 	h.ppid = BPF_CORE_READ(task, real_parent, tgid);
 	h.kind = KIND_EXEC_OK;
 	h.ts_ns = bpf_ktime_get_ns();
-	h.is_toplevel = is_toplevel;
 	h.tid = (__u32)ctx->args[1];
 
 	if (bpf_map_update_elem(&execs, &tgid, &h, BPF_ANY))

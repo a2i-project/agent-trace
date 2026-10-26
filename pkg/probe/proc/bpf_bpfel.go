@@ -22,9 +22,8 @@ type bpfEventHdr struct {
 	TsNs          int64
 	ExitCode      int32
 	HasExitCode   uint8
-	IsToplevel    uint8
 	ArgsTruncated uint8
-	Pad0          uint8
+	Pad0          uint16
 	FilenameLen   uint32
 	ArgsSize      uint32
 	Tid           uint32
@@ -36,12 +35,6 @@ type bpfExecScratch struct {
 	Hdr      bpfEventHdr
 	Filename [256]int8
 	Args     [262144]int8
-}
-
-type bpfProcInfo struct {
-	_          structs.HostLayout
-	IsShell    uint8
-	IsToplevel uint8
 }
 
 type bpfTrackedStat struct {
@@ -59,7 +52,6 @@ const (
 	bpfMapEvents          = "events"
 	bpfMapExecs           = "execs"
 	bpfMapHeap            = "heap"
-	bpfMapRootPidMap      = "root_pid_map"
 	bpfMapStateLostCount  = "state_lost_count"
 	bpfMapSysEnterProgs   = "sys_enter_progs"
 	bpfMapTrackedPids     = "tracked_pids"
@@ -133,7 +125,6 @@ type bpfMapSpecs struct {
 	Events         *ebpf.MapSpec `ebpf:"events"`
 	Execs          *ebpf.MapSpec `ebpf:"execs"`
 	Heap           *ebpf.MapSpec `ebpf:"heap"`
-	RootPidMap     *ebpf.MapSpec `ebpf:"root_pid_map"`
 	StateLostCount *ebpf.MapSpec `ebpf:"state_lost_count"`
 	SysEnterProgs  *ebpf.MapSpec `ebpf:"sys_enter_progs"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
@@ -173,7 +164,6 @@ type bpfMaps struct {
 	Events         *ebpf.Map `ebpf:"events"`
 	Execs          *ebpf.Map `ebpf:"execs"`
 	Heap           *ebpf.Map `ebpf:"heap"`
-	RootPidMap     *ebpf.Map `ebpf:"root_pid_map"`
 	StateLostCount *ebpf.Map `ebpf:"state_lost_count"`
 	SysEnterProgs  *ebpf.Map `ebpf:"sys_enter_progs"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
@@ -189,7 +179,6 @@ func (m *bpfMaps) Close() error {
 		m.Events,
 		m.Execs,
 		m.Heap,
-		m.RootPidMap,
 		m.StateLostCount,
 		m.SysEnterProgs,
 		m.TrackedPids,

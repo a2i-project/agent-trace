@@ -211,13 +211,11 @@ func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts tim
 		reqHash = &h
 	}
 
-	isTopLevel := true
 	event := models.GroundTruthEvent{
 		Timestamp:   ts,
 		ActionType:  models.NetRequest,
 		Target:      target,
 		RequestHash: reqHash,
-		IsTopLevel:  &isTopLevel,
 		PID:         tgid,
 	}
 

@@ -1,6 +1,6 @@
 # Network probe
 
-Checked against commit d1ca6a7 on 2026-10-26.
+Checked against commit 3476fbf on 2026-10-26.
 
 ## Objective
 
@@ -64,7 +64,7 @@ Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps
 - `emit` turns a connection to port 53 that wrote and yielded no question into `net_dns` with the `ip:port` target, ground truth only like a listener (N-20), and counts it in `Coverage.DNS`. One that wrote nothing falls to the dial rule below (N-27: Go's address selection connects a datagram socket to port 53 of each candidate address and sends nothing). A connection to port 0 (the resolver's source-address selection, N-19) is counted in `Coverage.AddressProbes` and not emitted. Each is marked emitted so its close does not retry.
 - `NET_SOCK_BIND` and `NET_SOCK_LISTEN` become `net_bind` and `net_listen` with target `host:port` (IPv6 in brackets), `unix:<path>`, `unix:@<abstract>` or `unbound`. `NET_UNIX_CONNECT` becomes `net_unix_connect`. These types, with `net_dns` and `net_dial`, are ground truth only; `models.ClassifyBindTarget` grades a listener as loopback, wildcard, interface, local socket or unknown.
 
-Every N0 event carries `PID` (the tgid; for a connection, the tgid that connected). None carries `PPID`.
+Every N0 event carries `PID` (the tgid; for a connection, the tgid that connected). None carries `PPID`, and none a level: the verifier places each event by its `PID` in the process forest (V1).
 
 ### Stop
 
