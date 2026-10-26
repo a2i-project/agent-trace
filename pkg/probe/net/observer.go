@@ -188,7 +188,8 @@ type Observer struct {
 	// Kernel-side counters snapshotted by Stop, before it closes the maps
 	// they live in. kernelCountersFinal is raised after the values are set.
 	finalFaulted        atomic.Uint64
-	finalRingbufDrops   atomic.Uint64
+	finalNetDrops       atomic.Uint64
+	finalTLSDrops       atomic.Uint64
 	finalUntracked      atomic.Uint64
 	finalStateFull      atomic.Uint64
 	finalIOURingNet     atomic.Uint64
@@ -198,6 +199,19 @@ type Observer struct {
 	finalReadFaults     atomic.Uint64
 	finalReadDrops      atomic.Uint64
 	kernelCountersFinal atomic.Bool
+
+	// Occupancy diagnostics (N-33): the high-water mark of each ring, and the
+	// entries of each tracked_pids map. tlsTracked is nil without content
+	// capture.
+	netRing     ringMeter
+	sslRing     ringMeter
+	netRingSize uint64
+	sslRingSize uint64
+	netTracked  *trackedCounter
+	tlsTracked  *trackedCounter
+	// h2Unvalidated counts the write frames offset validation read that
+	// began with the HTTP/2 preface.
+	h2Unvalidated atomic.Uint64
 
 	// iouringSubmitUnseen is set when the kernel has no io_uring_submit_req
 	// tracepoint, so io_uring operations cannot be classified; every ring a
@@ -363,10 +377,11 @@ func New(cfg Config) (*Observer, error) {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
 
+	netTracked := &trackedCounter{stat: objs.TrackedStat, seededMap: objs.TrackedSeeded, capacity: objs.TrackedPids.MaxEntries()}
 	if cfg.TrackedPID > 0 {
 		p := uint32(cfg.TrackedPID)
 		one := uint8(1)
-		if err := objs.TrackedPids.Update(&p, &one, ebpf.UpdateAny); err != nil {
+		if err := netTracked.seed(objs.TrackedPids, &p, &one); err != nil {
 			_ = objs.Close()
 			return nil, fmt.Errorf("update tracked_pids: %w", err)
 		}
@@ -427,6 +442,8 @@ func New(cfg Config) (*Observer, error) {
 		readOK:       make(chan struct{}),
 		readStop:     make(chan struct{}),
 		readDone:     make(chan struct{}),
+		netTracked:   netTracked,
+		netRingSize:  uint64(objs.NetEvents.MaxEntries()),
 
 		iouringSubmitUnseen: !submitSeen && kernelHasIOURing(),
 	}
@@ -499,10 +516,11 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 		}
 	}()
 
+	tlsTracked := &trackedCounter{stat: o.tlsObjs.TrackedStat, seededMap: o.tlsObjs.TrackedSeeded, capacity: o.tlsObjs.TrackedPids.MaxEntries()}
 	if cfg.TrackedPID > 0 {
 		p := uint32(cfg.TrackedPID)
 		one := uint8(1)
-		if err := o.tlsObjs.TrackedPids.Update(&p, &one, ebpf.UpdateAny); err != nil {
+		if err := tlsTracked.seed(o.tlsObjs.TrackedPids, &p, &one); err != nil {
 			return fmt.Errorf("update tls tracked_pids: %w", err)
 		}
 	}
@@ -532,6 +550,8 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 
 	o.tlsForkLink = tlsForkLink
 	o.tlsExitLink = tlsExitLink
+	o.tlsTracked = tlsTracked
+	o.sslRingSize = uint64(o.tlsObjs.SslEvents.MaxEntries())
 	o.exe = exe
 	o.sslReader = sslReader
 	o.tlsCache = cache
@@ -660,6 +680,7 @@ func (o *Observer) validateSSLWriteCandidate(timeout time.Duration) (rec sslReco
 		if err != nil {
 			return sslRecord{}, 0, false
 		}
+		o.sslRing.observe(&record)
 		rec, ok := decodeSSLRecord(record.RawSample)
 		if !ok {
 			return sslRecord{}, 1, false
@@ -673,6 +694,9 @@ func (o *Observer) validateSSLWriteCandidate(timeout time.Duration) (rec sslReco
 			continue
 		}
 		if !httpRequestLineRE.Match(rec.payload) {
+			if bytes.HasPrefix(rec.payload, h2ClientPreface) {
+				o.h2Unvalidated.Add(1)
+			}
 			return sslRecord{}, 1, false
 		}
 		return rec, 1, true
@@ -719,12 +743,12 @@ func computeBootOffsetNs() (int64, error) {
 func (o *Observer) TrackPID(pid int32) error {
 	p := uint32(pid)
 	one := uint8(1)
-	if err := o.objs.TrackedPids.Update(&p, &one, ebpf.UpdateAny); err != nil {
+	if err := o.netTracked.seed(o.objs.TrackedPids, &p, &one); err != nil {
 		return fmt.Errorf("update tracked_pids: %w", err)
 	}
 	o.tracking.Store(true)
 	if o.tlsObjs.TrackedPids != nil {
-		if err := o.tlsObjs.TrackedPids.Update(&p, &one, ebpf.UpdateAny); err != nil {
+		if err := o.tlsTracked.seed(o.tlsObjs.TrackedPids, &p, &one); err != nil {
 			return fmt.Errorf("update tls tracked_pids: %w", err)
 		}
 	}
@@ -742,7 +766,8 @@ func (o *Observer) Coverage() Coverage {
 	snapshot := func() kernelCounts {
 		return kernelCounts{
 			faulted:    o.finalFaulted.Load(),
-			drops:      o.finalRingbufDrops.Load(),
+			netDrop:    o.finalNetDrops.Load(),
+			tlsDrop:    o.finalTLSDrops.Load(),
 			untracked:  o.finalUntracked.Load(),
 			stateFull:  o.finalStateFull.Load(),
 			uringNet:   o.finalIOURingNet.Load(),
@@ -764,7 +789,9 @@ func (o *Observer) Coverage() Coverage {
 		}
 	}
 	cov.FaultedReads += k.faulted
-	cov.RingbufDrops += k.drops
+	cov.RingbufDrops += k.netDrop + k.tlsDrop
+	cov.NetRingDrops += k.netDrop
+	cov.TLSRingDrops += k.tlsDrop
 	cov.UntrackedChildren += k.untracked
 	cov.StateMapFull += k.stateFull
 	cov.IOURingNetOps += k.uringNet
@@ -774,6 +801,7 @@ func (o *Observer) Coverage() Coverage {
 	cov.ReadFaults += k.readFault
 	cov.ReadDrops += k.readDrop
 	cov.ReadsUnvalidated += int(o.heldDropped.Load())
+	cov.H2PrefaceUnvalidated += int(o.h2Unvalidated.Load())
 	if o.iouringSubmitUnseen {
 		cov.IOURingNetOps += k.uringRing
 	}
@@ -783,7 +811,8 @@ func (o *Observer) Coverage() Coverage {
 // kernelCounts are the percpu counters the eBPF programs maintain, summed.
 type kernelCounts struct {
 	faulted    uint64 // SSL reads that faulted
-	drops      uint64 // records the net and TLS ring buffers discarded because they were full
+	netDrop    uint64 // records the net ring buffer discarded because it was full
+	tlsDrop    uint64 // write frames the TLS ring buffer discarded because it was full
 	untracked  uint64 // descendants that could not be added to a tracked_pids map
 	stateFull  uint64 // connections lost because the conns map was full
 	uringNet   uint64 // io_uring operations on sockets by tracked processes (N-25)
@@ -807,7 +836,7 @@ func (o *Observer) kernelCounters() (k kernelCounts, err error) {
 			*dst += v
 		}
 	}
-	add(&k.drops, o.objs.DropCount)
+	add(&k.netDrop, o.objs.DropCount)
 	add(&k.untracked, o.objs.UntrackedCount)
 	add(&k.stateFull, o.objs.StateLostCount)
 	add(&k.uringNet, o.objs.IouringNetCount)
@@ -815,7 +844,7 @@ func (o *Observer) kernelCounters() (k kernelCounts, err error) {
 	add(&k.uringRing, o.objs.IouringSetupCount)
 	add(&k.helloFault, o.objs.HelloFaultCount)
 	add(&k.faulted, o.tlsObjs.FaultedReads)
-	add(&k.drops, o.tlsObjs.DropCount)
+	add(&k.tlsDrop, o.tlsObjs.DropCount)
 	add(&k.untracked, o.tlsObjs.UntrackedCount)
 	add(&k.readFault, o.tlsObjs.ReadFaultCount)
 	add(&k.readDrop, o.tlsObjs.ReadDropCount)
@@ -877,6 +906,45 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		HelloFaults:       cov.HelloFaults,
 		Responses:         responses,
 		ResponseGaps:      cov.ReadFaults + cov.ReadDrops + uint64(cov.ResponsesUnparsed+cov.ResponsesTruncated+cov.ResponsesUnattributed),
+		Diagnostics:       o.diagnostics(cov),
+	}
+}
+
+// diagnostics assembles the occupancy and content counters of the capture
+// (N-33). Diagnostics only: Assess reads none of them.
+func (o *Observer) diagnostics(cov Coverage) *models.ProbeDiagnostics {
+	d := &models.ProbeDiagnostics{
+		Rings: map[string]models.RingStats{"net_events": {
+			SizeBytes: o.netRingSize, PeakBytes: o.netRing.peak.Load(), Records: o.netRing.records.Load(), Drops: cov.NetRingDrops,
+		}},
+		TrackedSets: map[string]models.TrackedSetStats{},
+		NetContent:  netContentCounts(cov),
+	}
+	if o.netTracked != nil {
+		d.TrackedSets["net"] = o.netTracked.stats()
+	}
+	if o.tlsTracked != nil {
+		readDrops := cov.ReadDrops
+		d.Rings["ssl_events"] = models.RingStats{
+			SizeBytes: o.sslRingSize, PeakBytes: o.sslRing.peak.Load(), Records: o.sslRing.records.Load(), Drops: cov.TLSRingDrops, ReadDrops: &readDrops,
+		}
+		d.TrackedSets["tls"] = o.tlsTracked.stats()
+	}
+	return d
+}
+
+// netContentCounts copies the correlator's counters into the capture's
+// record.
+func netContentCounts(c Coverage) *models.NetContentCounts {
+	return &models.NetContentCounts{
+		Connections: c.Connections, WithHostname: c.WithHostname, WithContent: c.WithContent,
+		Dials: c.Dials, AddressProbes: c.AddressProbes, OpenAtStop: c.OpenAtStop, Replaced: c.Replaced,
+		HellosFollowed: c.HellosFollowed, DNS: c.DNS, DNSNamed: c.DNSNamed, DNSUnparsed: c.DNSUnparsed, Datagrams: c.Datagrams,
+		ContentUnsupported: c.ContentUnsupported, H2Preface: c.H2Preface, H2PrefaceUnvalidated: c.H2PrefaceUnvalidated, FramesH2: c.FramesH2,
+		FramesUnattributed: c.FramesUnattributed, FramesTruncated: c.FramesTruncated,
+		Responses: c.Responses, ResponsesUnpaired: c.ResponsesUnpaired, ResponsesUnattributed: c.ResponsesUnattributed,
+		ResponsesIncomplete: c.ResponsesIncomplete, ResponsesTruncated: c.ResponsesTruncated, ResponsesUnparsed: c.ResponsesUnparsed,
+		SSEEvents: c.SSEEvents, ReadsUnvalidated: c.ReadsUnvalidated, ReadFaults: c.ReadFaults,
 	}
 }
 
@@ -969,7 +1037,8 @@ func (o *Observer) Stop() error {
 		// values are stored before the final flag is raised.
 		k, _ := o.kernelCounters()
 		o.finalFaulted.Store(k.faulted)
-		o.finalRingbufDrops.Store(k.drops)
+		o.finalNetDrops.Store(k.netDrop)
+		o.finalTLSDrops.Store(k.tlsDrop)
 		o.finalUntracked.Store(k.untracked)
 		o.finalStateFull.Store(k.stateFull)
 		o.finalIOURingNet.Store(k.uringNet)
@@ -979,6 +1048,12 @@ func (o *Observer) Stop() error {
 		o.finalReadFaults.Store(k.readFault)
 		o.finalReadDrops.Store(k.readDrop)
 		o.kernelCountersFinal.Store(true)
+		if o.netTracked != nil {
+			o.netTracked.snapshot()
+		}
+		if o.tlsTracked != nil {
+			o.tlsTracked.snapshot()
+		}
 		closeLinks(o.readLinks)
 		_ = o.reader.Close()
 		if o.sslReader != nil {
@@ -1088,6 +1163,7 @@ func (o *Observer) netFeed(out chan<- netRecord) {
 			}
 			continue
 		}
+		o.netRing.observe(&record)
 		if len(record.RawSample) < hdrSize {
 			continue
 		}
@@ -1138,6 +1214,7 @@ func (o *Observer) sslFeed(out chan<- sslRecord) {
 			}
 			continue
 		}
+		o.sslRing.observe(&record)
 		if rec, ok := decodeSSLRecord(record.RawSample); ok {
 			out <- rec
 		}

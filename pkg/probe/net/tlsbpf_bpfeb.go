@@ -37,6 +37,12 @@ type tlsbpfSslReadArg struct {
 	Ssl uint64
 }
 
+type tlsbpfTrackedStat struct {
+	_    structs.HostLayout
+	Live int64
+	Peak int64
+}
+
 // Names of all BPF objects in the ELF.
 //
 // Used for safe lookups in a Collection or CollectionSpec.
@@ -49,6 +55,8 @@ const (
 	tlsbpfMapSslHeap             = "ssl_heap"
 	tlsbpfMapSslReadArgs         = "ssl_read_args"
 	tlsbpfMapTrackedPids         = "tracked_pids"
+	tlsbpfMapTrackedSeeded       = "tracked_seeded"
+	tlsbpfMapTrackedStat         = "tracked_stat"
 	tlsbpfMapUntrackedCount      = "untracked_count"
 	tlsbpfProgHandleExit         = "handle_exit"
 	tlsbpfProgHandleFork         = "handle_fork"
@@ -118,6 +126,8 @@ type tlsbpfMapSpecs struct {
 	SslHeap        *ebpf.MapSpec `ebpf:"ssl_heap"`
 	SslReadArgs    *ebpf.MapSpec `ebpf:"ssl_read_args"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
+	TrackedSeeded  *ebpf.MapSpec `ebpf:"tracked_seeded"`
+	TrackedStat    *ebpf.MapSpec `ebpf:"tracked_stat"`
 	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
 }
 
@@ -155,6 +165,8 @@ type tlsbpfMaps struct {
 	SslHeap        *ebpf.Map `ebpf:"ssl_heap"`
 	SslReadArgs    *ebpf.Map `ebpf:"ssl_read_args"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
+	TrackedSeeded  *ebpf.Map `ebpf:"tracked_seeded"`
+	TrackedStat    *ebpf.Map `ebpf:"tracked_stat"`
 	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
 }
 
@@ -168,6 +180,8 @@ func (m *tlsbpfMaps) Close() error {
 		m.SslHeap,
 		m.SslReadArgs,
 		m.TrackedPids,
+		m.TrackedSeeded,
+		m.TrackedStat,
 		m.UntrackedCount,
 	)
 }

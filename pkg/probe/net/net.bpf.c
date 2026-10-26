@@ -218,6 +218,56 @@ static __always_inline void count_untracked(void)
 		__sync_fetch_and_add(count, 1);
 }
 
+// tracked_stat and tracked_seeded count the entries of tracked_pids, as in
+// proc.bpf.c (P-34): live is incremented by handle_fork's insert and
+// decremented by handle_exit's delete, peak keeps the highest live plus
+// seeded read back after an insert, and tracked_seeded holds the pids
+// userspace inserted (TrackPID), written only by userspace.
+struct tracked_stat {
+	__s64 live;
+	__s64 peak;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, struct tracked_stat);
+} tracked_stat SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __s64);
+} tracked_seeded SEC(".maps");
+
+// tracked_inserted counts an insert and raises peak; the read-back and the
+// raise are plain loads and a store, so the peak can fall short when inserts
+// race on two CPUs (see proc.bpf.c).
+static __always_inline void tracked_inserted(void)
+{
+	__u32 zero = 0;
+	struct tracked_stat *s = bpf_map_lookup_elem(&tracked_stat, &zero);
+	if (!s)
+		return;
+	__sync_fetch_and_add(&s->live, 1);
+	__s64 n = *(volatile __s64 *)&s->live;
+	__s64 *seeded = bpf_map_lookup_elem(&tracked_seeded, &zero);
+	if (seeded)
+		n += *seeded;
+	if (n > *(volatile __s64 *)&s->peak)
+		*(volatile __s64 *)&s->peak = n;
+}
+
+static __always_inline void tracked_removed(void)
+{
+	__u32 zero = 0;
+	struct tracked_stat *s = bpf_map_lookup_elem(&tracked_stat, &zero);
+	if (s)
+		__sync_fetch_and_add(&s->live, -1);
+}
+
 // state_lost_count counts records this program lost because a state map it
 // writes per process or per connection was full (conns). Unlike a ring buffer
 // drop the failure happens in a map update, so it is easy to miss: a connection whose state could not be stored gets no hello capture and no close record, and userspace emits a connection only at hello or close, so the connection itself vanishes from the ground truth.
@@ -1628,6 +1678,7 @@ int trace_iouring_submit(struct bpf_raw_tracepoint_args *ctx)
 }
 
 #define CLONE_THREAD 0x10000
+#define EEXIST 17
 
 // task_newtask fires in the parent; its arguments are the new task and the
 // clone flags.
@@ -1646,8 +1697,15 @@ int handle_fork(struct bpf_raw_tracepoint_args *ctx)
 	if (!p)
 		return 0;
 
+	// An entry left for the pid is replaced as before, without counting a
+	// second entry.
 	__u8 one = 1;
-	if (bpf_map_update_elem(&tracked_pids, &child_pid, &one, BPF_ANY))
+	long err = bpf_map_update_elem(&tracked_pids, &child_pid, &one, BPF_NOEXIST);
+	if (err == -EEXIST)
+		err = bpf_map_update_elem(&tracked_pids, &child_pid, &one, BPF_ANY);
+	else if (!err)
+		tracked_inserted();
+	if (err)
 		count_untracked();
 	return 0;
 }
@@ -1663,6 +1721,7 @@ int handle_exit(struct bpf_raw_tracepoint_args *ctx)
 	if (tgid != tid)
 		return 0;
 
-	bpf_map_delete_elem(&tracked_pids, &tgid);
+	if (!bpf_map_delete_elem(&tracked_pids, &tgid))
+		tracked_removed();
 	return 0;
 }
