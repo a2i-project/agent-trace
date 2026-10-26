@@ -287,10 +287,15 @@ func TestExclusionRulesOfProtocol101(t *testing.T) {
 			}
 		}
 	}
-	if _, skip := H2Excluded(1); !skip {
+	own := models.TrajectoryEntry{ActionType: models.FileOpen, Target: "/w/a", Tool: "Read"}
+	implied := models.TrajectoryEntry{ActionType: models.FileOpen, Target: "/w/out", ImpliedBy: "cat /w/out"}
+	if _, skip := H2Excluded(models.Trajectory{own}); !skip {
 		t.Error("a trajectory with one claim cannot be swept (X5)")
 	}
-	if _, skip := H2Excluded(2); skip {
+	if _, skip := H2Excluded(models.Trajectory{own, implied}); !skip {
+		t.Error("a harness-implied claim is not the agent's: the generators see one claim (X5)")
+	}
+	if _, skip := H2Excluded(models.Trajectory{own, own}); skip {
 		t.Error("two claims are enough for the generators")
 	}
 }

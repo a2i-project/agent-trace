@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/agent-trace/agent-trace/pkg/attack"
+	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
 // RunFacts is what the exclusion rules of protocol section 10.1 read about
@@ -110,10 +113,12 @@ func ScopeOf(ex []Exclusion) Scope {
 }
 
 // H2Excluded says whether X5 sets a run aside from the sweep: the generators
-// need at least MinClaimsForSweep claims.
-func H2Excluded(claims int) (Exclusion, bool) {
-	if claims < MinClaimsForSweep {
-		return Exclusion{X5, fmt.Sprintf("%d claim(s), the generators need %d", claims, MinClaimsForSweep)}, true
+// need at least MinClaimsForSweep claims of the agent's own, since they
+// refuse harness-implied claims (protocol 5.1).
+func H2Excluded(claims models.Trajectory) (Exclusion, bool) {
+	own, implied := attack.WithoutImplied(claims)
+	if len(own) < MinClaimsForSweep {
+		return Exclusion{X5, fmt.Sprintf("%d claim(s) of the agent's own (%d harness-implied left out), the generators need %d", len(own), implied, MinClaimsForSweep)}, true
 	}
 	return Exclusion{}, false
 }
