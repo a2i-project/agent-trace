@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-31 (P-33, V-46).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29) and O-20 (N-31) are closed; the others are undecided.
 
@@ -85,14 +85,6 @@ Question: When the agent or its commands run in another PID namespace, how does 
 Options: Not yet designed beyond `ProcessModel.Containerized` and `Normalize`.
 Current behaviour: No translation. Both supported agents are host-native.
 Blocked by: An integrated containerized agent.
-
-### O-31: A file reached through more than one mount
-Status: Open.
-Date: raised 2026-10-18, with P-30.
-Question: A bind mount gives one file several paths, and a fanotify record does not say which one the process used. The fs probe names it through one mount per filesystem (P-30), and matching compares cleaned path strings, so a claim naming another alias is unmatched. Which alias should an event carry, or should matching accept any alias?
-Options: (a) resolve the workspace's filesystem through the mount that holds the workspace; (b) record each filesystem's mounts in `fs_scope` and let matching accept any alias; (c) emit every alias.
-Current behaviour: The first mount of the filesystem in `/proc/self/mountinfo` names every file; an honest agent in a bind-mounted workspace whose path differs has its file claims unmatched.
-Blocked by: Nothing; a choice.
 
 ### O-11: Degraded verification for persistent-shell agents
 Status: Open.

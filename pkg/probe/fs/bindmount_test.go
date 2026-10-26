@@ -17,13 +17,15 @@ import (
 // A file reached through a bind mount and through its source path (P-30).
 // The filesystem mark covers every mount of the filesystem, and a record
 // carries the filesystem id, the directory's handle and the entry's name,
-// which are the same whichever path the process used, so nothing in it says
+// which are the same whichever path a process used, so nothing in it says
 // which path that was. The probe names both writes through the one mount it
 // resolves the filesystem's handles with, the first one marked: here the
 // tmpfs's own mount, whose path holds the source. The workspace is given as
 // the alias, as an agent running inside the bind would see it, and the start
 // walk caches the alias under the same name. A claim naming the alias does
-// not match the event, which is the known limit this pins.
+// not match the event by path, but it does through the mount table the probe
+// recorded (P-33, V-46), and a claim naming another file through the alias
+// does not.
 func TestObserver_ABindMountAliasIsNamedThroughTheProbesMount(t *testing.T) {
 	skipUnprivileged(t)
 	root := t.TempDir()
@@ -85,7 +87,69 @@ func TestObserver_ABindMountAliasIsNamedThroughTheProbesMount(t *testing.T) {
 	claim := models.TrajectoryEntry{ActionType: models.FileWrite, Target: viaAlias}
 	for _, e := range events {
 		if e.ActionType == models.FileWrite && matching.TargetsMatch(claim, e) {
-			t.Errorf("a claim through the alias matched %s; the known limit in 12_probe_fs.md no longer holds", e.Target)
+			t.Errorf("a claim through the alias matched %s by path alone", e.Target)
+		}
+	}
+
+	table, changed := obs.MountTable()
+	if table == nil || changed == nil {
+		t.Fatalf("mount table %v, changed %v: want both recorded", table != nil, changed)
+	}
+	var fsMounts *models.FSMounts
+	for i := range table {
+		for _, m := range table[i].Mounts {
+			if m.Point == fsDir {
+				fsMounts = &table[i]
+			}
+		}
+	}
+	if fsMounts == nil {
+		t.Fatalf("no filesystem in the table is mounted at %s", fsDir)
+	}
+	for _, m := range fsMounts.Mounts {
+		t.Logf("table: %s id %d parent %d root %s at %s names %v", fsMounts.Device, m.ID, m.Parent, m.Root, m.Point, m.Names)
+		switch m.Point {
+		case fsDir:
+			if m.Root != "/" || !m.Names {
+				t.Errorf("tmpfs mount recorded as %+v, want root / and names", m)
+			}
+		case alias:
+			if m.Root != "/src" || m.Names {
+				t.Errorf("alias recorded as %+v, want root /src and not names", m)
+			}
+		}
+	}
+	if *changed {
+		// Another process changed the namespace's mount table while the
+		// capture ran; the table is then not trusted (V-46).
+		if matching.NewMounts(&models.FSScope{Filesystems: table, MountTableChanged: changed}) != nil {
+			t.Error("a table that changed during the capture was trusted")
+		}
+		t.Skip("the mount table changed during the capture; the alias match is not checked")
+	}
+	mounts := matching.NewMounts(&models.FSScope{Filesystems: table, MountTableChanged: changed})
+	if mounts == nil {
+		t.Fatal("the recorded table was not usable")
+	}
+	corroborated := false
+	for _, e := range events {
+		if e.ActionType == models.FileWrite && mounts.TargetsMatch(claim, e) {
+			corroborated = true
+			if e.Target != filepath.Join(src, "via-alias.txt") {
+				t.Errorf("the alias claim matched %s", e.Target)
+			}
+		}
+	}
+	if !corroborated {
+		t.Error("the claim naming the alias was not matched through the mount table")
+	}
+	other := models.TrajectoryEntry{ActionType: models.FileWrite, Target: filepath.Join(alias, "via-source.txt.other")}
+	sameSuffix := models.TrajectoryEntry{ActionType: models.FileWrite, Target: filepath.Join(alias, "sub", "via-source.txt")}
+	for _, e := range events {
+		for _, c := range []models.TrajectoryEntry{other, sameSuffix} {
+			if mounts.TargetsMatch(c, e) {
+				t.Errorf("claim %s matched %s %s", c.Target, e.ActionType, e.Target)
+			}
 		}
 	}
 }
