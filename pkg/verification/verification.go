@@ -236,12 +236,13 @@ func (ex Expresses) can(entry models.TrajectoryEntry, field string) bool {
 // not captured), we cannot disprove the claim, so we treat it as agreement.
 // A mismatch requires both sides to have a non-nil, different value.
 //
-// NOTE: Verify applies a stricter override on top of this for specific
-// action types. For a FileClose or FileWrite entry whose OutputHash is nil
-// while the ground truth captured one, the nil is the agent opting out of a
-// check it could have passed, not a probe gap, and Verify forces a mismatch.
-// This function's permissive rule still governs every other case (any nil on
-// the ground-truth side, and a nil InputHash on either side).
+// contentDiffs overrides this for a FileClose or FileWrite claim whose
+// OutputHash is nil while the ground truth captured one, when Expresses says
+// the claim's format can state the hash (V-20, V-21, V-28): the nil is then
+// the agent opting out of a check it could have passed, not a probe gap, and
+// counts as a mismatch. This function's permissive rule governs every other
+// case (any nil on the ground-truth side, and a nil InputHash on either
+// side).
 func hashesAgree(a, b *string) bool {
 	if a == nil || b == nil {
 		return true
@@ -255,9 +256,10 @@ func hashesAgree(a, b *string) bool {
 // code and for those codes to differ -- e.g. the agent claims a command
 // succeeded while the ground truth shows it exited nonzero.
 //
-// NOTE: as with hashesAgree, Verify overrides this for a ProcessExit entry
-// whose ExitCode is nil while the ground truth captured one -- that reads as
-// the agent declining to report a value the probe has, not a probe gap.
+// As with hashesAgree, contentDiffs overrides this for a ProcessExit claim
+// whose ExitCode is nil while the ground truth captured one, when Expresses
+// says the format can state the code (V-20, V-21): that reads as the agent
+// declining to report a value the probe has, not a probe gap.
 func exitCodesAgree(a, b *int32) bool {
 	if a == nil || b == nil {
 		return true

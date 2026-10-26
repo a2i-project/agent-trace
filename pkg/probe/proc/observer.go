@@ -117,9 +117,10 @@ type Observer struct {
 
 	// bootOffsetNs converts a bpf_ktime_get_ns() reading (ns since boot) to a
 	// wall-clock UnixNano. Computed once at New() from a matched pair of
-	// CLOCK_MONOTONIC and wall-clock reads, so it drifts slowly with NTP
-	// adjustments over long uptimes -- acceptable for a probe whose consumer
-	// compares timestamps within a configurable delta, not exactly.
+	// CLOCK_MONOTONIC and wall-clock reads, so a later step of the wall clock
+	// is not followed. The verifier uses the timestamps only to order events
+	// and to check a claim's interval, which --interval-slack widens (V6,
+	// V-12); it never pairs by time.
 	bootOffsetNs int64
 }
 
