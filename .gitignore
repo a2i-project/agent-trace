@@ -21,6 +21,7 @@ STATE.md
 /baseline
 /attack
 /status
+/analyze
 
 # Output of the README Quickstart (trajectory and ground truth JSON)
 /trajectory.json
