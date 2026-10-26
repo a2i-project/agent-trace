@@ -1600,12 +1600,20 @@ func TestObserver_DeleteInARemovedDirectoryIsCounted(t *testing.T) {
 		t.Fatalf("rm: %v\n%s", err, out)
 	}
 	obs.Start()
+	// The mark covers the whole filesystem and nothing filters by path, so on
+	// a busy machine other processes' records can fill the channel before
+	// Stop: read it throughout, or the read loop blocks and Stop waits on it.
+	done := make(chan struct{})
+	go func() {
+		for range obs.Events() {
+		}
+		close(done)
+	}()
 	time.Sleep(200 * time.Millisecond)
 	if err := obs.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	for range obs.Events() {
-	}
+	<-done
 	if got := obs.CaptureCoverage().UnresolvedPaths; got == 0 {
 		t.Error("UnresolvedPaths = 0 after a delete inside a removed directory")
 	}
