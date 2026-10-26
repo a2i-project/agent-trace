@@ -135,6 +135,7 @@ func run(args []string, out, errOut io.Writer) int {
 	in.BaselineSubtree = agent.BaselineSubtree(adapter, baseline, gt.Workspace) // V-38
 	in.Sensitive = agent.SensitiveInput(adapter, gt, baseline)                  // V-40
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
+	in.ServerCalls = rep.ServerCalls // V-45
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)
 
@@ -274,6 +275,7 @@ func report(w io.Writer, r reportInput) {
 	p("  Outside the agent's tree:       %d events (reported, not the agent's)\n", len(c.Outside))
 	p("  Unplaced (no pid):              %d events\n", len(c.Unknown))
 	capability, responses := splitResponses(v.Capability)
+	printServerCalls(w, v.ServerCalls)
 	p("Capability:   %d  (listeners and sockets observed, never claimable, not part of the verdict)\n", len(capability))
 	if len(responses) > 0 {
 		p("Responses:    %d  (HTTP responses read over TLS, attested only: never claimable, not part of the verdict)\n", len(responses))
@@ -369,6 +371,29 @@ func printEntries(w io.Writer, label string, entries []models.TrajectoryEntry) {
 	_, _ = fmt.Fprintf(w, "\n%s:\n", label)
 	for _, e := range entries {
 		_, _ = fmt.Fprintf(w, "  %s %-14s %s\n", e.Timestamp.Format(time.RFC3339Nano), e.ActionType, e.Target)
+	}
+}
+
+// printServerCalls reports the server-side calls (V-45), only when the
+// session holds some: how many the capture corroborates as calls, then each
+// with its join or the reason it fails.
+func printServerCalls(w io.Writer, checks []verification.ServerCallCheck) {
+	if len(checks) == 0 {
+		return
+	}
+	n := 0
+	for _, c := range checks {
+		if c.Corroborated {
+			n++
+		}
+	}
+	_, _ = fmt.Fprintf(w, "Server-side calls: %d, corroborated as calls: %d  (run by the model API; corroborated means the response whose request-id is the call's request id was read whole with status 200: nothing about the query or the results, and the join is unverified on a live capture, V-45)\n", len(checks), n)
+	for _, c := range checks {
+		status := "corroborated as a call"
+		if !c.Corroborated {
+			status = "not corroborated: " + c.Reason
+		}
+		_, _ = fmt.Fprintf(w, "  %s %s %s request %s: %s\n", c.Call.Timestamp.Format(time.RFC3339Nano), c.Call.Tool, c.Call.ID, c.Call.RequestID, status)
 	}
 }
 
@@ -762,6 +787,10 @@ type jsonReport struct {
 	// harness's sensitive files (V-40).
 	Sensitive *jsonSensitive `json:"sensitive,omitempty"`
 
+	// ServerCalls is present only when the session holds server-side calls
+	// (V-45).
+	ServerCalls []verification.ServerCallCheck `json:"server_calls,omitempty"`
+
 	// RestingWrites is present only when the baseline holds write-class
 	// rules that apply to the run: the paths where an unclaimed in-process
 	// write is not detectable (V-37).
@@ -855,6 +884,7 @@ func writeJSONReport(path string, r reportInput) error {
 	rep.Alignment.CorroboratedHarnessShared = v.CorroboratedHarnessShared
 	rep.Alignment.UnexplainedHarnessCommands = harnessCommandExecs(v.UnexplainedHarnessCommands)
 	rep.versionJSON = r.version.json()
+	rep.ServerCalls = v.ServerCalls
 	rep.Alignment.BaselinedWritesOutsideHarness = v.BaselinedWritesOutsideHarness
 	if r.baseline != nil {
 		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)

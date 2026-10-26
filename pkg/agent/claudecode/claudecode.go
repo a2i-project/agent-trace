@@ -271,6 +271,16 @@ var nonEffectful = map[string]bool{
 	"SendMessage": true, "TaskCreate": true, "TaskUpdate": true, "TaskGet": true, "TaskList": true,
 }
 
+// serverSide are the tools Claude Code runs inside the model API exchange
+// (I-16). They stay non-effectful, and Parse also reports each call with the
+// requestId of the record that issued it, which the verifier joins to the
+// capture's responses (V-45).
+var serverSide = map[string]bool{"WebSearch": true}
+
+// modelAPIHost is the host Claude Code sends its model API requests to; its
+// own process connected to it in every run of the checked captures (V-34).
+const modelAPIHost = "api.anthropic.com"
+
 // Detect recognises a main session transcript: a .jsonl file whose first
 // records are self-describing Claude Code records.
 func (Adapter) Detect(path string) bool {
@@ -303,6 +313,9 @@ type record struct {
 	Timestamp time.Time `json:"timestamp"`
 	SessionID string    `json:"sessionId"`
 	Version   string    `json:"version"`
+	// RequestID is the model API request id of the response an assistant
+	// record holds, which a server-side call is joined by (V-45).
+	RequestID string `json:"requestId"`
 	// Cwd is the session's working directory when the record was written,
 	// against which a Bash command's relative paths resolve (I-46).
 	Cwd string `json:"cwd"`
@@ -421,6 +434,8 @@ type toolUse struct {
 	thread    string
 	cwd       string
 	seq       int // position in the merged read, to keep ties in file order
+	// requestID is the requestId of the assistant record that holds the call.
+	requestID string
 }
 
 // Parse reads a main session transcript and merges its subagents directory
@@ -493,7 +508,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 				}
 				switch b.Type {
 				case "tool_use":
-					uses = append(uses, toolUse{id: b.ID, name: b.Name, input: b.Input, ts: r.Timestamp, messageID: r.Message.ID, thread: thread, cwd: r.Cwd, seq: len(uses)})
+					uses = append(uses, toolUse{id: b.ID, name: b.Name, input: b.Input, ts: r.Timestamp, messageID: r.Message.ID, thread: thread, cwd: r.Cwd, seq: len(uses), requestID: r.RequestID})
 				case "tool_result":
 					res := toolResult{ts: r.Timestamp}
 					// One structured result per record: with several tool
@@ -597,6 +612,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		}
 		if perMessage[u.messageID] > 1 {
 			base.BlockID = u.messageID
+		}
+		if serverSide[u.name] {
+			rep.ServerCalls = append(rep.ServerCalls, verification.ServerCall{Tool: u.name, ID: u.id, RequestID: u.requestID, Host: modelAPIHost, Timestamp: u.ts})
 		}
 		entries, why := claimsFor(u, base, res)
 		if why == "" && u.name == toolBash && hasResult && harnessReadVersions[rep.AgentVersion] {

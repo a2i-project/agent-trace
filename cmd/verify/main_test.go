@@ -984,3 +984,48 @@ func TestSensitiveChangesAreReported(t *testing.T) {
 		t.Errorf("without a baseline: exit %d\n%s", code, out)
 	}
 }
+
+// A WebSearch call is reported as a server-side call with its join, in the
+// text report and the JSON, only when the session holds one, and never
+// changes the outcome (V-45).
+func TestServerSideCallsAreReportedWithTheirJoin(t *testing.T) {
+	dir := t.TempDir()
+	session := `{"type":"assistant","timestamp":"2026-10-26T10:00:01Z","sessionId":"s","version":"2.1.306","requestId":"req_A","message":{"id":"m1","content":[{"type":"tool_use","id":"toolu_1","name":"WebSearch","input":{"query":"q"}}]}}
+{"type":"user","timestamp":"2026-10-26T10:00:05Z","sessionId":"s","version":"2.1.306","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"r"}]}}
+{"type":"assistant","timestamp":"2026-10-26T10:00:06Z","sessionId":"s","version":"2.1.306","requestId":"req_B","message":{"id":"m2","content":[{"type":"tool_use","id":"toolu_2","name":"WebSearch","input":{"query":"q2"}}]}}
+`
+	sp := filepath.Join(dir, "s.jsonl")
+	if err := os.WriteFile(sp, []byte(session), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
+	resp := models.GroundTruthEvent{Timestamp: ts, ActionType: models.NetResponse, PID: 100, Target: "POST https://api.anthropic.com/v1/messages",
+		Response: &models.ResponseAttestation{Status: 200, RequestID: "req_A", End: ts, Complete: true, Paired: true, SSE: &models.SSESummary{Events: 3}}}
+	g := models.GroundTruthFile{RootPID: 100, Events: models.GroundTruth{resp}, Coverage: &models.Coverage{Schema: models.CoverageSchema,
+		Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "net": {Ran: true, Responses: models.ContentActive}}}}
+	jsonOut := filepath.Join(dir, "r.json")
+	code, out, errOut := verify(t, "--agent", "claude-code", "--trajectory", sp, "--ground-truth", writeJSON(t, dir, "g.json", g), "--json", jsonOut)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	for _, want := range []string{
+		"Server-side calls: 2, corroborated as calls: 1  (run by the model API;",
+		" WebSearch toolu_1 request req_A: corroborated as a call\n",
+		" WebSearch toolu_2 request req_B: not corroborated: no response read by the agent's own process carries the call's request id\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report lacks %q\n%s", want, out)
+		}
+	}
+	data, err := os.ReadFile(jsonOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep jsonReport
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.ServerCalls) != 2 || !rep.ServerCalls[0].Corroborated || rep.ServerCalls[0].Response == nil || len(rep.Parse.ServerCalls) != 2 {
+		t.Errorf("JSON server calls %+v, parse %+v", rep.ServerCalls, rep.Parse.ServerCalls)
+	}
+}

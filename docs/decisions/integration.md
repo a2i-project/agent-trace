@@ -131,7 +131,7 @@ Consequences: Real-agent verdicts never check exit status. The three-valued nil 
 Alternatives rejected: A two-valued exit claim derived from `is_error`, which invents a value the format does not hold.
 
 ### I-16: Claude Code `WebSearch` is non-effectful; Gemini `search_web` is unknown
-Status: Accepted, implemented in the adapters' `nonEffectful` sets.
+Status: Accepted, implemented in the adapters' `nonEffectful` sets. Amended by V-45 (2026-10-26): a Claude Code `WebSearch` call is also reported as a server-side call, joined to the capture's responses.
 Date: 2026-10-02 (the traced run in Context), built 2026-10-06.
 Context: A traced run of Claude Code 2.1.286 (strace on `connect`, `sendto`, `sendmsg`, `write`, one run, Verified) showed `WebSearch` opens no connection to any search or content host, only to the model API and telemetry. The same method confirmed `WebFetch` connects directly from the agent process. Whether Gemini's `search_web` runs server-side is unverified.
 Decision: `WebSearch` is in Claude Code's non-effectful set, so it produces no entry. Gemini's `search_web` is neither mapped nor declared non-effectful, so it is named in `UnknownTools` and `Degradations`.
