@@ -67,7 +67,9 @@ type Baseline struct {
 	// the command did beneath it in the control runs: the programs run, files
 	// written, renamed or deleted, connections and requests
 	// (verification.SubtreeChecked), as rules of the same form, kept at the
-	// same agreement threshold. In a run, a baselined command explains only
+	// same agreement threshold. It records the same for each declared
+	// harness command that some control ran and that is not a rule, counted
+	// over the controls that ran it (Subtree.Declared, V-43). In a run, a baselined command explains only
 	// the events beneath it that its record holds (V-38). Nil, as in a
 	// baseline written before V-38, records nothing and leaves every
 	// baselined command explaining its whole subtree (V7); Capture always
@@ -116,6 +118,12 @@ type Subtree struct {
 	// control run but too few of them. Recorded for the reader; they explain
 	// nothing.
 	Unstable []Rule `json:"unstable,omitempty"`
+	// Declared marks the record of a command the adapter declares as the
+	// harness's own (HarnessCommander) that is not a command rule at this
+	// agreement: its actions are counted over the controls that ran it, and
+	// it explains nothing beneath a command no rule matches except under
+	// that declaration (V-43).
+	Declared bool `json:"declared,omitempty"`
 }
 
 // RecordsSubtrees reports whether the baseline holds the subtrees of its
@@ -169,6 +177,9 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 	// subCounts[command][rule] counts the runs in which some instance of the
 	// command did rule beneath it.
 	subCounts := map[string]map[Rule]int{}
+	// declaredRuns[command] counts the runs in which a declared harness
+	// command ran, as HarnessCommand recognises it (V-43).
+	declaredRuns := map[string]int{}
 	for i, r := range runs {
 		if r.RootPID == 0 {
 			return Baseline{}, fmt.Errorf("control run %d has no root pid, so its events cannot be attributed", i+1)
@@ -190,6 +201,8 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		}
 		// What each command did beneath it, in the same canonical form.
 		seenSub := map[string]map[Rule]bool{}
+		declared := HarnessCommand(a, r.Events)
+		seenDeclared := map[string]bool{}
 		for _, c := range part.Commands {
 			if c.Exec == nil {
 				continue
@@ -199,6 +212,9 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 				continue
 			}
 			cmd := templateWorkspace(ce.Target, r.Workspace)
+			if declared != nil && declared(*c.Exec) {
+				seenDeclared[cmd] = true
+			}
 			if seenSub[cmd] == nil {
 				seenSub[cmd] = map[Rule]bool{}
 			}
@@ -209,6 +225,9 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 				e = canonical(a, e)
 				seenSub[cmd][Rule{ActionType: e.ActionType, Target: templateWorkspace(e.Target, r.Workspace)}] = true
 			}
+		}
+		for cmd := range seenDeclared {
+			declaredRuns[cmd]++
 		}
 		for cmd, rules := range seenSub {
 			if subCounts[cmd] == nil {
@@ -248,8 +267,51 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		sortRules(st.Unstable)
 		b.Subtrees = append(b.Subtrees, st)
 	}
+	b.Subtrees = append(b.Subtrees, declaredSubtrees(b.Rules, declaredRuns, subCounts, agreement)...)
 	b.Sensitive = captureSensitive(a, runs, need)
 	return b, nil
+}
+
+// declaredSubtrees records what each declared harness command that is not a
+// command rule did beneath it in the controls that ran it (V-43): an action
+// is kept when at least the agreement's share of those controls did it
+// beneath the command, at least one, and is unstable otherwise. A declared
+// command that is a rule has its record among the rules' (V-38); one no
+// control ran has no record, so in a run everything checked beneath it is
+// unexplained.
+func declaredSubtrees(rules []Rule, runs map[string]int, subCounts map[string]map[Rule]int, agreement float64) []Subtree {
+	isRule := map[string]bool{}
+	for _, r := range rules {
+		if r.ActionType == models.ProcessExec {
+			isRule[r.Target] = true
+		}
+	}
+	cmds := make([]string, 0, len(runs))
+	for cmd := range runs {
+		if !isRule[cmd] {
+			cmds = append(cmds, cmd)
+		}
+	}
+	sort.Strings(cmds)
+	var out []Subtree
+	for _, cmd := range cmds {
+		need := int(math.Ceil(agreement*float64(runs[cmd]) - 1e-9))
+		if need < 1 {
+			need = 1
+		}
+		st := Subtree{Command: cmd, Declared: true, Events: []Rule{}}
+		for sub, n := range subCounts[cmd] {
+			if n >= need {
+				st.Events = append(st.Events, sub)
+			} else {
+				st.Unstable = append(st.Unstable, sub)
+			}
+		}
+		sortRules(st.Events)
+		sortRules(st.Unstable)
+		out = append(out, st)
+	}
+	return out
 }
 
 // captureSensitive is what the controls changed in the adapter's declared

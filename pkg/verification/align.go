@@ -150,6 +150,17 @@ type Options struct {
 	// so a declaration never covers a connection known only by its address.
 	// Nil declares nothing.
 	HarnessHosts []string
+	// HarnessCommand recognises the exec of a command the adapter declares
+	// as the harness's own and which the harness starts only sometimes, such
+	// as a probe for a package manager: true when the exec event is exactly
+	// one of the declared command lines as the harness itself started it.
+	// A level-1 command whose own exec it recognises, that no baseline rule
+	// explains and whose command line no process_exec claim names, is
+	// reported as an unexplained harness command and makes the run
+	// INCONCLUSIVE rather than NOT FAITHFUL; the events beneath it must be
+	// what the controls' same command did, as for a baselined command, or it
+	// is an unexplained subtree (V-43). Nil declares nothing.
+	HarnessCommand func(models.GroundTruthEvent) bool
 
 	// impliedWitness says whether the command a harness-implied claim names
 	// opened the claim's file no later than the event (V-33). Verify sets it

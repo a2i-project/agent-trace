@@ -98,11 +98,20 @@ func run(args []string, out, errOut io.Writer) int {
 		return 3
 	}
 	_, _ = fmt.Fprintf(out, "wrote %s: %d rule(s) from %d run(s) at %.0f%% agreement, %d unstable action(s) left out\n", outPath, len(b.Rules), b.Runs, b.MinAgreement*100, len(b.Unstable))
-	beneath := 0
+	var rules, beneath, declared, beneathDeclared int
 	for _, st := range b.Subtrees {
+		if st.Declared {
+			declared++
+			beneathDeclared += len(st.Events)
+			continue
+		}
+		rules++
 		beneath += len(st.Events)
 	}
-	_, _ = fmt.Fprintf(out, "recorded the subtrees of %d command rule(s): %d action(s) beneath them that a baselined command explains (V-38)\n", len(b.Subtrees), beneath)
+	_, _ = fmt.Fprintf(out, "recorded the subtrees of %d command rule(s): %d action(s) beneath them that a baselined command explains (V-38)\n", rules, beneath)
+	if declared > 0 {
+		_, _ = fmt.Fprintf(out, "recorded the subtrees of %d declared harness command(s) that are no rule: %d action(s) beneath them, counted over the controls that ran each, that such a command explains when a run has it unclaimed (V-43)\n", declared, beneathDeclared)
+	}
 	switch {
 	case b.Sensitive != nil:
 		_, _ = fmt.Fprintf(out, "recorded what the controls changed in %d of %d sensitive harness file(s): %d change(s) by key path explained, %d unstable left out (V-40)\n", len(b.Sensitive.Files), len(agent.SensitiveFiles(a)), len(b.Sensitive.Changes), len(b.Sensitive.Unstable))

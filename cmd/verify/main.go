@@ -241,6 +241,9 @@ func report(w io.Writer, r reportInput) {
 	if len(v.UnexplainedHarnessNet) > 0 {
 		p("  Unexplained harness network activity: %d  (level-0 connections to the harness's declared service hosts that nothing explains)\n", len(v.UnexplainedHarnessNet))
 	}
+	if len(v.UnexplainedHarnessCommands) > 0 {
+		p("  Unexplained harness commands: %d  (commands the adapter declares as the harness's own that no claim and no baseline rule explains; what each did beneath it is checked against the controls)\n", len(v.UnexplainedHarnessCommands))
+	}
 	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
 	if len(v.BaselinedWritesOutsideHarness) > 0 {
 		p("  Baselined writes outside the harness's directories: %d  (level-0 writes a baseline rule explains on paths the adapter does not declare as the harness's own: an unclaimed write there would be hidden)\n", len(v.BaselinedWritesOutsideHarness))
@@ -286,6 +289,7 @@ func report(w io.Writer, r reportInput) {
 	printEntries(w, "Out of scope", v.OutOfScope)
 	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
 	printEvents(w, "Unexplained harness network activity", v.UnexplainedHarnessNet)
+	printEvents(w, "Unexplained harness commands", harnessCommandExecs(v.UnexplainedHarnessCommands))
 	printEvents(w, "Outside writes", v.OutsideWrites)
 	printEvents(w, "Baselined writes outside the harness's directories", v.BaselinedWritesOutsideHarness)
 	printSensitive(w, "Unexplained sensitive changes", v.UnexplainedSensitiveChanges)
@@ -402,10 +406,15 @@ func printSubtrees(w io.Writer, cmds []*verification.Command) {
 		if c.Exec != nil {
 			target = c.Exec.Target
 		}
-		if c.Baseline {
-			// A baselined command whose subtree did what no control's same
-			// command did (V-38): the events that are not explained.
-			_, _ = fmt.Fprintf(w, "  pid %d %s  (baselined command; %d of the %d events beneath it are not what the controls' same command did)\n", c.Process.PID, target, len(c.Unbaselined), len(c.Content))
+		if c.Baseline || c.Harness {
+			// A baselined command, or a declared harness command, whose
+			// subtree did what no control's same command did (V-38, V-43):
+			// the events that are not explained.
+			kind := "baselined command"
+			if c.Harness {
+				kind = "declared harness command"
+			}
+			_, _ = fmt.Fprintf(w, "  pid %d %s  (%s; %d of the %d events beneath it are not what the controls' same command did)\n", c.Process.PID, target, kind, len(c.Unbaselined), len(c.Content))
 			for _, e := range c.Unbaselined {
 				_, _ = fmt.Fprintf(w, "    %s %-14s %s\n", e.Timestamp.Format(time.RFC3339Nano), e.ActionType, e.Target)
 			}
@@ -578,6 +587,9 @@ func commandStatus(c *verification.Command, v verification.Verdict) string {
 	if c.Baseline {
 		return "baseline"
 	}
+	if c.Harness {
+		return "harness"
+	}
 	for _, u := range v.Coverage.UnexplainedSubtrees {
 		if u == c {
 			return "unexplained"
@@ -611,6 +623,12 @@ func printCommands(w io.Writer, cmds []*verification.Command) {
 			status = "baseline"
 			if len(c.Unbaselined) > 0 {
 				status = fmt.Sprintf("baseline, %d beneath it not in the controls", len(c.Unbaselined))
+			}
+		}
+		if c.Harness {
+			status = "harness"
+			if len(c.Unbaselined) > 0 {
+				status = fmt.Sprintf("harness, %d beneath it not in the controls", len(c.Unbaselined))
 			}
 		}
 		if c.Exec == nil && c.Exit == nil && len(c.Content) == 0 && len(c.Capability) == 0 {
@@ -710,8 +728,9 @@ type jsonCommand struct {
 	Exit       *models.GroundTruthEvent `json:"exit,omitempty"`
 	Events     models.GroundTruth       `json:"events"`
 	Capability models.GroundTruth       `json:"capability,omitempty"`
-	// Unbaselined is present only for a baselined command with events
-	// beneath it that no control's same command produced (V-38).
+	// Unbaselined is present only for a baselined or declared harness
+	// command with events beneath it that no control's same command
+	// produced (V-38, V-43).
 	Unbaselined models.GroundTruth `json:"unbaselined,omitempty"`
 }
 
@@ -762,6 +781,9 @@ type jsonAlignment struct {
 	// UnexplainedHarnessNet is present only when some level-0 connection to
 	// a declared harness host is unexplained (V-34).
 	UnexplainedHarnessNet models.GroundTruth `json:"unexplained_harness_net,omitempty"`
+	// UnexplainedHarnessCommands is present only when some declared harness
+	// command is unexplained (V-43): the exec of each.
+	UnexplainedHarnessCommands models.GroundTruth `json:"unexplained_harness_commands,omitempty"`
 	// HarnessImplied and HarnessImpliedUnpaired are present only when the
 	// adapter derived harness-implied claims (V-33).
 	HarnessImplied         []jsonImplied `json:"harness_implied,omitempty"`
@@ -831,6 +853,7 @@ func writeJSONReport(path string, r reportInput) error {
 		Capability: nonNilEvents(v.Capability), Commands: []jsonCommand{}, Complete: v.Completeness,
 	}
 	rep.Alignment.CorroboratedHarnessShared = v.CorroboratedHarnessShared
+	rep.Alignment.UnexplainedHarnessCommands = harnessCommandExecs(v.UnexplainedHarnessCommands)
 	rep.versionJSON = r.version.json()
 	rep.Alignment.BaselinedWritesOutsideHarness = v.BaselinedWritesOutsideHarness
 	if r.baseline != nil {
@@ -868,6 +891,15 @@ func writeJSONReport(path string, r reportInput) error {
 		return fmt.Errorf("write JSON report %s: %w", path, err)
 	}
 	return nil
+}
+
+// harnessCommandExecs is the exec of each command, in order.
+func harnessCommandExecs(cmds []*verification.Command) models.GroundTruth {
+	var out models.GroundTruth
+	for _, c := range cmds {
+		out = append(out, *c.Exec)
+	}
+	return out
 }
 
 func nonNilSensitive(c []verification.SensitiveChange) []verification.SensitiveChange {

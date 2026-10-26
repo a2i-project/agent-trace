@@ -26,12 +26,20 @@ type Command struct {
 	// Baseline is set when the harness baseline explains this command, so no
 	// claim is needed for it (V7). See Partition.SubtractBaseline.
 	Baseline bool
-	// Unbaselined holds the events beneath a baselined command that the
-	// controls' same command never produced: programs run, files written,
+	// Unbaselined holds the events beneath a baselined command, or a
+	// declared harness command (Harness), that the controls' same command
+	// never produced: programs run, files written,
 	// renamed or deleted, connections and requests (SubtreeChecked). Any one
 	// makes the command an unexplained subtree (V-38). Empty when the
 	// baseline recorded no subtrees.
 	Unbaselined models.GroundTruth
+	// Harness is set when the command's own exec is a command the adapter
+	// declares as the harness's own (Options.HarnessCommand) that no claim
+	// names and no baseline rule explains: it is reported apart, not
+	// aligned (V-43). Its Unbaselined then holds the events beneath it that
+	// the controls' same command never produced, every checked one when the
+	// baseline recorded nothing for it.
+	Harness bool
 }
 
 // AttributedEvent is an event with its place in the tree.

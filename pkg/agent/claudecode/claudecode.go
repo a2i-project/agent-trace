@@ -152,6 +152,24 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 // explains them and they are not declared.
 func (Adapter) HarnessHosts() []string { return []string{"downloads.claude.ai"} }
 
+// packageManagerProbe is the command Claude Code starts to learn the host's
+// system and its package managers and JavaScript runtimes, as the proc probe
+// reports its exec. It ran, with exactly this command line, as a direct child
+// of the agent's process in 35 of the 48 runs of the checked Claude Code
+// captures of 2.1.286, 2.1.296 and 2.1.306 (34 of 38 controls, 1 of 10 task
+// runs), and never truncated (I-63, V-43).
+const packageManagerProbe = "/usr/bin/sh -c uname -s\nuname -r\nuname -m\n" +
+	"for c in npm yarn pnpm; do command -v \"$c\" >/dev/null 2>&1 && printf \"%s,\" \"$c\"; done; echo\n" +
+	"for c in bun deno node; do command -v \"$c\" >/dev/null 2>&1 && printf \"%s,\" \"$c\"; done; echo"
+
+// HarnessCommands are the commands Claude Code starts on its own only
+// sometimes (V-43): the package-manager probe, which some controls of a
+// capture run and others do not, for a reason the captures do not show. An agent's shell call never execs it as the command's
+// own exec: the harness wraps every Bash call in /bin/bash, and Normalize's
+// rewrite of that wrapper into the claimed command is not recognised as the
+// declared exec (agent.HarnessCommand).
+func (Adapter) HarnessCommands() []string { return []string{packageManagerProbe} }
+
 // SensitiveFiles are Claude Code's security-sensitive files (V-40, I-59):
 // the global configuration ~/.claude.json, which holds the per-project
 // allowed tools, MCP servers and trust flags and which the harness renamed
