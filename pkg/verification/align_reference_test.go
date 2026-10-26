@@ -107,7 +107,7 @@ func refAlignLane(lane Lane, claims models.Trajectory, observed models.GroundTru
 	}
 	for i := 1; i <= n; i++ {
 		for j := 1; j <= m; j++ {
-			pc, _ := pairCost(claims[ci[i-1]], observed[ei[j-1]], opts.Expresses)
+			pc, _ := pairCost(claims[ci[i-1]], observed[ei[j-1]], opts.Expresses, nil)
 			pair[(i-1)*m+(j-1)] = pc
 			diag := cost[(i-1)*w+(j-1)] + int32(pc)
 			up := cost[(i-1)*w+j] + costIndel   // claim i unpaired: insertion
@@ -154,7 +154,7 @@ func refAlignLane(lane Lane, claims models.Trajectory, observed models.GroundTru
 		switch {
 		case i > 0 && j > 0 && here == cost[(i-1)*w+(j-1)]+int32(pair[(i-1)*m+(j-1)]) && hv == viol[(i-1)*w+(j-1)]+outside(i, j):
 			c, e := claims[ci[i-1]], observed[ei[j-1]]
-			_, diffs := pairCost(c, e, opts.Expresses)
+			_, diffs := pairCost(c, e, opts.Expresses, nil)
 			ed := Edit{Kind: EditMatch, ClaimIndex: ci[i-1], EventIndex: ei[j-1], Claim: &claims[ci[i-1]], Event: &observed[ei[j-1]]}
 			if len(diffs) > 0 {
 				ed.Kind, ed.Diffs = EditSubstitution, diffs
@@ -406,7 +406,7 @@ func refAlignBlocks(la LaneAlignment, claims models.Trajectory, observed models.
 	var rev []Edit
 	emitPair := func(p, j int) {
 		c, e := claims[ci[p]], observed[ei[j-1]]
-		_, diffs := pairCost(c, e, opts.Expresses)
+		_, diffs := pairCost(c, e, opts.Expresses, nil)
 		ed := Edit{Kind: EditMatch, ClaimIndex: ci[p], EventIndex: ei[j-1], Claim: &claims[ci[p]], Event: &observed[ei[j-1]]}
 		if len(diffs) > 0 {
 			ed.Kind, ed.Diffs = EditSubstitution, diffs

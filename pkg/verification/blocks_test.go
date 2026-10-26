@@ -510,7 +510,7 @@ func TestAlign_BlocksAgreeWithBruteForce(t *testing.T) {
 			case EditInsertion, EditDeletion:
 				cost += costIndel
 			default:
-				pc, _ := pairCost(*e.Claim, *e.Event, nil)
+				pc, _ := pairCost(*e.Claim, *e.Event, nil, nil)
 				cost += pc
 				if e.OutsideInterval {
 					viol++

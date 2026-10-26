@@ -504,7 +504,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	var rev []Edit
 	emitPair := func(p, j int) {
 		c, e := claims[ci[p]], observed[ei[j-1]]
-		_, diffs := pairCost(c, e, opts.Expresses)
+		_, diffs := pairCost(c, e, opts.Expresses, opts.mounts)
 		ed := Edit{Kind: EditMatch, ClaimIndex: ci[p], EventIndex: ei[j-1], Claim: &claims[ci[p]], Event: &observed[ei[j-1]]}
 		if len(diffs) > 0 {
 			ed.Kind, ed.Diffs = EditSubstitution, diffs

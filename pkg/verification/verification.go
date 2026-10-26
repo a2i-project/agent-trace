@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
@@ -413,7 +414,9 @@ func Verify(in Input) Verdict {
 			v.OutOfScope = append(v.OutOfScope, c)
 		}
 	}
-	claimed := claimedTargets(claims)
+	// The capture's mount table, when it proves aliases (V-46).
+	mounts := matching.NewMounts(in.FSScope)
+	claimed := claimedTargets(claims, mounts)
 	// A baseline event on a path some claim names stays in the sequence, so
 	// the claim can pair with it; one left unpaired is counted as baselined
 	// after alignment, as if it had been subtracted (V-30).
@@ -459,7 +462,8 @@ func Verify(in Input) Verdict {
 	v.ServerCalls = checkServerCalls(in.ServerCalls, part.Capability, in.Coverage)
 
 	opts := in.Options
-	opts.impliedWitness = impliedWitness(part.Commands)
+	opts.impliedWitness = impliedWitness(part.Commands, mounts)
+	opts.mounts = mounts
 	alignments, err := Align(claims, part.Observed, opts)
 	if err != nil {
 		if errors.Is(err, ErrTooLarge) {
@@ -590,7 +594,7 @@ func Verify(in Input) Verdict {
 // later than the event the claim would pair with. The harness reads a file
 // after the command that read it finished, so its open never precedes the
 // command's.
-func impliedWitness(cmds []*Command) func(models.TrajectoryEntry, models.GroundTruthEvent) bool {
+func impliedWitness(cmds []*Command, mounts *matching.Mounts) func(models.TrajectoryEntry, models.GroundTruthEvent) bool {
 	// first[command text][path] is the earliest open of the path beneath a
 	// command with that text.
 	first := map[string]map[string]time.Time{}
@@ -614,6 +618,12 @@ func impliedWitness(cmds []*Command) func(models.TrajectoryEntry, models.GroundT
 	}
 	return func(c models.TrajectoryEntry, e models.GroundTruthEvent) bool {
 		t, ok := first[c.ImpliedBy][c.Target]
+		if !ok {
+			// The claim's path through another mount (V-46).
+			if n, canon := mounts.Canonical(c.Target); canon {
+				t, ok = first[c.ImpliedBy][n]
+			}
+		}
 		return ok && !t.After(e.Timestamp)
 	}
 }
@@ -642,14 +652,19 @@ func unverifiedReason(pairs []MatchedPair) string {
 	return fmt.Sprintf("%d claim(s) state content the probe did not capture (%s), so they are neither confirmed nor refuted", len(pairs), strings.Join(names, ", "))
 }
 
-// claimedTargets is the set of file paths the claims name. A harness-implied
+// claimedTargets is the set of file paths the claims name, each also under
+// the name the probe gives the file when the capture's mount table proves it
+// (V-46), since the set is compared with observed names. A harness-implied
 // claim names none: it keeps no baseline or harness-owned event in the
 // sequence (V-33), it only absorbs an open that would otherwise be Unrecorded.
-func claimedTargets(claims models.Trajectory) map[string]bool {
+func claimedTargets(claims models.Trajectory, mounts *matching.Mounts) map[string]bool {
 	set := map[string]bool{}
 	for _, c := range claims {
 		if LaneOf(c.ActionType) == LaneFS && !implied(c) {
 			set[c.Target] = true
+			if n, ok := mounts.Canonical(c.Target); ok {
+				set[n] = true
+			}
 		}
 	}
 	return set
