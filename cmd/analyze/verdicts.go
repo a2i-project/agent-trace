@@ -285,10 +285,14 @@ func h2Verdicts(res *Results) ([]Verdict, []string) {
 		}
 	}
 	// H2d.
-	viol, comp, positions := 0, 0, 0
+	// The composed clause is refuted by an omission no longer found
+	// (detected); one found but not classified or located is reported, as
+	// H2b and H2c judge those.
+	viol, comp, partial, positions := 0, 0, 0, 0
 	for _, a := range h.A4 {
 		viol += len(a.Violations)
-		comp += len(a.ComposedMisses)
+		comp += len(a.ComposedNotFound)
+		partial += len(a.ComposedMisses) - len(a.ComposedNotFound)
 		positions += a.Positions + a.ComposedPositions
 	}
 	d := Verdict{ID: "H2d", Scope: "both agents, every capture", Claim: h2Claim("H2d"), Threshold: "holds everywhere; refuted by any counterexample"}
@@ -296,9 +300,12 @@ func h2Verdicts(res *Results) ([]Verdict, []string) {
 	case positions == 0:
 		d.Result, d.Detail = NotEvaluated, "no position was checked"+note
 	case viol+comp > 0:
-		d.Result, d.Detail = Refuted, fmt.Sprintf("%d widening(s) changed the verdict and %d omission(s) with widened neighbours were missed, of %d positions", viol, comp, positions)
+		d.Result, d.Detail = Refuted, fmt.Sprintf("%d widening(s) changed the verdict and %d omission(s) with widened neighbours were not found, of %d positions", viol, comp, positions)
 	default:
 		d.Result, d.Detail = Holds, fmt.Sprintf("%d positions checked, no counterexample", positions)
+	}
+	if partial > 0 {
+		d.Detail += fmt.Sprintf("; %d omission(s) with widened neighbours found but not classified or not located", partial)
 	}
 	v = append(v, d)
 	// H2e.

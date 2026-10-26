@@ -80,6 +80,7 @@ type A4Summary struct {
 	ComposedDetected     int      `json:"composed_detected"`
 	ComposedClassified   int      `json:"composed_classified"`
 	ComposedLocated      int      `json:"composed_located"`
+	ComposedNotFound     []string `json:"composed_not_found,omitempty"`
 	ComposedMisses       []string `json:"composed_misses,omitempty"`
 }
 
@@ -302,6 +303,9 @@ func buildA4(runs []RunOutput, agentName string) A4Summary {
 		s.ComposedDetected += a.ComposedDetected
 		s.ComposedClassified += a.ComposedClassified
 		s.ComposedLocated += a.ComposedLocated
+		for _, m := range a.ComposedNotFound {
+			s.ComposedNotFound = append(s.ComposedNotFound, o.ID+": "+m)
+		}
 		for _, m := range a.ComposedMisses {
 			s.ComposedMisses = append(s.ComposedMisses, o.ID+": "+m)
 		}
