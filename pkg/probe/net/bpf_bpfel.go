@@ -79,6 +79,12 @@ type bpfNetEventHdr struct {
 	Flags      uint16
 }
 
+type bpfTrackedStat struct {
+	_    structs.HostLayout
+	Live int64
+	Peak int64
+}
+
 // Names of all BPF objects in the ELF.
 //
 // Used for safe lookups in a Collection or CollectionSpec.
@@ -96,6 +102,8 @@ const (
 	bpfMapStateLostCount      = "state_lost_count"
 	bpfMapSysEnterProgs       = "sys_enter_progs"
 	bpfMapTrackedPids         = "tracked_pids"
+	bpfMapTrackedSeeded       = "tracked_seeded"
+	bpfMapTrackedStat         = "tracked_stat"
 	bpfMapUntrackedCount      = "untracked_count"
 	bpfProgHandleExit         = "handle_exit"
 	bpfProgHandleFork         = "handle_fork"
@@ -196,6 +204,8 @@ type bpfMapSpecs struct {
 	StateLostCount    *ebpf.MapSpec `ebpf:"state_lost_count"`
 	SysEnterProgs     *ebpf.MapSpec `ebpf:"sys_enter_progs"`
 	TrackedPids       *ebpf.MapSpec `ebpf:"tracked_pids"`
+	TrackedSeeded     *ebpf.MapSpec `ebpf:"tracked_seeded"`
+	TrackedStat       *ebpf.MapSpec `ebpf:"tracked_stat"`
 	UntrackedCount    *ebpf.MapSpec `ebpf:"untracked_count"`
 }
 
@@ -238,6 +248,8 @@ type bpfMaps struct {
 	StateLostCount    *ebpf.Map `ebpf:"state_lost_count"`
 	SysEnterProgs     *ebpf.Map `ebpf:"sys_enter_progs"`
 	TrackedPids       *ebpf.Map `ebpf:"tracked_pids"`
+	TrackedSeeded     *ebpf.Map `ebpf:"tracked_seeded"`
+	TrackedStat       *ebpf.Map `ebpf:"tracked_stat"`
 	UntrackedCount    *ebpf.Map `ebpf:"untracked_count"`
 }
 
@@ -256,6 +268,8 @@ func (m *bpfMaps) Close() error {
 		m.StateLostCount,
 		m.SysEnterProgs,
 		m.TrackedPids,
+		m.TrackedSeeded,
+		m.TrackedStat,
 		m.UntrackedCount,
 	)
 }

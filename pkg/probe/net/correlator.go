@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -30,9 +31,11 @@ type Coverage struct {
 	HellosFollowed     int    // ClientHellos whose first send did not hold them whole, followed into later sends (N-31)
 	WithContent        int    // at least one HTTP request attributed to a connection
 	FramesUnattributed int    // ssl_frame whose request could not be joined to a connection or parsed
-	ContentUnsupported int    // h2 connections (ALPN negotiated h2; content parsing skipped)
+	ContentUnsupported int    // connections whose ClientHello offered h2 in ALPN, whatever was negotiated
 	FaultedReads       uint64 // SSL_write calls whose plaintext read faulted in-kernel (see D5)
-	RingbufDrops       uint64 // records the net and TLS ring buffers discarded because they were full
+	RingbufDrops       uint64 // records the net and TLS ring buffers discarded because they were full: NetRingDrops plus TLSRingDrops
+	NetRingDrops       uint64 // records the net ring buffer discarded (N-33)
+	TLSRingDrops       uint64 // write frames the TLS ring buffer discarded (N-33)
 	UntrackedChildren  uint64 // descendants left untracked because a tracked_pids map was full (lower bound)
 	StateMapFull       uint64 // connections lost because the kernel conns map was full (lower bound)
 	IOURingNetOps      uint64 // io_uring operations on sockets by tracked processes, which no hook records (N-25); event loss
@@ -40,6 +43,11 @@ type Coverage struct {
 	IOURingRings       uint64 // io_uring rings set up by tracked processes; diagnostic
 	HelloFaults        uint64 // hello reads that faulted on a connection still waiting for its hello; content gap (no hostname), not event loss
 	FramesTruncated    int    // SSL_write calls larger than the capture copies; the request stream is dropped and counted in FramesUnattributed too
+
+	// HTTP/2 (N-33). Diagnostic: the frames are handled as before.
+	H2Preface            int // TLS connections whose request stream began with the HTTP/2 client preface
+	H2PrefaceUnvalidated int // write frames that began with the preface while offset validation read them, before content capture was active
+	FramesH2             int // write frames on connections counted in H2Preface, the preface's included
 
 	// Response capture (N-29). All diagnostic; ResponseGaps in
 	// ProbeCoverage sums the ones that mean missing response data.
@@ -76,6 +84,9 @@ type tlsConn struct {
 	host     string // host and port of the latest attributed request
 	port     int
 	lastSeen time.Time
+	// h2 is set when the request stream began with the HTTP/2 preface and
+	// cleared when a request parses on it (an SSL* reused for HTTP/1.1).
+	h2 bool
 }
 
 // sentRequest is what a response needs of the request it answers.
@@ -123,6 +134,13 @@ func (o *Observer) evictTLSConn() {
 // number of bytes the call wrote beyond the captured payload.
 func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts time.Time) {
 	c := o.tlsConn(key, ts)
+	if c.req.Len() == 0 && bytes.HasPrefix(payload, h2ClientPreface) {
+		c.h2 = true
+		o.coverage.H2Preface++
+	}
+	if c.h2 {
+		o.coverage.FramesH2++
+	}
 	if missing > 0 {
 		// The request stream has a hole: a body hashed across it would be
 		// wrong, and its framing cannot be trusted past it.
@@ -149,6 +167,7 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 		if !ok {
 			return // need more bytes; wait for the next ssl_frame
 		}
+		c.h2 = false
 		sent := &sentRequest{method: req.Method}
 		if target, host, port, ok := o.emitNetRequest(key.tgid, req, ts); ok {
 			sent.target = target
