@@ -136,8 +136,8 @@ func h3Verdicts(res *Results) ([]Verdict, []string) {
 			switch {
 			case len(inc.Unattributed) > 0:
 				c3.Result = Halt
-				c3.Detail = fmt.Sprintf("%d INCONCLUSIVE run(s) with no listed cause: %s", len(inc.Unattributed), strings.Join(inc.Unattributed, ", "))
-				halts = append(halts, fmt.Sprintf("H3c (%s): %d INCONCLUSIVE run(s) whose reasons match no cause of the list: an unattributed INCONCLUSIVE is an instrument defect (%s)", label, len(inc.Unattributed), strings.Join(inc.Unattributed, ", ")))
+				c3.Detail = fmt.Sprintf("%d INCONCLUSIVE run(s) with a reason no listed cause matches: %s; the reasons: %s", len(inc.Unattributed), strings.Join(inc.Unattributed, ", "), strings.Join(inc.UnmatchedReasons, " | "))
+				halts = append(halts, fmt.Sprintf("H3c (%s): %d INCONCLUSIVE run(s) with a reason that matches no cause of the list: an unattributed INCONCLUSIVE is an instrument defect (%s)", label, len(inc.Unattributed), strings.Join(inc.Unattributed, ", ")))
 			case inc.Rate.Rate == nil:
 				c3.Result, c3.Detail = NotEvaluated, threeCounts(inc.Rate)
 			default:

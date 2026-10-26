@@ -351,7 +351,7 @@ func (r *AttackRun) account(id string, spec GenSpec, seed uint64, t *Tally, rec 
 		}
 		a := Attribute(v.Reasons)
 		primary := a.Primary
-		if a.Unattributed {
+		if primary == "" {
 			primary = "unattributed"
 		}
 		t.InconclusiveCause[primary]++
