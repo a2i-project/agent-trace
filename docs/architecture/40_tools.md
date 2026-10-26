@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 19bd03d on 2026-10-26.
+Checked against commit 11a9ff5 on 2026-10-26.
 
 ## Objective
 
@@ -227,7 +227,7 @@ Readings where the protocol is silent, each fixed in `protocol.go` or in the cod
 - A harness-implied claim is not an agent claim: it leaves the per-claim denominator.
 - The INCONCLUSIVE cause list is the protocol's eleven plus the unexplained declared harness command of O-30, appended last. An INCONCLUSIVE run with any reason no cause matches, alone or beside known ones, is unattributed and a halt condition, and the report names the reason; the run is still counted under the causes its other reasons state. Causes are read from the reason texts, so a reworded or new reason halts instead of being counted under another cause.
 - "Primary" sweep variants are those with uniform selection (omission, retimed omission, fabrication, substitution, per-field substitution); the `sensitive` variants are secondary and outside the verdicts. The per-field runs use n=1. Retimed omissions are reported apart, in their own REPORTED line (detection, and the attacked runs reporting a claim outside its interval), and stay outside the H2a to H2c verdicts (the user's reading, 2026-10-26).
-- A mutation is out of capture when it is not detected and its claim was set aside as out of scope, whatever its kind, and unverifiable when it is not detected and its claim is among the unverified pairs.
+- A mutation is out of capture when it is not detected and its claim was set aside as out of scope, whatever its kind, and unverifiable when it is not detected and its claim is among the unverified pairs. An omission is out of capture when the honest run set the omitted claim aside as out of scope: H2a covers in-capture mutations only, so it is counted apart and listed, not a miss (the user's reading, 2026-10-26).
 - H2b and H2c are judged over the detected mutations, as their claims say ("every detected mutation"), so a miss counts against H2a only; the rate over the detectable mutations (the scorer's own `Tally.Rate`) is reported beside them (the user's reading, 2026-10-26).
 - A4 holds at a position when the outcome and the numbers of findings, unrecorded events and unexplained subtrees equal the honest run's and no more interval findings appear. The composed clause ("still found") is refuted by a detectable omission that is not detected; one detected but not classified or not located is listed beside the verdict and left to H2b and H2c.
 - The leave-one-out baseline uses the primary agreement over the pooled controls.

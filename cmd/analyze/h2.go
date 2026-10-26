@@ -103,6 +103,7 @@ type H2Results struct {
 	Excluded         []string           `json:"excluded_runs,omitempty"`
 	Cells            []H2Cell           `json:"cells"`
 	Misses           []Miss             `json:"misses,omitempty"`
+	OutOfCapture     []SetAside         `json:"out_of_capture,omitempty"`
 	Contradictions   []Contradiction    `json:"contradictions,omitempty"`
 	A4               []A4Summary        `json:"a4"`
 	Mislocation      []MislocationTable `json:"mislocation"`
@@ -221,6 +222,7 @@ func BuildH2(runs []RunOutput, lastSeed uint64) *H2Results {
 		r.Sessions++
 		agents[o.Agent] = true
 		r.Misses = append(r.Misses, o.Attack.Misses...)
+		r.OutOfCapture = append(r.OutOfCapture, o.Attack.OutOfCapture...)
 		r.Contradictions = append(r.Contradictions, o.Attack.Contradictions...)
 		r.MislocationCases = append(r.MislocationCases, o.Attack.Mislocation...)
 		r.GeneratorErrors = append(r.GeneratorErrors, o.Attack.GeneratorErrors...)
