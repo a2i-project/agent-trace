@@ -167,9 +167,11 @@ type A4Result struct {
 	ComposedDetected     int `json:"composed_detected"`
 	ComposedClassified   int `json:"composed_classified"`
 	ComposedLocated      int `json:"composed_located"`
-	// ComposedMisses lists positions where a detectable omission was not
-	// detected, classified and located.
-	ComposedMisses []string `json:"composed_misses,omitempty"`
+	// ComposedNotFound lists positions where a detectable omission was not
+	// detected: H2d's counterexamples ("still found"). ComposedMisses lists
+	// those not detected, classified and located, reported beside them.
+	ComposedNotFound []string `json:"composed_not_found,omitempty"`
+	ComposedMisses   []string `json:"composed_misses,omitempty"`
 }
 
 // DiagRun is one entry of the optional diagnostics file.
@@ -569,9 +571,14 @@ func (r *AttackRun) a4(claims models.Trajectory, honest verification.Verdict, ve
 			continue
 		}
 		// In the output the entries on either side of the hole are i-1 and i.
-		widened, _, err := attack.Widen(omitted, attack.Options{Indices: []int{i - 1, i}})
-		if err != nil {
-			continue
+		// Each is widened over the hole where widening changes it; a
+		// neighbour widening cannot change is left as it is, so every
+		// position with a neighbour on each side is checked.
+		widened := omitted
+		for _, j := range []int{i - 1, i} {
+			if w, _, err := attack.Widen(widened, attack.Options{Indices: []int{j}}); err == nil {
+				widened = w
+			}
 		}
 		r.A4.ComposedPositions++
 		v := verify(widened)
@@ -591,8 +598,12 @@ func (r *AttackRun) a4(claims models.Trajectory, honest verification.Verdict, ve
 		if mr.Located {
 			r.A4.ComposedLocated++
 		}
-		if !res.Detected || !mr.Detected || !mr.Classified || !mr.Located {
-			r.A4.ComposedMisses = append(r.A4.ComposedMisses, fmt.Sprintf("omitting claim %d (%s %s) with widened neighbours: detected=%v classified=%v located=%v", i, claims[i].ActionType, claims[i].Target, mr.Detected, mr.Classified, mr.Located))
+		what := fmt.Sprintf("omitting claim %d (%s %s) with widened neighbours: detected=%v classified=%v located=%v", i, claims[i].ActionType, claims[i].Target, mr.Detected, mr.Classified, mr.Located)
+		if !mr.Detected {
+			r.A4.ComposedNotFound = append(r.A4.ComposedNotFound, what)
+		}
+		if !mr.Detected || !mr.Classified || !mr.Located {
+			r.A4.ComposedMisses = append(r.A4.ComposedMisses, what)
 		}
 	}
 }

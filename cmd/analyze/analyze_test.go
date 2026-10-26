@@ -471,3 +471,36 @@ func TestCostFromTheCapabilityRecord(t *testing.T) {
 		t.Error("a missing report is not measured")
 	}
 }
+
+// H2d's composed check runs at every position with a neighbour on each side,
+// also where one neighbour's interval cannot widen (claims of one parallel
+// block share a timestamp), and only an omission no longer found refutes it.
+func TestComposedA4CoversEveryInnerPosition(t *testing.T) {
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	var claims models.Trajectory
+	for i := range 4 {
+		claims = append(claims, models.TrajectoryEntry{ActionType: models.FileOpen, Target: fmt.Sprintf("/w/f%d", i), Tool: "Read", Timestamp: at})
+	}
+	run := &AttackRun{}
+	honest := verification.Verdict{}
+	run.a4(claims, honest, func(models.Trajectory) verification.Verdict { return honest }, nil)
+	if run.A4.ComposedPositions != 2 {
+		t.Errorf("both inner positions must be checked, got %d", run.A4.ComposedPositions)
+	}
+	if len(run.A4.ComposedNotFound) != 2 || len(run.A4.ComposedMisses) != 2 {
+		t.Errorf("a verifier that finds nothing misses both: %+v", run.A4)
+	}
+
+	// Found but neither classified nor located: H2d holds, H2b and H2c judge it.
+	res := &Results{H2: &H2Results{Sessions: 1, A4: []A4Summary{{Agent: AgentClaudeCode, Sessions: 1, Positions: 3, ComposedPositions: 2, ComposedMisses: []string{"x: detected=true classified=false located=false"}}}}, H3: &H3Results{}, H4: &H4Results{}}
+	res.Verdicts, res.Halts = BuildVerdicts(res)
+	if v := verdictOf(res, "H2d", "every capture"); v.Result != Holds || !strings.Contains(v.Detail, "not classified or not located") {
+		t.Errorf("H2d: %+v", v)
+	}
+	res.H2.A4[0].ComposedNotFound = []string{"y: detected=false"}
+	res.H2.A4[0].ComposedMisses = append(res.H2.A4[0].ComposedMisses, "y: detected=false")
+	res.Verdicts, res.Halts = BuildVerdicts(res)
+	if v := verdictOf(res, "H2d", "every capture"); v.Result != Refuted {
+		t.Errorf("an omission not found refutes H2d: %+v", v)
+	}
+}
