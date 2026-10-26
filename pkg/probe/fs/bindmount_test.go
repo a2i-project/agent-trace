@@ -89,3 +89,81 @@ func TestObserver_ABindMountAliasIsNamedThroughTheProbesMount(t *testing.T) {
 		}
 	}
 }
+
+// A file outside the bind of a subdirectory the probe names its filesystem
+// through has no name through that mount: readlink of its handle opened
+// there gives "/" (P-33). The probe must leave it unnamed, not name it "/"
+// or a directory entry under "/", which would be the name of another file.
+// The filesystem's own mount is detached after a directory outside the bind
+// is opened, so the bind is the only mount of the filesystem and the probe's.
+func TestObserver_AFileOutsideTheProbesBindIsNotNamed(t *testing.T) {
+	skipUnprivileged(t)
+	root := t.TempDir()
+	fsDir, ws := filepath.Join(root, "fs"), filepath.Join(root, "ws")
+	for _, d := range []string{fsDir, ws} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := unix.Mount("agent-trace-escape", fsDir, "tmpfs", 0, "size=1m"); err != nil {
+		t.Skipf("mount tmpfs: %v", err)
+	}
+	detached := false
+	t.Cleanup(func() {
+		if !detached {
+			_ = unix.Unmount(fsDir, unix.MNT_DETACH)
+		}
+	})
+	for _, d := range []string{"src", "other"} {
+		if err := os.Mkdir(filepath.Join(fsDir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := unix.Mount(filepath.Join(fsDir, "src"), ws, "", unix.MS_BIND, ""); err != nil {
+		t.Skipf("bind mount: %v", err)
+	}
+	t.Cleanup(func() { _ = unix.Unmount(ws, unix.MNT_DETACH) })
+	outside, err := unix.Open(filepath.Join(fsDir, "other"), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Close(outside) }()
+	if err := unix.Unmount(fsDir, unix.MNT_DETACH); err != nil {
+		t.Fatalf("detach the tmpfs mount: %v", err)
+	}
+	detached = true
+
+	obs, err := New(Config{Path: ws, PIDFilter: int32(os.Getpid()), EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
+	time.Sleep(50 * time.Millisecond)
+
+	inside := filepath.Join(ws, "inside.txt")
+	if err := os.WriteFile(inside, []byte("i\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fd, err := unix.Openat(outside, "outside.txt", unix.O_CREAT|unix.O_WRONLY|unix.O_CLOEXEC, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unix.Write(fd, []byte("o\n")); err != nil {
+		t.Fatal(err)
+	}
+	_ = unix.Close(fd)
+	events := collectEvents(obs, 300*time.Millisecond)
+	if err := obs.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		t.Logf("%s %q", e.ActionType, e.Target)
+	}
+
+	assertHasNamedEvent(t, events, models.FileWrite, inside)
+	for _, e := range events {
+		if e.Target != "" && e.Target != ws && !strings.HasPrefix(e.Target, ws+"/") {
+			t.Errorf("%s named %q, outside the probe's mount %s", e.ActionType, e.Target, ws)
+		}
+	}
+}

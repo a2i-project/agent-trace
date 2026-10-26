@@ -9,7 +9,6 @@
 package fs
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -124,10 +123,12 @@ func fsidOf(path string) (fsID, error) {
 	return fsID{st.Fsid.Val[0], st.Fsid.Val[1]}, nil
 }
 
-// mountEntry is one line of /proc/self/mountinfo the probe may mark.
+// mountEntry is one mount the probe may mark.
 type mountEntry struct {
 	Point  string
 	FSType string
+	// Root is the directory within the filesystem the mount exposes.
+	Root string
 }
 
 // pseudoFSTypes are the filesystem types that hold no files an agent acts on,
@@ -143,32 +144,11 @@ var pseudoFSTypes = map[string]bool{
 	"iso9660": true, "ramfs": true, "selinuxfs": true, "apparmorfs": true,
 }
 
-// parseMountInfo reads /proc/self/mountinfo and returns the mount points of
-// the filesystems worth marking, in file order. The format is
-// "id parent major:minor root point options [optional...] - fstype source
-// superopts"; the mount point has spaces and other characters octal-escaped.
+// parseMountInfo reads /proc/self/mountinfo and returns the mounts of the
+// filesystems worth marking, in file order. The mount point has spaces and
+// other characters octal-escaped.
 func parseMountInfo(r io.Reader) []mountEntry {
-	var out []mountEntry
-	sc := bufio.NewScanner(r)
-	for sc.Scan() {
-		fields := strings.Fields(sc.Text())
-		sep := -1
-		for i, f := range fields {
-			if f == "-" {
-				sep = i
-				break
-			}
-		}
-		if sep < 5 || sep+1 >= len(fields) {
-			continue
-		}
-		fstype := fields[sep+1]
-		if pseudoFSTypes[fstype] || strings.HasPrefix(fstype, "fuse") {
-			continue
-		}
-		out = append(out, mountEntry{Point: unescapeMountPoint(fields[4]), FSType: fstype})
-	}
-	return out
+	return markable(parseMountTable(r))
 }
 
 func unescapeMountPoint(s string) string {
@@ -206,11 +186,13 @@ type markedSet struct {
 	unmarked map[string]string
 }
 
-// markAll marks every real filesystem on the host once, by filesystem id,
-// starting with the one holding path so it is always included. A filesystem
-// that cannot be marked or opened is recorded in unmarked and skipped: the
-// capture then says where it was not looking instead of failing outright.
-func markAll(fanotifyFD int, path string, mask uint64) (markedSet, error) {
+// markAll marks every real filesystem of the mount table once, by
+// filesystem id, then the one holding path so it is always included. A
+// filesystem that cannot be marked or opened is recorded in unmarked and
+// skipped: the capture then says where it was not looking instead of failing
+// outright. The mount kept for a filesystem is the first marked in
+// markOrder: a mount of the whole filesystem when it has one (P-33).
+func markAll(fanotifyFD int, path string, mask uint64, table []mountLine) (markedSet, error) {
 	set := markedSet{fds: map[fsID]int{}, unmarked: map[string]string{}}
 	mark := func(point string) error {
 		id, err := fsidOf(point)
@@ -234,13 +216,10 @@ func markAll(fanotifyFD int, path string, mask uint64) (markedSet, error) {
 	// Mount points first, so the filesystem holding path is named by its
 	// mount point and not by path; then path itself, in case its filesystem
 	// is not listed, which must succeed.
-	if f, err := os.Open("/proc/self/mountinfo"); err == nil {
-		for _, m := range parseMountInfo(f) {
-			if err := mark(m.Point); err != nil {
-				set.unmarked[m.Point] = err.Error()
-			}
+	for _, m := range markOrder(markable(table)) {
+		if err := mark(m.Point); err != nil {
+			set.unmarked[m.Point] = err.Error()
 		}
-		_ = f.Close()
 	}
 	if err := mark(path); err != nil {
 		return set, err
@@ -271,7 +250,8 @@ func openByHandle(mountFD int, handleType int32, handleData []byte) (int, error)
 // filesystem. A removed
 // directory resolves to no path even when its handle still opens, since
 // readlink would name it with a " (deleted)" mark inside the path; the
-// directory cache names it instead (P-28).
+// directory cache names it instead (P-28). An object outside that mount
+// resolves to no path either (P-33).
 func newKernelResolver(mounts map[fsID]int, open handleOpener) handleResolver {
 	if open == nil {
 		open = openByHandle
@@ -292,6 +272,12 @@ func newKernelResolver(mounts map[fsID]int, open handleOpener) handleResolver {
 
 		path, err := os.Readlink(procFD(fd))
 		if err != nil {
+			return ""
+		}
+		// An object outside the mount the handle was opened through reads
+		// as "/" (isProcessRoot): it has no name through that mount, and
+		// "/" would name another file (P-33).
+		if path == "/" && !isProcessRoot(fd) {
 			return ""
 		}
 		return path

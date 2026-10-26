@@ -77,15 +77,22 @@ type Observer struct {
 	mounts map[fsID]int
 	// marked and unmarked are the mount points the all-filesystems mark
 	// covered and those it could not, for Scope.
-	marked         []string
-	unmarked       map[string]string
-	stopR          int // read end of stop-signal pipe
-	stopW          int // write end of stop-signal pipe
-	events         chan models.GroundTruthEvent
-	stopped        chan struct{}
-	cfg            Config
-	overflow       bool // true if FAN_Q_OVERFLOW was seen
-	hashlessCloses atomic.Uint64
+	marked   []string
+	unmarked map[string]string
+	// mountTable is the mount table at New, with the mounts the probe names
+	// files through marked; nil when it could not be read. mountTableFD is
+	// the open mountinfo file it was read from, polled and closed at Stop,
+	// which sets mountTableChanged (P-33).
+	mountTable        []models.FSMounts
+	mountTableFD      int
+	mountTableChanged *bool
+	stopR             int // read end of stop-signal pipe
+	stopW             int // write end of stop-signal pipe
+	events            chan models.GroundTruthEvent
+	stopped           chan struct{}
+	cfg               Config
+	overflow          bool // true if FAN_Q_OVERFLOW was seen
+	hashlessCloses    atomic.Uint64
 	// undrained counts the records still queued when the stop drain ran out
 	// of time (drainAtStop): event loss, a lower bound.
 	undrained atomic.Uint64
@@ -285,30 +292,44 @@ func New(cfg Config) (*Observer, error) {
 		return nil, err
 	}
 
+	// The mount table is read before anything is marked, and its fd stays
+	// open so that Stop can tell whether it changed meanwhile (P-33).
+	tableFD, table := readMountTable()
+	fail := func(set markedSet, err error) (*Observer, error) {
+		set.close()
+		_ = unix.Close(fd)
+		if tableFD >= 0 {
+			_ = unix.Close(tableFD)
+		}
+		return nil, err
+	}
 	var set markedSet
 	if cfg.AllFilesystems {
-		set, err = markAll(fd, cfg.Path, watchMask)
+		set, err = markAll(fd, cfg.Path, watchMask, table)
 	} else {
 		set, err = markOne(fd, cfg.Path, watchMask)
 	}
 	if err != nil {
-		set.close()
-		_ = unix.Close(fd)
-		return nil, err
+		return fail(set, err)
 	}
 	pathID, err := fsidOf(cfg.Path)
 	if err != nil {
-		set.close()
-		_ = unix.Close(fd)
-		return nil, err
+		return fail(set, err)
 	}
 	dirs := newDirCache(dirCacheSize, openRenameWatch(set.marked, unix.FAN_MARK_FILESYSTEM))
 	o, err := assemble(cfg, fd, set, set.fds[pathID], dirs)
 	if err != nil {
-		set.close()
 		dirs.close()
-		_ = unix.Close(fd)
-		return nil, err
+		return fail(set, err)
+	}
+	if table != nil {
+		names := map[int]bool{}
+		for _, mfd := range set.fds {
+			if id, ok := mountIDOf(mfd); ok {
+				names[id] = true
+			}
+		}
+		o.mountTable, o.mountTableFD = buildMountTable(table, names), tableFD
 	}
 	return o, nil
 }
@@ -349,6 +370,7 @@ func assemble(cfg Config, fd int, set markedSet, mountFD int, dirs *dirCache) (*
 		stopDrain:           stopDrainBudget,
 		hashFD:              content.SHA256FD,
 		self:                int32(os.Getpid()),
+		mountTableFD:        -1,
 	}, nil
 }
 
@@ -380,6 +402,14 @@ func (o *Observer) Scope() (marked []string, unmarked map[string]string) {
 		unmarked[k] = v
 	}
 	return marked, unmarked
+}
+
+// MountTable returns the mount table read at New, every mount grouped by
+// filesystem with the mounts the probe names files through marked, and
+// whether the table changed before Stop (nil: not known). Call after Stop.
+// A nil table means it could not be read (P-33).
+func (o *Observer) MountTable() ([]models.FSMounts, *bool) {
+	return o.mountTable, o.mountTableChanged
 }
 
 // selfPID returns the observer's own pid, without a system call once
@@ -495,6 +525,11 @@ func (o *Observer) Stop() error {
 	<-o.stopped
 
 	_ = unix.Close(o.fanotifyFD)
+	if o.mountTableFD >= 0 {
+		o.mountTableChanged = mountTableChanged(o.mountTableFD)
+		_ = unix.Close(o.mountTableFD)
+		o.mountTableFD = -1
+	}
 	o.dirs.close()
 	for _, fd := range o.mounts {
 		_ = unix.Close(fd)

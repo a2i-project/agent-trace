@@ -1239,7 +1239,7 @@ func TestParseMountInfo_KeepsRealFilesystemsOnly(t *testing.T) {
 garbage line
 `
 	got := parseMountInfo(strings.NewReader(sample))
-	want := []mountEntry{{"/", "ext4"}, {"/tmp", "tmpfs"}, {"/mnt/my disk", "ext4"}}
+	want := []mountEntry{{"/", "ext4", "/"}, {"/tmp", "tmpfs", "/"}, {"/mnt/my disk", "ext4", "/"}}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
