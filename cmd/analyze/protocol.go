@@ -55,6 +55,21 @@ const PrimaryAgreement = 0.2
 
 var AgreementGrid = []Agreement{{"1/5", 0.2}, {"2/5", 0.4}, {"3/5", 0.6}, {"4/5", 0.8}, {"5/5", 1.0}}
 
+// LOOAgreement is the agreement of the leave-one-out pooled baseline over n
+// pooled controls: any one control, 1/n, as the capture script's own default
+// is one of its controls (the user's reading of 2026-10-26). A fixed fraction
+// would ask a rule of about 59 of 295 pooled controls and keep out the rare
+// harness activity pooling is meant to explain.
+func LOOAgreement(n int) float64 {
+	if n <= 0 {
+		return 1
+	}
+	return 1 / float64(n)
+}
+
+// LOOAgreementLabel describes LOOAgreement in results.json.
+const LOOAgreementLabel = "1/N of the pooled controls (any one control)"
+
 // Agreement is one setting of the sensitivity grid.
 type Agreement struct {
 	Label string  `json:"label"`

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/attack"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
@@ -585,5 +587,43 @@ func TestRetimedOmissionsAreOutsideTheVerdicts(t *testing.T) {
 	}
 	if v := h2Verdict(t, runs, misses, "H2-retimed"); v.Result != Reported || !strings.Contains(v.Detail, "8 of 10 detectable detected") {
 		t.Errorf("retimed line: %+v", v)
+	}
+}
+
+// The leave-one-out baseline admits an action any one pooled control
+// performed: one rule-making control whatever the pool's size.
+func TestLeaveOneOutAgreementIsAnyOneControl(t *testing.T) {
+	ctl := filepath.Join("..", "..", "pkg", "agent", "claudecode", "testdata", "paired-2.1.296-edits")
+	kept, _ := LoadControls(ControlPaths(ctl))
+	if len(kept) < 2 {
+		t.Skip("the fixture's controls are absent")
+	}
+	// The pool repeats the fixture's controls; an action of only the first
+	// is a rule at 1/N and not at the primary fraction once N > 5.
+	pool := []models.GroundTruthFile{kept[0]}
+	for len(pool) < 10 {
+		pool = append(pool, kept[1])
+	}
+	a, _ := agent.Lookup(AgentClaudeCode)
+	loo, err := BuildBaseline(a, "2.1.296", pool, LOOAgreement(len(pool)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	frac, err := BuildBaseline(a, "2.1.296", pool, PrimaryAgreement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := func(b *agent.Baseline) int { return len(b.Rules) }
+	if only(loo) <= only(frac) {
+		t.Errorf("1/N keeps the first control's own actions, which the primary fraction drops: %d rules against %d", only(loo), only(frac))
+	}
+	once, _ := BuildBaseline(a, "2.1.296", []models.GroundTruthFile{kept[0], kept[1]}, 0.5)
+	if only(loo) != only(once) {
+		t.Errorf("1/N of the pool is the union of its distinct controls: %d rules, the union has %d", only(loo), only(once))
+	}
+	for _, n := range []int{1, 5, 59, 295, 1000} {
+		if need := int(math.Ceil(LOOAgreement(n)*float64(n) - 1e-9)); need != 1 {
+			t.Errorf("n=%d needs %d controls, want 1", n, need)
+		}
 	}
 }
