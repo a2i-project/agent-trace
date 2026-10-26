@@ -47,10 +47,9 @@ struct ssl_frame {
 	__u8 payload[SSL_CAP_LEN];
 };
 
-// Same shape and gating role as net.bpf.c's tracked_pids. Kept as a separate
-// map (rather than shared/pinned) until S6 wires proc + net + tls together
-// under one pinned map at /sys/fs/bpf/agenttrace/tracked_pids.
-// net.Observer.TrackPID writes to both copies today.
+// Same shape and gating role as net.bpf.c's tracked_pids, and like it this
+// object's own map, neither pinned nor shared. net.Observer.TrackPID seeds
+// both copies, and each object's fork and exit programs follow descendants.
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 4096);
