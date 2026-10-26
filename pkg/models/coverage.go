@@ -6,9 +6,15 @@ import (
 	"fmt"
 )
 
-// CoverageSchema is the version of the coverage record this build writes and
-// accepts. A file with another version is rejected rather than guessed at.
-const CoverageSchema = 1
+// CoverageSchema is the version of the coverage record this build writes.
+// Schema 2 added ProbeCoverage.Diagnostics and changed nothing else, so a
+// schema 1 record reads as before, with nil Diagnostics. A file with a version
+// outside MinCoverageSchema to CoverageSchema is rejected rather than guessed
+// at.
+const CoverageSchema = 2
+
+// MinCoverageSchema is the oldest coverage record this build reads.
+const MinCoverageSchema = 1
 
 // Content states for ProbeCoverage.Content (net probe only).
 const (
@@ -96,6 +102,110 @@ type ProbeCoverage struct {
 	// skipped. A content gap on attestation, never event loss: no claim
 	// depends on a response (N-29). Net probe only.
 	ResponseGaps uint64 `json:"response_gaps,omitempty"`
+	// Diagnostics holds the probe's occupancy and content counters (schema
+	// 2). Nil means not measured: a capture written before the record, or a
+	// probe that keeps none (fs). The verifier reads none of it.
+	Diagnostics *ProbeDiagnostics `json:"diagnostics,omitempty"`
+}
+
+// ProbeDiagnostics says how close a capture came to its limits and how much
+// of its network traffic had parsed content. It is measurement for the
+// experiment record, not loss accounting: the loss counters above decide
+// completeness, and verification.Assess reads nothing here, so no reason,
+// note or verdict depends on it (P-34, N-33).
+type ProbeDiagnostics struct {
+	// Rings is keyed by the kernel ring buffer's map name: "events" (proc),
+	// "net_events" and "ssl_events" (net; ssl_events only when content
+	// capture was configured).
+	Rings map[string]RingStats `json:"rings,omitempty"`
+	// TrackedSets is keyed by the eBPF object whose tracked_pids map it
+	// describes: "proc", "net" and "tls" (tls only when content capture was
+	// configured).
+	TrackedSets map[string]TrackedSetStats `json:"tracked_sets,omitempty"`
+	// NetContent holds the net probe's correlator counters. Net probe only.
+	NetContent *NetContentCounts `json:"net_content,omitempty"`
+}
+
+// RingStats describes one kernel ring buffer over a capture.
+type RingStats struct {
+	// SizeBytes is the ring's data size.
+	SizeBytes uint64 `json:"size_bytes"`
+	// PeakBytes is the highest occupancy userspace saw: at each record it
+	// reads, the bytes committed or reserved and not yet consumed, the
+	// record itself and its 8-byte header included. A lower bound on the
+	// true peak, short of it by at most one record and its header.
+	PeakBytes uint64 `json:"peak_bytes"`
+	// Records counts the records userspace read from the ring.
+	Records uint64 `json:"records"`
+	// Drops counts the records the kernel discarded because the ring was
+	// full; on ssl_events, write frames only. RingbufDrops is the sum of
+	// Drops over the probe's rings.
+	Drops uint64 `json:"drops"`
+	// ReadDrops counts the SSL_read frames discarded because the ring was
+	// full. Set on ssl_events only, nil elsewhere. Part of ResponseGaps.
+	ReadDrops *uint64 `json:"read_drops,omitempty"`
+}
+
+// TrackedSetStats describes one eBPF object's tracked_pids map over a
+// capture.
+type TrackedSetStats struct {
+	// Capacity is the map's maximum number of entries.
+	Capacity uint32 `json:"capacity"`
+	// Peak is the highest number of entries the map held, counted as the
+	// kernel inserted them (P-34). When it equals Capacity, a further insert
+	// failed and UntrackedChildren says so.
+	Peak uint64 `json:"peak"`
+	// AtStop is the number of entries the map held when the probe stopped.
+	AtStop int64 `json:"at_stop"`
+}
+
+// NetContentCounts are the net probe's correlator counters for a capture.
+// Connection counts are by connect; content counts by TLS connection (the
+// process and its SSL object, N-30).
+type NetContentCounts struct {
+	Connections   int `json:"connections"`    // connections recorded at connect
+	WithHostname  int `json:"with_hostname"`  // connections whose ClientHello named a host
+	WithContent   int `json:"with_content"`   // HTTP/1.1 requests emitted as net_request
+	Dials         int `json:"dials"`          // connections closed with no name and nothing written (N-22)
+	AddressProbes int `json:"address_probes"` // connections to port 0, not emitted
+	OpenAtStop    int `json:"open_at_stop"`   // connections still open at the stop (N-21)
+	Replaced      int `json:"replaced"`       // connections replaced by a new connect on the same socket (N-24)
+	// HellosFollowed counts ClientHellos followed across sends (N-31).
+	HellosFollowed int `json:"hellos_followed"`
+	DNS            int `json:"dns"`          // net_dns events (N-27)
+	DNSNamed       int `json:"dns_named"`    // of those, the ones that carry the question
+	DNSUnparsed    int `json:"dns_unparsed"` // sends to port 53 that did not parse as a query
+	Datagrams      int `json:"datagrams"`    // addressed datagrams recorded (N-28)
+	// ContentUnsupported counts the connections whose ClientHello offered h2
+	// in ALPN, whatever the server chose.
+	ContentUnsupported int `json:"content_unsupported"`
+	// H2Preface counts the TLS connections whose request stream began with
+	// the HTTP/2 client connection preface: h2 negotiated, seen in the
+	// plaintext. Counted only while content capture is active.
+	H2Preface int `json:"h2_preface"`
+	// H2PrefaceUnvalidated counts the write frames that began with the
+	// HTTP/2 preface while SSL_write offset validation was reading, before
+	// content capture was active. Validation accepts HTTP/1.x only, so these
+	// are h2 connections the content counts above miss.
+	H2PrefaceUnvalidated int `json:"h2_preface_unvalidated"`
+	// FramesH2 counts the write frames on connections counted in H2Preface.
+	// None is parsed into a request.
+	FramesH2 int `json:"frames_h2"`
+	// FramesUnattributed counts write frames that yielded no request: they
+	// did not parse as HTTP/1.1, had no host, or were truncated.
+	FramesUnattributed int `json:"frames_unattributed"`
+	// FramesTruncated counts write frames larger than the capture copies.
+	FramesTruncated int `json:"frames_truncated"`
+	// Responses and the counts after it are the response side (N-29).
+	Responses             int    `json:"responses"`
+	ResponsesUnpaired     int    `json:"responses_unpaired"`
+	ResponsesUnattributed int    `json:"responses_unattributed"`
+	ResponsesIncomplete   int    `json:"responses_incomplete"`
+	ResponsesTruncated    int    `json:"responses_truncated"`
+	ResponsesUnparsed     int    `json:"responses_unparsed"`
+	SSEEvents             int    `json:"sse_events"`
+	ReadsUnvalidated      int    `json:"reads_unvalidated"`
+	ReadFaults            uint64 `json:"read_faults"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.
@@ -204,8 +314,8 @@ func ParseGroundTruthFile(data []byte) (GroundTruthFile, error) {
 			return GroundTruthFile{}, err
 		}
 	}
-	if f.Coverage != nil && f.Coverage.Schema != CoverageSchema {
-		return GroundTruthFile{}, fmt.Errorf("unsupported coverage schema %d (this build reads %d)", f.Coverage.Schema, CoverageSchema)
+	if f.Coverage != nil && (f.Coverage.Schema < MinCoverageSchema || f.Coverage.Schema > CoverageSchema) {
+		return GroundTruthFile{}, fmt.Errorf("unsupported coverage schema %d (this build reads %d to %d)", f.Coverage.Schema, MinCoverageSchema, CoverageSchema)
 	}
 	return f, nil
 }

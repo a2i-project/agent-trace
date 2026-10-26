@@ -163,6 +163,63 @@ static __always_inline void count_state_lost(void)
 		__sync_fetch_and_add(count, 1);
 }
 
+// tracked_stat counts the entries of tracked_pids: live is incremented when
+// handle_fork inserts a pid and decremented when handle_exit deletes one,
+// and peak keeps the highest live plus seeded read back after an insert
+// (P-34). One shared slot, not per CPU, since a peak needs the global count;
+// it is written only on a tracked process's fork and exit. A pid userspace seeds
+// (SetRootPID) is counted in tracked_seeded, which only userspace writes, so
+// live goes below zero when a seeded pid exits.
+struct tracked_stat {
+	__s64 live;
+	__s64 peak;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, struct tracked_stat);
+} tracked_stat SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __s64);
+} tracked_seeded SEC(".maps");
+
+// tracked_inserted counts an insert into tracked_pids and raises peak to the
+// occupancy it reads back. bpf2go builds for BPF v1, which has an atomic add
+// but neither fetch-and-add nor compare-and-swap, so the read-back and the
+// raise are plain loads and a store: an insert or a delete on another CPU
+// between them can make the value read differ from this insert's own count,
+// and of two raises racing, the lower can land last. Either way the peak only
+// falls short, by at most the number of such races, and each value it keeps
+// was the occupancy at some instant (P-34).
+static __always_inline void tracked_inserted(void)
+{
+	__u32 zero = 0;
+	struct tracked_stat *s = bpf_map_lookup_elem(&tracked_stat, &zero);
+	if (!s)
+		return;
+	__sync_fetch_and_add(&s->live, 1);
+	__s64 n = *(volatile __s64 *)&s->live;
+	__s64 *seeded = bpf_map_lookup_elem(&tracked_seeded, &zero);
+	if (seeded)
+		n += *seeded;
+	if (n > *(volatile __s64 *)&s->peak)
+		*(volatile __s64 *)&s->peak = n;
+}
+
+static __always_inline void tracked_removed(void)
+{
+	__u32 zero = 0;
+	struct tracked_stat *s = bpf_map_lookup_elem(&tracked_stat, &zero);
+	if (s)
+		__sync_fetch_and_add(&s->live, -1);
+}
+
 // heap is the scratch record, one slot per CPU. A per-CPU array would be
 // the natural map, but the kernel caps a per-CPU value at 32 KiB and the
 // 128 KiB command line needs 256 KiB (P-19), so this is a plain array with
@@ -196,6 +253,7 @@ struct {
 } execs SEC(".maps");
 
 #define CLONE_THREAD 0x10000
+#define EEXIST 17
 
 // task_newtask(struct task_struct *task, u64 clone_flags) fires in the
 // parent.
@@ -239,7 +297,14 @@ int handle_fork(struct bpf_raw_tracepoint_args *ctx)
 		child.is_toplevel = 0;
 	}
 
-	if (bpf_map_update_elem(&tracked_pids, &child_pid, &child, BPF_ANY))
+	// An entry left for the pid (none should be, since handle_exit deletes
+	// it) is replaced as before, without counting a second entry.
+	long err = bpf_map_update_elem(&tracked_pids, &child_pid, &child, BPF_NOEXIST);
+	if (err == -EEXIST)
+		err = bpf_map_update_elem(&tracked_pids, &child_pid, &child, BPF_ANY);
+	else if (!err)
+		tracked_inserted();
+	if (err)
 		count_untracked();
 	return 0;
 }
@@ -558,8 +623,8 @@ int handle_exit(struct bpf_raw_tracepoint_args *ctx)
 	// A tracked process that never exec'd has no execs entry, but its
 	// tracked_pids entry must go too, or a later process that reuses the pid
 	// is tracked although it is not a descendant.
-	if (get_use_pid_filter())
-		bpf_map_delete_elem(&tracked_pids, &tgid);
+	if (get_use_pid_filter() && !bpf_map_delete_elem(&tracked_pids, &tgid))
+		tracked_removed();
 
 	struct event_hdr *cached = bpf_map_lookup_elem(&execs, &tgid);
 	if (!cached)

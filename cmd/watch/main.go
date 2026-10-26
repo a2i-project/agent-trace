@@ -134,6 +134,44 @@ func responseLine(state string, nc probenet.Coverage) string {
 		state, nc.Responses, nc.ResponsesUnpaired, nc.ResponsesUnattributed, nc.ResponsesIncomplete, nc.ResponsesTruncated, nc.ResponsesUnparsed, nc.SSEEvents, nc.ReadsUnvalidated, nc.ReadFaults, nc.ReadDrops)
 }
 
+// diagnosticsLine is a probe's occupancy and content counters on one line
+// (P-34, N-33): each ring's size, high-water mark, records read and drops,
+// each tracked set's capacity, peak and entries at the stop, and the net
+// probe's content counters. Empty when the probe recorded none.
+func diagnosticsLine(name string, d *models.ProbeDiagnostics) string {
+	if d == nil {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s probe diagnostics:", name)
+	for _, ring := range sortedKeys(d.Rings) {
+		r := d.Rings[ring]
+		fmt.Fprintf(&b, " ring %s size=%d peak=%d records=%d drops=%d", ring, r.SizeBytes, r.PeakBytes, r.Records, r.Drops)
+		if r.ReadDrops != nil {
+			fmt.Fprintf(&b, " readDrops=%d", *r.ReadDrops)
+		}
+		b.WriteString(";")
+	}
+	for _, set := range sortedKeys(d.TrackedSets) {
+		t := d.TrackedSets[set]
+		fmt.Fprintf(&b, " tracked %s capacity=%d peak=%d atStop=%d;", set, t.Capacity, t.Peak, t.AtStop)
+	}
+	if c := d.NetContent; c != nil {
+		fmt.Fprintf(&b, " content connections=%d withHostname=%d withContent=%d contentUnsupported=%d h2Preface=%d h2PrefaceUnvalidated=%d framesH2=%d framesUnattributed=%d framesTruncated=%d dials=%d responses=%d;",
+			c.Connections, c.WithHostname, c.WithContent, c.ContentUnsupported, c.H2Preface, c.H2PrefaceUnvalidated, c.FramesH2, c.FramesUnattributed, c.FramesTruncated, c.Dials, c.Responses)
+	}
+	return strings.TrimSuffix(b.String(), ";")
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // buildCoverage assembles the per-probe loss record written next to the
 // events. Every known probe gets an entry: one that was not selected is
 // recorded with Ran=false, so the file shows what was not watched instead of
@@ -783,6 +821,9 @@ func runWatch(opts watchOptions) error {
 		}
 		fmt.Printf("%s probe loss: ringbufDrops=%d untrackedChildren=%d stateMapFull=%d channelDrops=%d faultedReads=%d queueOverflow=%v hashlessCloses=%d ioUringNetOps=%d undrainedRecords=%d unresolvedPaths=%d unresolvedInTree=%d responseGaps=%d\n",
 			name, p.RingbufDrops, p.UntrackedChildren, p.StateMapFull, p.ChannelDrops, p.FaultedReads, p.QueueOverflow, p.HashlessCloses, p.IOURingNetOps, p.UndrainedRecords, p.UnresolvedPaths, p.UnresolvedInTree, p.ResponseGaps)
+		if line := diagnosticsLine(name, p.Diagnostics); line != "" {
+			fmt.Println(line)
+		}
 	}
 	if c := verification.Assess(&cov); !c.Complete {
 		log.Printf("WARNING: %s is incomplete and a verdict built on it is unreliable:", opts.out)
