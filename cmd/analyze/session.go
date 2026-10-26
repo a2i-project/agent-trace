@@ -164,12 +164,28 @@ func (s *Session) Facts(ann Annotation, loadErr error) RunFacts {
 		return f
 	}
 	f.SessionVersion = s.Report.AgentVersion
-	if s.G.Coverage == nil {
-		f.LossReasons = []string{"no coverage record"}
-	} else if c := verification.Assess(s.G.Coverage); !c.Complete {
-		f.LossReasons = c.Reasons
-	}
+	f.LossReasons = lossReasons(s.G.Coverage)
 	return f
+}
+
+// lossReasons are the completeness reasons of a capture that state lost
+// events (X1, the loss cause of H3c). An incomplete capture for another
+// reason, io_uring socket operations (N-25), is not loss: the protocol counts
+// it under its own cause and keeps the run.
+func lossReasons(cov *models.Coverage) []string {
+	if cov == nil {
+		return []string{"no coverage record"}
+	}
+	var out []string
+	for _, r := range verification.Assess(cov).Reasons {
+		for _, h := range ClassifyReason(r) {
+			if h.Cause == CauseEventLoss {
+				out = append(out, r)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // versionReason is cmd/verify's --strict-version check (I-57) for one

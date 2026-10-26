@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
 // run builds a synthetic honest run for the H3 builders.
@@ -663,5 +665,20 @@ func TestAnalyzeReadsTheComparisonAndTheOverheadBenchmark(t *testing.T) {
 	// What was skipped is listed, never silently dropped.
 	if len(res.NotComputed) != 2 {
 		t.Errorf("not computed: %v", res.NotComputed)
+	}
+}
+
+// X1 is loss: an io_uring socket operation makes a capture incomplete but is
+// its own INCONCLUSIVE cause (N-25), and such a run stays in H3a, H3b and H2.
+func TestX1IsLossNotEveryIncompleteness(t *testing.T) {
+	if r := lossReasons(&models.Coverage{Probes: map[string]models.ProbeCoverage{"net": {Ran: true, IOURingNetOps: 3}}}); len(r) != 0 {
+		t.Errorf("io_uring alone is not loss: %v", r)
+	}
+	r := lossReasons(&models.Coverage{Probes: map[string]models.ProbeCoverage{"net": {Ran: true, IOURingNetOps: 3}, "proc": {Ran: true, RingbufDrops: 1}}})
+	if len(r) != 1 || !strings.Contains(r[0], "ring buffer") {
+		t.Errorf("only the loss counter is X1's reason: %v", r)
+	}
+	if r := lossReasons(nil); len(r) != 1 {
+		t.Errorf("a capture with no coverage record is counted as loss: %v", r)
 	}
 }
