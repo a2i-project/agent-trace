@@ -193,7 +193,7 @@ func BuildH1(dir string) (*H1Results, error) {
 	for _, c := range summary.Cells {
 		held[cellKey{rowKey{c.Tool, c.Condition, c.Attacker, c.Kind}, c.Fixture}] = c.ControlsHeld
 	}
-	res := &H1Results{Dir: dir, HarnessErrors: summary.HarnessErrors, ControlRowCounts: map[string]map[string]int{}}
+	res := &H1Results{Dir: filepath.Base(filepath.Clean(dir)), HarnessErrors: summary.HarnessErrors, ControlRowCounts: map[string]map[string]int{}}
 	if rd, err := os.ReadFile(filepath.Join(dir, "run.json")); err == nil {
 		var run struct {
 			AgentTrace struct {

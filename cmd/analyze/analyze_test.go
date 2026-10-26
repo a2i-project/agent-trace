@@ -504,3 +504,31 @@ func TestComposedA4CoversEveryInnerPosition(t *testing.T) {
 		t.Errorf("an omission not found refutes H2d: %+v", v)
 	}
 }
+
+// results.json and report.md are published (D14): they name the campaign,
+// the config and the other inputs by their last path element, and the
+// config by its hash, never by a path of the analysing machine.
+func TestOutputsNameNoPathOfTheAnalysingMachine(t *testing.T) {
+	dir := syntheticCampaign(t, pairedRuns[:1])
+	o := testOptions(t, dir)
+	o.LastSeed = 1
+	o.Out = filepath.Join(t.TempDir(), "out")
+	if code := run(append(runArgs(o), "--no-sweep", "--no-sensitivity"), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 && code != exitHalt {
+		t.Fatalf("run exited %d", code)
+	}
+	for _, name := range []string{"results.json", "report.md"} {
+		data, err := os.ReadFile(filepath.Join(o.Out, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range []string{dir, filepath.Dir(o.Config)} {
+			if bytes.Contains(data, []byte(p)) {
+				t.Errorf("%s names %s", name, p)
+			}
+		}
+	}
+	data, _ := os.ReadFile(filepath.Join(o.Out, "results.json"))
+	if !bytes.Contains(data, []byte(`"agent_config_sha256": "`)) {
+		t.Error("the config's hash is not recorded")
+	}
+}
