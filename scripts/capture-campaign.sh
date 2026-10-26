@@ -141,10 +141,10 @@
 # summary.txt is a table of the same, one line per run.
 #
 # annotations.json (in OUTPUT_DIR, the file cmd/analyze reads for what the
-# manifest cannot show): the runner writes x4 for a task run that completed but
-# whose watch exited non-zero (the agent exited with an error, or watch failed;
-# the ground truth and the transcript exist, so the manifest reads the run as
-# ok). Entries it wrote are listed under "auto" and rewritten when the slot is
+# manifest cannot show): for a task run that completed but whose watch exited
+# non-zero, the runner writes agent_exit_status (a note the analysis ignores)
+# when watch's log says the agent exited with an error, since such a run counts
+# (I-66), and x4 when watch itself failed. Entries it wrote are listed under "auto" and rewritten when the slot is
 # recorded again. scripts/annotate-run.sh records what only the operator knows
 # (task completion for X5, a user intervention for X6, other X4 causes) and
 # takes those fields over from the runner.
@@ -580,14 +580,21 @@ def update_annotations(out, rid, auto):
     os.replace(tmp, path)
 
 
-def watch_failure(run_dir, lab, code):
-    """The reason for an x4 annotation: what watch's log says about a non-zero exit."""
+def watch_nonzero(run_dir, lab, code):
+    """Classify a task run's non-zero watch exit from watch's log: ("agent", N)
+    when the agent it ran exited with an error (N is the agent's status, else
+    watch's own), which does not make the run a failure (I-66), and ("watch",
+    reason) when watch itself failed, a harness error (X4)."""
     try:
         text = open(os.path.join(run_dir, f"{lab}.watch.log"), encoding="utf-8", errors="replace").read()
     except OSError:
         text = ""
-    what = "the agent exited with an error" if "agent exited with error" in text else "watch failed"
-    return f"watch exited {code} for the task run ({what}); the capture and the transcript exist"
+    m = re.search(r"agent exited with error: exit status (\d+)", text)
+    if m:
+        return "agent", int(m.group(1))
+    if "agent exited with error" in text:
+        return "agent", code
+    return "watch", f"watch failed with exit status {code} for the task run; the capture and the transcript exist"
 
 
 def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status, seed, position, total,
@@ -667,7 +674,11 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
     wx = r["watch_exit"]["task"]
     auto = {}
     if ok and wx:
-        auto["x4"] = watch_failure(run_dir, lab, wx)
+        kind, what = watch_nonzero(run_dir, lab, wx)
+        # An agent that exited non-zero after a complete session counts (I-66):
+        # its status is a note the analysis does not read. Only watch's own
+        # failure is a harness error.
+        auto["agent_exit_status" if kind == "agent" else "x4"] = what
     update_annotations(out_root, os.path.relpath(run_dir, out_root), auto)
     print("\t".join([r["status"], exclusion["rule"] if exclusion else "-", exclusion["reason"] if exclusion else "-"]))
 

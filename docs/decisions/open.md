@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29) and O-20 (N-31) are closed; the others are undecided.
 
@@ -108,13 +108,6 @@ Question: `WebSearch` runs server-side inside the model API exchange (I-16). N-2
 Options: (a) confirm on a live capture and keep V-45 as built; (b) if the `requestId` names another exchange, change the join (V-45's rule) or withdraw it.
 Current behaviour: V-45: each `WebSearch` call is reported with its join or the reason it fails, never changing the outcome; on the checked captures no call and no response exist, so nothing is corroborated. A corroborated call says that the response which issued it was received whole, nothing about whether the search ran or what it returned, and any call inserted into the same response shares its id.
 Blocked by: a live capture of Claude Code with response reading active (pending with the user), and the offsets per Bun release.
-
-### O-32: What the campaign does with a run whose agent exits non-zero after a complete session
-Status: Open.
-Date: 2026-10-26.
-Question: `watch` exits 1 when the agent it ran exited with an error, and still writes the capture. The capture script ends 0 whenever the transcript exists, so the manifest reads the run as `ok`. Options: (a) annotate the run `x4` and keep it, so the analysis leaves it out of every number and the operator can take the annotation over; (b) fail the capture, so the slot is retried as X4 up to twice and then reported failed; (c) ignore the agent's exit status when the transcript and the capture exist.
-Current behaviour: (a). The runner writes `x4` into `annotations.json` for the task run ([40_tools.md](../architecture/40_tools.md#capture-scripts), I-65). A control run with a non-zero `watch` exit is recorded in `watch_exit` and kept in its baseline.
-Blocked by: the pilot, which shows how often `claude -p` and `agy -p` exit non-zero after a session that answered; and a ruling on whether protocol 10.1's X4 ("the agent or watch failed") covers it.
 
 ## Proposals (not decided)
 

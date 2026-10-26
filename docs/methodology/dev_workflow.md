@@ -84,7 +84,8 @@ in [`../README.md`](../README.md).
    `PAGE_OF` in `scripts/check-docs.py`; the agent version configuration,
    `config/` and `pkg/config/`, maps to the adapters' page, and the overhead
    benchmark `scripts/bench-overhead.sh`, the comparison tooling
-   `scripts/compare/`, the campaign runner `scripts/capture-campaign.sh` and
+   `scripts/compare/`, the campaign runner `scripts/capture-campaign.sh` with
+   its helpers `scripts/measure-watch.py` and `scripts/annotate-run.sh`, and
    the capture seeds `scripts/seed/` to the tools page). Remove a known limit the commit
    fixes; add one it introduces. Set the page's `Checked against commit` line
    to the commit's parent.
