@@ -192,13 +192,16 @@ func lossReasons(cov *models.Coverage) []string {
 // session: why the run is INCONCLUSIVE for its version, or "".
 func versionReason(cfg *config.Config, adapter, version string) string {
 	const note = "(--strict-version, I-57)"
+	// The config is named by its file name: its full path is the analysing
+	// machine's, and results.json is meant to be published (D14).
+	name := filepath.Base(cfg.Path)
 	switch {
 	case !cfg.Has(adapter):
-		return fmt.Sprintf("%s has no entry for the %s adapter, so no version of it is verified %s", cfg.Path, adapter, note)
+		return fmt.Sprintf("%s has no entry for the %s adapter, so no version of it is verified %s", name, adapter, note)
 	case version == "":
-		return fmt.Sprintf("the session does not state the %s version and --agent-version was not given, so it cannot be checked against %s %s", adapter, cfg.Path, note)
+		return fmt.Sprintf("the session does not state the %s version and --agent-version was not given, so it cannot be checked against %s %s", adapter, name, note)
 	case !cfg.Configured(adapter, version):
-		return fmt.Sprintf("the session was recorded by %s version %s, which %s does not configure (configured: %s): the adapter was verified on those versions only %s", adapter, version, cfg.Path, strings.Join(cfg.Versions(adapter), ", "), note)
+		return fmt.Sprintf("the session was recorded by %s version %s, which %s does not configure (configured: %s): the adapter was verified on those versions only %s", adapter, version, name, strings.Join(cfg.Versions(adapter), ", "), note)
 	}
 	return ""
 }

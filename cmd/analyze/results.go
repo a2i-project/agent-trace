@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -36,14 +38,18 @@ type Options struct {
 
 // Inputs records what the numbers were computed from.
 type Inputs struct {
-	Campaign       string   `json:"campaign_directory"`
-	ManifestSHA256 string   `json:"manifest_sha256"`
-	ManifestCommit string   `json:"manifest_commit"`
-	ManifestStamp  string   `json:"manifest_generated"`
-	Annotations    bool     `json:"annotations_file"`
-	AgentConfig    string   `json:"agent_config,omitempty"`
-	Comparison     string   `json:"comparison_directory,omitempty"`
-	Overhead       []string `json:"overhead_runs,omitempty"`
+	Campaign       string `json:"campaign_directory"`
+	ManifestSHA256 string `json:"manifest_sha256"`
+	ManifestCommit string `json:"manifest_commit"`
+	ManifestStamp  string `json:"manifest_generated"`
+	Annotations    bool   `json:"annotations_file"`
+	// Paths are recorded by their last element only, and the agent config
+	// by its content hash beside its name, so results.json carries no path
+	// of the analysing machine.
+	AgentConfig       string   `json:"agent_config,omitempty"`
+	AgentConfigSHA256 string   `json:"agent_config_sha256,omitempty"`
+	Comparison        string   `json:"comparison_directory,omitempty"`
+	Overhead          []string `json:"overhead_runs,omitempty"`
 }
 
 // Constants snapshots the registered values the run used, so the results
@@ -144,8 +150,11 @@ func Analyze(o Options) (*Results, error) {
 	}
 	res := &Results{Schema: resultsSchema, Constants: constants(last)}
 	res.Inputs = Inputs{
-		Campaign: o.Campaign, ManifestSHA256: c.ManifestSHA256, ManifestCommit: c.Manifest.Commit, ManifestStamp: c.Manifest.Generated,
-		Annotations: len(c.Annotations.Runs) > 0, AgentConfig: filepath.ToSlash(cfg.Path), Comparison: o.Comparison,
+		Campaign: filepath.Base(filepath.Clean(o.Campaign)), ManifestSHA256: c.ManifestSHA256, ManifestCommit: c.Manifest.Commit, ManifestStamp: c.Manifest.Generated,
+		Annotations: len(c.Annotations.Runs) > 0, AgentConfig: filepath.Base(cfg.Path), AgentConfigSHA256: fileSHA256(cfg.Path),
+	}
+	if o.Comparison != "" {
+		res.Inputs.Comparison = filepath.Base(filepath.Clean(o.Comparison))
 	}
 
 	po := ProcessOptions{Config: cfg, Sweep: !o.NoSweep, SweepOpts: SweepOptions{LastSeed: last, Diagnostics: o.Diagnostics != ""}, Sensitivity: !o.NoSensitivity, LOO: !o.NoLOO, Pools: NewPools(c)}
@@ -240,6 +249,16 @@ func Analyze(o Options) (*Results, error) {
 		}
 	}
 	return res, nil
+}
+
+// fileSHA256 is the hex SHA-256 of a file's content, "" when it cannot be read.
+func fileSHA256(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func splitLabel(spec string) (label, path string) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -121,7 +122,7 @@ func LoadBench(label, path string) (*BenchRun, error) {
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	run := &BenchRun{Label: label, Path: path, Machine: f.Machine, Params: f.Params}
+	run := &BenchRun{Label: label, Path: filepath.Base(path), Machine: f.Machine, Params: f.Params}
 	type key struct {
 		name string
 		rep  int

@@ -91,7 +91,7 @@ func Report(res *Results) string {
 	m.line("Computed under %s.", res.Constants.Protocol)
 	m.blank()
 	m.line("- campaign `%s`, manifest sha256 `%s`, recorded at commit `%s`", res.Inputs.Campaign, res.Inputs.ManifestSHA256, res.Inputs.ManifestCommit)
-	m.line("- agent version config `%s`", res.Inputs.AgentConfig)
+	m.line("- agent version config `%s`, sha256 `%s`", res.Inputs.AgentConfig, res.Inputs.AgentConfigSHA256)
 	m.line("- bootstrap: %d resamples, seed %d; Wilson 95%%; exact one-sided 95%% Clopper-Pearson at 0 or n", res.Constants.BootstrapResamples, res.Constants.BootstrapSeed)
 	m.line("- primary baseline agreement %.2f of the controls; interval slack %d ms", res.Constants.PrimaryAgreement, res.Constants.IntervalSlackMS)
 	m.line("- every rate carries three counts: considered (in scope), evaluated (the denominator), succeeded (the numerator, the runs or mutations with the property the rate names)")

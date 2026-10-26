@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit cfef1d9 on 2026-10-26.
+Checked against commit a237181 on 2026-10-26.
 
 ## Objective
 
@@ -219,7 +219,7 @@ analyze --campaign DIR [--out DIR] [--config FILE] [--comparison SWEEP_DIR]
 
 **H4.** H4a: from the benchmark's samples (repetition 0 left out), each run under watch paired with the same workload alone in its repetition: wall and CPU ratios, fixed cost (start-up plus drain), watch CPU, peak RSS, capture and capability sizes, runs with loss, and the bootstrap interval of the median wall ratio, against the limits of decision D3 of the protocol. H4b: per agent version, per session and per claim, from the manifest (duration, events, claims, peak processes), the capture file's size and the capability events in the runner's verify output; a field the manifest and logs do not carry (start-up, drain, watch CPU and peak RSS unless the runner records a `cost` object in `run.json`) is counted as not measured.
 
-**Output and exit codes.** The same inputs give byte-identical `results.json` and `report.md`: nothing reads the clock or a global random source, results are collected in manifest order whatever the worker count, and every map is written in key order. `results.json` holds paths and targets from private captures; redact it before publication. The exit status is 0 when done, 1 when done and a halt condition of protocol 10.2 occurred (an H2e contradiction or an unattributed INCONCLUSIVE; the report names it first), and 3 for usage and I/O errors.
+**Output and exit codes.** The same inputs give byte-identical `results.json` and `report.md`: nothing reads the clock or a global random source, results are collected in manifest order whatever the worker count, and every map is written in key order. Both name the campaign, the comparison sweep, the benchmark files and the agent config by their last path element, and the config also by its SHA-256, so no path of the analysing machine appears. They still hold what the captures hold: the targets of claims and events (paths, hosts, command lines) in the misses, the premise check, the mislocation cases and the A4 lists, and the verdict reasons; they pass through the same redaction as the fixtures before publication. The exit status is 0 when done, 1 when done and a halt condition of protocol 10.2 occurred (an H2e contradiction or an unattributed INCONCLUSIVE; the report names it first), and 3 for usage and I/O errors.
 
 Readings where the protocol is silent, each fixed in `protocol.go` or in the code and listed so a reader can disagree (E-6):
 
