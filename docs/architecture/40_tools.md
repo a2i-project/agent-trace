@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 8d47d09 on 2026-10-26.
+Checked against commit 9848892 on 2026-10-26.
 
 ## Objective
 
@@ -228,7 +228,7 @@ Readings where the protocol is silent, each fixed in `protocol.go` or in the cod
 - The INCONCLUSIVE cause list is the protocol's eleven plus the unexplained declared harness command of O-30, appended last. An INCONCLUSIVE run with any reason no cause matches, alone or beside known ones, is unattributed and a halt condition, and the report names the reason; the run is still counted under the causes its other reasons state. Causes are read from the reason texts, so a reworded or new reason halts instead of being counted under another cause.
 - "Primary" sweep variants are those with uniform selection (omission, retimed omission, fabrication, substitution, per-field substitution); the `sensitive` variants are secondary and outside the verdicts. The per-field runs use n=1.
 - A mutation is out of capture when it is not detected and its claim was set aside as out of scope, whatever its kind, and unverifiable when it is not detected and its claim is among the unverified pairs.
-- H2b and H2c are rates over the detectable mutations (the scorer's own `Tally.Rate`); the rate over detected mutations is reported beside them.
+- H2b and H2c are judged over the detected mutations, as their claims say ("every detected mutation"), so a miss counts against H2a only; the rate over the detectable mutations (the scorer's own `Tally.Rate`) is reported beside them (the user's reading, 2026-10-26).
 - A4 holds at a position when the outcome and the numbers of findings, unrecorded events and unexplained subtrees equal the honest run's and no more interval findings appear. The composed clause ("still found") is refuted by a detectable omission that is not detected; one detected but not classified or not located is listed beside the verdict and left to H2b and H2c.
 - The leave-one-out baseline uses the primary agreement over the pooled controls.
 - H3d's bar is read on the point estimate. The H4a limits are read as the median for the wall ratio and the fixed cost, the largest observed peak for the RSS, and the count of runs for loss.
