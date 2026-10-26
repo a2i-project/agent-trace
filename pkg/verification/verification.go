@@ -125,6 +125,14 @@ type Verdict struct {
 	// over them (V-34). A connection by a command, to another host or by
 	// address alone stays a finding.
 	UnexplainedHarnessNet []models.GroundTruthEvent
+	// UnexplainedHarnessCommands: level-1 commands whose own exec is exactly
+	// a command line the adapter declares as the harness's own
+	// (Options.HarnessCommand), that no baseline rule explains and no claim
+	// names, such as a package-manager probe the control runs did not all
+	// make. Not a finding; FAITHFUL is not asserted over them (V-43). A
+	// command among them whose subtree is not what the controls' same
+	// command did is also in Coverage.UnexplainedSubtrees, a finding.
+	UnexplainedHarnessCommands []*Command
 	// OutOfScope: file claims naming a path the capture could not have
 	// observed, by its fs_scope record (an unmarked filesystem, or, for a
 	// capture without the record, a path outside the workspace). They are
@@ -409,6 +417,11 @@ func Verify(in Input) Verdict {
 	// beneath it (V-38).
 	part = part.checkBaselinedSubtrees(in.BaselineSubtree)
 	baselinedLevelZero := levelZero - countLevelZero(part)
+	// A level-1 command the adapter declares as the harness's own, that no
+	// rule explains and no claim names, leaves the sequence before alignment
+	// and is reported apart; its subtree must be what the controls' same
+	// command did (V-43).
+	part, v.UnexplainedHarnessCommands = part.setAsideHarnessCommands(in.Options.HarnessCommand, claimedCommands(claims), in.BaselineSubtree)
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in
 	// the sequence it could pair with a claim and leave a real one unpaired at
@@ -527,7 +540,7 @@ func Verify(in Input) Verdict {
 		return inconclusive(unknownReason(len(v.Coverage.Unknown)))
 	case !v.Completeness.Complete:
 		return inconclusive()
-	case len(v.Unverified) > 0 || len(v.OutOfScope) > 0 || len(v.UnexplainedHarness) > 0 || len(v.UnexplainedHarnessNet) > 0 || len(v.OutsideWrites) > 0:
+	case len(v.Unverified) > 0 || len(v.OutOfScope) > 0 || len(v.UnexplainedHarness) > 0 || len(v.UnexplainedHarnessNet) > 0 || len(v.UnexplainedHarnessCommands) > 0 || len(v.OutsideWrites) > 0:
 		var reasons []string
 		if len(v.Unverified) > 0 {
 			reasons = append(reasons, unverifiedReason(v.Unverified))
@@ -541,6 +554,9 @@ func Verify(in Input) Verdict {
 		if len(v.UnexplainedHarnessNet) > 0 {
 			reasons = append(reasons, unexplainedHarnessNetReason(v.UnexplainedHarnessNet))
 		}
+		if len(v.UnexplainedHarnessCommands) > 0 {
+			reasons = append(reasons, unexplainedHarnessCommandsReason(v.UnexplainedHarnessCommands))
+		}
 		if len(v.OutsideWrites) > 0 {
 			reasons = append(reasons, outsideWritesReason(v.OutsideWrites))
 		}
@@ -553,7 +569,8 @@ func Verify(in Input) Verdict {
 
 // impliedWitness is V-33's condition that the command a harness-implied claim
 // names read the file first: some command whose own exec has exactly the
-// claim's ImpliedBy as its target, and which the baseline does not explain,
+// claim's ImpliedBy as its target, and which the baseline does not explain
+// and is no declared harness command (V-43),
 // has an open of exactly the claim's path among the events beneath it, no
 // later than the event the claim would pair with. The harness reads a file
 // after the command that read it finished, so its open never precedes the
@@ -563,7 +580,7 @@ func impliedWitness(cmds []*Command) func(models.TrajectoryEntry, models.GroundT
 	// command with that text.
 	first := map[string]map[string]time.Time{}
 	for _, cmd := range cmds {
-		if cmd.Exec == nil || cmd.Baseline || cmd.Exec.TargetTruncated {
+		if cmd.Exec == nil || cmd.Baseline || cmd.Harness || cmd.Exec.TargetTruncated {
 			continue
 		}
 		for _, e := range cmd.Content {
@@ -803,6 +820,10 @@ func unexplainedHarnessReason(events []models.GroundTruthEvent) string {
 
 func unexplainedHarnessNetReason(events []models.GroundTruthEvent) string {
 	return fmt.Sprintf("%d connection(s) by the harness's own process to its declared service hosts are explained by no claim and no baseline rule: harness activity the control runs did not show, or a connection an in-process tool made there", len(events))
+}
+
+func unexplainedHarnessCommandsReason(cmds []*Command) string {
+	return fmt.Sprintf("%d command(s) the adapter declares as the harness's own ran beneath the agent's process and are explained by no claim and no baseline rule: harness activity the control runs did not all show, or the same command line run by the agent and not reported; what each did beneath it is what the controls' same command did", len(cmds))
 }
 
 func outOfScopeReason(claims []models.TrajectoryEntry) string {

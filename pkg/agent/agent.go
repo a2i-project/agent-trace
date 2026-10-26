@@ -80,6 +80,58 @@ type HarnessHoster interface {
 	HarnessHosts() []string
 }
 
+// HarnessCommander is implemented by an adapter that can name the commands
+// the harness itself starts only sometimes, such as Claude Code's probe for a
+// package manager: each the exact command line of the exec the harness makes,
+// as the proc probe reports it before the adapter's Normalize. The verifier
+// reports a level-1 command whose own exec is one of them, that no baseline
+// rule explains and no claim names, as an unexplained harness command, which
+// makes the run INCONCLUSIVE rather than NOT FAITHFUL, and checks the events
+// beneath it against what the controls' same command did (V-43). Like
+// HarnessHoster it explains nothing and is no baseline rule. Each command is
+// declared from measured captures.
+type HarnessCommander interface {
+	HarnessCommands() []string
+}
+
+// HarnessCommand recognises, among a capture's normalized events, the execs
+// of the adapter's declared harness commands (V-43): an exec whose raw
+// target, before Normalize, is exactly a declared command line, not
+// truncated, and which Normalize left unchanged. The raw event is matched by
+// its pid and timestamp, which Normalize keeps, so an exec Normalize rewrote
+// into a declared command line (an agent's shell call whose payload is that
+// text) is never recognised. Nil when the adapter declares nothing or no exec
+// of the capture is a declared one.
+func HarnessCommand(a Adapter, raw models.GroundTruth) func(models.GroundTruthEvent) bool {
+	hc, ok := a.(HarnessCommander)
+	if !ok {
+		return nil
+	}
+	declared := map[string]bool{}
+	for _, c := range hc.HarnessCommands() {
+		if c != "" {
+			declared[c] = true
+		}
+	}
+	type key struct {
+		pid uint32
+		ts  int64
+	}
+	execs := map[key]string{}
+	for _, e := range raw {
+		if e.ActionType == models.ProcessExec && !e.TargetTruncated && declared[e.Target] {
+			execs[key{e.PID, e.Timestamp.UnixNano()}] = e.Target
+		}
+	}
+	if len(execs) == 0 {
+		return nil
+	}
+	return func(e models.GroundTruthEvent) bool {
+		t, ok := execs[key{e.PID, e.Timestamp.UnixNano()}]
+		return ok && e.ActionType == models.ProcessExec && !e.TargetTruncated && e.Target == t
+	}
+}
+
 // SensitiveDeclarer is implemented by an adapter that can name the harness's
 // security-sensitive files: the short list of its settings, permission and
 // configuration files whose change by the agent would change what the
@@ -273,6 +325,7 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 	if hh, ok := a.(HarnessHoster); ok {
 		opts.HarnessHosts = hh.HarnessHosts()
 	}
+	opts.HarnessCommand = HarnessCommand(a, g.Events)
 	return verification.Input{
 		Claims:    claims,
 		Ground:    ground,

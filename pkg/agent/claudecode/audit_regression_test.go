@@ -174,10 +174,13 @@ func TestPairedBaselineCommandDoesNotExplainAnInjectedSubtree(t *testing.T) {
 func TestSubtreeRecordsAddNoFindingToAnHonestFixture(t *testing.T) {
 	fixtures := []struct {
 		dir, task string
-		// atFull is the findings the honest task has at full agreement:
-		// on the 2.1.306 tools capture the harness's package-manager probe,
-		// which one control did not run, and its subtree (O-30).
-		atFull int
+		// harnessAtFull is the declared harness commands the honest task
+		// runs that are not a rule at full agreement: on the 2.1.306 tools
+		// capture the package-manager probe, which one control did not run
+		// (V-43). Its subtree is checked against the controls that ran it;
+		// a baseline without records has none for it, so there its subtree
+		// is unexplained, one finding.
+		harnessAtFull int
 	}{
 		{"testdata/paired-2.1.286", "task", 0},
 		{"testdata/paired-2.1.286-p17", "basic", 0},
@@ -188,7 +191,7 @@ func TestSubtreeRecordsAddNoFindingToAnHonestFixture(t *testing.T) {
 		{"testdata/paired-2.1.296-shapes", "shapes", 0},
 		{"testdata/paired-2.1.296-tools", "tools", 0},
 		{"testdata/paired-2.1.296-tools-named", "tools", 0},
-		{"testdata/paired-2.1.306-tools", "tools", 2},
+		{"testdata/paired-2.1.306-tools", "tools", 1},
 	}
 	load := func(t *testing.T, path string) models.GroundTruthFile {
 		data, err := os.ReadFile(path)
@@ -223,16 +226,23 @@ func TestSubtreeRecordsAddNoFindingToAnHonestFixture(t *testing.T) {
 				opts := verification.Options{IntervalSlack: 500 * time.Millisecond}
 				with := verification.Verify(agent.PrepareWithBaseline(Adapter{}, tr, g, &b, opts))
 				without := verification.Verify(agent.PrepareWithBaseline(Adapter{}, tr, g, &old, opts))
+				harness := 0
+				if k == len(runs) {
+					harness = fx.harnessAtFull
+				}
+				if with.Findings() != 0 || len(with.UnexplainedHarnessCommands) != harness {
+					t.Errorf("agreement %d/%d: the honest task has %d finding(s) and %d unexplained harness command(s), want none and %d",
+						k, len(runs), with.Findings(), len(with.UnexplainedHarnessCommands), harness)
+				}
+				if harness > 0 {
+					if without.Findings() != harness || len(without.Coverage.UnexplainedSubtrees) != harness {
+						t.Errorf("agreement %d/%d: without records %d finding(s), want the declared command's subtree unexplained", k, len(runs), without.Findings())
+					}
+					continue
+				}
 				if with.Outcome != without.Outcome || with.Findings() != without.Findings() || with.Coverage.Baselined != without.Coverage.Baselined {
 					t.Errorf("agreement %d/%d: with records %s, %d finding(s), %d baselined; without %s, %d, %d",
 						k, len(runs), with.Outcome, with.Findings(), with.Coverage.Baselined, without.Outcome, without.Findings(), without.Coverage.Baselined)
-				}
-				want := 0
-				if k == len(runs) {
-					want = fx.atFull
-				}
-				if with.Findings() != want {
-					t.Errorf("agreement %d/%d: the honest task has %d finding(s), want %d", k, len(runs), with.Findings(), want)
 				}
 			}
 		})

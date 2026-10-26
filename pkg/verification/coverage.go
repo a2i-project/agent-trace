@@ -128,7 +128,8 @@ type Coverage struct {
 	// or that never exec'd and did something observable: whole subtrees nothing
 	// the agent said accounts for. A baselined command is here too when events
 	// beneath it are not what the controls' same command did
-	// (Command.Unbaselined, V-38).
+	// (Command.Unbaselined, V-38), and so is a declared harness command
+	// whose subtree is not what the controls' same command did (V-43).
 	UnexplainedSubtrees []*Command
 	// Quiet holds the level-1 processes that never exec'd and caused no
 	// observed event. There is nothing in them to explain. Go's os/exec
@@ -192,6 +193,12 @@ func CheckCoverage(p Partition, alignments []LaneAlignment) Coverage {
 			cov.UnexplainedSubtrees = append(cov.UnexplainedSubtrees, c)
 		case c.Baseline:
 			cov.Baselined += len(c.Content)
+		case c.Harness && len(c.Unbaselined) > 0:
+			// A declared harness command whose subtree is not what the
+			// controls' same command did (V-43).
+			cov.UnexplainedSubtrees = append(cov.UnexplainedSubtrees, c)
+		case c.Harness:
+			// Reported apart in Verdict.UnexplainedHarnessCommands (V-43).
 		case execPaired[c]:
 			cov.Explained += len(c.Content)
 		case c.Exec == nil && c.Exit == nil && len(c.Content) == 0:
@@ -202,4 +209,65 @@ func CheckCoverage(p Partition, alignments []LaneAlignment) Coverage {
 	}
 	cov.Complete = len(cov.UnexplainedActions) == 0 && len(cov.UnexplainedSubtrees) == 0 && len(cov.Unknown) == 0
 	return cov
+}
+
+// setAsideHarnessCommands marks every level-1 command whose own exec the
+// adapter's declaration recognises (Options.HarnessCommand), that no baseline
+// rule explains and whose command line no process_exec claim names exactly
+// (claimed), as a declared harness command, removes its exec and exit from
+// the aligned sequence, and returns the marked commands (V-43). On each it
+// sets Unbaselined to the events beneath it of a checked type
+// (SubtreeChecked) that sub does not hold for it, so its subtree is explained
+// only where it is what the controls' same command did, as V-38 has it for a
+// baselined command; with a nil sub nothing is recorded and every checked
+// event beneath it is unbaselined. A command whose exec is truncated is never
+// marked. It copies the commands it changes.
+func (p Partition) setAsideHarnessCommands(recognise func(models.GroundTruthEvent) bool, claimed map[string]bool, sub SubtreeBaseline) (Partition, []*Command) {
+	if recognise == nil {
+		return p, nil
+	}
+	out := p
+	out.Commands = make([]*Command, len(p.Commands))
+	copy(out.Commands, p.Commands)
+	marked := map[*Command]bool{}
+	var aside []*Command
+	for i, c := range out.Commands {
+		if c.Baseline || c.Exec == nil || c.Exec.TargetTruncated || claimed[c.Exec.Target] || !recognise(*c.Exec) {
+			continue
+		}
+		cc := *c
+		cc.Harness = true
+		cc.Unbaselined = nil
+		for _, e := range c.Content {
+			if SubtreeChecked(e.ActionType) && (sub == nil || !sub(*c.Exec, e)) {
+				cc.Unbaselined = append(cc.Unbaselined, e)
+			}
+		}
+		out.Commands[i] = &cc
+		marked[c] = true
+		aside = append(aside, &cc)
+	}
+	if len(aside) == 0 {
+		return p, nil
+	}
+	out.Observed, out.Owner = nil, nil
+	for i, e := range p.Observed {
+		if marked[p.Owner[i]] {
+			continue // the declared command's own exec or exit
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	return out, aside
+}
+
+// claimedCommands is the set of command lines the process_exec claims name.
+func claimedCommands(claims models.Trajectory) map[string]bool {
+	set := map[string]bool{}
+	for _, c := range claims {
+		if c.ActionType == models.ProcessExec {
+			set[c.Target] = true
+		}
+	}
+	return set
 }

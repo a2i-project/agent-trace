@@ -250,3 +250,89 @@ func TestABaselineWithoutSubtreeRecordsKeepsTheOldReading(t *testing.T) {
 		t.Errorf("a command the adapter declares noise: outcome = %s, want FAITHFUL", v.Outcome)
 	}
 }
+
+// commander declares envCmd as a command the harness starts only sometimes,
+// and its Normalize rewrites a wrapper "wrap: <cmd>" into <cmd>, as an
+// adapter recovers an agent's command from the harness's shell wrapper.
+type commander struct{ canonFake }
+
+func (commander) HarnessCommands() []string { return []string{envCmd, ""} }
+
+func (commander) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
+	e.Target = strings.TrimPrefix(e.Target, "wrap: ")
+	return e, true
+}
+
+// V-43: a declared harness command that is no rule at the baseline's
+// agreement has a record of what it did beneath it, counted over the controls
+// that ran it; one that is a rule has the rule's record, unmarked.
+func TestCaptureRecordsADeclaredCommandOverTheControlsThatRanIt(t *testing.T) {
+	a := commander{canonFake{fake{name: "f"}}}
+	quiet := completeFile(nil)
+	quiet.Workspace = "/tmp/c4/ws"
+	runs := append(envControls(), quiet) // three of four controls run it
+	b, err := Capture(a, "1", runs, t0, CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRule(b.Rules, models.ProcessExec, envCmd) || len(b.Subtrees) != 1 {
+		t.Fatalf("rules %v, subtrees %+v; want the command no rule and one record", b.Rules, b.Subtrees)
+	}
+	st := b.Subtrees[0]
+	if st.Command != envCmd || !st.Declared ||
+		!hasRule(st.Events, models.ProcessExec, "/usr/bin/env") || !hasRule(st.Events, models.FileWrite, "{workspace}/.cache") ||
+		!hasRule(st.Events, models.FileWrite, "/home/u/.snap-N") || len(st.Events) != 3 ||
+		!hasRule(st.Unstable, models.NetConnect, "sometimes.example") {
+		t.Errorf("record %+v: want the three actions all three runs that ran it did, and the connection two of them made unstable", st)
+	}
+	// At two in four the command is a rule, and its record is the rule's.
+	b, err = Capture(a, "1", runs, t0, CaptureOptions{MinAgreement: 0.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRule(b.Rules, models.ProcessExec, envCmd) || len(b.Subtrees) != 1 || b.Subtrees[0].Declared {
+		t.Errorf("rules %v, subtrees %+v; want the rule's own record", b.Rules, b.Subtrees)
+	}
+	// An adapter that declares nothing records nothing for it.
+	b, err = Capture(canonFake{fake{name: "f"}}, "1", runs, t0, CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Subtrees) != 0 {
+		t.Errorf("subtrees %+v without a declaration, want none", b.Subtrees)
+	}
+}
+
+// V-43 through Prepare: an occurrence of the declared command that no rule
+// explains is INCONCLUSIVE with its subtree checked against the record; an
+// extra connection beneath it is a finding; the same command line reached
+// through the wrapper the adapter normalizes is not recognised.
+func TestADeclaredHarnessCommandIsReportedApart(t *testing.T) {
+	a := commander{canonFake{fake{name: "f"}}}
+	quiet := completeFile(nil)
+	quiet.Workspace = "/tmp/c4/ws"
+	b, err := Capture(a, "1", append(envControls(), quiet), t0, CaptureOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verify := func(run models.GroundTruthFile) verification.Verdict {
+		return verification.Verify(PrepareWithBaseline(a, nil, run, &b, verification.Options{}))
+	}
+	v := verify(envRun("/tmp/r/ws", "z9"))
+	if v.Outcome != verification.OutcomeInconclusive || v.Findings() != 0 || len(v.UnexplainedHarnessCommands) != 1 {
+		t.Errorf("honest: outcome %s, %d findings, %d harness commands; want INCONCLUSIVE, none, one", v.Outcome, v.Findings(), len(v.UnexplainedHarnessCommands))
+	}
+	v = verify(envRun("/tmp/r/ws", "z9", ev(models.NetConnect, "evil.example", 201, 200)))
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Coverage.UnexplainedSubtrees) != 1 {
+		t.Errorf("payload: outcome %s, unexplained subtrees %d; want NOT FAITHFUL on the subtree", v.Outcome, len(v.Coverage.UnexplainedSubtrees))
+	}
+	wrapped := envRun("/tmp/r/ws", "z9")
+	wrapped.Events[1].Target = "wrap: " + envCmd
+	v = verify(wrapped)
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.UnexplainedHarnessCommands) != 0 || len(v.Unrecorded) != 1 {
+		t.Errorf("wrapped: outcome %s, %d harness commands, unrecorded %v; want the command an Unrecorded finding", v.Outcome, len(v.UnexplainedHarnessCommands), v.Unrecorded)
+	}
+	if HarnessCommand(a, wrapped.Events) != nil || HarnessCommand(canonFake{fake{name: "f"}}, envRun("/w", "a").Events) != nil {
+		t.Error("a recogniser for a capture with no declared exec, or an adapter that declares none, want nil")
+	}
+}

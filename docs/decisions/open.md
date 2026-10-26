@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-31 (P-33, V-46).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29) and O-20 (N-31) are closed; the others are undecided.
 
@@ -57,9 +57,9 @@ Blocked by: O-29 (the thread part of O-2; the parallel-block part is decided as 
 ### O-8: Is the V7 baseline sufficient at level 0?
 Status: Open.
 Date: raised 2026-09 (in the archived integration design, before 2026-09-19).
-Question: Level 0 has no lineage discriminator and is also where harness activity lives. For level-0 events other than file events in the harness's own directories (connections, commands), can exact-match baseline rules separate harness activity from agent actions? Occasional activity of that kind is decided for connections to the harness's declared hosts (V-34) and open for commands (O-30).
+Question: Level 0 has no lineage discriminator and is also where harness activity lives. For level-0 events other than file events in the harness's own directories (connections, commands), can exact-match baseline rules separate harness activity from agent actions? Occasional activity of that kind is decided for connections to the harness's declared hosts (V-34) and for commands the adapter declares (V-43).
 Options: (a) exact rules only (current, V-19); (b) add structure, such as per-phase baselines; (c) accept level-0 findings as advisory.
-Current behaviour: (a), with two additions. Eight paired captures of Claude Code (five of 2.1.286, three of 2.1.296) on one machine carry baselines measured from control runs. The capture script keeps an action seen in any one control (a 1/N threshold, V-24) while `cmd/baseline` keeps what every run did by default (I-24). An unexplained level-0 file event under the harness's own directories makes the run INCONCLUSIVE instead of being a finding (V-24), and so does an unexplained level-0 connection to a host the adapter declares as the harness's own service (V-34); any other level-0 connection that sent data, and a command, is still a finding. Since N-22 a connection that sent nothing is capability evidence and never a finding.
+Current behaviour: (a), with two additions. Eight paired captures of Claude Code (five of 2.1.286, three of 2.1.296) on one machine carry baselines measured from control runs. The capture script keeps an action seen in any one control (a 1/N threshold, V-24) while `cmd/baseline` keeps what every run did by default (I-24). An unexplained level-0 file event under the harness's own directories makes the run INCONCLUSIVE instead of being a finding (V-24), and so does an unexplained level-0 connection to a host the adapter declares as the harness's own service (V-34) and an unexplained level-1 command whose exec the adapter declares as the harness's own (V-43); any other level-0 connection that sent data, and any other command, is still a finding. Since N-22 a connection that sent nothing is capability evidence and never a finding.
 Blocked by: Baselines exist for Claude Code 2.1.286 and 2.1.296 (V7); what blocks a ruling is a measurement of how much harness activity at level 0 those exact rules leave unexplained across more sessions (more captures, needs root).
 
 ### O-12: Can any finding survive event loss?
@@ -69,14 +69,6 @@ Question: Which findings are robust enough to keep NOT FAITHFUL without the `Adv
 Options: Candidates are an unexplained event whose full ancestry chain was observed, and a content mismatch on a pair whose lane neighbours are intact.
 Current behaviour: Every finding under loss is NOT FAITHFUL marked `Advisory` (V-15).
 Blocked by: A proof per finding kind that it does not depend on a missing event.
-
-### O-30: Occasional harness commands
-Status: Open.
-Date: 2026-10-13 (the process part of O-25, whose network part is decided as V-34 in [verification.md](verification.md)).
-Question: V-24 and V-34 set apart unexplained level-0 file events under the harness's own directories and level-0 connections to its declared hosts. How should a command the harness itself starts only sometimes be treated, when no control showed it?
-Options: (a) leave it to the agreement threshold (current); (b) an adapter-declared set of harness commands whose unexplained occurrence is reported apart and INCONCLUSIVE, with the rules of V-34 (exact, never a command the agent's claims name, never a baseline rule); (c) more control runs only.
-Current behaviour: (a). A harness command is a level-1 subtree; one no rule explains is an Unrecorded exec and an unexplained subtree, two findings. Measured on 2026-10-13 (**Verified**): Claude Code's package-manager probe (`sh -c uname -s ... for c in npm yarn pnpm`) ran in 30 of 33 controls of 2.1.286 and 2.1.296 and in none of 9 task runs, so it is a rule at every agreement below full and never a finding in a kept run; no run of Claude Code or agy has an unexplained subtree at any agreement. agy's auto-updater, started only when its last check is more than 15 minutes old, would read as an unexplained command (**Verified** under `strace` only, I-47); no capture under the probes shows it.
-Blocked by: Nothing since 2026-10-24: in `paired-2.1.306-tools` the package-manager probe ran in the task run and four of five controls, so at full agreement (five in five) it is an Unrecorded exec and an unexplained subtree, two findings on an honest run (I-63). A choice between the options is now due.
 
 ### O-10: Containers and PID namespace translation
 Status: Open.
