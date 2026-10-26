@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit f4da861 on 2026-10-26.
+Checked against commit 0169119 on 2026-10-27.
 
 ## Objective
 
@@ -350,7 +350,7 @@ Limits of the comparison machinery: the converter decides which fields halo-reco
 - `status` checks the agent first on `PATH`, as the capture script does; another installation the user runs is not checked. Its kernel check covers only the minimums the probe pages state, not kernel options (BTF, BPF ring buffers) the probes also need.
 - A normalized trajectory, such as the one `attack` writes, carries no harness-implied claims, so under `verify --normalized` the harness's read after a Bash read command is Unrecorded where the adapter's own reading explains it (V-33).
 - `capture-campaign.sh` takes each task run's controls in the same invocation, so a Claude Code `basic` run costs six sessions and a `long` run six sessions of which the task is the only long one; the quota cost of D10 is the user's, and the dry run states it. Controls of two task runs may differ by the time of day, which is the point of D10 and is not a cost the script can remove.
-- The model check reads what the transcript records. For agy it reads the executor metadata of the conversation database, which the existing captures show as `gemini-3.8-flash-high` for the default model; whether `--model gemini-3.8-flash-high` (now agy's default, I-65) records the same string, and which id matches "as captured", is not measured (no agy session was run for this page): the pilot decides, and a mismatch fails the run with the recorded names in `order.tsv`. A Claude Code transcript's subagents may run another model (their models are recorded, not checked).
+- The model check reads what the transcript records. For agy it reads the executor metadata of the conversation database, which the existing captures show as `gemini-3.8-flash-high` for the default model; whether `--model gemini-3.8-flash-high` (now agy's default, I-65) records the same string, and which id matches "as captured", is not measured (no agy session was run for this page): the pilot decides, and a mismatch fails the run with the recorded names in `order.tsv`. A Claude Code transcript's subagents may run another model (their models are recorded, not checked). It takes a model name only as a whole token, not inside a path: the metadata also holds the workspace path, which under a campaign contains the agent's directory name (`gemini-1.4.7`).
 - The classification of a failed run reads the agent's and `watch`'s logs for login and quota phrases (`not logged in`, `/login`, `401`, `429`, `rate limit`, `quota` and the like); a message outside the list is a plain X4 harness error, retried twice. An X4 reason is the script's reading, not the agent's.
 - The version lock is the settings file and the environment the runs get, and a version read before and after each run. It does not prove that Claude Code ignored the lock, only that the version did not change; `claude doctor` says whether the lock is read.
 - `--validate-e2e` runs `go test` as root with the user's `PATH`; whether root's Go caches suffice offline was not run here, since no sudo ran. The known-answer check runs `simagent` with `fs,proc` only, so it does not exercise the net probe.

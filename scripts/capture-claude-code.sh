@@ -721,7 +721,9 @@ def claude(p):
     return seen
 
 def agy(p):
-    # The conversation's executor metadata names the model the run was set to;
+    # The conversation's executor metadata names the model the run was set to,
+    # read as a whole token: the same bytes hold paths, and the campaign's own
+    # directory names (gemini-1.4.7) are not models;
     # gen_metadata names the model that answered, in a form that drops the
     # effort suffix.
     # Read a copy with its write-ahead log beside it, so the capture is not touched.
@@ -734,7 +736,7 @@ def agy(p):
             c = sqlite3.connect(d + "/c.db")
             for (b,) in c.execute("select data from executor_metadata"):
                 if isinstance(b, bytes):
-                    seen |= {m.decode() for m in re.findall(rb"(?:gemini|claude|gpt)-[0-9A-Za-z.\-]*[0-9A-Za-z]", b)}
+                    seen |= {m.decode() for m in re.findall(rb"(?<![/0-9A-Za-z._-])(?:gemini|claude|gpt)-[0-9A-Za-z.\-]*[0-9A-Za-z](?![/0-9A-Za-z._-])", b)}
             c.close()
         except (OSError, sqlite3.Error):
             pass
