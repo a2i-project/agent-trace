@@ -207,14 +207,19 @@ func (f *Forest) Commands() []*Process {
 	return out
 }
 
-// Orphans returns the processes that name a parent the capture never saw,
-// whose chain therefore does not reach the agent. A process outside the tree
-// because it belongs to someone else also lands here, so a non-empty result
-// is a question (was a fork record lost?) and not by itself a finding.
+// Orphans returns, in creation order, the processes that name a parent the
+// capture never saw, whose chain therefore does not reach the agent. Their
+// descendants are outside the tree too but are not listed: each orphan is the
+// top of one broken chain. A process outside the tree because it belongs to
+// someone else also lands here, so a non-empty result is a question (was a
+// fork record lost?) and not by itself a finding.
 func (f *Forest) Orphans() []*Process {
 	var out []*Process
 	for _, p := range f.ordered {
-		if p.Level < 0 {
+		if p.Level >= 0 {
+			continue
+		}
+		if parent := f.lookup(p.PPID, p.Start); parent == nil || parent == p {
 			out = append(out, p)
 		}
 	}

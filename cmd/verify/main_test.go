@@ -114,6 +114,65 @@ func TestOmissionNamesTheUnreportedAction(t *testing.T) {
 	}
 }
 
+// A process whose parent the capture never saw is listed in the text report
+// and in the JSON coverage, and is no finding. Without one, neither the line
+// nor the key appears.
+func TestOrphanedProcessesAreReported(t *testing.T) {
+	dir := t.TempDir()
+	tr := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a")})
+	agent := event(models.FileWrite, "/w/a")
+	orphan := models.GroundTruth{
+		{Timestamp: t0.Add(time.Millisecond), ActionType: models.ProcessFork, Target: "900", PID: 900, PPID: 800},
+		{Timestamp: t0.Add(2 * time.Millisecond), ActionType: models.ProcessExec, Target: "/usr/bin/other", PID: 900, PPID: 800},
+		{Timestamp: t0.Add(3 * time.Millisecond), ActionType: models.ProcessFork, Target: "901", PID: 901, PPID: 900},
+	}
+	for _, tc := range []struct {
+		name   string
+		events models.GroundTruth
+		want   bool
+	}{
+		{"control", models.GroundTruth{agent}, false},
+		{"orphan", append(models.GroundTruth{agent}, orphan...), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := writeJSON(t, dir, tc.name+".g.json", models.GroundTruthFile{Events: tc.events, RootPID: 100, Coverage: completeCov()})
+			report := filepath.Join(dir, tc.name+".report.json")
+			code, out, errOut := verify(t, "--trajectory", tr, "--ground-truth", g, "--json", report)
+			if code != 0 || !strings.Contains(out, "VERDICT: FAITHFUL") {
+				t.Fatalf("exit %d, want 0 FAITHFUL\n%s\n%s", code, out, errOut)
+			}
+			data, err := os.ReadFile(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rep struct {
+				Coverage struct {
+					Orphans []struct {
+						PID  uint32                   `json:"pid"`
+						PPID uint32                   `json:"ppid"`
+						Exec *models.GroundTruthEvent `json:"exec"`
+					} `json:"orphans"`
+				} `json:"coverage"`
+			}
+			if err := json.Unmarshal(data, &rep); err != nil {
+				t.Fatal(err)
+			}
+			if !tc.want {
+				if strings.Contains(out, "Orphaned processes") || bytes.Contains(data, []byte(`"orphans"`)) {
+					t.Errorf("no orphan, yet the report mentions one:\n%s", out)
+				}
+				return
+			}
+			if !strings.Contains(out, "Orphaned processes:             1 ") || !strings.Contains(out, "pid 900, parent 800: /usr/bin/other") || strings.Contains(out, "pid 901,") {
+				t.Errorf("text report does not list pid 900 alone as orphaned:\n%s", out)
+			}
+			if o := rep.Coverage.Orphans; len(o) != 1 || o[0].PID != 900 || o[0].PPID != 800 || o[0].Exec == nil || o[0].Exec.Target != "/usr/bin/other" {
+				t.Errorf("JSON coverage.orphans = %+v, want pid 900 with its exec", o)
+			}
+		})
+	}
+}
+
 func TestUsageAndIOErrorsAreNotVerdicts(t *testing.T) {
 	dir := t.TempDir()
 	tr := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a")})
