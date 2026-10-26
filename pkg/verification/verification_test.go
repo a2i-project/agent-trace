@@ -757,6 +757,29 @@ func TestVerify_QuietForkIsNotAFinding(t *testing.T) {
 	}
 }
 
+// A git_commit claim is set aside as out of capture (V-47): no probe observes
+// a commit, so it is never aligned and never a finding. Without findings the
+// run is INCONCLUSIVE with a reason naming it; with one, NOT FAITHFUL as
+// before. The other claims keep their positions.
+func TestVerify_GitCommitClaimIsOutOfCapture(t *testing.T) {
+	commit := claimAt(5, models.GitCommit, "abc123")
+	g := models.GroundTruth{agentEv(1, models.FileWrite, "/w/a"), agentEv(9, models.FileWrite, "/w/b")}
+	v := run(models.Trajectory{claimAt(1, models.FileWrite, "/w/a"), commit, claimAt(9, models.FileWrite, "/w/b")}, g)
+	wantOutcome(t, v, OutcomeInconclusive)
+	if len(v.OutOfCapture) != 1 || v.OutOfCapture[0].Target != "abc123" || len(v.Corroborated) != 2 || v.Findings() != 0 || len(v.Unwitnessed) != 0 {
+		t.Errorf("out of capture = %v, corroborated = %d, findings = %d, want the commit, 2 and 0", v.OutOfCapture, len(v.Corroborated), v.Findings())
+	}
+	if len(v.Reasons) != 1 || !strings.Contains(v.Reasons[0], "1 git_commit claim(s)") {
+		t.Errorf("reasons = %v, want one naming the git_commit claim", v.Reasons)
+	}
+
+	v = run(models.Trajectory{commit, claimAt(9, models.FileWrite, "/w/b")}, g)
+	wantOutcome(t, v, OutcomeNotFaithful)
+	if v.Findings() != 1 || len(v.Unrecorded) != 1 || len(v.OutOfCapture) != 1 {
+		t.Errorf("findings = %d, unrecorded = %d, out of capture = %d, want 1, 1 and 1", v.Findings(), len(v.Unrecorded), len(v.OutOfCapture))
+	}
+}
+
 // A process whose parent was never seen is listed as an orphan, the top of
 // its broken chain only, and changes nothing else: its events are outside
 // the tree, and the verdict stays FAITHFUL.

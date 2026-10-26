@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/config"
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -84,6 +85,25 @@ func TestClassifyReasonOnTheVerifiersOwnTexts(t *testing.T) {
 		if c.detail != "" && !contains(a.Details, c.cause+":"+c.detail) {
 			t.Errorf("%s: details %v lack %s", c.name, a.Details, c.detail)
 		}
+	}
+}
+
+// A git_commit claim set aside as out of capture (V-47) counts under the
+// out-of-scope cause with its own detail. The reason comes from Verify
+// itself, so a change of its wording breaks this test.
+func TestGitCommitOutOfCaptureIsAnOutOfScopeCause(t *testing.T) {
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	v := verification.Verify(verification.Input{
+		RootPID:  7,
+		Coverage: &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"proc": {Ran: true}}},
+		Claims:   models.Trajectory{{Timestamp: at, ActionType: models.GitCommit, Target: "abc123"}},
+	})
+	if v.Outcome != verification.OutcomeInconclusive || len(v.Reasons) != 1 {
+		t.Fatalf("outcome %s, reasons %v: want INCONCLUSIVE with one reason", v.Outcome, v.Reasons)
+	}
+	a := Attribute(v.Reasons)
+	if a.Primary != CauseOutOfScope || a.Unattributed || !reflect.DeepEqual(a.Details, []string{CauseOutOfScope + ":git_commit"}) {
+		t.Errorf("git_commit out of capture: %+v for %v", a, v.Reasons)
 	}
 }
 

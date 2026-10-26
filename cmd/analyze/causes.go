@@ -42,6 +42,13 @@ var CauseOrder = []string{
 // is never counted silently under another cause.
 const HarnessCommandMarker = "the adapter declares as the harness's own"
 
+// OutOfCaptureMarker is the part of the verifier's reason for a git_commit
+// claim set aside as out of capture (V-47). Such a claim is, like a file claim
+// out of scope (V-23), a claim the capture could not observe, so it counts
+// under that cause with the detail git_commit, at the same place in the
+// precedence list. Matched case-insensitively.
+const OutOfCaptureMarker = "git_commit claim(s) name a commit, which no probe observes"
+
 // Hit is one cause found in one reason, with the counter or field it names
 // where the protocol splits the cause.
 type Hit struct {
@@ -109,6 +116,9 @@ func ClassifyReason(reason string) []Hit {
 	}
 	if strings.Contains(r, "could not observe") {
 		add(CauseOutOfScope, "")
+	}
+	if strings.Contains(r, OutOfCaptureMarker) {
+		add(CauseOutOfScope, "git_commit")
 	}
 	if strings.Contains(r, "cannot place") {
 		add(CauseOutsideWrite, "")

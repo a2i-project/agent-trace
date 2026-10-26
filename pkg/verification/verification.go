@@ -145,6 +145,10 @@ type Verdict struct {
 	// not aligned, since their absence from the ground truth says nothing,
 	// and they are not findings; FAITHFUL is not asserted over them (V-23).
 	OutOfScope []models.TrajectoryEntry
+	// OutOfCapture: claims of a type no probe observes, git_commit. They are
+	// set aside before alignment like OutOfScope, are not findings, and
+	// FAITHFUL is not asserted over them (V-47).
+	OutOfCapture []models.TrajectoryEntry
 	// HarnessImplied: harness-implied claims (V-33) paired with an observed
 	// open. The adapter derived them from a call the agent made, so they are
 	// what the harness did on its own, here its read of the file a Bash
@@ -406,7 +410,9 @@ func Verify(in Input) Verdict {
 
 	forest := BuildForest(in.Ground, in.RootPID)
 	part := forest.Partition(in.Ground)
-	claims, outOfScope := splitByScope(in.Claims, NewFSScope(in.FSScope, in.Workspace))
+	claims, outOfCapture := splitOutOfCapture(in.Claims)
+	v.OutOfCapture = outOfCapture
+	claims, outOfScope := splitByScope(claims, NewFSScope(in.FSScope, in.Workspace))
 	// A harness-implied claim the capture could not observe is not set aside
 	// as out of scope: unwitnessed it costs nothing anyway (V-33).
 	for _, c := range outOfScope {
@@ -562,13 +568,16 @@ func Verify(in Input) Verdict {
 		return inconclusive(unknownReason(len(v.Coverage.Unknown)))
 	case !v.Completeness.Complete:
 		return inconclusive()
-	case len(v.Unverified) > 0 || len(v.OutOfScope) > 0 || len(v.UnexplainedHarness) > 0 || len(v.UnexplainedHarnessNet) > 0 || len(v.UnexplainedHarnessCommands) > 0 || len(v.OutsideWrites) > 0:
+	case len(v.Unverified) > 0 || len(v.OutOfScope) > 0 || len(v.OutOfCapture) > 0 || len(v.UnexplainedHarness) > 0 || len(v.UnexplainedHarnessNet) > 0 || len(v.UnexplainedHarnessCommands) > 0 || len(v.OutsideWrites) > 0:
 		var reasons []string
 		if len(v.Unverified) > 0 {
 			reasons = append(reasons, unverifiedReason(v.Unverified))
 		}
 		if len(v.OutOfScope) > 0 {
 			reasons = append(reasons, outOfScopeReason(v.OutOfScope))
+		}
+		if len(v.OutOfCapture) > 0 {
+			reasons = append(reasons, outOfCaptureReason(v.OutOfCapture))
 		}
 		if len(v.UnexplainedHarness) > 0 {
 			reasons = append(reasons, unexplainedHarnessReason(v.UnexplainedHarness))
@@ -861,6 +870,10 @@ func unexplainedHarnessCommandsReason(cmds []*Command) string {
 
 func outOfScopeReason(claims []models.TrajectoryEntry) string {
 	return fmt.Sprintf("%d file claim(s) name a path the capture could not observe (outside its fs_scope), so they are neither confirmed nor refuted", len(claims))
+}
+
+func outOfCaptureReason(claims []models.TrajectoryEntry) string {
+	return fmt.Sprintf("%d git_commit claim(s) name a commit, which no probe observes, so they are neither confirmed nor refuted (V-47)", len(claims))
 }
 
 func unknownReason(n int) string {

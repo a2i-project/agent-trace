@@ -37,7 +37,9 @@ const (
 	ProcessFork ActionType = "process_fork"
 	ProcessExec ActionType = "process_exec"
 	ProcessExit ActionType = "process_exit"
-	GitCommit   ActionType = "git_commit"
+	// GitCommit is claimable, but no probe emits it: the verifier sets a
+	// claim of it aside as out of capture (V-47).
+	GitCommit ActionType = "git_commit"
 	// NetResponse is an HTTP response read over TLS, with its attestation
 	// record in GroundTruthEvent.Response. Ground truth only, like NetDNS: a
 	// response is attested, never claimed or compared with a trajectory

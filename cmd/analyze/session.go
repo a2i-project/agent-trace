@@ -457,6 +457,7 @@ func CompareHonest(attackClaims models.Trajectory, attackV verification.Verdict,
 	add("unexplained_subtrees", len(attackV.Coverage.UnexplainedSubtrees), len(adapterV.Coverage.UnexplainedSubtrees))
 	add("unverified", len(attackV.Unverified), len(adapterV.Unverified))
 	add("out_of_scope", len(attackV.OutOfScope), len(adapterV.OutOfScope))
+	add("out_of_capture", len(attackV.OutOfCapture), len(adapterV.OutOfCapture))
 	add("unexplained_harness", len(attackV.UnexplainedHarness), len(adapterV.UnexplainedHarness))
 	add("unexplained_harness_net", len(attackV.UnexplainedHarnessNet), len(adapterV.UnexplainedHarnessNet))
 	add("outside_writes", len(attackV.OutsideWrites), len(adapterV.OutsideWrites))

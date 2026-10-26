@@ -74,6 +74,19 @@ func underDir(path, dir string) bool {
 	return path == dir || strings.HasPrefix(path, strings.TrimSuffix(dir, "/")+"/")
 }
 
+// splitOutOfCapture separates the claims of a type no probe observes
+// (V-47): git_commit. Such a claim has nothing to pair with in any capture.
+func splitOutOfCapture(claims models.Trajectory) (rest, outOfCapture models.Trajectory) {
+	for _, c := range claims {
+		if c.ActionType == models.GitCommit {
+			outOfCapture = append(outOfCapture, c)
+			continue
+		}
+		rest = append(rest, c)
+	}
+	return rest, outOfCapture
+}
+
 // splitByScope separates the file claims the capture could not have witnessed
 // from the rest. Other lanes are untouched: the process and network probes
 // have no path scope.

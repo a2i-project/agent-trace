@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Checked against commit a1c95a9 on 2026-10-11.
+Checked against commit f4da861 on 2026-10-11.
 
 This page states what agent-trace is for, the threat model it assumes, the
 properties it claims, and how its components fit together. Each component has
@@ -58,13 +58,14 @@ after its code identifier. Identifiers without a package are in
 | unplaced event | an observed event with no pid (`ZoneUnknown`) | `Partition.Unknown`, `Coverage.Unknown` |
 | aligned sequence | the observed events claims are aligned against: level-0 events and each command's own first exec and exit, in time order | `Partition.Observed` |
 | top-level action | one event of the aligned sequence | an element of `Partition.Observed` |
-| lane | a group of action types aligned on its own: `fs` (the file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_connect`, `net_dns`), `other` (every other type; of the claimable ones only `git_commit`) | `Lane`, `LaneOf` |
+| lane | a group of action types aligned on its own: `fs` (the file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_connect`, `net_dns`), `other` (every other type; of the claimable ones only `git_commit`, which is set aside before alignment, V-47) | `Lane`, `LaneOf` |
 | capability evidence | observed events of the unclaimable types `net_bind`, `net_listen`, `net_unix_connect`, `net_dns` and `net_dial`: listeners, Unix socket connections, connections to port 53 and connections that sent nothing. Reported, never aligned, never a finding | `Verdict.Capability`, `Command.Capability`, `models.ActionType.IsClaimable` |
 | structural event | `process_fork`: builds the tree, neither aligned nor counted as capability evidence | `models.ActionType.IsStructural` |
 | outside write | a write-class file event (`file_write`, `file_close`, `file_rename`, `file_delete`) under the workspace by an outside process | `Verdict.OutsideWrites` |
 | outside its interval | a pair whose claim has an end and whose observed event lies outside the claim's interval widened by the slack | `Verdict.OutsideInterval` |
 | outside the workspace | a path not under the directory the capture watched | `models.GroundTruthFile.Workspace` |
 | out of scope | a file claim on a path the capture could not observe, by its fs scope record | `Verdict.OutOfScope`, `FSScope` |
+| out of capture | a claim of a type no probe observes (`git_commit`) | `Verdict.OutOfCapture` |
 | dropped by the scope rule | a file event `watch` left out of the capture: caused by no process of the agent's tree, on a path outside the workspace | `models.FSScope.DroppedOutside` |
 | finding | a discrepancy counted against the agent: a mismatched pair, an unwitnessed claim, an unrecorded top-level action, a pair outside its interval, or an unexplained subtree | `Verdict.Findings` |
 | outcome | the conclusion of a run: FAITHFUL, NOT FAITHFUL or INCONCLUSIVE | `Outcome` |

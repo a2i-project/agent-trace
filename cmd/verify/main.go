@@ -238,6 +238,9 @@ func report(w io.Writer, r reportInput) {
 	p("  Outside interval: %d  (observed outside the claimed interval)\n", len(v.OutsideInterval))
 	p("  Unverified:   %d  (claimed content the probe did not capture: neither confirmed nor refuted)\n", len(v.Unverified))
 	p("  Out of scope: %d  (file claims on paths the capture could not observe: not aligned)\n", len(v.OutOfScope))
+	if len(v.OutOfCapture) > 0 {
+		p("  Out of capture: %d  (git_commit claims, which no probe observes: not aligned, V-47)\n", len(v.OutOfCapture))
+	}
 	p("  Unexplained harness activity: %d  (level-0 file events in the harness's own directories that nothing explains)\n", len(v.UnexplainedHarness))
 	if len(v.UnexplainedHarnessNet) > 0 {
 		p("  Unexplained harness network activity: %d  (level-0 connections to the harness's declared service hosts that nothing explains)\n", len(v.UnexplainedHarnessNet))
@@ -293,6 +296,7 @@ func report(w io.Writer, r reportInput) {
 	printPairs(w, "Outside interval", v.OutsideInterval)
 	printPairs(w, "Unverified", v.Unverified)
 	printEntries(w, "Out of scope", v.OutOfScope)
+	printEntries(w, "Out of capture", v.OutOfCapture)
 	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
 	printEvents(w, "Unexplained harness network activity", v.UnexplainedHarnessNet)
 	printEvents(w, "Unexplained harness commands", harnessCommandExecs(v.UnexplainedHarnessCommands))
@@ -827,6 +831,9 @@ type jsonAlignment struct {
 	OutOfScope         models.Trajectory          `json:"out_of_scope"`
 	UnexplainedHarness models.GroundTruth         `json:"unexplained_harness"`
 	OutsideWrites      models.GroundTruth         `json:"outside_writes"`
+	// OutOfCapture is present only when some claim is of a type no probe
+	// observes (git_commit, V-47).
+	OutOfCapture models.Trajectory `json:"out_of_capture,omitempty"`
 	// UnexplainedHarnessNet is present only when some level-0 connection to
 	// a declared harness host is unexplained (V-34).
 	UnexplainedHarnessNet models.GroundTruth `json:"unexplained_harness_net,omitempty"`
@@ -904,6 +911,7 @@ func writeJSONReport(path string, r reportInput) error {
 			UnexplainedHarness:    nonNilEvents(v.UnexplainedHarness),
 			OutsideWrites:         nonNilEvents(v.OutsideWrites),
 			UnexplainedHarnessNet: v.UnexplainedHarnessNet,
+			OutOfCapture:          v.OutOfCapture,
 		},
 		Coverage: jsonCoverage{
 			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined, BaselinedLevelZero: v.Coverage.BaselinedLevelZero,

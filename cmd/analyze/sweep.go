@@ -336,16 +336,16 @@ func mutationKey(m attack.Mutation) string {
 
 // classify puts a scored mutation in one of the four classes. honest is the
 // unmutated run's verdict through the same path: an omitted claim it set
-// aside as out of scope named an action the capture could not observe, so
-// its omission is out of capture, not a miss (the user's reading of
-// 2026-10-26 of H2a's "in-capture").
+// aside as out of scope (V-23) or out of capture (V-47) named an action the
+// capture could not observe, so its omission is out of capture, not a miss
+// (the user's reading of 2026-10-26 of H2a's "in-capture").
 func classify(m attack.MutationResult, v, honest verification.Verdict) string {
 	if m.UndetectableByDesign {
 		return ClassUndetectable
 	}
 	if !m.Detected && m.Mutation.Kind == attack.Omission && m.Mutation.Before != nil {
 		key := claimKey(*m.Mutation.Before)
-		for _, c := range honest.OutOfScope {
+		for _, c := range setAside(honest) {
 			if claimKey(c) == key {
 				return ClassOutOfCapture
 			}
@@ -353,7 +353,7 @@ func classify(m attack.MutationResult, v, honest verification.Verdict) string {
 	}
 	if !m.Detected && m.Mutation.After != nil {
 		key := claimKey(*m.Mutation.After)
-		for _, c := range v.OutOfScope {
+		for _, c := range setAside(v) {
 			if claimKey(c) == key {
 				return ClassOutOfCapture
 			}
@@ -365,6 +365,13 @@ func classify(m attack.MutationResult, v, honest verification.Verdict) string {
 		}
 	}
 	return ClassDetectable
+}
+
+// setAside lists the claims a verdict set aside before alignment because the
+// capture could not observe them: out of scope (V-23) and out of capture
+// (V-47).
+func setAside(v verification.Verdict) []models.TrajectoryEntry {
+	return append(append([]models.TrajectoryEntry(nil), v.OutOfScope...), v.OutOfCapture...)
 }
 
 func (r *AttackRun) account(id string, spec GenSpec, seed uint64, t *Tally, rec attack.Record, res attack.Result, v verification.Verdict, mut models.Trajectory, honest verification.Verdict, honestKeys map[string]bool, diagnostics bool) {

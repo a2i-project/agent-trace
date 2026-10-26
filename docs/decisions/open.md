@@ -109,6 +109,14 @@ Options: (a) confirm on a live capture and keep V-45 as built; (b) if the `reque
 Current behaviour: V-45: each `WebSearch` call is reported with its join or the reason it fails, never changing the outcome; on the checked captures no call and no response exist, so nothing is corroborated. A corroborated call says that the response which issued it was received whole, nothing about whether the search ran or what it returned, and any call inserted into the same response shares its id.
 Blocked by: a live capture of Claude Code with response reading active (pending with the user), and the offsets per Bun release.
 
+### O-33: Verifying a `git_commit` claim from the fs probe's ground truth
+Status: Open.
+Date: 2026-10-26.
+Question: Can a `git_commit` claim be checked against the file events of the commit instead of being set aside (V-47)? The claimed commit id would be compared with the observed write to `.git/refs/heads/<branch>`, whose closed-file hash is the hash of the ref's content (the new commit id and a newline), and the object writes under `.git/objects` would show the commit's objects were written.
+Options: (a) keep V-47; (b) pair a `git_commit` claim with the close of the ref file whose content hash equals the hash of the claimed id's ref line, in the fs lane, and require the commit's object write; (c) as (b) without the object check.
+Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, never aligned and never a finding, and the run is at best INCONCLUSIVE. The fs probe already records the ref and object writes inside the workspace with their closed-file hashes, so no new kernel probe is needed. A packed ref (`.git/packed-refs`), a commit made by a `git` outside the tracked tree, or a repository outside the fs scope would need their own rules.
+Blocked by: An agent that emits `git_commit` claims. No current adapter does.
+
 ## Proposals (not decided)
 
 ### O-18: Move net hooks to the kernel socket layer (fentry or LSM)

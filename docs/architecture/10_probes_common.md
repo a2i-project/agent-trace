@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit d606e3e on 2026-10-26.
+Checked against commit f4da861 on 2026-10-26.
 
 ## Objective
 
@@ -82,7 +82,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `RequestHash` | `request_hash` | net, on `net_request` with a body |
 | `Response` | `response` | net, on `net_response` only: status, request id, content type and encoding, body length and hash, end time, completeness, pairing and the server-sent event counts ([13_probe_net.md](13_probe_net.md), N-29) |
 
-`process_fork`, `net_bind`, `net_listen`, `net_unix_connect`, `net_dns`, `net_dial` and `net_response` are ground truth only: `ActionType.IsClaimable` rejects them in a trajectory. `process_fork` is also structural (`IsStructural`): the verifier uses it to build the tree and neither aligns nor counts it. No probe emits `file_read` or `git_commit`.
+`process_fork`, `net_bind`, `net_listen`, `net_unix_connect`, `net_dns`, `net_dial` and `net_response` are ground truth only: `ActionType.IsClaimable` rejects them in a trajectory. `process_fork` is also structural (`IsStructural`): the verifier uses it to build the tree and neither aligns nor counts it. No probe emits `file_read` or `git_commit`; the verifier sets a `git_commit` claim aside as out of capture (V-47).
 
 ### ProbeCoverage
 

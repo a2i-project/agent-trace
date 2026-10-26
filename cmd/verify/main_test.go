@@ -114,6 +114,38 @@ func TestOmissionNamesTheUnreportedAction(t *testing.T) {
 	}
 }
 
+// A git_commit claim is listed as out of capture in the text report and
+// the JSON alignment, and makes a run without findings INCONCLUSIVE (V-47).
+func TestGitCommitClaimIsOutOfCapture(t *testing.T) {
+	dir := t.TempDir()
+	tr := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a"), claim(models.GitCommit, "abc123")})
+	g := writeJSON(t, dir, "g.json", models.GroundTruthFile{Events: models.GroundTruth{event(models.FileWrite, "/w/a")}, RootPID: 100, Coverage: completeCov()})
+	report := filepath.Join(dir, "report.json")
+	code, out, errOut := verify(t, "--trajectory", tr, "--ground-truth", g, "--json", report)
+	if code != 2 || !strings.Contains(out, "VERDICT: INCONCLUSIVE") || !strings.Contains(out, "1 git_commit claim(s)") {
+		t.Fatalf("exit %d, want 2 INCONCLUSIVE with the reason\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(out, "Out of capture: 1 ") || !strings.Contains(out, "\nOut of capture:\n") || !strings.Contains(out, "abc123") {
+		t.Errorf("text report does not list the git_commit claim as out of capture:\n%s", out)
+	}
+	data, err := os.ReadFile(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep struct {
+		Alignment struct {
+			OutOfCapture models.Trajectory `json:"out_of_capture"`
+			Unwitnessed  models.Trajectory `json:"unwitnessed"`
+		} `json:"alignment"`
+	}
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Alignment.OutOfCapture) != 1 || rep.Alignment.OutOfCapture[0].Target != "abc123" || len(rep.Alignment.Unwitnessed) != 0 {
+		t.Errorf("JSON alignment: out_of_capture %v, unwitnessed %v", rep.Alignment.OutOfCapture, rep.Alignment.Unwitnessed)
+	}
+}
+
 // A process whose parent the capture never saw is listed in the text report
 // and in the JSON coverage, and is no finding. Without one, neither the line
 // nor the key appears.

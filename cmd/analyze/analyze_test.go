@@ -376,6 +376,17 @@ func TestClassifyPutsAMutationInOneClass(t *testing.T) {
 	if got := classify(om, verification.Verdict{}, verification.Verdict{}); got != ClassDetectable {
 		t.Errorf("an omitted in-scope claim: %s", got)
 	}
+	// A git_commit claim is set aside as out of capture (V-47): fabricated or
+	// omitted, it is out of capture too.
+	commit := models.TrajectoryEntry{ActionType: models.GitCommit, Target: "abc123", Timestamp: time.Unix(2, 0)}
+	fab := attack.MutationResult{Mutation: attack.Mutation{Kind: attack.Fabrication, After: &commit}}
+	if got := classify(fab, verification.Verdict{OutOfCapture: []models.TrajectoryEntry{commit}}, verification.Verdict{}); got != ClassOutOfCapture {
+		t.Errorf("a fabricated git_commit claim: %s", got)
+	}
+	omc := attack.MutationResult{Mutation: attack.Mutation{Kind: attack.Omission, Before: &commit}}
+	if got := classify(omc, verification.Verdict{}, verification.Verdict{OutOfCapture: []models.TrajectoryEntry{commit}}); got != ClassOutOfCapture {
+		t.Errorf("an omitted git_commit claim: %s", got)
+	}
 }
 
 func TestMislocationCategories(t *testing.T) {
