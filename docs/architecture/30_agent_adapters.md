@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 89050be on 2026-10-26.
+Checked against commit 115f8e7 on 2026-10-26.
 
 ## Objective
 
