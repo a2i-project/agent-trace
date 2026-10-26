@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit f0ddcce on 2026-10-26.
+Checked against commit b4c2434 on 2026-10-26.
 
 ## Objective
 
@@ -231,7 +231,7 @@ Readings where the protocol is silent, each fixed in `protocol.go` or in the cod
 - H2b and H2c are judged over the detected mutations, as their claims say ("every detected mutation"), so a miss counts against H2a only; the rate over the detectable mutations (the scorer's own `Tally.Rate`) is reported beside them (the user's reading, 2026-10-26).
 - A4 holds at a position when the outcome and the numbers of findings, unrecorded events and unexplained subtrees equal the honest run's and no more interval findings appear. The composed clause ("still found") is refuted by a detectable omission that is not detected; one detected but not classified or not located is listed beside the verdict and left to H2b and H2c.
 - The leave-one-out baseline admits an action any one pooled control performed (agreement 1/N of the pool), as the capture script's own baseline admits one of its controls; a fixed fraction of a pool of about 300 would keep out the rare harness activity pooling is meant to explain (the user's reading, 2026-10-26).
-- H3d's bar is read on the point estimate. The H4a limits are read as the median for the wall ratio and the fixed cost, the largest observed peak for the RSS, and the count of runs for loss.
+- H3d's bar is read on the point estimate. The H4a limits are read on each workload's median over the repetitions for the wall ratio, the fixed cost and the peak RSS, the statistic of D3's pilot figures, with the largest single repetition shown beside the fixed cost and the RSS (the user's reading, 2026-10-26), and on the count of runs for loss.
 - The two recording modes of the net probe are not separate strata; the manifest's mode is carried in each run's record only.
 
 Not computed: whether a mutation changes the replayed final state (the H1 edit-criterion split needs it in the sweep's rows); the per-capture peak RSS of `verify` and `baseline`; X4 causes the manifest does not show (a crash, a quota error, a failed `watch`, a suspend) and X5 completion, unless `annotations.json` says them; the halt conditions that need the machine (instrument validation, the redaction check, an event the scripted known answer did not perform). `--seeds` below 100 is reported as a reduced sweep and is not the registered one.

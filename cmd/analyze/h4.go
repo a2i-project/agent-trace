@@ -259,10 +259,14 @@ func judgeBench(r *BenchRun) []LimitResult {
 	out = append(out, lim)
 
 	// The other three limits are read over every workload under `all`.
-	fixed := LimitResult{ID: "H4a-fixed-cost", Limit: fmt.Sprintf("fixed cost (start-up plus drain) at most %.0f s per session under %s, on every workload", MaxFixedCostSeconds, H4Condition)}
-	rss := LimitResult{ID: "H4a-rss", Limit: fmt.Sprintf("peak RSS of the watch tree at most %.0f MiB under %s, on every workload", MaxWatchRSSMiB, H4Condition)}
+	fixed := LimitResult{ID: "H4a-fixed-cost", Limit: fmt.Sprintf("median fixed cost (start-up plus drain) at most %.0f s per session under %s, on every workload", MaxFixedCostSeconds, H4Condition)}
+	rss := LimitResult{ID: "H4a-rss", Limit: fmt.Sprintf("median peak RSS of the watch tree at most %.0f MiB under %s, on every workload", MaxWatchRSSMiB, H4Condition)}
 	loss := LimitResult{ID: "H4a-loss", Limit: fmt.Sprintf("zero runs with loss under %s, on every workload", H4Condition)}
-	var fixedMax, rssMax float64
+	// Fixed cost and RSS are read on each workload's median over the
+	// repetitions, the statistic D3's pilot figures are (2.5 s, 83 MiB), and
+	// the largest single repetition is shown beside it (the user's reading of
+	// 2026-10-26).
+	var fixedMax, rssMax, fixedTop, rssTop float64
 	lossRuns, failed, seen := 0, 0, 0
 	for _, row := range r.Rows {
 		if row.Condition != H4Condition {
@@ -273,9 +277,11 @@ func judgeBench(r *BenchRun) []LimitResult {
 		failed += row.Failed
 		if row.FixedCostS != nil {
 			fixedMax = math.Max(fixedMax, row.FixedCostS.Median)
+			fixedTop = math.Max(fixedTop, row.FixedCostS.Top1)
 		}
 		if row.PeakRSSMiB != nil {
-			rssMax = math.Max(rssMax, row.PeakRSSMiB.Top1)
+			rssMax = math.Max(rssMax, row.PeakRSSMiB.Median)
+			rssTop = math.Max(rssTop, row.PeakRSSMiB.Top1)
 		}
 	}
 	if seen == 0 {
@@ -283,9 +289,9 @@ func judgeBench(r *BenchRun) []LimitResult {
 			l.Result, l.Detail = "NOT EVALUATED", "no run under "+H4Condition
 		}
 	} else {
-		fixed.Detail = fmt.Sprintf("largest per-workload median %.3f s", fixedMax)
+		fixed.Detail = fmt.Sprintf("largest per-workload median %.3f s; largest single repetition %.3f s", fixedMax, fixedTop)
 		fixed.Result = passFail(fixedMax <= MaxFixedCostSeconds)
-		rss.Detail = fmt.Sprintf("largest observed peak %.1f MiB (top1 over the repetitions)", rssMax)
+		rss.Detail = fmt.Sprintf("largest per-workload median %.1f MiB; largest single repetition %.1f MiB", rssMax, rssTop)
 		rss.Result = passFail(rssMax <= MaxWatchRSSMiB)
 		loss.Detail = fmt.Sprintf("%d run(s) with loss; %d run(s) failed and are not counted as clean", lossRuns, failed)
 		loss.Result = passFail(lossRuns <= MaxLossRuns)
