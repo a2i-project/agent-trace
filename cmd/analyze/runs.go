@@ -225,7 +225,7 @@ func ProcessRun(c *Campaign, rec RunRecord, o ProcessOptions) RunOutput {
 			others := o.Pools.Others(s)
 			if len(others) == 0 {
 				out.LOONote = "no other capture of the same agent, version and control tool set"
-			} else if b, err := BuildBaseline(s.Adapter, s.Version, others, PrimaryAgreement); err != nil {
+			} else if b, err := BuildBaseline(s.Adapter, s.Version, others, LOOAgreement(len(others))); err != nil {
 				out.Sensitivity[SettingLOO] = &H3Run{Error: err.Error()}
 			} else {
 				out.Sensitivity[SettingLOO] = s.Honest(b, out.StrictReason, loss)

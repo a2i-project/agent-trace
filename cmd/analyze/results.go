@@ -59,6 +59,7 @@ type Constants struct {
 	BootstrapResamples int         `json:"bootstrap_resamples"`
 	BootstrapSeed      uint64      `json:"bootstrap_seed"`
 	PrimaryAgreement   float64     `json:"primary_agreement"`
+	LOOAgreement       string      `json:"loo_agreement"`
 	AgreementGrid      []Agreement `json:"agreement_grid"`
 	SeedFirst          uint64      `json:"seed_first"`
 	SeedLast           uint64      `json:"seed_last_registered"`
@@ -76,7 +77,7 @@ type Constants struct {
 func constants(lastSeed uint64) Constants {
 	return Constants{
 		Protocol: Protocol, BootstrapResamples: BootstrapResamples, BootstrapSeed: BootstrapSeed,
-		PrimaryAgreement: PrimaryAgreement, AgreementGrid: AgreementGrid, SeedFirst: SeedFirst, SeedLast: SeedLast, SeedLastRun: lastSeed,
+		PrimaryAgreement: PrimaryAgreement, LOOAgreement: LOOAgreementLabel, AgreementGrid: AgreementGrid, SeedFirst: SeedFirst, SeedLast: SeedLast, SeedLastRun: lastSeed,
 		NearZeroFP: NearZeroFP, ClaudeFaithfulBar: ClaudeFaithfulBar, MaxWallRatio: MaxWallRatio, MaxFixedCostS: MaxFixedCostSeconds,
 		MaxWatchRSSMiB: MaxWatchRSSMiB, MaxLossRuns: MaxLossRuns, IntervalSlackMS: IntervalSlack.Milliseconds(), CauseOrder: CauseOrder,
 	}
