@@ -234,7 +234,7 @@ func ProcessRun(c *Campaign, rec RunRecord, o ProcessOptions) RunOutput {
 		}
 	}
 	if o.Sweep && out.Scope.Kept {
-		if ex, skip := H2Excluded(len(s.Claims)); skip {
+		if ex, skip := H2Excluded(s.Claims); skip {
 			out.SweepExclusion = &ex
 		} else {
 			out.Attack = s.Sweep(baseline, o.SweepOpts)
