@@ -276,6 +276,13 @@ type Report struct {
 	// format states one. A baseline holds for one version, so cmd/verify
 	// refuses a baseline captured for another.
 	AgentVersion string
+	// ServerCalls are the calls the session records that the harness's model
+	// API ran on its own side, such as Claude Code's WebSearch, with the
+	// request id the session gives each. They produce no entry and are
+	// counted in UnmappedByTool as well; a caller passes them to the
+	// verifier as Input.ServerCalls, which joins them to the capture's
+	// responses (V-45).
+	ServerCalls []verification.ServerCall `json:"server_calls,omitempty"`
 }
 
 // Count records a tool call that produced no entry.

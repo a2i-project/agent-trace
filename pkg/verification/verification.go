@@ -50,7 +50,12 @@ type Input struct {
 	// security-sensitive files with the baseline's record of them (V-40).
 	// Nil, a capture without a snapshot, checks nothing.
 	Sensitive *SensitiveInput
-	Options   Options
+	// ServerCalls are the tool calls the harness's model API ran on its own
+	// side, as the adapter read them from the session (V-45). They are
+	// joined to the capture's responses and reported, never aligned. Nil
+	// checks nothing.
+	ServerCalls []ServerCall
+	Options     Options
 }
 
 // Verdict is the result of a verification run. The finding lists derive from
@@ -169,6 +174,11 @@ type Verdict struct {
 	// SensitiveCheck is what the check of the sensitive files did and
 	// could not do. Zero when the capture holds no snapshot.
 	SensitiveCheck SensitiveCheck
+	// ServerCalls is the check of each server-side call (V-45): whether the
+	// model API response that issued it, joined by its request id, was read
+	// whole. Corroboration of the call only, nothing about its query or
+	// results. Not a finding and no effect on the outcome either way.
+	ServerCalls []ServerCallCheck
 	// Capability holds observed events of an unclaimable action type
 	// (listeners). They are counted and reported, never aligned against a
 	// claim, and never make a run unfaithful: no trajectory can mention them,
@@ -446,6 +456,7 @@ func Verify(in Input) Verdict {
 	for _, a := range part.Capability {
 		v.Capability = append(v.Capability, a.Event)
 	}
+	v.ServerCalls = checkServerCalls(in.ServerCalls, part.Capability, in.Coverage)
 
 	opts := in.Options
 	opts.impliedWitness = impliedWitness(part.Commands)

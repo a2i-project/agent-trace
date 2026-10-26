@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit d84afc0 on 2026-10-26.
+Checked against commit dd98cff on 2026-10-26.
 
 ## Objective
 
@@ -76,7 +76,7 @@ Only `ExitsClaimed` changes verifier behaviour today. The other fields are decla
 
 ### Report
 
-`Report` makes what was not measured visible: `ToolCalls` (invocations in the session), `Entries` (claims produced), `AgentVersion` (the harness version the session states, if any), `UnmappedByTool` (tool calls that produced no entry, by name), `UnknownTools` (tools neither mapped nor declared non-effectful, which may have acted unseen), `ParseErrors`, and `Degradations` (each precision loss in words). `cmd/verify` prints all of them before the verdict.
+`Report` makes what was not measured visible: `ToolCalls` (invocations in the session), `Entries` (claims produced), `AgentVersion` (the harness version the session states, if any), `UnmappedByTool` (tool calls that produced no entry, by name), `UnknownTools` (tools neither mapped nor declared non-effectful, which may have acted unseen), `ParseErrors`, `Degradations` (each precision loss in words), and `ServerCalls`, the calls the harness's model API ran on its own side, each with its tool, id, the session's request id for it and the model API host, which also count in `UnmappedByTool` and which `cmd/verify` passes to the verifier as `Input.ServerCalls` (V-45). `cmd/verify` prints all but the last before the verdict, and the server-side calls with the verifier's check of each.
 
 ## Technologies
 
@@ -152,7 +152,7 @@ Parse reads the main transcript, then every `<session>/subagents/agent-*.jsonl` 
 | `Glob` | `process_exec` | `claude-code search:glob` | none |
 | Any other tool (for example `MultiEdit`, which 2.1.296 does not offer, I-42) | none, counted and listed in `UnknownTools` | | |
 
-`WebSearch` is non-effectful because Claude Code runs it server-side, so the host never sees it (verified once).
+`WebSearch` is non-effectful because Claude Code runs it server-side, so the host never sees it (verified once). Each `WebSearch` call is also reported in `Report.ServerCalls` (`serverSide`), with the `requestId` of the assistant record that holds the call and the model API host `api.anthropic.com` (`modelAPIHost`); the verifier corroborates it as a call when that id joins one complete status-200 event stream the harness read from that host, which says the response that issued the call was received whole, nothing about the search (V-45; `TestAWebSearchIsAServerSideCallJoinedByItsRequestID`). The join is unconfirmed on a live capture (O-14).
 
 A harness-implied open (I-46) predicts the harness's own read of the file a Bash command read, which the harness makes after the call to record the file's state unless the file is already in that record, is not a regular file or exceeds 10 MiB. It is derived only for a session of 2.1.284, 2.1.286, 2.1.296 or 2.1.306, whose binaries were read (I-63 for 2.1.306), only when the call has a result and the call's and the result's records carry the same absolute `cwd`, and not when the input has `run_in_background` or the structured result says `interrupted`, `isImage` or names a `backgroundTaskId`. The command must hold no `|`, `<` or `>` and be one of the binary's read forms, or several joined by `;`, `&&` or newlines where every other part is `echo`, `printf` or `true`: `sed -n 'N,Mp' FILE` or `'Np'` (`-n` also as `--quiet` or `--silent`), `cat` (`-n`, `--number`), `nl`, `bat` and `batcat` (`-n`, `--number`, `-p`, `--plain`) of one file, `head` and `tail` of one file with a line count, and, as the whole command, `grep`, `egrep`, `fgrep` or `rg` of a pattern and one file, which counts only when the structured result shows exit 0 (no `returnCodeInterpretation`, no `is_error`). `readCommandFiles` reads a subset: shell syntax beyond quotes, `;`, `&&` and newlines, a quoted command name or a flag outside its lists derive nothing. The verifier decides whether the harness read: the claim costs nothing unpaired and pairs only with an open of exactly that path, inside the call's interval, after the command opened it (V-33). `collapseOpenClaims` never merges a harness-implied open with an ordinary one. An input marked `__unparsedToolInput`, an unreadable input or a missing target field produces no entry and a parse error.
 
