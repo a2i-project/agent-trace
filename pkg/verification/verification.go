@@ -437,6 +437,10 @@ func Verify(in Input) Verdict {
 	if in.Options.IgnoreExits {
 		part = part.DropExits()
 		claims = dropExitClaims(claims)
+	} else {
+		// An exit is the exit of the process its command's exec started, not
+		// of the program it last ran (V-44).
+		part = part.ExitsByProcess()
 	}
 
 	for _, a := range part.Capability {
