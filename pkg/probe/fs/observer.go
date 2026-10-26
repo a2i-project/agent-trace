@@ -1411,6 +1411,14 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 	if pathFD >= 0 && o.writerHolds != nil && o.writerHolds(pid, pathFD) {
 		return "", false
 	}
+	// Only a regular file has content to hash. Reopening a named pipe for
+	// reading blocks until a writer opens it, which may be never (logind's
+	// inhibitor pipes under /run/systemd/inhibit are closed by processes
+	// anywhere on the host), and the read loop, and with it Stop, would wait
+	// forever (P-35).
+	if pathFD >= 0 && !isRegularFD(pathFD) {
+		return "", false
+	}
 
 	var d string
 	var err error
@@ -1433,7 +1441,7 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 		o.pendingHashOpens[suppressPath]++
 		o.mu.Unlock()
 
-		readFD, openErr := unix.Open(procPath, unix.O_RDONLY, 0)
+		readFD, openErr := unix.Open(procPath, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 		if openErr == nil {
 			d, err = o.hashFD(readFD)
 			_ = unix.Close(readFD)
@@ -1555,4 +1563,14 @@ func expandMask(mask uint64) []models.ActionType {
 		add(models.FileRename)
 	}
 	return types
+}
+
+// isRegularFD reports whether fd, which may be an O_PATH descriptor, names a
+// regular file. fstat works on an O_PATH descriptor and never blocks.
+func isRegularFD(fd int) bool {
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return false
+	}
+	return st.Mode&unix.S_IFMT == unix.S_IFREG
 }
