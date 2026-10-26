@@ -162,6 +162,15 @@ type FSScope struct {
 	// are not in Events, since an event with no target cannot be aligned or
 	// attributed to a path; the count says the capture is missing them.
 	Unresolved map[string]int `json:"unresolved,omitempty"`
+	// Filesystems is the probe's mount table when the capture started,
+	// every mount grouped by filesystem, so a path can be traced to the file
+	// it reaches (P-33). Nil means not recorded: a capture before the record,
+	// or a probe that could not read the table.
+	Filesystems []FSMounts `json:"filesystems,omitempty"`
+	// MountTableChanged says whether the probe's mount table changed while
+	// the capture ran, which would make Filesystems stale. Nil means not
+	// measured.
+	MountTableChanged *bool `json:"mount_table_changed,omitempty"`
 }
 
 // ParseGroundTruthFile reads a ground truth file in either form: the current

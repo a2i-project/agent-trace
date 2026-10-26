@@ -743,6 +743,7 @@ func runWatch(opts watchOptions) error {
 	if fsObs != nil {
 		marked, unmarked := fsObs.Scope()
 		scope = &models.FSScope{Rule: models.FSScopeUnfiltered, Mounts: marked, Unmarked: unmarked}
+		scope.Filesystems, scope.MountTableChanged = fsObs.MountTable()
 		ground = dropSelfFSEvents(ground, self)
 		var resolved models.GroundTruth
 		resolved, scope.Unresolved = dropUnresolvedFSEvents(ground)
