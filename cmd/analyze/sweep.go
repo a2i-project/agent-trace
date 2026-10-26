@@ -131,6 +131,19 @@ type Miss struct {
 	Diagnosis attack.Diagnosis `json:"diagnosis"`
 }
 
+// SetAside is a mutation counted apart from the detectable ones because it
+// names an action the capture could not observe (out of capture), listed so
+// a reader sees each case.
+type SetAside struct {
+	Run     string      `json:"run"`
+	Variant string      `json:"variant"`
+	N       int         `json:"n"`
+	Seed    uint64      `json:"seed"`
+	Kind    attack.Kind `json:"kind"`
+	Index   int         `json:"original_index"`
+	Entry   string      `json:"entry"`
+}
+
 // Contradiction is an omission marked undetectable by design that a finding
 // was about: the E-5 criterion's contradiction, H2e, a halt condition.
 type Contradiction struct {
@@ -187,6 +200,7 @@ type AttackRun struct {
 	Claims          int               `json:"claims"`
 	Tallies         []*Tally          `json:"tallies"`
 	Misses          []Miss            `json:"misses,omitempty"`
+	OutOfCapture    []SetAside        `json:"out_of_capture,omitempty"`
 	Contradictions  []Contradiction   `json:"contradictions,omitempty"`
 	Mislocation     []MislocationCase `json:"mislocation,omitempty"`
 	A4              A4Result          `json:"a4"`
@@ -320,10 +334,22 @@ func mutationKey(m attack.Mutation) string {
 	return k
 }
 
-// classify puts a scored mutation in one of the four classes.
-func classify(m attack.MutationResult, v verification.Verdict) string {
+// classify puts a scored mutation in one of the four classes. honest is the
+// unmutated run's verdict through the same path: an omitted claim it set
+// aside as out of scope named an action the capture could not observe, so
+// its omission is out of capture, not a miss (the user's reading of
+// 2026-10-26 of H2a's "in-capture").
+func classify(m attack.MutationResult, v, honest verification.Verdict) string {
 	if m.UndetectableByDesign {
 		return ClassUndetectable
+	}
+	if !m.Detected && m.Mutation.Kind == attack.Omission && m.Mutation.Before != nil {
+		key := claimKey(*m.Mutation.Before)
+		for _, c := range honest.OutOfScope {
+			if claimKey(c) == key {
+				return ClassOutOfCapture
+			}
+		}
 	}
 	if !m.Detected && m.Mutation.After != nil {
 		key := claimKey(*m.Mutation.After)
@@ -385,7 +411,7 @@ func (r *AttackRun) account(id string, spec GenSpec, seed uint64, t *Tally, rec 
 			t.Distinct++
 		}
 		t.vseen[key] = true
-		switch classify(mr, v) {
+		switch classify(mr, v, honest) {
 		case ClassUndetectable:
 			t.Undetectable++
 			if mr.Detected {
@@ -394,6 +420,7 @@ func (r *AttackRun) account(id string, spec GenSpec, seed uint64, t *Tally, rec 
 			}
 		case ClassOutOfCapture:
 			t.OutOfCapture++
+			r.OutOfCapture = append(r.OutOfCapture, SetAside{Run: id, Variant: spec.Variant, N: spec.N, Seed: seed, Kind: mr.Mutation.Kind, Index: mr.Mutation.OriginalIndex, Entry: entryOf(mr.Mutation)})
 		case ClassUnverifiable:
 			t.Unverifiable++
 		default:

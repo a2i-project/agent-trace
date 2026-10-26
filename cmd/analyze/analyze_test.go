@@ -348,22 +348,31 @@ func TestClassifyPutsAMutationInOneClass(t *testing.T) {
 		return attack.MutationResult{Mutation: attack.Mutation{Kind: kind, After: &after}, Detected: det, UndetectableByDesign: ubd}
 	}
 	var v verification.Verdict
-	if got := classify(mk(attack.Fabrication, false, true), v); got != ClassDetectable {
+	if got := classify(mk(attack.Fabrication, false, true), v, verification.Verdict{}); got != ClassDetectable {
 		t.Errorf("a detected mutation is detectable: %s", got)
 	}
-	if got := classify(mk(attack.Omission, true, false), v); got != ClassUndetectable {
+	if got := classify(mk(attack.Omission, true, false), v, verification.Verdict{}); got != ClassUndetectable {
 		t.Errorf("flagged by design: %s", got)
 	}
 	v.OutOfScope = []models.TrajectoryEntry{claim}
-	if got := classify(mk(attack.Fabrication, false, false), v); got != ClassOutOfCapture {
+	if got := classify(mk(attack.Fabrication, false, false), v, verification.Verdict{}); got != ClassOutOfCapture {
 		t.Errorf("a fabrication set aside as out of scope: %s", got)
 	}
-	if got := classify(mk(attack.Fabrication, false, true), v); got != ClassDetectable {
+	if got := classify(mk(attack.Fabrication, false, true), v, verification.Verdict{}); got != ClassDetectable {
 		t.Errorf("a detected mutation is never set aside: %s", got)
 	}
 	v = verification.Verdict{Unverified: []verification.MatchedPair{{Entry: claim, Diffs: []string{"output_hash"}}}}
-	if got := classify(mk(attack.Substitution, false, false), v); got != ClassUnverifiable {
+	if got := classify(mk(attack.Substitution, false, false), v, verification.Verdict{}); got != ClassUnverifiable {
 		t.Errorf("a substituted value the probe did not capture: %s", got)
+	}
+	// An omission of a claim the honest run set aside as out of scope is out
+	// of capture, not a miss; of an in-scope claim it stays detectable.
+	om := attack.MutationResult{Mutation: attack.Mutation{Kind: attack.Omission, Before: &claim}}
+	if got := classify(om, verification.Verdict{}, verification.Verdict{OutOfScope: []models.TrajectoryEntry{claim}}); got != ClassOutOfCapture {
+		t.Errorf("an omitted out-of-scope claim: %s", got)
+	}
+	if got := classify(om, verification.Verdict{}, verification.Verdict{}); got != ClassDetectable {
+		t.Errorf("an omitted in-scope claim: %s", got)
 	}
 }
 

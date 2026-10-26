@@ -244,7 +244,7 @@ func Analyze(o Options) (*Results, error) {
 	for i := range runs {
 		if a := runs[i].Attack; a != nil {
 			cp := *a
-			cp.Misses, cp.Mislocation, cp.Contradictions = nil, nil, nil
+			cp.Misses, cp.OutOfCapture, cp.Mislocation, cp.Contradictions = nil, nil, nil, nil
 			runs[i].Attack = &cp
 		}
 	}

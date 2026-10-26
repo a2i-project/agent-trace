@@ -319,6 +319,11 @@ func reportH2(m *md, res *Results) {
 		m.blank()
 	}
 	listed(m, "Detectable in-capture mutations not detected", ms)
+	var oc []string
+	for _, x := range h.OutOfCapture {
+		oc = append(oc, fmt.Sprintf("`%s` %s n=%d seed %d: %s of %s", x.Run, x.Variant, x.N, x.Seed, x.Kind, x.Entry))
+	}
+	listed(m, "Mutations out of capture (counted apart, not misses)", oc)
 
 	m.line("### Mislocation: where classification and localisation fail")
 	m.blank()
