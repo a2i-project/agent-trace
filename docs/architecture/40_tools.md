@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 050f7fd on 2026-10-26.
+Checked against commit 9c43bb8 on 2026-10-26.
 
 ## Objective
 
@@ -225,7 +225,7 @@ Readings where the protocol is silent, each fixed in `protocol.go` or in the cod
 
 - H3c and H3d count every completed run (not X3, X4 or X6; X1 included). An X1 run is counted under the loss cause even when its outcome is an advisory NOT FAITHFUL.
 - A harness-implied claim is not an agent claim: it leaves the per-claim denominator.
-- The INCONCLUSIVE cause list is the protocol's eleven plus the unexplained harness command of O-30, appended last; an unattributed INCONCLUSIVE is a reason no cause matches. Causes are read from the reason texts, so a changed text is caught by `causes_test.go`.
+- The INCONCLUSIVE cause list is the protocol's eleven plus the unexplained declared harness command of O-30, appended last. An INCONCLUSIVE run with any reason no cause matches, alone or beside known ones, is unattributed and a halt condition, and the report names the reason; the run is still counted under the causes its other reasons state. Causes are read from the reason texts, so a reworded or new reason halts instead of being counted under another cause.
 - "Primary" sweep variants are those with uniform selection (omission, retimed omission, fabrication, substitution, per-field substitution); the `sensitive` variants are secondary and outside the verdicts. The per-field runs use n=1.
 - A mutation is out of capture when it is not detected and its claim was set aside as out of scope, whatever its kind, and unverifiable when it is not detected and its claim is among the unverified pairs.
 - H2b and H2c are rates over the detectable mutations (the scorer's own `Tally.Rate`); the rate over detected mutations is reported beside them.

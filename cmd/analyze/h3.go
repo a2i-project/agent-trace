@@ -130,12 +130,11 @@ type Inconclusive struct {
 	Multi   map[string]int `json:"multi_cause"`
 	Details map[string]int `json:"details,omitempty"`
 	Primary map[string]int `json:"primary_cause"`
-	// Unattributed lists INCONCLUSIVE runs none of whose reasons matched a
-	// cause: an instrument defect and a halt condition.
-	Unattributed []string `json:"unattributed_runs,omitempty"`
-	// PartiallyUnmatched lists runs with at least one reason no cause matched
-	// beside matched ones.
-	PartiallyUnmatched []string `json:"partially_unmatched_runs,omitempty"`
+	// Unattributed lists INCONCLUSIVE runs with a reason no cause matched,
+	// beside matched ones or alone: an instrument defect and a halt
+	// condition. UnmatchedReasons lists those reasons once each.
+	Unattributed     []string `json:"unattributed_runs,omitempty"`
+	UnmatchedReasons []string `json:"unmatched_reasons,omitempty"`
 	// InRange says whether the Claude Code pilot-informed range holds
 	// (reported, never a refutation).
 	InRange *bool `json:"in_pilot_range,omitempty"`
@@ -190,6 +189,7 @@ func BuildH3Cell(runs []RunOutput, av AgentVersion, scope, setting string) H3Cel
 	notDone := map[string]int{}
 	var clusters []Cluster
 	multi, details, primary := map[string]int{}, map[string]int{}, map[string]int{}
+	unmatched := map[string]bool{}
 	var inc Inconclusive
 	for _, o := range runs {
 		if o.Agent != av.Agent || o.Version != av.Version || !InScope(o, scope) {
@@ -253,13 +253,14 @@ func BuildH3Cell(runs []RunOutput, av AgentVersion, scope, setting string) H3Cel
 			if h.Inconclusive() || hasRule(o.Exclusions, X1) {
 				inconclusive++
 				a := h.Attribution
-				if a == nil || a.Unattributed {
-					inc.Unattributed = append(inc.Unattributed, o.ID)
-					primary["unattributed"]++
-					continue
+				if a == nil {
+					a = &Attribution{Unattributed: true}
 				}
-				if len(a.Unmatched) > 0 {
-					inc.PartiallyUnmatched = append(inc.PartiallyUnmatched, o.ID)
+				if a.Unattributed {
+					inc.Unattributed = append(inc.Unattributed, o.ID)
+					for _, r := range a.Unmatched {
+						unmatched[r] = true
+					}
 				}
 				for _, c := range a.Causes {
 					multi[c]++
@@ -267,7 +268,11 @@ func BuildH3Cell(runs []RunOutput, av AgentVersion, scope, setting string) H3Cel
 				for _, d := range a.Details {
 					details[d]++
 				}
-				primary[a.Primary]++
+				if a.Primary == "" {
+					primary["unattributed"]++
+				} else {
+					primary[a.Primary]++
+				}
 			}
 		}
 	}
@@ -276,6 +281,7 @@ func BuildH3Cell(runs []RunOutput, av AgentVersion, scope, setting string) H3Cel
 	cell.ClaimFP.Rate = cb[0]
 	inc.Rate = NewRate(considered, doneEval, inconclusive, notDone)
 	inc.Multi, inc.Details, inc.Primary = multi, details, primary
+	inc.UnmatchedReasons = sortedKeys(unmatched)
 	if av.Agent == AgentClaudeCode && inc.Rate.Rate != nil {
 		in := *inc.Rate.Rate >= ClaudeInconclusiveLo && *inc.Rate.Rate <= ClaudeInconclusiveHi
 		inc.InRange = &in

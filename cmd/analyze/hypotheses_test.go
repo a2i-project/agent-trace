@@ -190,6 +190,27 @@ func TestAnUnattributedInconclusiveHaltsTheCampaign(t *testing.T) {
 	}
 }
 
+// An unknown reason beside a known one halts as well, and the run is still
+// counted under its known cause.
+func TestAnUnknownReasonBesideAKnownOneHalts(t *testing.T) {
+	runs := []RunOutput{
+		synthRun(1, AgentClaudeCode, "2.1.306", "edits", inconclusiveRun(harnessFileReason, "a reason a new verifier gives")),
+	}
+	res := resultsWith(runs)
+	res.Verdicts, res.Halts = BuildVerdicts(res)
+	if len(res.Halts) != 1 || !strings.Contains(res.Halts[0], "edits/run-01") {
+		t.Fatalf("halts: %v", res.Halts)
+	}
+	v := verdictOf(res, "H3c", "claude-code")
+	if v.Result != Halt || !strings.Contains(v.Detail, "a reason a new verifier gives") {
+		t.Errorf("H3c must halt and name the reason: %+v", v)
+	}
+	inc := res.H3.Cell(AgentVersion{AgentClaudeCode, "2.1.306"}, ScopeAll).Inconclusive
+	if inc.Primary[CauseHarnessFile] != 1 || inc.Multi[CauseHarnessFile] != 1 {
+		t.Errorf("the known cause is still counted: %+v", inc)
+	}
+}
+
 // res2 fills the parts of a minimal Results the report reads.
 func res2(res *Results) *Results {
 	res.Constants = constants(SeedLast)

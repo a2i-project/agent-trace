@@ -341,11 +341,6 @@ func warnings(res *Results, runs []RunOutput) []string {
 			}
 		}
 	}
-	for _, c := range res.H3.Cells {
-		if c.Scope == ScopeAll && len(c.Inconclusive.PartiallyUnmatched) > 0 {
-			w = append(w, fmt.Sprintf("%s %s: %d INCONCLUSIVE run(s) have a reason no cause of the list matches beside matched ones: %s", c.Agent, c.Version, len(c.Inconclusive.PartiallyUnmatched), strings.Join(c.Inconclusive.PartiallyUnmatched, ", ")))
-		}
-	}
 	return w
 }
 

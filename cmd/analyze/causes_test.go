@@ -72,7 +72,9 @@ func TestClassifyReasonOnTheVerifiersOwnTexts(t *testing.T) {
 		{"harness net", "1 connection(s) by the harness's own process to its declared service hosts are explained by no claim and no baseline rule", CauseHarnessNet, ""},
 		// cmd/verify/version.go, versionCheck.reason.
 		{"version", "the session was recorded by claude-code version 9.9.9, which config/agents.json does not configure (configured: 2.1.306): the adapter was verified on those versions only (--strict-version, I-57)", CauseVersion, ""},
-		{"harness command", "1 command(s) run by the harness's own process are explained by no claim: an unexplained harness command (O-30)", CauseHarnessCommand, ""},
+		// The verifier's unexplainedHarnessCommandsReason (V-43, O-30), as the
+		// verifier lane words it.
+		{"harness command", "1 command(s) the adapter declares as the harness's own ran beneath the agent's process and are explained by no claim and no baseline rule: harness activity the control runs did not all show, or the same command line run by the agent and not reported; what each did beneath it is what the controls' same command did", CauseHarnessCommand, ""},
 	}
 	for _, c := range cases {
 		a := Attribute([]string{c.reason})
@@ -121,9 +123,16 @@ func TestAnUnmatchedReasonIsUnattributedAndListed(t *testing.T) {
 	if b := Attribute(nil); !b.Unattributed {
 		t.Errorf("no reasons at all cannot be attributed: %+v", b)
 	}
+	// A reason the list does not know beside a known one still halts (H3c):
+	// otherwise a new INCONCLUSIVE cause would be counted under whatever
+	// cause happened to accompany it.
 	mixed := Attribute([]string{"1 file claim(s) name a path the capture could not observe", "something new"})
-	if mixed.Unattributed || len(mixed.Unmatched) != 1 || mixed.Primary != CauseOutOfScope {
-		t.Errorf("a partly matched run is attributed and its unmatched reason listed: %+v", mixed)
+	if !mixed.Unattributed || len(mixed.Unmatched) != 1 || mixed.Primary != CauseOutOfScope {
+		t.Errorf("a partly matched run keeps its known primary cause and is unattributed: %+v", mixed)
+	}
+	// The pre-V-43 guess at the O-30 text matches nothing, so it halts.
+	if g := Attribute([]string{"1 command(s) run by the harness are an unexplained harness command"}); !g.Unattributed {
+		t.Errorf("a harness-command text the verifier does not produce must not match: %+v", g)
 	}
 }
 

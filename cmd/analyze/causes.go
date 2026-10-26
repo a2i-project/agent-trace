@@ -24,8 +24,7 @@ const (
 	// CauseHarnessCommand is the twelfth cause. The protocol lists eleven;
 	// decision O-30 (option b) makes an unexplained harness command, reported
 	// apart, a reason for INCONCLUSIVE, so it is appended after the eleven
-	// registered ones. Its position and its reason text (HarnessCommandMarker)
-	// are the verifier's to confirm.
+	// registered ones.
 	CauseHarnessCommand = "unexplained_harness_command"
 )
 
@@ -36,9 +35,12 @@ var CauseOrder = []string{
 	CauseHarnessFile, CauseHarnessNet, CauseHarnessCommand,
 }
 
-// HarnessCommandMarker is the text of the reason the verifier gives for an
-// unexplained harness command (O-30). It is matched case-insensitively.
-const HarnessCommandMarker = "harness command"
+// HarnessCommandMarker is the part of the verifier's reason for an
+// unexplained declared harness command (O-30, V-43) that no other reason
+// contains. It is matched case-insensitively. A reworded reason matches no
+// cause and halts the analysis (Attribution.Unmatched), so a changed text
+// is never counted silently under another cause.
+const HarnessCommandMarker = "the adapter declares as the harness's own"
 
 // Hit is one cause found in one reason, with the counter or field it names
 // where the protocol splits the cause.
@@ -131,15 +133,18 @@ type Attribution struct {
 	Details []string `json:"details,omitempty"`
 	// Primary is the first cause in the precedence list that applies.
 	Primary string `json:"primary"`
-	// Unattributed is true when no cause matched: an instrument defect and
-	// a halt condition.
+	// Unattributed is true when some reason matched no cause: an instrument
+	// defect and a halt condition (protocol H3c). A reason the list does not
+	// know, beside known ones, halts too, since its cause would otherwise go
+	// uncounted.
 	Unattributed bool `json:"unattributed"`
 	// Unmatched lists the reasons no cause matched.
 	Unmatched []string `json:"unmatched,omitempty"`
 }
 
 // Attribute classifies every reason of a verdict. Any reason that matches no
-// cause is listed, and a run none of whose reasons match is unattributed.
+// cause is listed and makes the run unattributed; Primary is still the first
+// cause the other reasons state, if any.
 func Attribute(reasons []string) Attribution {
 	have := map[string]bool{}
 	details := map[string]bool{}
@@ -164,8 +169,7 @@ func Attribute(reasons []string) Attribution {
 	a.Details = sortedKeys(details)
 	if len(a.Causes) > 0 {
 		a.Primary = a.Causes[0]
-	} else {
-		a.Unattributed = true
 	}
+	a.Unattributed = len(a.Causes) == 0 || len(a.Unmatched) > 0
 	return a
 }
