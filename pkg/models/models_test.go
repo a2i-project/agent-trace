@@ -364,6 +364,34 @@ func TestLegacyJSONParsesWithNewFieldsUnset(t *testing.T) {
 	}
 }
 
+// Captures written before the is_top_level field was removed carry it on
+// proc and net events. Both forms of the file must still parse, and the key
+// must not come back when an event is written again.
+func TestGroundTruthFileWithIsTopLevelParses(t *testing.T) {
+	event := `{"timestamp":"2026-10-06T12:00:00Z","action_type":"process_exec","target":"ls","pid":4242,"ppid":4000,"is_top_level":true}`
+	for name, data := range map[string]string{
+		"object": `{"events":[` + event + `],"root_pid":4000}`,
+		"array":  `[` + event + `]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, err := ParseGroundTruthFile([]byte(data))
+			if err != nil {
+				t.Fatalf("ParseGroundTruthFile: %v", err)
+			}
+			if len(f.Events) != 1 || f.Events[0].PID != 4242 || f.Events[0].PPID != 4000 || f.Events[0].Target != "ls" {
+				t.Fatalf("events = %+v, want the one exec of ls by 4242", f.Events)
+			}
+			out, err := json.Marshal(f.Events[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(out), "is_top_level") {
+				t.Errorf("re-marshalled event %s still carries is_top_level", out)
+			}
+		})
+	}
+}
+
 func TestProcessIdentityRoundTrips(t *testing.T) {
 	end := time.Date(2026, 10, 6, 12, 0, 5, 0, time.UTC)
 	e := GroundTruthEvent{Timestamp: end, ActionType: ProcessExec, Target: "ls", PID: 4242, PPID: 4000}

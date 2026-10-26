@@ -1366,9 +1366,8 @@ func (o *Observer) resolveHello(conn *connection) bool {
 
 // emitListener sends a NetBind or NetListen event. They carry no hostname and
 // need no connection state, so they bypass the connection correlator. They
-// are ground truth only, never claimable (models.ActionType.IsClaimable), and
-// the net probe assigns no level, so IsTopLevel stays nil and the verifier
-// keys on the action type instead.
+// are ground truth only, never claimable (models.ActionType.IsClaimable); the
+// verifier keys on the action type.
 func (o *Observer) emitListener(t models.ActionType, hdr bpfNetEventHdr, payload []byte, ts time.Time) {
 	var target string
 	if hdr.Family == afUnix {
@@ -1469,12 +1468,10 @@ func (o *Observer) emit(conn *connection, ts time.Time) {
 		}
 	}
 
-	isTopLevel := true
 	event := models.GroundTruthEvent{
 		Timestamp:  ts,
 		ActionType: models.NetConnect,
 		Target:     target,
-		IsTopLevel: &isTopLevel,
 		PID:        tgid,
 	}
 

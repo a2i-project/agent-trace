@@ -97,9 +97,6 @@ func TestRunWatch_ExecWrapSuppressesRootSeesChild(t *testing.T) {
 		}
 		if strings.HasPrefix(e.Target, "/bin/echo") && strings.Contains(e.Target, nonce) {
 			sawChild = true
-			if e.IsTopLevel != nil && !*e.IsTopLevel {
-				t.Errorf("child exec %q tagged forensic-only, want top-level", e.Target)
-			}
 		}
 	}
 	if sawRoot {

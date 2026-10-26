@@ -80,15 +80,6 @@ type GroundTruthEvent struct {
 	// probe that sees processes start; zero means not recorded. It is what
 	// lets the verifier build the tree from events.
 	PPID uint32 `json:"ppid,omitempty"`
-	// IsTopLevel identifies verification-grade events generated directly by
-	// the tracked root process or one of its direct children. A nil value is
-	// legacy data and is treated as top-level for backward compatibility.
-	//
-	// Legacy (to be removed, not tagged Deprecated so staticcheck does not flag
-	// the probes and verifier that still use it): a lossy one-bit summary of the structure PID and PPID now
-	// carry (V1). Kept only because pkg/verification still reads
-	// it until the forest rewrite (Tier 6 step 5) replaces its consumer.
-	IsTopLevel *bool `json:"is_top_level,omitempty"`
 	// PathIsAmbiguous is true when the probe could only resolve this event
 	// to its containing directory, not the specific file within it (a
 	// fanotify DFID-only record with no name, produced when the kernel
