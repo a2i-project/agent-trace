@@ -252,7 +252,7 @@ func h2Verdicts(res *Results) ([]Verdict, []string) {
 		}
 		missesA := 0
 		for _, m := range h.Misses {
-			if (a == "" || runAgent(res.Runs, m.Run) == a) && specOf(m.Variant).Primary() {
+			if (a == "" || runAgent(res.Runs, m.Run) == a) && specOf(m.Variant).InVerdict() {
 				missesA++
 			}
 		}
@@ -286,6 +286,11 @@ func h2Verdicts(res *Results) ([]Verdict, []string) {
 			}
 			v = append(v, Verdict{ID: id, Scope: scope, Claim: h2Claim(id), Threshold: threshold, Result: r, Detail: d + note})
 		}
+	}
+	// Retimed omissions (E-2): reported apart, outside H2a to H2c.
+	if rt := RetimedPooled(res.Runs, ""); rt.AttackedRuns > 0 {
+		v = append(v, Verdict{ID: "H2-retimed", Scope: "both agents, every capture", Claim: "retimed omissions: detection, and runs reporting later claims outside their interval", Threshold: "reported, outside the H2a to H2c verdicts",
+			Result: Reported, Detail: fmt.Sprintf("%d of %d detectable detected, %d classified, %d located; %d of %d attacked runs report a claim outside its interval%s", rt.Detected, rt.Detectable, rt.Classified, rt.Located, rt.OutsideIntervalRuns, rt.AttackedRuns, note)})
 	}
 	// H2d.
 	// The composed clause is refuted by an omission no longer found

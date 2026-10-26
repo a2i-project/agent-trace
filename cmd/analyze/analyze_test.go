@@ -564,3 +564,17 @@ func TestH2bAndH2cAreOverDetectedMutations(t *testing.T) {
 		t.Errorf("one detected mutation not classified refutes H2b: %+v", v)
 	}
 }
+
+// Retimed omissions are reported apart: a retimed miss refutes nothing.
+func TestRetimedOmissionsAreOutsideTheVerdicts(t *testing.T) {
+	runs := []RunOutput{h2Run("r1", "omit", 10, 10, 10, 10), h2Run("r2", "omit-retime", 10, 8, 7, 7)}
+	misses := []Miss{{Run: "r2", Variant: "omit-retime", N: 1}, {Run: "r2", Variant: "omit-retime", N: 1}}
+	for _, id := range []string{"H2a", "H2b", "H2c"} {
+		if v := h2Verdict(t, runs, misses, id); v.Result != Holds || !strings.Contains(v.Detail, "10 of 10") {
+			t.Errorf("%s must not count retimed omissions: %+v", id, v)
+		}
+	}
+	if v := h2Verdict(t, runs, misses, "H2-retimed"); v.Result != Reported || !strings.Contains(v.Detail, "8 of 10 detectable detected") {
+		t.Errorf("retimed line: %+v", v)
+	}
+}
