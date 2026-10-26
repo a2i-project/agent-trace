@@ -262,26 +262,29 @@ func h2Verdicts(res *Results) ([]Verdict, []string) {
 			r = Refuted
 		}
 		v = append(v, Verdict{ID: "H2a", Scope: scope, Claim: h2Claim("H2a"), Threshold: "rate 1.000; refuted by any miss", Result: r, Detail: fmt.Sprintf("%s; %d miss(es) listed with their Diagnose records", detail, missesA)})
+		// H2b and H2c are judged over the detected mutations, as their claims
+		// say ("every detected mutation"), so a miss counts against H2a only;
+		// the rate over the detectable mutations is reported beside them.
 		nt := PrimaryPooled(res.Runs, a, true)
 		for _, id := range []string{"H2b", "H2c"} {
-			num := t.Classified
+			num, n2 := t.Classified, nt.Classified
 			if id == "H2c" {
-				num = t.Located
+				num, n2 = t.Located, nt.Located
 			}
-			rate := float64(num) / float64(t.Detectable)
+			threshold := "1.000 on captures without harness-shared reads, below 1 on tool-heavy tasks (pilot-informed); refuted by a rate below 1.000 over the detected mutations"
+			if t.Detected == 0 {
+				v = append(v, Verdict{ID: id, Scope: scope, Claim: h2Claim(id), Threshold: threshold, Result: NotEvaluated, Detail: "no mutation was detected" + note})
+				continue
+			}
 			r := Holds
-			if num < t.Detectable {
+			if num < t.Detected {
 				r = Refuted
 			}
-			d := fmt.Sprintf("%d of %d detectable mutations (%.3f)", num, t.Detectable, rate)
-			if nt.Detectable > 0 {
-				n2 := nt.Classified
-				if id == "H2c" {
-					n2 = nt.Located
-				}
-				d += fmt.Sprintf("; without the tool-heavy stratum %d of %d (%.3f)", n2, nt.Detectable, float64(n2)/float64(nt.Detectable))
+			d := fmt.Sprintf("%d of %d detected mutations (%.3f); over the detectable mutations %d of %d (%.3f)", num, t.Detected, float64(num)/float64(t.Detected), num, t.Detectable, float64(num)/float64(t.Detectable))
+			if nt.Detected > 0 {
+				d += fmt.Sprintf("; without the tool-heavy stratum %d of %d detected (%.3f)", n2, nt.Detected, float64(n2)/float64(nt.Detected))
 			}
-			v = append(v, Verdict{ID: id, Scope: scope, Claim: h2Claim(id), Threshold: "1.000 on captures without harness-shared reads, below 1 on tool-heavy tasks (pilot-informed); refuted by a rate below 1.000", Result: r, Detail: d + note})
+			v = append(v, Verdict{ID: id, Scope: scope, Claim: h2Claim(id), Threshold: threshold, Result: r, Detail: d + note})
 		}
 	}
 	// H2d.

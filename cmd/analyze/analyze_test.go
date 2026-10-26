@@ -532,3 +532,35 @@ func TestOutputsNameNoPathOfTheAnalysingMachine(t *testing.T) {
 		t.Error("the config's hash is not recorded")
 	}
 }
+
+// h2Run is a swept run whose one primary tally has the given counts.
+func h2Run(id, variant string, detectable, detected, classified, located int) RunOutput {
+	return RunOutput{ID: id, Agent: AgentClaudeCode, Version: "2.1.306", Task: "edits", Attack: &AttackRun{Tallies: []*Tally{{Variant: variant, N: 1, AttackedRuns: detectable, Mutations: detectable, Detectable: detectable, Detected: detected, Classified: classified, Located: located}}}}
+}
+
+func h2Verdict(t *testing.T, runs []RunOutput, misses []Miss, id string) Verdict {
+	t.Helper()
+	res := &Results{Runs: runs, H2: BuildH2(runs, SeedLast), H3: &H3Results{}, H4: &H4Results{}}
+	res.H2.Misses = misses
+	res.Verdicts, res.Halts = BuildVerdicts(res)
+	return verdictOf(res, id, "every capture")
+}
+
+// H2b and H2c divide by the detected mutations: a miss refutes H2a only.
+func TestH2bAndH2cAreOverDetectedMutations(t *testing.T) {
+	runs := []RunOutput{h2Run("r1", "fabricate", 10, 9, 9, 9)}
+	misses := []Miss{{Run: "r1", Variant: "fabricate", N: 1}}
+	if v := h2Verdict(t, runs, misses, "H2a"); v.Result != Refuted {
+		t.Errorf("H2a: %+v", v)
+	}
+	for _, id := range []string{"H2b", "H2c"} {
+		v := h2Verdict(t, runs, misses, id)
+		if v.Result != Holds || !strings.Contains(v.Detail, "9 of 9 detected") || !strings.Contains(v.Detail, "over the detectable mutations 9 of 10") {
+			t.Errorf("%s: %+v", id, v)
+		}
+	}
+	runs = []RunOutput{h2Run("r1", "fabricate", 10, 10, 9, 10)}
+	if v := h2Verdict(t, runs, nil, "H2b"); v.Result != Refuted {
+		t.Errorf("one detected mutation not classified refutes H2b: %+v", v)
+	}
+}
