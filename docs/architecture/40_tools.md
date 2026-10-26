@@ -1,10 +1,10 @@
 # Command-line tools
 
-Checked against commit 89050be on 2026-10-26.
+Checked against commit 050f7fd on 2026-10-26.
 
 ## Objective
 
-Six commands turn the probes, adapters and verifier into a workflow: `watch` records ground truth while an agent runs, `baseline` measures a harness's own activity from control runs, `verify` compares a trajectory with a capture and prints a verdict, `status` says whether the agents installed on the machine are at versions the adapters were verified against and whether the kernel meets the probes' stated minimums (I-57), `attack` mutates a trajectory for evaluation (see [50_attack_generators.md](50_attack_generators.md)), and `simagent` is a simulated agent that exercises the whole chain in tests. The probes are described in [10_probes_common.md](10_probes_common.md), the verifier in [20_verifier.md](20_verifier.md) and the adapters in [30_agent_adapters.md](30_agent_adapters.md).
+Seven commands turn the probes, adapters and verifier into a workflow: `watch` records ground truth while an agent runs, `baseline` measures a harness's own activity from control runs, `verify` compares a trajectory with a capture and prints a verdict, `status` says whether the agents installed on the machine are at versions the adapters were verified against and whether the kernel meets the probes' stated minimums (I-57), `attack` mutates a trajectory for evaluation (see [50_attack_generators.md](50_attack_generators.md)), `simagent` is a simulated agent that exercises the whole chain in tests, and `analyze` computes the evaluation's numbers and verdicts from a campaign directory (see below). The probes are described in [10_probes_common.md](10_probes_common.md), the verifier in [20_verifier.md](20_verifier.md) and the adapters in [30_agent_adapters.md](30_agent_adapters.md).
 
 ## Structure
 
@@ -16,6 +16,7 @@ Six commands turn the probes, adapters and verifier into a workflow: `watch` rec
 | `status` | `cmd/status/main.go` | `run(args, out, errOut, env) int`, `agentVersion`, `printKernel` | `cmd/status/main_test.go` |
 | `attack` | `cmd/attack/main.go` | `run(args, out, errOut) int`, `observedTargets` | `cmd/attack/main_test.go` |
 | `simagent` | `cmd/simagent/main.go` | `main` | driven by `tests/e2e` |
+| `analyze` | `cmd/analyze/*.go`; `protocol.go` holds every registered constant | `run(args, out, errOut) int`, `Analyze(Options)`, `ProcessRun`, `Session.Sweep`, `BuildH3`, `BuildH2`, `BuildH1`, `LoadBench`, `BuildVerdicts`, `Report`; `Wilson`, `ClopperPearsonUpper`, `ClusterBootstrap`, `Attribute`, `Exclusions` | `cmd/analyze/*_test.go` |
 
 ### watch
 
@@ -181,9 +182,63 @@ The fixed script, in claim order: write `file1.txt` (claimed in kernel order as 
 
 An `--attack` value not in the table is a usage error: `simagent` prints it with the flag list and exits 3, as the other commands do for a usage error, before it acts or writes anything, so a mistyped scenario cannot run as an honest one. Exit codes: 0 on success, 3 for an unknown `--attack` value, 2 for a malformed flag (the `flag` package's own exit), 1 on any other failure (`log.Fatal`), a missing required flag included.
 
+### analyze
+
+Computes every number of the experiment protocol from a campaign directory, in process, and writes `results.json` (each number, count and interval) and `report.md` (the tables, and one verdict line per registered hypothesis against its registered threshold). It runs the verifier, the adapters and the attack generators itself; it reads the comparison sweep's output and the overhead benchmark's output rather than reimplementing them. It needs no root and calls no model.
+
+```
+analyze --campaign DIR [--out DIR] [--config FILE] [--comparison SWEEP_DIR]
+        [--overhead LABEL=FILE]... [--overhead-after LABEL=FILE]...
+        [--seeds N] [--jobs N] [--no-sweep] [--no-sensitivity] [--no-loo]
+        [--diagnostics FILE] [--measure-cost FILE]
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--campaign DIR` | (required) | The directory `capture-campaign.sh` writes: `manifest.json` and one `<agent>-<version>/<task>/run-NN` directory per run. A path the manifest recorded on another machine is looked for again under this directory |
+| `--out DIR` | the campaign directory | Where `results.json` and `report.md` go |
+| `--config FILE` | as `verify` | The agent version config, for the strict version check (I-57). Required: every verdict is computed as `verify --strict-version` computes it |
+| `--comparison DIR` | none | The output directory of `scripts/compare/sweep.py` (`results.jsonl`, `summary.json`, `run.json`), for H1 |
+| `--overhead LABEL=FILE` | none | An overhead benchmark `results.json`, for H4a; repeatable (tmpfs and disk) |
+| `--overhead-after LABEL=FILE` | none | The same benchmark repeated after the campaign; the change in each median wall ratio is reported as machine drift |
+| `--seeds N` | 100 | The highest seed of the attack sweep. The registered sweep is 1 to 100; a smaller value bounds the cost, and the report and the H2 verdict lines say the sweep is reduced |
+| `--jobs N` | the CPU count | Runs processed in parallel. The output does not depend on it |
+| `--no-sweep`, `--no-sensitivity`, `--no-loo` | off | Skip the attack sweep, the H3 sensitivity analyses, or only the leave-one-out baseline. Each is listed under "Not computed" |
+| `--diagnostics FILE` | none | Also write the `Diagnose` records of every sweep run `NeedsDiagnosis` selects |
+| `--measure-cost FILE` | none | Also time baseline building and verification of every run, one at a time, into this file. Timings vary between invocations, so they never enter `results.json` |
+
+`protocol.go` is the only file of constants: the bootstrap (10,000 resamples, seed 20261018), the Wilson and exact one-sided levels, the primary agreement (a rule needs one of five controls) and the sensitivity grid, the sweep's generators, mutation counts and seeds, the held-out and tool-heavy tasks, the H3 and H4 thresholds, and the exclusion rules' limits. The freeze pins the registration by pinning that file; `results.json` records the values it ran under. The order of the INCONCLUSIVE causes is the protocol's precedence list (`causes.go`).
+
+**Per run.** Each manifest run is read through its adapter, verified through the adapter path against a baseline built from its own controls (`agent.Capture` at the primary agreement, the control task's command excluded, as the capture script builds it), and compared with the runner's own `verify-baseline.json` outcome. Controls with loss or no coverage record are left out of the baseline and counted (X2). The exclusion rules of the protocol apply to every run and each excluded run is listed with its rule, its reason and its effect: X1 (a loss counter set) leaves H3a, H3b and H2 and stays in H3c and H3d under the loss cause; X3 (the session states another version than the manifest), X4 (the runner's status is not ok, the session does not parse, or `annotations.json` says so) and X6 (`annotations.json` says the user intervened) leave everything; X5 never leaves H3 and sets a run aside from the sweep only below two claims. `annotations.json` at the campaign root maps a run's directory to `{"x4": reason, "x6": reason, "completed": bool}`: it holds what only the operator knows. A slot is a run position; slots that did not complete, and the attempts the runner moved aside, are counted per agent against the 10% line of X4.
+
+**H3.** Per agent version (never pooled over versions) and per scope (all, development and held-out tasks, each task, and the named tool-heavy subgroup): the per-run false-positive rate (runs with `Findings() > 0` over kept runs) with a Wilson 95% interval and the exact one-sided 95% Clopper-Pearson bound when the count is 0 or n; the per-claim rate (claims flagged `Mismatched`, `Unwitnessed` or `OutsideInterval` over the agent's own claims) with a bootstrap over sessions, beside the per-run counts of `Unrecorded`, unexplained subtrees and unexplained sensitive changes; the INCONCLUSIVE rate over completed runs with its causes read from the verdict's reasons, under every cause a run has and under the primary cause by the protocol's precedence, split by loss counter and unverified field; and the FAITHFUL rate. The sensitivity analyses recompute these at agreement 1/5 to 5/5 and with a leave-one-out baseline pooled from the controls of every other capture of the same agent, version and control tool set, and report beside each setting the level-0 paths the baseline holds (V-36, V-37) and the single omissions that are then undetectable by design.
+
+**H2.** The attack sweep, over every kept run: `Omit` (exhaustive at n=1, seeds at n=2 and 3, uniform and sensitive selection, and retimed), `Fabricate` and `Substitute` (seeds at n=1 to 3, uniform and sensitive, and per field), each scored with `Score` and `MarkUndetectableByDesign` against the honest run, and `Widen` (every position, and composed with an omission at every position with a neighbour on each side). It reports detected, classified and located over the detectable in-capture mutations with a session-cluster bootstrap, the distinct mutations, and the undetectable by design, out of capture and unverifiable counts apart, with the sensitivity rows that count each as a miss; ambiguous alignments, unaccounted findings (and those already on the honest run through the attack path), the share of attacked runs that are NOT FAITHFUL and the causes of those that are INCONCLUSIVE; the premise check, listing every difference between the honest run through the attack path and through the adapter path; each miss with its `Diagnose` record; the assignment of every mutation that is not classified or not located, and of every unaccounted finding, to the six categories of protocol 5.7 (a case the record does not decide is category 6 and listed); and the attack surface per session (the claims whose single omission is undetectable by design, and how many of those `attack.Sensitive` selects). A finding about a mutation marked undetectable by design is a halt condition.
+
+**H1.** From the sweep directory: acceptance per tool row and attack kind (accepted over evaluated, with a bootstrap over fixtures and the distinct mutations), the control rows (a witness-checkpoint row that accepts, or a pinned-key row that accepts, makes the matching H1 row UNJUDGED), cells whose controls did not hold counted as UNJUDGED and left out, and the verdicts of H1a to H1d and H1 as a whole. A mutation counts as an edit mutation when its record names a Write or Edit call.
+
+**H4.** H4a: from the benchmark's samples (repetition 0 left out), each run under watch paired with the same workload alone in its repetition: wall and CPU ratios, fixed cost (start-up plus drain), watch CPU, peak RSS, capture and capability sizes, runs with loss, and the bootstrap interval of the median wall ratio, against the limits of decision D3 of the protocol. H4b: per agent version, per session and per claim, from the manifest (duration, events, claims, peak processes), the capture file's size and the capability events in the runner's verify output; a field the manifest and logs do not carry (start-up, drain, watch CPU and peak RSS unless the runner records a `cost` object in `run.json`) is counted as not measured.
+
+**Output and exit codes.** The same inputs give byte-identical `results.json` and `report.md`: nothing reads the clock or a global random source, results are collected in manifest order whatever the worker count, and every map is written in key order. `results.json` holds paths and targets from private captures; redact it before publication. The exit status is 0 when done, 1 when done and a halt condition of protocol 10.2 occurred (an H2e contradiction or an unattributed INCONCLUSIVE; the report names it first), and 3 for usage and I/O errors.
+
+Readings where the protocol is silent, each fixed in `protocol.go` or in the code and listed so a reader can disagree (E-6):
+
+- H3c and H3d count every completed run (not X3, X4 or X6; X1 included). An X1 run is counted under the loss cause even when its outcome is an advisory NOT FAITHFUL.
+- A harness-implied claim is not an agent claim: it leaves the per-claim denominator.
+- The INCONCLUSIVE cause list is the protocol's eleven plus the unexplained harness command of O-30, appended last; an unattributed INCONCLUSIVE is a reason no cause matches. Causes are read from the reason texts, so a changed text is caught by `causes_test.go`.
+- "Primary" sweep variants are those with uniform selection (omission, retimed omission, fabrication, substitution, per-field substitution); the `sensitive` variants are secondary and outside the verdicts. The per-field runs use n=1.
+- A mutation is out of capture when it is not detected and its claim was set aside as out of scope, whatever its kind, and unverifiable when it is not detected and its claim is among the unverified pairs.
+- H2b and H2c are rates over the detectable mutations (the scorer's own `Tally.Rate`); the rate over detected mutations is reported beside them.
+- A4 holds at a position when the outcome and the numbers of findings, unrecorded events and unexplained subtrees equal the honest run's and no more interval findings appear.
+- The leave-one-out baseline uses the primary agreement over the pooled controls.
+- H3d's bar is read on the point estimate. The H4a limits are read as the median for the wall ratio and the fixed cost, the largest observed peak for the RSS, and the count of runs for loss.
+- The two recording modes of the net probe are not separate strata; the manifest's mode is carried in each run's record only.
+
+Not computed: whether a mutation changes the replayed final state (the H1 edit-criterion split needs it in the sweep's rows); the per-capture peak RSS of `verify` and `baseline`; X4 causes the manifest does not show (a crash, a quota error, a failed `watch`, a suspend) and X5 completion, unless `annotations.json` says them; the halt conditions that need the machine (instrument validation, the redaction check, an event the scripted known answer did not perform). `--seeds` below 100 is reported as a reduced sweep and is not the registered one.
+
 ## Technologies
 
-Go with the standard `flag` package. `watch` needs root for fanotify and the eBPF programs and links the probe packages; `verify` and `baseline` are unprivileged and read files only; `status` is unprivileged and runs only the agents' `--version`. `make build` builds `watch`, `verify`, `baseline`, `simagent` and `status` into the repository root; it does not build `attack` (`go build -o attack ./cmd/attack/`).
+Go with the standard `flag` package. `watch` needs root for fanotify and the eBPF programs and links the probe packages; `verify` and `baseline` are unprivileged and read files only; `status` is unprivileged and runs only the agents' `--version`. `make build` builds `watch`, `verify`, `baseline`, `simagent` and `status` into the repository root; it does not build `attack` or `analyze` (`go build -o attack ./cmd/attack/`, `go build -o analyze ./cmd/analyze/`).
 
 ## Workflow
 
@@ -263,6 +318,7 @@ Limits of the comparison machinery: the converter decides which fields halo-reco
 - `verify` keeps verdicts (0 to 2) and errors (3) apart, and never guesses between two adapters.
 - `verify` names a session's agent version that `config/agents.json` does not list in a `WARNING:` line and in the JSON report, and under `--strict-version` never reports FAITHFUL or NOT FAITHFUL for it; the capture script refuses such an agent before it asks for sudo unless told otherwise (I-57).
 - `baseline` refuses control runs that lost events or carry no coverage record, so a baseline cannot be short because of loss.
+- `analyze` lists every excluded run with its rule and reason and prints the considered, evaluated and succeeded counts with every rate, so no run and no unevaluated item drops silently; its outputs are a function of its inputs (E-6).
 
 ## Known limits
 
@@ -287,4 +343,5 @@ Limits of the comparison machinery: the converter decides which fields halo-reco
 - `bench-overhead.sh` reads a peak RSS from GNU `time` for the whole measured tree, so under `watch` it is the largest of `watch` and the workload's processes: `watch`'s own peak only when it exceeds the workload's, which the alone condition measures. `watch`'s CPU is a difference of two measurements, and the workload's CPU and the probes' in-kernel cost charged to it are not separated beyond the ratio to the alone run. The fixtures are reduced by `scripts/make-capture-fixture.py`, so their sizes are not those of raw captures, and the workloads are synthetic: neither stands for a real agent session's volume. The script does not pin CPUs or set the governor, so the results hold for the recorded machine state only.
 - The text report's `Capability:` count line calls its events listeners and sockets; it also counts DNS connections and dials, which the forensic view's groups name.
 - `watch` prints the loss counters and, for an incomplete capture, `Assess`'s reasons, not its notes (content gaps, the response notes among them); `verify` prints both.
+- `analyze` re-verifies each run in process with the current verifier and adapters, so its numbers are those of the build that runs it, which the freeze pins; a full sweep of long sessions is hours of CPU (`--seeds` bounds it). Its leave-one-out baseline holds every pooled control of an agent version in memory.
 - `simagent` covers one fixed script; it is not a substitute for a real agent session. Real sessions verified end to end are the Claude Code captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective).
