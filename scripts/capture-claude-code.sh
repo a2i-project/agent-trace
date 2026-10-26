@@ -10,11 +10,35 @@
 # the probes: run it yourself, it asks for sudo once.
 #
 #   scripts/capture-claude-code.sh [--agent claude-code|gemini] [--task TASK] [--baseline-from DIR]
+#                                  [--model ID] [--controls-before N] [--heldout-dir DIR]
 #                                  [--allow-unconfigured-version] [--content] [--check]
 #                                  [--no-build] [OUTPUT_DIR]
 #
 # Claude Code tasks: basic, parallel, project, edits, tools, shapes, long.
 # Gemini tasks: basic, search, long.
+# Either agent also runs a held-out task, --task heldout:NAME with --heldout-dir DIR
+# (below).
+#
+# --model ID pins the model of every run, controls included (D7): Claude Code
+# gets --model ID (default claude-sonnet-5-5), agy gets --model ID and has no
+# default, since the id it accepts is one of those `agy models` lists
+# (gemini-3.8-flash-high, -medium, -low); the script refuses without it. After
+# each run the script reads the model the transcript records (the model of every
+# assistant message of a Claude Code transcript; the executor model of an agy
+# conversation database) and stops with MODEL MISMATCH, exit 1, when it is not
+# the pinned one. The result of each check is in order.tsv.
+# --controls-before N records N of the CONTROLS control runs before the task and
+# the rest after it (D11; default 0, the task first); the order is written to
+# control-order.txt and order.tsv. It cannot be combined with --baseline-from.
+# For Claude Code the script refuses unless settings.json of the user
+# ($CLAUDE_CONFIG_DIR or ~/.claude) sets env.DISABLE_UPDATES to "1" (D6), and it
+# passes DISABLE_UPDATES=1 to every Claude Code run, since --setting-sources
+# project, which the runs use, ignores the user's settings.
+# --heldout-dir DIR holds held-out tasks (D8) outside the repository, one
+# directory NAME each with prompt.txt, tools.txt (the task's tools, separated by
+# white space) and an optional seed/ that every run starts from. The script
+# refuses a DIR inside the repository, never copies it and never prints the
+# prompt; task-meta.txt records the SHA-256 of the prompt and of the seed.
 #
 # --content turns on the net probe's content capture (watch --net-exe-path) on
 # the Claude Code binary, which carries its own TLS library; every run,
@@ -106,6 +130,12 @@
 #   control-tools.txt, control-prompt.txt  the tool set and prompt the controls ran with
 #   control-agent.txt, control-version.txt, control-watch.txt  their agent, version
 #                             and recording mode (identity or content)
+#   control-model.txt, control-order.txt  their pinned model, and how many ran before
+#                             and after the task (before=2 after=3)
+#   task-meta.txt             the task, the SHA-256 of its prompt and seed, its tools, the model
+#   order.tsv                 each run in the order it was recorded: number, label, role
+#                             (task or control), start, end, the model check and the models
+#                             the transcript recorded
 #   baseline.json             built from the control runs
 #   report.txt                verify output, without and with the baseline
 #   verify.json, verify-baseline.json  the same two verdicts as verify --json writes them
@@ -169,6 +199,9 @@ allow_unconfigured=
 content=
 check_only=
 build=1
+model=
+controls_before=0
+heldout_dir=
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs claude-code or gemini}; shift 2 ;;
@@ -176,6 +209,9 @@ while [ $# -gt 0 ]; do
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
     --allow-unconfigured-version) allow_unconfigured=1; shift ;;
     --content) content=1; shift ;;
+    --model) model=${2:?--model needs a model id}; shift 2 ;;
+    --controls-before) controls_before=${2:?--controls-before needs a number}; shift 2 ;;
+    --heldout-dir) heldout_dir=${2:?--heldout-dir needs a directory}; shift 2 ;;
     --check) check_only=1; shift ;;
     --no-build) build=; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -184,10 +220,18 @@ while [ $# -gt 0 ]; do
   esac
 done
 case $agent in
-  claude-code) case $task in basic|parallel|project|edits|tools|shapes|long) ;; *) echo "unknown task $task for claude-code" >&2; exit 2 ;; esac ;;
-  gemini) case $task in basic|search|long) ;; *) echo "unknown task $task for gemini (basic, search or long)" >&2; exit 2 ;; esac ;;
+  claude-code) case $task in basic|parallel|project|edits|tools|shapes|long|heldout:*) ;; *) echo "unknown task $task for claude-code" >&2; exit 2 ;; esac ;;
+  gemini) case $task in basic|search|long|heldout:*) ;; *) echo "unknown task $task for gemini (basic, search, long or heldout:NAME)" >&2; exit 2 ;; esac ;;
   *) echo "unknown agent $agent (claude-code or gemini)" >&2; exit 2 ;;
 esac
+case $controls_before in ''|*[!0-9]*) echo "--controls-before must be a number" >&2; exit 2 ;; esac
+[ "${CONTROLS:-5}" -ge "$controls_before" ] 2>/dev/null || { echo "--controls-before $controls_before is more than the ${CONTROLS:-5} control runs (CONTROLS)" >&2; exit 2; }
+if [ "$controls_before" -gt 0 ] && [ -n "$baseline_from" ]; then
+  echo "--controls-before orders the control runs of this capture; --baseline-from takes none" >&2
+  exit 2
+fi
+# The label of the task run's files: a held-out task heldout:NAME is heldout-NAME.
+task_label=${task//:/-}
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
@@ -206,12 +250,34 @@ if [ "$agent" = gemini ]; then
     exit 1
   }
   agy_conversations=$HOME/.gemini/antigravity-cli/conversations
+  # The model is pinned (D7). agy has no default for it here: the id it accepts
+  # is one `agy models` lists, and the campaign must name it.
+  [ -n "$model" ] || {
+    echo "agy needs --model ID: the model of a campaign is pinned (D7), and the id is one of those \`agy models\` lists (gemini-3.8-flash-high, -medium, -low)" >&2
+    exit 1
+  }
   # agy -p gives up after its print timeout; the long task needs far more
   # than the short ones.
   print_timeout=600s
-  [ "$task" != long ] || print_timeout=5400s
+  case $task in long|heldout:*) print_timeout=5400s ;; esac
 else
   claude_bin=$(command -v claude) || { echo "claude is not on PATH" >&2; exit 1; }
+  model=${model:-claude-sonnet-5-5}
+  # Version lock (D6, protocol 6.1): a Claude Code that updates itself during a
+  # campaign mixes versions. The runs below ignore the user's settings, so the
+  # lock is checked in the settings file and passed to every run (below).
+  claude_settings=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json
+  python3 - "$claude_settings" <<'PY' || {
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get("env", {}).get("DISABLE_UPDATES")
+except (OSError, ValueError, AttributeError):
+    sys.exit(1)
+sys.exit(0 if str(v) == "1" else 1)
+PY
+    echo "$claude_settings must set env.DISABLE_UPDATES to \"1\": Claude Code must not update itself during a campaign (D6)" >&2
+    exit 1
+  }
   # Hooks and plugins add processes and connections that are not part of the
   # agent's own behaviour. Restricting settings to the project keeps the capture
   # about the harness itself. Override if your install needs user settings to
@@ -258,6 +324,30 @@ case $check in
     echo "continuing (--allow-unconfigured-version): the report's verify runs use --strict-version and read INCONCLUSIVE until this version is configured" >&2
     ;;
   *) echo "could not read $agent_config" >&2; exit 1 ;;
+esac
+
+# A held-out task (D8) is written by the user and kept outside the repository:
+# its prompt, tool set and seed are read from --heldout-dir and never copied
+# into the repository or printed.
+heldout_seed=
+case $task in
+  heldout:*)
+    held=${task#heldout:}
+    case $held in ''|.*|*[!A-Za-z0-9._-]*) echo "bad held-out task name '$held' (letters, digits, dot, dash and underscore)" >&2; exit 1 ;; esac
+    [ -n "$heldout_dir" ] || { echo "$task needs --heldout-dir DIR, which holds $held/prompt.txt and $held/tools.txt" >&2; exit 1; }
+    heldout_dir=$(realpath -m "$heldout_dir")
+    case $heldout_dir/ in "$root"/*) echo "--heldout-dir $heldout_dir is inside the repository; held-out tasks are never copied into it" >&2; exit 1 ;; esac
+    for f in prompt.txt tools.txt; do
+      [ -s "$heldout_dir/$held/$f" ] || { echo "missing or empty $heldout_dir/$held/$f" >&2; exit 1; }
+    done
+    task_prompt=$(cat "$heldout_dir/$held/prompt.txt")
+    task_tools=$(tr -s '[:space:]' ' ' <"$heldout_dir/$held/tools.txt" | sed 's/^ //; s/ $//')
+    for t in $task_tools; do
+      case $t in *[!A-Za-z0-9_]*) echo "held-out tool name '$t' in $held/tools.txt has a character other than a letter, digit or underscore" >&2; exit 1 ;; esac
+    done
+    [ ! -d "$heldout_dir/$held/seed" ] || heldout_seed=$heldout_dir/$held/seed
+    ;;
+  *) [ -z "$heldout_dir" ] || { echo "--heldout-dir is for --task heldout:NAME" >&2; exit 2; } ;;
 esac
 
 case $agent:$task in
@@ -330,7 +420,16 @@ esac
 # A task with a directory under scripts/seed starts every run, controls
 # included, from a copy of it; the others start from three one-line files.
 seed=$root/scripts/seed/$task
-case $task in project|tools|shapes|long) [ -d "$seed" ] || { echo "missing seed directory $seed" >&2; exit 1; } ;; *) seed= ;; esac
+case $task in
+  project|tools|shapes|long) [ -d "$seed" ] || { echo "missing seed directory $seed" >&2; exit 1; } ;;
+  heldout:*) seed=$heldout_seed ;;
+  *) seed= ;;
+esac
+seed_sha256=none
+if [ -n "$seed" ]; then
+  seed_sha256=$(cd "$seed" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
+fi
+task_prompt_sha256=$(printf '%s' "$task_prompt" | sha256sum | cut -d' ' -f1)
 # The shapes task needs a directory the agent cannot write to, holding a file
 # it can: git keeps no directory modes, so every run's copy of locked/ loses
 # its write permission while the run lasts.
@@ -365,6 +464,10 @@ fi
 # shadows find and grep only when Grep and Glob are disabled), so a baseline
 # measured with one tool set does not explain the other's setup commands.
 control_tools=$task_tools
+# A control makes one command call, so its tool set must offer one.
+need_tool=Bash
+[ "$agent" != gemini ] || need_tool=run_command
+case " $control_tools " in *" $need_tool "*) ;; *) echo "the tool set of this task ($control_tools) lacks $need_tool, which the controls need" >&2; exit 1 ;; esac
 
 # Refuse an unusable --baseline-from before anything that needs root or quota.
 if [ -n "$baseline_from" ]; then
@@ -404,6 +507,18 @@ if [ -n "$baseline_from" ]; then
     echo "the control runs in $baseline_from are of $agent $earlier, the installed one is $version" >&2
     echo "a baseline holds for one version; run without --baseline-from to measure new controls" >&2
     exit 1
+  fi
+  # The model is part of what a control measures. A capture made before it was
+  # recorded ran the default model of its day, which the file cannot name.
+  if [ -f "$baseline_from/control-model.txt" ]; then
+    earlier=$(cat "$baseline_from/control-model.txt")
+    if [ "$earlier" != "$model" ]; then
+      echo "the control runs in $baseline_from ran model $earlier, this capture pins $model" >&2
+      echo "a baseline holds for one model; run without --baseline-from to measure new controls" >&2
+      exit 1
+    fi
+  else
+    echo "WARNING: the control runs in $baseline_from did not record their model; they ran the default model of their day, not necessarily $model" >&2
   fi
   # Content capture adds the requests to the capture, which a baseline taken
   # without it does not explain, and the other way round. A capture made
@@ -448,6 +563,9 @@ if [ -n "$check_only" ]; then
   echo "control_tools=$control_tools"
   echo "control_prompt_sha256=$(printf '%s' "$control_prompt" | sha256sum | cut -d' ' -f1)"
   echo "watch_mode=$watch_mode"
+  echo "model=$model"
+  echo "task_prompt_sha256=$task_prompt_sha256"
+  echo "seed_sha256=$seed_sha256"
   exit 0
 fi
 echo "output: $out"
@@ -459,15 +577,17 @@ fi
 [ -z "$build" ] || (cd "$root" && make build >/dev/null)
 sudo -v
 
-capture() { # label prompt tools
+capture_one() { # label prompt tools
   local label=$1 prompt=$2 tools=$3
   local ws="$out/ws-$label" session
   session=$(cat /proc/sys/kernel/random/uuid)
-  mkdir -p "$ws"
+  # capture_one runs where set -e does not apply, so each step that must not
+  # fail says so.
+  mkdir -p "$ws" || return 1
   if [ -n "$seed" ]; then
-    cp -r "$seed/." "$ws/"
+    cp -r "$seed/." "$ws/" || return 1
   else
-    for f in b c d; do printf 'seed\n' >"$ws/$f.txt"; done
+    for f in b c d; do printf 'seed\n' >"$ws/$f.txt" || return 1; done
   fi
   if [ -n "$locked" ]; then
     chmod a-w "$ws/$locked"
@@ -483,7 +603,8 @@ capture() { # label prompt tools
     sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
-      "$claude_bin" -p "${claude_flags[@]}" --allowedTools "$tools" \
+      env DISABLE_UPDATES=1 \
+      "$claude_bin" -p "${claude_flags[@]}" --model "$model" --allowedTools "$tools" \
       --session-id "$session" "$prompt" >"$out/$label.watch.log" 2>&1
   ) || echo "   watch exited non-zero, see $out/$label.watch.log"
   # Recording has ended: give the permission back so the output can be removed.
@@ -494,9 +615,9 @@ capture() { # label prompt tools
     echo "   no transcript found for session $session" >&2
     return 1
   fi
-  cp "$found" "$out/$label.session.jsonl"
+  cp "$found" "$out/$label.session.jsonl" || return 1
   if [ -d "${found%.jsonl}/subagents" ]; then
-    mkdir -p "$out/$label.session"
+    mkdir -p "$out/$label.session" || return 1
     cp -r "${found%.jsonl}/subagents" "$out/$label.session/"
     echo "   $(find "$out/$label.session/subagents" -name '*.jsonl' | wc -l) subagent transcript(s) copied"
   fi
@@ -514,8 +635,8 @@ agent_md() { # tools
 
 capture_gemini() { # label prompt tools workspace
   local label=$1 prompt=$2 tools=$3 ws=$4 id before f sid n=0
-  mkdir -p "$ws/.agents/agents/agent-trace"
-  agent_md "$tools" >"$ws/.agents/agents/agent-trace/agent.md"
+  mkdir -p "$ws/.agents/agents/agent-trace" || return 1
+  agent_md "$tools" >"$ws/.agents/agents/agent-trace/agent.md" || return 1
   echo "== $label"
   # The databases that exist before the run: any other one after it is the
   # run's own or a subagent's (I-55).
@@ -527,7 +648,7 @@ capture_gemini() { # label prompt tools workspace
       setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
       env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
       AGY_CLI_DISABLE_AUTO_UPDATE=true \
-      "$agy_bin" --agent agent-trace --dangerously-skip-permissions --output-format json \
+      "$agy_bin" --agent agent-trace --model "$model" --dangerously-skip-permissions --output-format json \
       --print-timeout "$print_timeout" -p "$prompt" >"$out/$label.watch.log" 2>&1
   ) || echo "   watch exited non-zero, see $out/$label.watch.log"
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
@@ -538,7 +659,7 @@ capture_gemini() { # label prompt tools workspace
     return 1
   fi
   echo "   conversation $id"
-  cp "$agy_conversations/$id.db" "$out/$label.conversation.db"
+  cp "$agy_conversations/$id.db" "$out/$label.conversation.db" || return 1
   # A write-ahead log that agy left unmerged holds steps too.
   [ ! -s "$agy_conversations/$id.db-wal" ] || cp "$agy_conversations/$id.db-wal" "$out/$label.conversation.db-wal"
   for f in "$agy_conversations"/*.db; do
@@ -553,7 +674,106 @@ capture_gemini() { # label prompt tools workspace
   [ "$n" -eq 0 ] || echo "   $n subagent conversation database(s) copied"
 }
 
-capture "$task" "$task_prompt" "$task_tools"
+# The models a run's transcript records (D7). Prints observed=<models of the
+# main transcript>;subagents=<models of its subagents' transcripts, not
+# checked>; exits 0 when the main transcript records the pinned model and no
+# other, 1 when it records another, 2 when it records none.
+model_seen() { # file
+  python3 - "$agent" "$1" "$model" <<'PY'
+import json, os, re, shutil, sqlite3, sys, tempfile
+agent, path, want = sys.argv[1:]
+
+def claude(p):
+    seen = set()
+    try:
+        for line in open(p, encoding="utf-8", errors="replace"):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(r, dict) or r.get("type") != "assistant":
+                continue
+            m = (r.get("message") or {}).get("model") or r.get("model")
+            if isinstance(m, str) and m != "<synthetic>":
+                seen.add(m)
+    except OSError:
+        pass
+    return seen
+
+def agy(p):
+    # The conversation's executor metadata names the model the run was set to;
+    # gen_metadata names the model that answered, in a form that drops the
+    # effort suffix.
+    # Read a copy with its write-ahead log beside it, so the capture is not touched.
+    seen = set()
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            shutil.copy(p, d + "/c.db")
+            if os.path.exists(p + "-wal"):
+                shutil.copy(p + "-wal", d + "/c.db-wal")
+            c = sqlite3.connect(d + "/c.db")
+            for (b,) in c.execute("select data from executor_metadata"):
+                if isinstance(b, bytes):
+                    seen |= {m.decode() for m in re.findall(rb"(?:gemini|claude|gpt)-[0-9A-Za-z.\-]*[0-9A-Za-z]", b)}
+            c.close()
+        except (OSError, sqlite3.Error):
+            pass
+    return seen
+
+if agent == "gemini":
+    main, subs = agy(path), set()
+else:
+    main, subs = claude(path), set()
+    d = path[:-len(".jsonl")] + "/subagents"
+    if os.path.isdir(d):
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".jsonl"):
+                subs |= claude(os.path.join(d, f))
+print("observed=%s;subagents=%s" % (",".join(sorted(main)), ",".join(sorted(subs))))
+sys.exit(2 if not main else (0 if main == {want} else 1))
+PY
+}
+
+# capture LABEL ROLE PROMPT TOOLS: one recorded run, then its model check, and a
+# line of order.tsv: the order the runs were recorded in (D11), their times and
+# the models their transcripts recorded.
+capture() {
+  local label=$1 role=$2 started ended rc=0 seen= mrc=0 file
+  started=$(date --iso-8601=seconds)
+  capture_one "$label" "$3" "$4" || rc=$?
+  ended=$(date --iso-8601=seconds)
+  if [ "$rc" -eq 0 ]; then
+    file=$out/$label.session.jsonl
+    [ "$agent" != gemini ] || file=$out/$label.conversation.db
+    seen=$(model_seen "$file") || mrc=$?
+  else
+    mrc=-
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(($(wc -l <"$out/order.tsv" 2>/dev/null || echo 0) + 1))" "$label" "$role" "$started" "$ended" "model_check=$mrc;$seen" >>"$out/order.tsv"
+  [ "$rc" -eq 0 ] || return "$rc"
+  case $mrc in
+    0) ;;
+    1) echo "   MODEL MISMATCH: $label recorded $seen, the pinned model is $model" >&2; return 1 ;;
+    *) echo "   MODEL MISMATCH: the transcript of $label records no model (pinned: $model)" >&2; return 1 ;;
+  esac
+}
+
+{
+  echo "task=$task"
+  echo "task_prompt_sha256=$task_prompt_sha256"
+  echo "task_tools=$task_tools"
+  echo "seed_sha256=$seed_sha256"
+  echo "model=$model"
+  echo "agent=$agent"
+  echo "version=$version"
+} >"$out/task-meta.txt"
+: >"$out/order.tsv"
+
+controls_total=${CONTROLS:-5}
+if [ -z "$baseline_from" ]; then
+  for n in $(seq 1 "$controls_before"); do capture "control-$n" control "$control_prompt" "$control_tools"; done
+fi
+capture "$task_label" task "$task_prompt" "$task_tools"
 
 if [ -n "$baseline_from" ]; then
   controls=("$baseline_from"/control-*.ground_truth.json)
@@ -561,7 +781,9 @@ if [ -n "$baseline_from" ]; then
 
   echo "baseline: reusing ${#controls[@]} control run(s) from $baseline_from"
 else
-  for n in $(seq 1 "${CONTROLS:-5}"); do capture "control-$n" "$control_prompt" "$control_tools"; done
+  for n in $(seq $((controls_before + 1)) "$controls_total"); do capture "control-$n" control "$control_prompt" "$control_tools"; done
+  printf 'before=%s after=%s' "$controls_before" "$((controls_total - controls_before))" >"$out/control-order.txt"
+  printf '%s' "$model" >"$out/control-model.txt"
   printf '%s' "$control_tools" >"$out/control-tools.txt"
   printf '%s' "$control_prompt" >"$out/control-prompt.txt"
   printf '%s' "$agent" >"$out/control-agent.txt"
@@ -573,8 +795,8 @@ min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4
 "$root/baseline" --agent "$agent" --agent-version "$version" --min-agreement "$min_agreement" \
   --exclude "$control_command" --out "$out/baseline.json" "${controls[@]}"
 
-trajectory=$out/$task.session.jsonl
-[ "$agent" != gemini ] || trajectory=$out/$task.conversation.db
+trajectory=$out/$task_label.session.jsonl
+[ "$agent" != gemini ] || trajectory=$out/$task_label.conversation.db
 # A version the config does not list makes the verdict INCONCLUSIVE (I-57).
 # agy's conversation does not state its version, so it is passed.
 version_flags=(--strict-version)
@@ -582,11 +804,11 @@ version_flags=(--strict-version)
 {
   echo "##### verify WITHOUT a baseline"
   "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
-    --ground-truth "$out/$task.ground_truth.json" --json "$out/verify.json" || true
+    --ground-truth "$out/$task_label.ground_truth.json" --json "$out/verify.json" || true
   echo
   echo "##### verify WITH the baseline"
   "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
-    --ground-truth "$out/$task.ground_truth.json" --baseline "$out/baseline.json" \
+    --ground-truth "$out/$task_label.ground_truth.json" --baseline "$out/baseline.json" \
     --json "$out/verify-baseline.json" || true
 } >"$out/report.txt" 2>&1
 echo
