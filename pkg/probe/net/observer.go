@@ -44,7 +44,7 @@ import (
 const (
 	netConnect uint8 = 1
 	netHello   uint8 = 2
-	netBind    uint8 = 3 // unused until tls.bpf.c exists (S5)
+	netBind    uint8 = 3 // reserved, never emitted (N-D1)
 	netClose   uint8 = 4
 
 	// Listener evidence, mirroring NET_SOCK_BIND and NET_SOCK_LISTEN. Distinct
@@ -107,9 +107,8 @@ type Config struct {
 	ConnsMax uint32
 
 	// ExePath, if set, is the executable to attach the SSL_write uprobe to
-	// for content capture (S5). Without it, Observer runs identity-only,
-	// exactly as in S3: NetConnect events with a resolved hostname, no
-	// NetRequest events. Required for TrackedPID's process to yield
+	// for content capture. Without it, Observer runs identity-only:
+	// NetConnect events with a resolved hostname, no NetRequest events. Required for TrackedPID's process to yield
 	// request-level content.
 	ExePath string
 
@@ -163,8 +162,8 @@ type dgramKey struct {
 }
 
 // Observer watches network connections via eBPF and emits
-// models.GroundTruthEvent values. See the package doc comment for what this
-// slice does and does not cover.
+// models.GroundTruthEvent values. See the package doc comment for what it
+// does and does not cover.
 type Observer struct {
 	objs    bpfObjects
 	links   []link.Link // net.bpf.c raw tracepoints, in attach order
@@ -223,9 +222,8 @@ type Observer struct {
 	conns  map[uint64]*connection // by socket inode number
 	dgrams map[dgramKey]bool      // datagram destinations already emitted (N-28)
 
-	// Content-capture (S5) state. tlsObjs and sslWriteLink are zero/nil
-	// when cfg.ExePath is unset -- Observer then runs identity-only, as it
-	// did before this slice existed.
+	// Content-capture state. tlsObjs and sslWriteLink are zero/nil when
+	// cfg.ExePath is unset: Observer then runs identity-only.
 	tlsObjs      tlsbpfObjects
 	sslWriteLink link.Link
 	// firstLink is the uprobe New attaches at the first candidate, so a

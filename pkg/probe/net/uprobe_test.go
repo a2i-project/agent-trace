@@ -50,7 +50,7 @@ func findLibSSL(t *testing.T) string {
 	return ""
 }
 
-// TestObserver_ContentCaptureViaSSLWriteUprobe exercises the full S5 path:
+// TestObserver_ContentCaptureViaSSLWriteUprobe exercises the whole content-capture path:
 // resolve SSL_write in a real shared library, attach and validate the
 // uprobe, capture an HTTP/1.1 request written by openssl(1) s_client
 // through it, and correlate it into a models.NetRequest GroundTruthEvent

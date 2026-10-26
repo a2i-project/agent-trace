@@ -159,10 +159,10 @@ struct {
 	__type(value, struct bind_state);
 } binds SEC(".maps");
 
-// tracked_pids gates every program in this file. Section 10 of the design
-// doc has this pinned and populated by pkg/probe/proc once both probes run
-// together (S6); until that wiring lands, net.Observer populates its own
-// copy directly via TrackPID, the same way proc.Observer seeds root_pid_map.
+// tracked_pids gates every program in this file. It is this object's own
+// map, neither pinned nor shared with the proc probe: net.Observer seeds the
+// root with TrackPID, and handle_fork and handle_exit below follow its
+// descendants.
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 4096);
