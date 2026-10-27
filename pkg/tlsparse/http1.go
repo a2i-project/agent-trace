@@ -97,15 +97,24 @@ func ParseHTTP1(s *Stream) (*HTTPRequest, bool, error) {
 
 // parseRequestLine splits "METHOD target HTTP/1.x" into its parts. target is
 // split on the first '?' into Path and Query, both kept verbatim.
+//
+// The line must be a request line and nothing else (N-34): a method of two
+// to ten capital letters, the form the SSL_write validation accepts (N-D4);
+// a target in one of the forms of RFC 9112 section 3.2 (origin form "/...",
+// absolute form "http://..." or "https://...", "*" for OPTIONS, authority
+// form for CONNECT) with no control byte; and exactly HTTP/1.0 or HTTP/1.1.
+// Bytes left in a connection's stream ahead of a request, such as the tail of
+// an earlier body, end up in front of its method; such a line is malformed,
+// so it is never emitted as a request with the bytes for its method.
 func parseRequestLine(line []byte) (method, path, query string, err error) {
 	parts := bytes.SplitN(line, []byte(" "), 3)
 	if len(parts) != 3 {
 		return "", "", "", ErrMalformedRequest
 	}
-	if !bytes.HasPrefix(parts[2], []byte("HTTP/1.")) {
+	if v := string(parts[2]); v != "HTTP/1.1" && v != "HTTP/1.0" {
 		return "", "", "", ErrMalformedRequest
 	}
-	if len(parts[0]) == 0 || len(parts[1]) == 0 {
+	if !isMethod(parts[0]) || !isTarget(parts[1], string(parts[0])) {
 		return "", "", "", ErrMalformedRequest
 	}
 	target := parts[1]
@@ -113,6 +122,43 @@ func parseRequestLine(line []byte) (method, path, query string, err error) {
 		return string(parts[0]), string(target[:i]), string(target[i+1:]), nil
 	}
 	return string(parts[0]), string(target), "", nil
+}
+
+// isMethod reports whether m is two to ten capital ASCII letters.
+func isMethod(m []byte) bool {
+	if len(m) < 2 || len(m) > 10 {
+		return false
+	}
+	for _, c := range m {
+		if c < 'A' || c > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// isTarget reports whether t is a request target in a form RFC 9112 allows
+// for method, with no control byte or space.
+func isTarget(t []byte, method string) bool {
+	if len(t) == 0 {
+		return false
+	}
+	for _, c := range t {
+		if c <= ' ' || c == 0x7f {
+			return false
+		}
+	}
+	switch {
+	case t[0] == '/':
+		return true
+	case bytes.HasPrefix(t, []byte("http://")), bytes.HasPrefix(t, []byte("https://")):
+		return true
+	case len(t) == 1 && t[0] == '*':
+		return method == "OPTIONS"
+	default:
+		// The authority form, host and port, is CONNECT's only.
+		return method == "CONNECT" && !bytes.ContainsAny(t, "/?#@")
+	}
 }
 
 // readBody determines the request body from the bytes following the header

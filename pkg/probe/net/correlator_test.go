@@ -148,3 +148,32 @@ func TestHandleSSLFrame_HostHeaderWithNonDefaultPort(t *testing.T) {
 		t.Errorf("Target = %q, want %q", ev.Target, want)
 	}
 }
+
+// A connection whose stream holds bytes past a request's body, as a write
+// captured twice would leave them, emits the first request and then no
+// request with those bytes for its method (N-34): the next request line is
+// malformed, the buffer is dropped and counted, and a later request on the
+// connection parses again.
+func TestHandleSSLFrame_ABodyTailIsNeverARequestMethod(t *testing.T) {
+	o := newTestObserver()
+	key := sslKey{tgid: 1, ssl: 1}
+	body := `[{"message":"event_one","os":"linux"}]`
+	head := "POST /api/v2/logs HTTP/1.1\r\nHost: intake.example.com\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n"
+	o.handleSSLFrame(key, []byte(head), 0, time.Now())
+	o.handleSSLFrame(key, []byte(body), 0, time.Now())
+	o.handleSSLFrame(key, []byte(body[10:]), 0, time.Now())
+	o.handleSSLFrame(key, []byte(head+body), 0, time.Now())
+	o.handleSSLFrame(key, []byte("GET /next HTTP/1.1\r\nHost: intake.example.com\r\n\r\n"), 0, time.Now())
+
+	var targets []string
+	for len(o.events) > 0 {
+		targets = append(targets, (<-o.events).Target)
+	}
+	want := []string{"POST https://intake.example.com/api/v2/logs", "GET https://intake.example.com/next"}
+	if len(targets) != len(want) || targets[0] != want[0] || targets[1] != want[1] {
+		t.Errorf("targets %q, want %q", targets, want)
+	}
+	if o.coverage.FramesUnattributed != 1 {
+		t.Errorf("FramesUnattributed = %d, want 1", o.coverage.FramesUnattributed)
+	}
+}

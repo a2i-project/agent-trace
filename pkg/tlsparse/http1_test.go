@@ -1,6 +1,7 @@
 package tlsparse
 
 import (
+	"strconv"
 	"testing"
 )
 
@@ -146,5 +147,68 @@ func TestParseHTTP1_QueryVerbatim(t *testing.T) {
 	req := parseOne(t, s)
 	if req.Path != "/search" || req.Query != "q=a+b&x=1" {
 		t.Errorf("path=%q query=%q", req.Path, req.Query)
+	}
+}
+
+// A request line is a method of capital letters, a target in an RFC 9112
+// form and HTTP/1.0 or HTTP/1.1, and nothing else (N-34). The shape that
+// motivated it: the tail of an earlier JSON body left in the stream ahead of
+// the next request, with no space or line break in it, so that the whole
+// tail read as the method.
+func TestParseHTTP1_OnlyARequestLineIsARequest(t *testing.T) {
+	for line, ok := range map[string]bool{
+		"GET / HTTP/1.1":                                      true,
+		"POST /api/v2/logs HTTP/1.1":                          true,
+		"GET http://h/x HTTP/1.0":                             true,
+		"GET https://h/x?y=1 HTTP/1.1":                        true,
+		"OPTIONS * HTTP/1.1":                                  true,
+		"CONNECT example.com:443 HTTP/1.1":                    true,
+		`444","os":"linux","n":1}]POST /api/v2/logs HTTP/1.1`: false,
+		"abcPOST /x HTTP/1.1":                                 false,
+		"post /x HTTP/1.1":                                    false,
+		"P /x HTTP/1.1":                                       false,
+		"VERYLONGMETHOD /x HTTP/1.1":                          false,
+		"GET x HTTP/1.1":                                      false,
+		"GET * HTTP/1.1":                                      false,
+		"CONNECT /x HTTP/1.1":                                 true, // origin form, any method
+		"GET example.com:443 HTTP/1.1":                        false,
+		"CONNECT a/b:443 HTTP/1.1":                            false,
+		"GET /x HTTP/2.0":                                     false,
+		"GET /x HTTP/1.1 trailing":                            false,
+		"GET /x\x01y HTTP/1.1":                                false,
+		"GET  /x HTTP/1.1":                                    false,
+	} {
+		s := NewStream()
+		s.Append([]byte(line + "\r\nHost: h\r\n\r\n"))
+		req, complete, err := ParseHTTP1(s)
+		if ok && (err != nil || !complete || req == nil) {
+			t.Errorf("%q: %v, complete %v, want a request", line, err, complete)
+		}
+		if !ok && (err != ErrMalformedRequest || req != nil) {
+			t.Errorf("%q: %+v, %v, want ErrMalformedRequest", line, req, err)
+		}
+	}
+}
+
+// The synthesized stream of a write whose body bytes reached the stream
+// twice, as an SSL_write retried with bytes it had already been called with
+// would leave them: the first request ends at its Content-Length, the
+// repeated tail stays buffered, and the next request arrives behind it. The
+// next request line is then malformed, never a request with the tail as its
+// method.
+func TestParseHTTP1_ABodyTailAheadOfTheNextRequestIsNotARequest(t *testing.T) {
+	body := `[{"message":"event_one","id":"00000000-1111-2222-3333-444444444444","os":"linux"}]`
+	next := "POST /api/v2/logs HTTP/1.1\r\nHost: intake.example.com\r\nContent-Length: 2\r\n\r\n[]"
+	s := NewStream()
+	s.Append([]byte("POST /api/v2/logs HTTP/1.1\r\nHost: intake.example.com\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n" + body + body[40:]))
+	if req := parseOne(t, s); string(req.Body) != body {
+		t.Fatalf("first body %q", req.Body)
+	}
+	if req, ok, err := ParseHTTP1(s); req != nil || ok || err != nil {
+		t.Fatalf("the tail alone: %+v %v %v, want need-more-data", req, ok, err)
+	}
+	s.Append([]byte(next))
+	if req, _, err := ParseHTTP1(s); req != nil || err != ErrMalformedRequest {
+		t.Fatalf("the tail and the next request: %+v %v, want ErrMalformedRequest", req, err)
 	}
 }
