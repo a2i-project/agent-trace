@@ -208,8 +208,13 @@ func report(w io.Writer, r reportInput) {
 	switch {
 	case r.gt.FSScope != nil:
 		p("fs scope:     %s, %d filesystem(s) marked, %d unmarked, %d event(s) dropped outside the agent's tree and the workspace\n", r.gt.FSScope.Rule, len(r.gt.FSScope.Mounts), len(r.gt.FSScope.Unmarked), r.gt.FSScope.DroppedOutside)
-		for typ, n := range r.gt.FSScope.Unresolved {
-			p("              %d %s event(s) had no resolvable path and are not in the capture\n", n, typ)
+		types := make([]string, 0, len(r.gt.FSScope.Unresolved))
+		for typ := range r.gt.FSScope.Unresolved {
+			types = append(types, typ)
+		}
+		sort.Slice(types, func(i, j int) bool { return types[i] < types[j] })
+		for _, typ := range types {
+			p("              %d %s event(s) had no resolvable path and are not in the capture\n", r.gt.FSScope.Unresolved[typ], typ)
 		}
 	case r.gt.Workspace != "":
 		p("fs scope:     no record (capture predates it): paths under %s only\n", r.gt.Workspace)
