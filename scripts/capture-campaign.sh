@@ -848,10 +848,16 @@ def invocation(out, seed, commit, dirty, plan_path, controls, validate, e2e, sto
 
 
 def templated(target, ws):
-    """target with the workspace as cmd/baseline writes it in a rule (I-24, I-29)."""
+    """target with the workspace as cmd/baseline writes it in a rule (I-24, I-29,
+    I-70): every UTF-16 unit but an ASCII letter or digit a dash, and no
+    mangled form over 200 units, which the harness hashes."""
     if len(ws) < 2:
         return target
-    return target.replace(ws, "{workspace}").replace(ws.replace("/", "-"), "{workspace-}")
+    target = target.replace(ws, "{workspace}")
+    mangled = "".join(c if c.isascii() and c.isalnum() else "-" * (2 if ord(c) > 0xFFFF else 1) for c in ws)
+    if len(mangled) > 200:
+        return target
+    return target.replace(mangled, "{workspace-}")
 
 
 def events_text(events, limit=5):
