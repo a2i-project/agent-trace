@@ -498,3 +498,189 @@ func TestDirCache_TheStartWalkCachesTheResolvedName(t *testing.T) {
 		t.Errorf("lookup = %q, %v, want the walk's path %q", p, ok, dir)
 	}
 }
+
+// createRecord is a rename watch record of the creation of directory child
+// as name in directory parent, on filesystem fsid, as a group with
+// renameFlags reports it: the parent's DFID_NAME record, then the child's
+// FID record.
+func createRecord(fsid fsID, parent, name, child string) []byte {
+	dn := buildDfidNameInfo(1, []byte(parent), name)
+	fid := buildFidInfo(1, []byte(child))
+	for _, r := range [][]byte{dn, fid} {
+		binary.LittleEndian.PutUint32(r[4:8], uint32(fsid[0]))
+		binary.LittleEndian.PutUint32(r[8:12], uint32(fsid[1]))
+	}
+	info := append(dn, fid...)
+	return append(buildMetadata(unix.FAN_CREATE|unix.FAN_ONDIR, 1, uint16(len(info))), info...)
+}
+
+// A directory never cached is named through its creation: its parent's path,
+// from the cache, from resolving its handle, or through the parent's own
+// creation, joined to its name (P-37). A directory move on the filesystem
+// after the creation drops it, as it drops the cache; a creation of a file,
+// a malformed record or a parent that cannot be named names nothing.
+func TestDirCache_ADirectoryNeverCachedIsNamedThroughItsCreation(t *testing.T) {
+	a := fsID{1, 1}
+	live := func(_ fsID, _ int32, h []byte) string {
+		if string(h) == "tmp" {
+			return "/tmp/claude-1000"
+		}
+		return ""
+	}
+	fileCreate := createRecord(a, "tmp", "probe", "f")
+	binary.LittleEndian.PutUint64(fileCreate[8:16], unix.FAN_CREATE)
+	short := buildMetadata(unix.FAN_CREATE|unix.FAN_ONDIR, 1, 0)
+	for _, c := range []struct {
+		name    string
+		records [][]byte
+		cached  map[string]string
+		resolve handleResolver
+		lookup  string
+		want    string
+	}{
+		{"the parent resolves", [][]byte{createRecord(a, "tmp", "fswatch-probe-X", "d")}, nil, live, "d", "/tmp/claude-1000/fswatch-probe-X"},
+		{"the parent is cached", [][]byte{createRecord(a, "p", "x", "d")}, map[string]string{"p": "/cached"}, nil, "d", "/cached/x"},
+		{"through the parent's creation", [][]byte{createRecord(a, "tmp", "outer", "o"), createRecord(a, "o", "inner", "i")}, nil, live, "i", "/tmp/claude-1000/outer/inner"},
+		{"a directory moved after", [][]byte{createRecord(a, "tmp", "x", "d"), moveRecord(a, true)}, nil, live, "d", ""},
+		{"a directory moved before", [][]byte{moveRecord(a, true), createRecord(a, "tmp", "x", "d")}, nil, live, "d", "/tmp/claude-1000/x"},
+		{"a file moved after", [][]byte{createRecord(a, "tmp", "x", "d"), moveRecord(a, false)}, nil, live, "d", "/tmp/claude-1000/x"},
+		{"a file created", [][]byte{fileCreate}, nil, live, "f", ""},
+		{"a record without handles", [][]byte{short}, nil, live, "d", ""},
+		{"the parent cannot be named", [][]byte{createRecord(a, "gone", "x", "d")}, nil, live, "d", ""},
+		{"another directory", [][]byte{createRecord(a, "tmp", "x", "d")}, nil, live, "e", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w, records := pipeWatch(t, a)
+			dirs := newDirCache(16, w)
+			for k, p := range c.cached {
+				dirs.fill(a, 1, []byte(k), p)
+			}
+			for _, r := range c.records {
+				if _, err := unix.Write(records, r); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, ok := dirs.lookupResolving(a, 1, []byte(c.lookup), c.resolve)
+			if got != c.want || ok != (c.want != "") {
+				t.Errorf("lookup = %q, %v, want %q", got, ok, c.want)
+			}
+			if s := dirs.snapshot(); (s.Linked == 1) != (c.want != "") {
+				t.Errorf("stats = %+v", s)
+			}
+		})
+	}
+}
+
+// The recorded creations are bounded apart from the cache: the oldest is
+// dropped, and no creation evicts a directory the probe resolved.
+func TestDirCache_CreationsAreBoundedApartFromTheCache(t *testing.T) {
+	a := fsID{1, 1}
+	w, records := pipeWatch(t, a)
+	dirs := newDirCache(2, w)
+	dirs.fill(a, 1, []byte("r"), "/r")
+	for _, d := range []string{"d1", "d2", "d3"} {
+		if _, err := unix.Write(records, createRecord(a, "r", d, d)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := dirs.lookup(a, 1, []byte("d1")); ok {
+		t.Error("the oldest creation survived")
+	}
+	for _, d := range []string{"d2", "d3", "r"} {
+		if _, ok := dirs.lookup(a, 1, []byte(d)); !ok {
+			t.Errorf("%s was dropped", d)
+		}
+	}
+	if s := dirs.snapshot(); s.Created != 3 || s.Evicted != 0 {
+		t.Errorf("stats = %+v, want 3 created, none evicted", s)
+	}
+}
+
+// The shape of the five unresolved events of the agent's tree in a capture of
+// Claude Code 2.1.306 (P-37): the harness creates a directory under its
+// temporary directory, writes a probe file in it twice and removes both, and
+// the probe reads none of it until the directory is gone. Every record is
+// named through the directory's creation. Unprivileged: inode marks, the
+// main one placed on the new directory as the test creates it.
+func TestKernelDirectoryCreatedAndRemovedBetweenReadsIsNamed(t *testing.T) {
+	root := t.TempDir()
+	watch := openRenameWatch([]string{root}, 0)
+	if watch == nil || !watch.creates {
+		t.Skip("rename watch: the kernel refused FAN_REPORT_TARGET_FID or an inode mark for FAN_CREATE | FAN_ONDIR")
+	}
+	dirs := newDirCache(dirCacheSize, watch)
+	t.Cleanup(dirs.close)
+	fd, err := unix.FanotifyInit(uint(unix.FAN_CLASS_NOTIF|reportFlags|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK), unix.O_RDONLY)
+	if err != nil {
+		t.Skipf("fanotify_init with the probe's flags: %v", err)
+	}
+	t.Cleanup(func() { _ = unix.Close(fd) })
+	k := &kernelRig{t: t, fd: fd, root: root, dirs: dirs}
+	dir := filepath.Join(root, "fswatch-probe-X")
+	probe := filepath.Join(dir, "probe")
+	k.do(
+		func() error { return os.Mkdir(dir, 0o700) },
+		func() error {
+			return unix.FanotifyMark(fd, unix.FAN_MARK_ADD, watchMask|unix.FAN_EVENT_ON_CHILD, unix.AT_FDCWD, dir)
+		},
+		func() error { return os.WriteFile(probe, []byte("x"), 0o644) },
+		func() error { return os.WriteFile(probe, []byte("y"), 0o644) },
+		func() error { return os.Remove(probe) },
+		func() error { return os.Remove(dir) },
+	)
+	k.read()
+	if len(k.raws) == 0 {
+		t.Fatal("no records")
+	}
+	obs := &Observer{events: make(chan models.GroundTruthEvent, 64), mountFD: -1}
+	for i := range k.raws {
+		if k.raws[i].Path != probe && k.raws[i].Path != dir {
+			t.Errorf("record %#x named %q, want %s", k.raws[i].Mask, k.raws[i].Path, probe)
+		}
+		k.raws[i].PID = 1 // not the recorder's own
+		obs.processRawEvent(&k.raws[i], time.Now())
+	}
+	if got := obs.CaptureCoverage().UnresolvedPaths; got != 0 {
+		t.Errorf("UnresolvedPaths = %d, want 0", got)
+	}
+	if got := k.deletes(); strings.Join(got, "|") != "fswatch-probe-X/probe" {
+		t.Errorf("deletes = %q", got)
+	}
+	if s := k.dirs.snapshot(); s.Linked == 0 || s.Created == 0 {
+		t.Errorf("stats = %+v, want the records named through the creation", s)
+	}
+}
+
+// As root, on the probe's filesystem-wide marks: a directory created, written
+// in and removed by another process while the read loop is blocked, so that
+// no record of it is read while it exists, has every file event named, the
+// shape of Claude Code's file-watch probe directory in a capture whose read
+// loop paused for a second (P-37).
+func TestObserver_ADirectoryCreatedAndRemovedWhileTheReadLoopIsBlockedIsNamed(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	obs := startBlockedObserver(t, dir)
+	if !obs.DirCache().Watching {
+		t.Fatal("the rename watch marked nothing")
+	}
+	for _, f := range []string{"a", "b"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(200 * time.Millisecond) // the read loop reads the writes, then blocks
+	sub := filepath.Join(dir, "fswatch-probe-X")
+	probe := filepath.Join(sub, "probe")
+	script := `mkdir "$1" && printf x > "$1/probe" && printf y >> "$1/probe" && rm "$1/probe" && rmdir "$1"`
+	if out, err := exec.Command("sh", "-c", script, "sh", sub).CombinedOutput(); err != nil {
+		t.Fatalf("sh: %v\n%s", err, out)
+	}
+	events := drainAll(t, obs)
+	for _, a := range []models.ActionType{models.FileWrite, models.FileOpen, models.FileClose, models.FileDelete} {
+		assertHasNamedEvent(t, events, a, probe)
+	}
+	if obs.DirCache().Linked == 0 {
+		t.Errorf("dir cache %+v: nothing was named through a creation", obs.DirCache())
+	}
+	t.Logf("dir cache %+v, unresolved %d", obs.DirCache(), obs.CaptureCoverage().UnresolvedPaths)
+}

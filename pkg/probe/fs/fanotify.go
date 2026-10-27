@@ -481,7 +481,7 @@ func parseDfidName(record []byte, resolve handleResolver, dirs *dirCache) string
 		dirPath = resolve(fsid, handleType, handleData)
 		if dirPath != "" {
 			dirs.fill(fsid, handleType, handleData, dirPath)
-		} else if cached, ok := dirs.lookup(fsid, handleType, handleData); ok {
+		} else if cached, ok := dirs.lookupResolving(fsid, handleType, handleData, resolve); ok {
 			dirPath = cached
 		}
 	}

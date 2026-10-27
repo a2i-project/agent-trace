@@ -1,9 +1,11 @@
 package fs
 
 import (
+	"bytes"
 	"container/list"
 	"encoding/binary"
 	"errors"
+	"strings"
 	"sync"
 
 	"golang.org/x/sys/unix"
@@ -17,8 +19,25 @@ import (
 const dirCacheSize = 8192
 
 // renameMask is the mask of the rename watch: a move of any object on the
-// marked filesystems, directories included (P-28).
-const renameMask = unix.FAN_MOVE_SELF | unix.FAN_ONDIR
+// marked filesystems, directories included (P-28), and the creation of any
+// entry, so that a directory created and removed between two reads can still
+// be named (P-37). A created file's record is read and skipped.
+const renameMask = unix.FAN_MOVE_SELF | unix.FAN_CREATE | unix.FAN_ONDIR
+
+// renameOnlyMask is the rename watch's mask on a kernel that refuses
+// renameFlags (before Linux 5.17, no FAN_REPORT_TARGET_FID): moves only, as
+// before P-37.
+const renameOnlyMask = unix.FAN_MOVE_SELF | unix.FAN_ONDIR
+
+// renameFlags are the rename watch's report flags: the main group's, so a
+// creation record carries the parent's handle and the new entry's name, and
+// FAN_REPORT_TARGET_FID, so it also carries the new entry's own handle, the
+// one the main group reports as the directory of every record inside it.
+const renameFlags = reportFlags | unix.FAN_REPORT_TARGET_FID
+
+// maxLinkDepth bounds how many created directories a name is followed
+// through to a directory that still resolves or is cached.
+const maxLinkDepth = 32
 
 // DirCacheStats reports what the directory cache did (P-28).
 type DirCacheStats struct {
@@ -37,6 +56,12 @@ type DirCacheStats struct {
 	// Invalidated counts the entries dropped because a directory on their
 	// filesystem was renamed, or the rename watch lost records.
 	Invalidated uint64
+	// Created counts the directory creations the rename watch recorded by
+	// their parent and name (P-37).
+	Created uint64
+	// Linked counts the records whose directory no longer resolved, was
+	// never cached, and was named through its creation instead (P-37).
+	Linked uint64
 }
 
 // dirCache maps a directory's file handle, as fanotify reports it in a
@@ -54,14 +79,38 @@ type DirCacheStats struct {
 // been renamed since. The rename of a directory completes before its removal,
 // and its record is queued in the rename watch before the rename returns, so
 // a lookup made after a removal always sees the renames that preceded it.
+//
+// A directory created and removed between two reads of the probe was never
+// resolved and is not in the cache. The rename watch also records each
+// directory's creation, its own handle with its parent's handle and its name
+// (links), and a record whose directory is in neither is named through that:
+// the parent's path, from the cache, from resolving its handle or from its own
+// creation, joined to the name (P-37). The creation is queued in the watch
+// before the mkdir returns, so before any record inside the directory, and a
+// rename on the filesystem drops the links as it drops the entries.
 type dirCache struct {
 	mu      sync.Mutex
 	max     int
 	entries map[string]*list.Element
 	lru     *list.List
+	// links maps a created directory's key to its dirLink, bounded at max
+	// with the oldest dropped, apart from entries so that the creations of
+	// the whole host never evict a directory the probe resolved.
+	links   map[string]*list.Element
+	linkLRU *list.List
 	// watch reports directory renames; nil disables lookups.
 	watch *renameWatch
 	stats DirCacheStats
+}
+
+// dirLink is a directory the rename watch saw created: its parent's handle
+// and its name in the parent when it was created.
+type dirLink struct {
+	key        string
+	fsid       fsID
+	parentType int32
+	parent     []byte
+	name       string
 }
 
 // dirEntry is one cached directory.
@@ -78,7 +127,7 @@ type dirEntry struct {
 // newDirCache returns a cache of at most max entries guarded by watch, which
 // may be nil: entries are then kept but never used.
 func newDirCache(max int, watch *renameWatch) *dirCache {
-	return &dirCache{max: max, entries: map[string]*list.Element{}, lru: list.New(), watch: watch}
+	return &dirCache{max: max, entries: map[string]*list.Element{}, lru: list.New(), links: map[string]*list.Element{}, linkLRU: list.New(), watch: watch}
 }
 
 // dirKey identifies a directory handle: filesystem id, handle type and bytes.
@@ -183,6 +232,13 @@ func (c *dirCache) hit(fsid fsID, handleType int32, handleData []byte) (string, 
 // lookup returns the cached path of a directory handle that no longer
 // resolves, after applying every directory rename the watch has queued.
 func (c *dirCache) lookup(fsid fsID, handleType int32, handleData []byte) (string, bool) {
+	return c.lookupResolving(fsid, handleType, handleData, nil)
+}
+
+// lookupResolving is lookup that also names a directory never cached through
+// its creation (P-37), resolving the parent's handle with resolve when the
+// parent is not cached either. resolve may be nil.
+func (c *dirCache) lookupResolving(fsid fsID, handleType int32, handleData []byte, resolve handleResolver) (string, bool) {
 	if c == nil || c.watch == nil {
 		return "", false
 	}
@@ -192,12 +248,64 @@ func (c *dirCache) lookup(fsid fsID, handleType int32, handleData []byte) (strin
 	if !c.watch.guards(fsid) {
 		return "", false
 	}
-	el, ok := c.entries[dirKey(fsid, handleType, handleData)]
-	if !ok {
+	key := dirKey(fsid, handleType, handleData)
+	if el, ok := c.entries[key]; ok {
+		c.stats.Resolved++
+		return el.Value.(*dirEntry).path, true
+	}
+	p := c.linkedPath(key, resolve, maxLinkDepth)
+	if p == "" {
 		return "", false
 	}
-	c.stats.Resolved++
-	return el.Value.(*dirEntry).path, true
+	c.stats.Linked++
+	return p, true
+}
+
+// linkedPath names the directory key through its creation: its parent's
+// path joined to its name, the parent named from the cache, by resolving its
+// handle or through its own creation, at most depth creations up. The caller
+// holds c.mu. "" when the directory's creation was not recorded or its
+// parent cannot be named.
+func (c *dirCache) linkedPath(key string, resolve handleResolver, depth int) string {
+	el, ok := c.links[key]
+	if !ok || depth == 0 {
+		return ""
+	}
+	l := el.Value.(*dirLink)
+	pkey := dirKey(l.fsid, l.parentType, l.parent)
+	var parent string
+	if pe, ok := c.entries[pkey]; ok {
+		parent = pe.Value.(*dirEntry).path
+	} else if resolve != nil {
+		parent = resolve(l.fsid, l.parentType, l.parent)
+	}
+	if parent == "" {
+		parent = c.linkedPath(pkey, resolve, depth-1)
+	}
+	if parent == "" {
+		return ""
+	}
+	return joinEntry(parent, l.name)
+}
+
+// link records that the directory with handle (handleType, handleData) was
+// created as name in the directory with handle (parentType, parent), both on
+// filesystem fsid. An entry already cached for the directory is kept.
+func (c *dirCache) link(fsid fsID, handleType int32, handleData []byte, parentType int32, parent []byte, name string) {
+	key := dirKey(fsid, handleType, handleData)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stats.Created++
+	if el, ok := c.links[key]; ok {
+		c.linkLRU.MoveToFront(el)
+		return
+	}
+	c.links[key] = c.linkLRU.PushFront(&dirLink{key: key, fsid: fsid, parentType: parentType, parent: append([]byte(nil), parent...), name: name})
+	for c.linkLRU.Len() > c.max {
+		back := c.linkLRU.Back()
+		c.linkLRU.Remove(back)
+		delete(c.links, back.Value.(*dirLink).key)
+	}
 }
 
 // sync reads the rename watch and drops the entries it invalidates.
@@ -208,8 +316,8 @@ func (c *dirCache) sync() {
 	c.watch.drain(c)
 }
 
-// invalidate drops every entry of filesystem fsid, or every entry when all
-// is set.
+// invalidate drops every entry and every recorded creation of filesystem
+// fsid, or all of them when all is set.
 func (c *dirCache) invalidate(fsid fsID, all bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -219,6 +327,14 @@ func (c *dirCache) invalidate(fsid fsID, all bool) {
 			c.lru.Remove(el)
 			delete(c.entries, e.key)
 			c.stats.Invalidated++
+		}
+		el = next
+	}
+	for el := c.linkLRU.Front(); el != nil; {
+		next := el.Next()
+		if l := el.Value.(*dirLink); all || l.fsid == fsid {
+			c.linkLRU.Remove(el)
+			delete(c.links, l.key)
 		}
 		el = next
 	}
@@ -245,10 +361,11 @@ func (c *dirCache) close() {
 
 // renameWatch is a fanotify group that reports every move on the marked
 // filesystems with the moved object's handle, the FAN_ONDIR bit set for a
-// directory. Its records are used only to invalidate the directory cache and
-// never become events. It is a group of its own because FAN_ONDIR applies to
-// every event of a mark: in the main mark it would add the opens, creations
-// and removals of directories to the capture.
+// directory, and every creation with the parent's handle, the name and the
+// new entry's handle (P-37). Its records are used only to keep the directory
+// cache and never become events. It is a group of its own because FAN_ONDIR
+// applies to every event of a mark: in the main mark it would add the opens,
+// creations and removals of directories to the capture.
 type renameWatch struct {
 	fd int
 	// guarded are the filesystems the watch marked. A lookup on any other
@@ -256,14 +373,30 @@ type renameWatch struct {
 	guarded map[fsID]bool
 	// broken is set when a read of the watch fails; lookups then miss.
 	broken bool
-	buf    []byte
+	// creates is set when the watch reports creations (P-37); a kernel
+	// without FAN_REPORT_TARGET_FID gets a watch of moves only.
+	creates bool
+	buf     []byte
 }
 
 // openRenameWatch creates the rename watch and marks each path with flags
 // (FAN_MARK_FILESYSTEM in the probe, an inode mark in the unprivileged
-// tests). It returns nil when no path could be marked.
+// tests). It returns nil when no path could be marked. On a kernel that
+// refuses the report flags or the mask of creations it falls back to a watch
+// of moves only, which names no directory through its creation.
 func openRenameWatch(paths []string, flags uint) *renameWatch {
-	fd, err := unix.FanotifyInit(uint(unix.FAN_CLASS_NOTIF|unix.FAN_REPORT_FID|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK), unix.O_RDONLY)
+	if w := openWatch(paths, flags, renameFlags, renameMask); w != nil {
+		w.creates = true
+		return w
+	}
+	return openWatch(paths, flags, unix.FAN_REPORT_FID, renameOnlyMask)
+}
+
+// openWatch creates a watch group with the report flags and marks each path
+// with mask, or returns nil when the group cannot be created or no path
+// could be marked.
+func openWatch(paths []string, flags uint, report int, mask uint64) *renameWatch {
+	fd, err := unix.FanotifyInit(uint(unix.FAN_CLASS_NOTIF|report|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK), unix.O_RDONLY)
 	if err != nil {
 		return nil
 	}
@@ -273,7 +406,7 @@ func openRenameWatch(paths []string, flags uint) *renameWatch {
 		if err != nil {
 			continue
 		}
-		if unix.FanotifyMark(fd, unix.FAN_MARK_ADD|flags, renameMask, unix.AT_FDCWD, p) == nil {
+		if unix.FanotifyMark(fd, unix.FAN_MARK_ADD|flags, mask, unix.AT_FDCWD, p) == nil {
 			w.guarded[id] = true
 		}
 	}
@@ -316,7 +449,8 @@ func (w *renameWatch) drain(c *dirCache) {
 	}
 }
 
-// apply invalidates the cache for each record in buf.
+// apply keeps the cache for each record in buf, in order: a directory move
+// invalidates, a directory creation is recorded (P-37).
 func (w *renameWatch) apply(c *dirCache, buf []byte) {
 	for offset := 0; offset+metadataSize <= len(buf); {
 		meta := readMetadata(buf[offset:])
@@ -330,13 +464,64 @@ func (w *renameWatch) apply(c *dirCache, buf []byte) {
 		case meta.Mask&unix.FAN_Q_OVERFLOW != 0:
 			c.invalidate(fsID{}, true)
 		case meta.Mask&unix.FAN_ONDIR == 0:
-			// A file moved; no directory's path changed.
+			// A file moved or was created; no directory's path changed.
+		case meta.Mask&unix.FAN_MOVE_SELF == 0 && meta.Mask&unix.FAN_CREATE != 0:
+			// A directory was created. A record whose handles cannot be read
+			// leaves it unnamed, which a later record counts.
+			if fsid, parentType, parent, name, handleType, handle, ok := parseCreation(info); ok {
+				c.link(fsid, handleType, handle, parentType, parent, name)
+			}
 		case len(info) >= 12:
 			c.invalidate(recordFSID(info), false)
 		default:
 			c.invalidate(fsID{}, true)
 		}
 	}
+}
+
+// parseCreation reads a directory creation record of the rename watch: the
+// DFID_NAME record of the parent and the entry's name, and the FID record of
+// the new directory, on one filesystem. ok is false when either is missing,
+// malformed or empty, or the two name different filesystems.
+func parseCreation(info []byte) (fsid fsID, parentType int32, parent []byte, name string, handleType int32, handle []byte, ok bool) {
+	var dfidName, fid []byte
+	for offset := 0; offset+4 <= len(info); {
+		infoLen := int(binary.LittleEndian.Uint16(info[offset+2 : offset+4]))
+		if infoLen < 4 || offset+infoLen > len(info) {
+			return fsID{}, 0, nil, "", 0, nil, false
+		}
+		switch info[offset] {
+		case fanEventInfoTypeDfidName:
+			dfidName = info[offset : offset+infoLen]
+		case fanEventInfoTypeFid:
+			fid = info[offset : offset+infoLen]
+		}
+		offset += infoLen
+	}
+	if len(dfidName) < 20 || len(fid) < 20 {
+		return fsID{}, 0, nil, "", 0, nil, false
+	}
+	parentBytes := int(binary.LittleEndian.Uint32(dfidName[12:16]))
+	if 20+parentBytes > len(dfidName) {
+		return fsID{}, 0, nil, "", 0, nil, false
+	}
+	parentType = int32(binary.LittleEndian.Uint32(dfidName[16:20]))
+	parent = dfidName[20 : 20+parentBytes]
+	nameBytes := dfidName[20+parentBytes:]
+	if i := bytes.IndexByte(nameBytes, 0); i >= 0 {
+		nameBytes = nameBytes[:i]
+	}
+	name = string(nameBytes)
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
+		return fsID{}, 0, nil, "", 0, nil, false
+	}
+	fsid = recordFSID(dfidName)
+	var childFSID fsID
+	childFSID, handleType, handle = extractFID(fid)
+	if handle == nil || childFSID != fsid {
+		return fsID{}, 0, nil, "", 0, nil, false
+	}
+	return fsid, parentType, parent, name, handleType, handle, true
 }
 
 // isRemovedDir reports whether fd is a directory that has been removed: its
