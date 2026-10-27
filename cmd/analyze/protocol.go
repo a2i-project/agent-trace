@@ -94,13 +94,14 @@ func IsHeldOut(task string) bool { return strings.HasPrefix(task, HeldOutPrefix)
 // decision D5 and the mislocation stratum (decision D5). Protocol 6.3's coverage table names
 // `tools` and `long` for background Bash and the read of its output.
 var ToolHeavy = map[string]map[string]bool{
-	AgentClaudeCode: {"tools": true, "long": true},
-	AgentGemini:     {"long": true},
+	AgentClaudeCode: {"tools": true, "long": true, "long-cc": true},
+	AgentGemini:     {"long": true, "long-agy": true},
 }
 
 // IsToolHeavy says whether a task is in the tool-heavy subgroup. A held-out
-// task counts by its name after the prefix, so the user's heldout:long, which
-// meets the `long` requirements of protocol 6.3, is tool-heavy.
+// task counts by its name after the prefix, so the user's heldout:long-cc and
+// heldout:long-agy, which meet the `long` requirements of protocol 6.3, are
+// tool-heavy.
 func IsToolHeavy(agentName, task string) bool {
 	return ToolHeavy[agentName][strings.TrimPrefix(task, HeldOutPrefix)]
 }
@@ -219,4 +220,4 @@ const (
 )
 
 // Protocol identifies the registration the numbers belong to.
-const Protocol = "docs/eval/experiment_protocol.md (draft 2026-10-18) with docs/eval/decisions-2026-10-26.md"
+const Protocol = "docs/eval/experiment_protocol_v2.md (Claude Code registration, draft 2026-10-27)"
