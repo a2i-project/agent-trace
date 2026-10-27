@@ -161,6 +161,14 @@ type Options struct {
 	// what the controls' same command did, as for a baselined command, or it
 	// is an unexplained subtree (V-43). Nil declares nothing.
 	HarnessCommand func(models.GroundTruthEvent) bool
+	// CollapseOpenRuns is declared by an adapter whose claims and observed
+	// stream treat a run of opens of one file by one process as one access,
+	// a run only another file event of that process breaks (Claude Code,
+	// I-22, I-32). The verifier then folds such runs again in the level-0
+	// events left once the baseline's and the harness's own events are set
+	// aside, since those were still there to break a run when the adapter
+	// folded it (V-49). False folds nothing.
+	CollapseOpenRuns bool
 
 	// impliedWitness says whether the command a harness-implied claim names
 	// opened the claim's file no later than the event (V-33). Verify sets it

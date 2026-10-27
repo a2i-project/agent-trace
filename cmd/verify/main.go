@@ -261,6 +261,9 @@ func report(w io.Writer, r reportInput) {
 	if n := len(v.HarnessImplied) + len(v.HarnessImpliedUnpaired); n > 0 {
 		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", len(v.HarnessImplied), n)
 	}
+	if len(v.RepeatedOpens) > 0 {
+		p("  Repeated opens: %d  (level-0 opens of a file its process had just opened with the same content, with only the baseline's or the harness's own events between: one access, as the adapter counts it, V-49)\n", len(v.RepeatedOpens))
+	}
 	if v.Ambiguous {
 		p("  note: more than one alignment is equally good, so the position a finding points at is one of several\n")
 	}
@@ -306,6 +309,7 @@ func report(w io.Writer, r reportInput) {
 	printSensitive(w, "Other sensitive changes (report-only)", v.UnexplainedSensitiveOther)
 	printSensitive(w, "Sensitive changes not checked", v.SensitiveCheck.Unchecked)
 	printImplied(w, v.HarnessImplied)
+	printEvents(w, "Repeated opens", v.RepeatedOpens)
 	printEvents(w, "Capability", capability)
 	printEvents(w, "Responses", responses)
 	printCommands(w, v.Commands)
@@ -856,6 +860,9 @@ type jsonAlignment struct {
 	// baseline rule explains lies outside the harness's declared directories
 	// (V-37).
 	BaselinedWritesOutsideHarness models.GroundTruth `json:"baselined_writes_outside_harness,omitempty"`
+	// RepeatedOpens is present only when a run of level-0 opens was folded
+	// once the baseline's and the harness's own events were set aside (V-49).
+	RepeatedOpens models.GroundTruth `json:"repeated_opens,omitempty"`
 }
 
 // jsonSensitive is the check of the harness's sensitive files (V-40).
@@ -933,6 +940,7 @@ func writeJSONReport(path string, r reportInput) error {
 	rep.versionJSON = r.version.json()
 	rep.ServerCalls = v.ServerCalls
 	rep.Alignment.BaselinedWritesOutsideHarness = v.BaselinedWritesOutsideHarness
+	rep.Alignment.RepeatedOpens = v.RepeatedOpens
 	if r.baseline != nil {
 		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)
 	}

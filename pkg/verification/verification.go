@@ -161,6 +161,12 @@ type Verdict struct {
 	// may not act (V-33), so they cost nothing and are never Unwitnessed;
 	// listed so the reader sees every claim that was considered.
 	HarnessImpliedUnpaired []models.TrajectoryEntry
+	// RepeatedOpens: level-0 opens folded into the open of the same file
+	// and content by the same process before them, once the events between
+	// the two were set aside as the baseline's or the harness's own
+	// (Options.CollapseOpenRuns, V-49). One access, as the adapter counts
+	// it on both sides; not findings, listed so none is lost from view.
+	RepeatedOpens []models.GroundTruthEvent
 	// UnexplainedSensitiveChanges: changes to the harness's declared
 	// security-sensitive files between the start and the stop of the
 	// capture that the control runs never made and that no claim of a write
@@ -455,6 +461,11 @@ func Verify(in Input) Verdict {
 	// claim can pair with it (V-34).
 	hosts := harnessHostSet(in.Options.HarnessHosts)
 	part, v.UnexplainedHarnessNet = part.setAsideHarnessHosts(hosts, claimedHosts(claims))
+	// With those events set aside, a run of opens they alone broke is one
+	// access again, as the adapter's claims count it (V-49).
+	if in.Options.CollapseOpenRuns {
+		part, v.RepeatedOpens = part.collapseOpenRuns(in.Options.HarnessOwned)
+	}
 	if in.Options.IgnoreExits {
 		part = part.DropExits()
 		claims = dropExitClaims(claims)
@@ -717,6 +728,43 @@ func (p Partition) setAsideHarnessOwned(owned func(string) bool, claimed map[str
 		out.Owner = append(out.Owner, p.Owner[i])
 	}
 	return out, aside
+}
+
+// collapseOpenRuns removes from the aligned sequence each level-0 open whose
+// process's previous level-0 file event left in the sequence is an open of
+// the same path, with the same ambiguity and the same content hash, and
+// returns them (V-49). An event in the harness's own directories neither
+// breaks nor joins a run, as in the adapter's own collapse (I-32); commands
+// and other lanes do not break one, since the claims never see them.
+func (p Partition) collapseOpenRuns(owned func(string) bool) (Partition, []models.GroundTruthEvent) {
+	out := p
+	out.Observed, out.Owner = nil, nil
+	var folded []models.GroundTruthEvent
+	last := map[uint32]models.GroundTruthEvent{}
+	for i, e := range p.Observed {
+		if p.Owner[i] == nil && e.PID != 0 && LaneOf(e.ActionType) == LaneFS && !isHarnessOwned(e, owned) {
+			if prev, ok := last[e.PID]; ok && e.ActionType == models.FileOpen && prev.ActionType == models.FileOpen &&
+				prev.Target == e.Target && prev.PathIsAmbiguous == e.PathIsAmbiguous && sameHash(prev.InputHash, e.InputHash) {
+				folded = append(folded, e)
+				continue
+			}
+			last[e.PID] = e
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	if folded == nil {
+		return p, nil
+	}
+	return out, folded
+}
+
+// sameHash reports whether two optional hashes are both absent or equal.
+func sameHash(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // isHarnessOwned reports whether an observed file event lies under the

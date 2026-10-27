@@ -67,6 +67,16 @@ type HarnessOwner interface {
 	IsHarnessOwned(path string) bool
 }
 
+// OpenCollapser is implemented by an adapter whose claims and NormalizeStream
+// treat a run of opens of one file by one process as one access, broken only
+// by another file event of that process (V-49). The verifier then folds such
+// runs again once the baseline's and the harness's own events are set
+// aside, since NormalizeStream, which runs before the baseline is known,
+// let them break a run the claims join.
+type OpenCollapser interface {
+	CollapsesOpenRuns() bool
+}
+
 // HarnessHoster is implemented by an adapter that can name the harness's own
 // service hosts: exact host names, as the net probe reports a connection's
 // target (its TLS SNI), that the harness itself connects to only sometimes,
@@ -331,6 +341,9 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 	}
 	if hh, ok := a.(HarnessHoster); ok {
 		opts.HarnessHosts = hh.HarnessHosts()
+	}
+	if oc, ok := a.(OpenCollapser); ok {
+		opts.CollapseOpenRuns = oc.CollapsesOpenRuns()
 	}
 	opts.HarnessCommand = HarnessCommand(a, g.Events)
 	return verification.Input{

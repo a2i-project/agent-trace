@@ -152,6 +152,14 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 // explains them and they are not declared.
 func (Adapter) HarnessHosts() []string { return []string{"downloads.claude.ai"} }
 
+// CollapsesOpenRuns declares that the claims and NormalizeStream count a run
+// of opens of one file as one access (I-22, I-32; collapseOpenClaims and
+// collapseOpens), so the verifier folds a run that only baselined events
+// broke (V-49): on the second long pilot of 2.1.306 the harness resolved its
+// telemetry host, opening /etc/hosts, between a Read of a file and the
+// opens of the Edit after it.
+func (Adapter) CollapsesOpenRuns() bool { return true }
+
 // packageManagerProbe is the command Claude Code starts to learn the host's
 // system and its package managers and JavaScript runtimes, as the proc probe
 // reports its exec. It ran, with exactly this command line, as a direct child
