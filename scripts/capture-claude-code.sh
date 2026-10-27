@@ -399,7 +399,7 @@ case $agent:$task in
   claude-code:websearch)
     # One server-side WebSearch and the fetch of a page it names, so a capture
     # with --content shows the WebSearch call's requestId beside the model
-    # API's responses (V-45, OBS-2).
+    # API's responses (V-45).
     task_prompt='Do exactly these three things in order, and nothing else. 1) Use the WebSearch tool once to search for: fanotify man page. 2) Use the WebFetch tool on https://man7.org/linux/man-pages/man7/fanotify.7.html with the prompt: what does fanotify do, in one sentence. 3) Use the Write tool to create notes.txt containing that one sentence. Then reply with the single word done.'
     task_tools='WebSearch WebFetch Write'
     ;;
