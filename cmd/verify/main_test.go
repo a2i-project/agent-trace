@@ -1120,3 +1120,67 @@ func TestServerSideCallsAreReportedWithTheirJoin(t *testing.T) {
 		t.Errorf("JSON server calls %+v, parse %+v", rep.ServerCalls, rep.Parse.ServerCalls)
 	}
 }
+
+// V-50: the events the adapter's bookkeeping declaration explains are
+// counted and listed, in the text and the JSON, for the version the session
+// records; a session of another version lists none, prints no count and
+// writes no key, and the same events are unexplained harness activity.
+func TestDeclaredHarnessBookkeepingIsReported(t *testing.T) {
+	dir := t.TempDir()
+	const lock = "/home/u/.local/state/claude/locks/2.1.306.lock"
+	ts := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
+	ev := func(ns int, typ models.ActionType, target string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: ts.Add(time.Duration(ns)), ActionType: typ, Target: target, PID: 100}
+	}
+	g := models.GroundTruthFile{RootPID: 100, Coverage: completeCov(), Events: models.GroundTruth{
+		ev(0, models.FileWrite, lock+".tmp.0a1b2c3d"), ev(1, models.FileRename, lock+".tmp.0a1b2c3d"),
+		ev(2, models.FileOpen, lock+".tmp.0a1b2c3d"), ev(2, models.FileWrite, lock+".tmp.0a1b2c3d"),
+		ev(2, models.FileClose, lock+".tmp.0a1b2c3d"), ev(4, models.FileRename, lock),
+	}}
+	gp := writeJSON(t, dir, "g.json", g)
+	session := func(version string) string {
+		p := filepath.Join(dir, version+".jsonl")
+		line := `{"type":"assistant","timestamp":"2026-10-27T10:00:01Z","sessionId":"s","version":"` + version + `","message":{"id":"m1","content":[{"type":"text","text":"done"}]}}` + "\n"
+		if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	type report struct {
+		Alignment struct {
+			Bookkeeping *models.GroundTruth `json:"harness_bookkeeping"`
+			Harness     models.GroundTruth  `json:"unexplained_harness"`
+		} `json:"alignment"`
+	}
+	read := func(p string) report {
+		var r report
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	jsonOut := filepath.Join(dir, "a.json")
+	code, out, errOut := verify(t, "--agent", "claude-code", "--trajectory", session("2.1.306"), "--ground-truth", gp, "--json", jsonOut)
+	if code != 0 || !strings.Contains(out, "  Declared harness bookkeeping: 6  (") ||
+		!strings.Contains(out, "\nDeclared harness bookkeeping:\n  2026-10-27T10:00:00Z file_write     "+lock+".tmp.0a1b2c3d\n") ||
+		!strings.Contains(out, "Unexplained harness activity: 0  (") || !strings.Contains(out, "VERDICT: FAITHFUL") {
+		t.Fatalf("exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	if r := read(jsonOut); r.Alignment.Bookkeeping == nil || len(*r.Alignment.Bookkeeping) != 6 || len(r.Alignment.Harness) != 0 {
+		t.Errorf("JSON: %+v", r)
+	}
+
+	jsonOut = filepath.Join(dir, "b.json")
+	code, out, errOut = verify(t, "--agent", "claude-code", "--trajectory", session("2.1.305"), "--ground-truth", gp, "--json", jsonOut)
+	if code != 2 || strings.Contains(out, "bookkeeping") || !strings.Contains(out, "Unexplained harness activity: 6  (") {
+		t.Fatalf("exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	if r := read(jsonOut); r.Alignment.Bookkeeping != nil || len(r.Alignment.Harness) != 6 {
+		t.Errorf("JSON: %+v", r)
+	}
+}

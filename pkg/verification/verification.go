@@ -139,6 +139,13 @@ type Verdict struct {
 	// command among them whose subtree is not what the controls' same
 	// command did is also in Coverage.UnexplainedSubtrees, a finding.
 	UnexplainedHarnessCommands []*Command
+	// HarnessBookkeeping: level-0 file events on the exact files the adapter
+	// declares as the harness's own bookkeeping (Options.HarnessBookkeeping),
+	// such as a rewrite of its version lock, that no baseline rule explains
+	// and whose path no claim names. Explained by the declaration: not a
+	// finding and no reason for INCONCLUSIVE; listed so none is lost from
+	// view (V-50).
+	HarnessBookkeeping []models.GroundTruthEvent
 	// OutOfScope: file claims naming a path the capture could not have
 	// observed, by its fs_scope record (an unmarked filesystem, or, for a
 	// capture without the record, a path outside the workspace). They are
@@ -449,6 +456,10 @@ func Verify(in Input) Verdict {
 	// and is reported apart; its subtree must be what the controls' same
 	// command did (V-43).
 	part, v.UnexplainedHarnessCommands = part.setAsideHarnessCommands(in.Options.HarnessCommand, claimedCommands(claims), in.BaselineSubtree)
+	// A level-0 event on a file the adapter declares as the harness's own
+	// bookkeeping, that no rule explains and no claim names, is explained by
+	// the declaration and leaves the sequence (V-50).
+	part, v.HarnessBookkeeping = part.setAsideBookkeeping(in.Options.HarnessBookkeeping, in.Options.HarnessOwned, claimed)
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in
 	// the sequence it could pair with a claim and leave a real one unpaired at
@@ -726,6 +737,32 @@ func (p Partition) setAsideHarnessOwned(owned func(string) bool, claimed map[str
 		}
 		out.Observed = append(out.Observed, e)
 		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	return out, aside
+}
+
+// setAsideBookkeeping removes from the aligned sequence every level-0 file
+// event the adapter's bookkeeping declaration recognises, whose exact path
+// lies under the harness's own directories and no claim names, and returns
+// them (V-50). An event with an ambiguous or truncated path is never taken:
+// it does not name the declared file.
+func (p Partition) setAsideBookkeeping(bookkeeping func(models.GroundTruthEvent) bool, owned func(string) bool, claimed map[string]bool) (Partition, []models.GroundTruthEvent) {
+	if bookkeeping == nil || owned == nil {
+		return p, nil
+	}
+	out := p
+	out.Observed, out.Owner = nil, nil
+	var aside []models.GroundTruthEvent
+	for i, e := range p.Observed {
+		if p.Owner[i] == nil && isHarnessOwned(e, owned) && !e.PathIsAmbiguous && !e.TargetTruncated && !claimed[e.Target] && bookkeeping(e) {
+			aside = append(aside, e)
+			continue
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	if aside == nil {
+		return p, nil
 	}
 	return out, aside
 }

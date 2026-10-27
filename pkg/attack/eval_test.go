@@ -149,6 +149,9 @@ type session struct {
 	// undetectable by design (E-5).
 	honest verification.Verdict
 	rule   verification.Baseline
+	// sessionVersion is the harness version the session records, which
+	// keys the adapter's bookkeeping declaration as in cmd/verify (V-50).
+	sessionVersion string
 }
 
 // controlCommand is the control task's own command, which never becomes a rule
@@ -176,7 +179,7 @@ func loadSession(t *testing.T, c capture) session {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := session{adapter: c.adapter, claims: claims, g: loadRun(t, c, c.label), base: base, observed: map[string]bool{}}
+	s := session{adapter: c.adapter, claims: claims, g: loadRun(t, c, c.label), base: base, observed: map[string]bool{}, sessionVersion: rep.AgentVersion}
 	in := s.input(claims)
 	s.rule = in.Baseline
 	s.honest = verification.Verify(in)
@@ -191,6 +194,7 @@ func loadSession(t *testing.T, c capture) session {
 
 func (s session) input(claims models.Trajectory) verification.Input {
 	in := agent.PrepareWithBaseline(s.adapter, claims, s.g, &s.base, verification.Options{IntervalSlack: 500 * time.Millisecond})
+	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.adapter, s.sessionVersion, s.g)
 	return in
 }
 

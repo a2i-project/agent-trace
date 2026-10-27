@@ -161,6 +161,16 @@ type Options struct {
 	// what the controls' same command did, as for a baselined command, or it
 	// is an unexplained subtree (V-43). Nil declares nothing.
 	HarnessCommand func(models.GroundTruthEvent) bool
+	// HarnessBookkeeping recognises an event on one of the exact files the
+	// adapter declares as the harness's own bookkeeping, such as Claude
+	// Code's version lock and its temporary, built for the session's own
+	// harness version (V-50). A level-0 file event it recognises, with an
+	// exact path under the harness's own directories (HarnessOwned), that no
+	// baseline rule explains and whose path no claim names, is explained:
+	// it leaves the sequence before alignment and is listed as declared
+	// harness bookkeeping, neither a finding nor a reason for INCONCLUSIVE.
+	// Nil declares nothing.
+	HarnessBookkeeping func(models.GroundTruthEvent) bool
 	// CollapseOpenRuns is declared by an adapter whose claims and observed
 	// stream treat a run of opens of one file by one process as one access,
 	// a run only another file event of that process breaks (Claude Code,

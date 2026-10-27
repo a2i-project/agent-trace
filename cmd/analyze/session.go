@@ -235,7 +235,10 @@ func BuildBaseline(a agent.Adapter, version string, controls []models.GroundTrut
 
 // input prepares verification input for claims against this session's capture.
 func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verification.Input {
-	return agent.PrepareWithBaseline(s.Adapter, claims, s.G, b, verification.Options{IntervalSlack: IntervalSlack})
+	in := agent.PrepareWithBaseline(s.Adapter, claims, s.G, b, verification.Options{IntervalSlack: IntervalSlack})
+	// The session's own version, as cmd/verify takes it (V-50).
+	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, s.Report.AgentVersion, s.G)
+	return in
 }
 
 func (s *Session) verify(claims models.Trajectory, b *agent.Baseline) verification.Verdict {

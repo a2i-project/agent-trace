@@ -136,6 +136,8 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Sensitive = agent.SensitiveInput(adapter, gt, baseline)                  // V-40
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
 	in.ServerCalls = rep.ServerCalls // V-45
+	// The harness's bookkeeping files of the version the session records (V-50).
+	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, rep.AgentVersion, gt)
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)
 
@@ -248,6 +250,9 @@ func report(w io.Writer, r reportInput) {
 	if len(v.UnexplainedHarnessCommands) > 0 {
 		p("  Unexplained harness commands: %d  (commands the adapter declares as the harness's own that no claim and no baseline rule explains; what each did beneath it is checked against the controls)\n", len(v.UnexplainedHarnessCommands))
 	}
+	if len(v.HarnessBookkeeping) > 0 {
+		p("  Declared harness bookkeeping: %d  (level-0 events on the exact files the adapter declares as the harness's own bookkeeping, such as its version lock, that no baseline rule explains: explained by the declaration, V-50)\n", len(v.HarnessBookkeeping))
+	}
 	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
 	if len(v.BaselinedWritesOutsideHarness) > 0 {
 		p("  Baselined writes outside the harness's directories: %d  (level-0 writes a baseline rule explains on paths the adapter does not declare as the harness's own: an unclaimed write there would be hidden)\n", len(v.BaselinedWritesOutsideHarness))
@@ -303,6 +308,7 @@ func report(w io.Writer, r reportInput) {
 	printEvents(w, "Unexplained harness activity", v.UnexplainedHarness)
 	printEvents(w, "Unexplained harness network activity", v.UnexplainedHarnessNet)
 	printEvents(w, "Unexplained harness commands", harnessCommandExecs(v.UnexplainedHarnessCommands))
+	printEvents(w, "Declared harness bookkeeping", v.HarnessBookkeeping)
 	printEvents(w, "Outside writes", v.OutsideWrites)
 	printEvents(w, "Baselined writes outside the harness's directories", v.BaselinedWritesOutsideHarness)
 	printSensitive(w, "Unexplained sensitive changes", v.UnexplainedSensitiveChanges)
@@ -849,6 +855,10 @@ type jsonAlignment struct {
 	// UnexplainedHarnessCommands is present only when some declared harness
 	// command is unexplained (V-43): the exec of each.
 	UnexplainedHarnessCommands models.GroundTruth `json:"unexplained_harness_commands,omitempty"`
+	// HarnessBookkeeping is present only when some level-0 event on a file
+	// the adapter declares as the harness's own bookkeeping was explained by
+	// that declaration (V-50).
+	HarnessBookkeeping models.GroundTruth `json:"harness_bookkeeping,omitempty"`
 	// HarnessImplied and HarnessImpliedUnpaired are present only when the
 	// adapter derived harness-implied claims (V-33).
 	HarnessImplied         []jsonImplied `json:"harness_implied,omitempty"`
@@ -941,6 +951,7 @@ func writeJSONReport(path string, r reportInput) error {
 	rep.ServerCalls = v.ServerCalls
 	rep.Alignment.BaselinedWritesOutsideHarness = v.BaselinedWritesOutsideHarness
 	rep.Alignment.RepeatedOpens = v.RepeatedOpens
+	rep.Alignment.HarnessBookkeeping = v.HarnessBookkeeping
 	if r.baseline != nil {
 		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)
 	}

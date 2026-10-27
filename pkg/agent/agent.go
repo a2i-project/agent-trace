@@ -104,6 +104,40 @@ type HarnessCommander interface {
 	HarnessCommands() []string
 }
 
+// HarnessBookkeeper is implemented by an adapter that can name the exact
+// files the harness itself rewrites as bookkeeping, in shapes or at times
+// the control runs do not all show, such as Claude Code's version lock.
+// Given the harness version the session records and the home the capture
+// resolved "~/" against (empty when the capture does not say), it returns a
+// predicate that recognises an event on one of those files with one of the
+// event kinds the harness's own rewrite produces, or nil to declare nothing.
+// The verifier explains a level-0 event it recognises, under the harness's
+// own directories (HarnessOwner) and on a path no claim names, as declared
+// harness bookkeeping: not a finding and no reason for INCONCLUSIVE (V-50).
+// Unlike HarnessOwner this explains, so a declaration names exact files of
+// one version, never a directory.
+type HarnessBookkeeper interface {
+	HarnessBookkeeping(version, home string) func(models.GroundTruthEvent) bool
+}
+
+// HarnessBookkeeping is the adapter's bookkeeping declaration for a capture
+// and the harness version its session records (Report.AgentVersion), as
+// the verifier takes it (verification.Options.HarnessBookkeeping, V-50).
+// Nil when the adapter declares nothing or the session states no version:
+// a declaration is keyed by the version, and a version from anywhere else
+// (a configuration, a flag) is not the one the harness ran.
+func HarnessBookkeeping(a Adapter, version string, g models.GroundTruthFile) func(models.GroundTruthEvent) bool {
+	hb, ok := a.(HarnessBookkeeper)
+	if !ok || version == "" {
+		return nil
+	}
+	home := ""
+	if g.Sensitive != nil {
+		home = g.Sensitive.Home
+	}
+	return hb.HarnessBookkeeping(version, home)
+}
+
 // HarnessCommand recognises, among a capture's normalized events, the execs
 // of the adapter's declared harness commands (V-43): an exec whose raw
 // target, before Normalize, is exactly a declared command line, not

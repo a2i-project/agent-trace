@@ -152,6 +152,66 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 // explains them and they are not declared.
 func (Adapter) HarnessHosts() []string { return []string{"downloads.claude.ai"} }
 
+// versionPattern is the shape of a Claude Code version as its session
+// records it and as it names its version lock.
+var versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// homePattern is a home directory as I-30 declares the harness's own
+// directories under one.
+var homePattern = regexp.MustCompile(`^/(?:home/[^/]+|root)$`)
+
+// lockKinds are the event kinds the harness's own rewrite of its version
+// lock produces, on the lock and on its temporary, in every shape of the
+// checked captures of 2.1.286, 2.1.296 and 2.1.306 and the long pilots of
+// 2.1.306: the temporary is written, opened, written, closed and renamed;
+// the lock is renamed onto, opened, and, in the in-place shapes of 2.1.286
+// and 2.1.296, written and closed, and it is deleted at exit. No capture
+// shows a create, or a delete of the temporary.
+var lockKinds = map[models.ActionType]bool{
+	models.FileOpen: true, models.FileWrite: true, models.FileClose: true, models.FileRename: true, models.FileDelete: true,
+}
+
+// tempKinds are the kinds the rewrite produces on the temporary.
+var tempKinds = map[models.ActionType]bool{
+	models.FileOpen: true, models.FileWrite: true, models.FileClose: true, models.FileRename: true,
+}
+
+// HarnessBookkeeping declares the harness's version lock as its own
+// bookkeeping (V-50): ~/.local/state/claude/locks/<version>.lock for the
+// version the session records, and its temporary <version>.lock.tmp.<8 hex
+// digits>, with the kinds of lockKinds and tempKinds. The harness writes the
+// temporary and renames it onto the lock at start-up, and on the third long
+// pilot of 2.1.306 the probe reported that rename before the temporary's
+// open, write and close, a shape the fold of NormalizeStream does not take,
+// so the six events stayed unexplained (V-24). The home is the one the
+// capture resolved "~/" against when it recorded one, else any home I-30
+// declares. A version that is not three dot-separated numbers declares
+// nothing. Another version's lock, the lock directory itself, and every
+// other file there stay unexplained harness activity.
+func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthEvent) bool {
+	if !versionPattern.MatchString(version) {
+		return nil
+	}
+	h := `/(?:home/[^/]+|root)`
+	if home != "" {
+		if home != filepath.Clean(home) || !homePattern.MatchString(home) {
+			return nil
+		}
+		h = regexp.QuoteMeta(home)
+	}
+	lock := regexp.MustCompile(`^` + h + `/\.local/state/claude/locks/` + regexp.QuoteMeta(version) + `\.lock(\.tmp\.[0-9a-f]{8})?$`)
+	return func(e models.GroundTruthEvent) bool {
+		m := lock.FindStringSubmatch(e.Target)
+		if m == nil {
+			return false
+		}
+		if m[1] != "" {
+			return tempKinds[e.ActionType]
+		}
+		return lockKinds[e.ActionType]
+	}
+}
+
 // CollapsesOpenRuns declares that the claims and NormalizeStream count a run
 // of opens of one file as one access (I-22, I-32; collapseOpenClaims and
 // collapseOpens), so the verifier folds a run that only baselined events
