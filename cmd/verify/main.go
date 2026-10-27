@@ -268,8 +268,12 @@ func report(w io.Writer, r reportInput) {
 			p("  Other sensitive changes: %d  (report-only: the same, outside the security-relevant keys of a file that mixes the harness's state with its settings, such as caches and counters; not findings)\n", len(v.UnexplainedSensitiveOther))
 		}
 	}
-	if n := len(v.HarnessImplied) + len(v.HarnessImpliedUnpaired); n > 0 {
-		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", len(v.HarnessImplied), n)
+	opens, opensPaired := impliedCount(v, verification.LaneFS)
+	if opens > 0 {
+		p("  Harness implied: %d of %d  (opens the harness itself may make after a call, such as reading the file a Bash command read: explained, not the agent's claims; the rest unpaired at no cost)\n", opensPaired, opens)
+	}
+	if net, netPaired := impliedCount(v, verification.LaneNet); net > 0 {
+		p("  Harness implied network: %d of %d  (requests and connections the harness itself may make for a call, such as a WebFetch's domain check or a fetch it may serve from its cache: explained, not the agent's claims; the rest unpaired at no cost, V-52)\n", netPaired, net)
 	}
 	if len(v.RepeatedOpens) > 0 {
 		p("  Repeated opens: %d  (level-0 opens of a file its process had just opened with the same content, with only the baseline's or the harness's own events between: one access, as the adapter counts it, V-49)\n", len(v.RepeatedOpens))
@@ -555,9 +559,27 @@ func printPairs(w io.Writer, label string, pairs []verification.MatchedPair) {
 	}
 }
 
+// impliedCount returns how many harness-implied claims of a lane the run
+// holds and how many of them paired.
+func impliedCount(v verification.Verdict, lane verification.Lane) (all, paired int) {
+	for _, p := range v.HarnessImplied {
+		if verification.LaneOf(p.Entry.ActionType) == lane {
+			all++
+			paired++
+		}
+	}
+	for _, c := range v.HarnessImpliedUnpaired {
+		if verification.LaneOf(c.ActionType) == lane {
+			all++
+		}
+	}
+	return all, paired
+}
+
 // printImplied lists the harness-implied claims that paired, each with the
 // call that implied it, whether the harness acted after or before it
-// (V-48), and the open it explains (V-33).
+// (V-48), or for it (a request or a connection, V-52), and the event it
+// explains (V-33).
 func printImplied(w io.Writer, pairs []verification.MatchedPair) {
 	if len(pairs) == 0 {
 		return
@@ -565,7 +587,10 @@ func printImplied(w io.Writer, pairs []verification.MatchedPair) {
 	_, _ = fmt.Fprintln(w, "\nHarness implied:")
 	for _, p := range pairs {
 		order := "after"
-		if p.Entry.ImpliedBefore {
+		switch {
+		case verification.LaneOf(p.Entry.ActionType) == verification.LaneNet:
+			order = "for"
+		case p.Entry.ImpliedBefore:
 			order = "before"
 		}
 		_, _ = fmt.Fprintf(w, "  %s %-14s %s  (%s %q)\n", p.Event.Timestamp.Format(time.RFC3339Nano), p.Event.ActionType, p.Event.Target, order, p.Entry.ImpliedBy)

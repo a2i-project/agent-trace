@@ -668,6 +668,11 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	var tr models.Trajectory
 	unknown := map[string]bool{}
 	writeUnknown := 0
+	// fetched are the URLs of the WebFetch calls so far, and the counts are
+	// of the calls whose request is claimed and of those whose URL's request
+	// cannot be predicted (I-72).
+	fetched := map[string]bool{}
+	fetchRequests, fetchUnpredicted := 0, 0
 	for _, u := range uses {
 		base := models.TrajectoryEntry{Timestamp: u.ts, ThreadID: u.thread, Tool: u.name}
 		res, hasResult := results[u.id]
@@ -690,6 +695,14 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		}
 		if why == "" && u.name == toolGrep && hasResult && grepOpenVersions[rep.AgentVersion] {
 			entries = append(entries, grepOpenClaims(u, base, res)...)
+		}
+		if why == "" && u.name == toolWebFetch && hasResult && webFetchVersions[rep.AgentVersion] {
+			if claims, ok := webFetchClaims(u, base, res, fetched); ok {
+				entries = claims
+				fetchRequests++
+			} else {
+				fetchUnpredicted++
+			}
 		}
 		if u.name == toolWrite && why == "" && res.kind != "create" && res.kind != "update" {
 			writeUnknown++
@@ -724,6 +737,12 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	}
 	if len(unknown) > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("tools with no mapping and not declared non-effectful: %s; their effects, if any, will appear unexplained", strings.Join(rep.UnknownTools, ", ")))
+	}
+	if fetchRequests > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d WebFetch call(s) claim their GET, checked only when the capture read the agent's request content, and the harness's domain check as harness-implied; a redirect the harness follows within the site is a request no claim names (I-72)", fetchRequests))
+	}
+	if fetchUnpredicted > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d WebFetch call(s) have a URL whose request the adapter cannot predict, so only their connection is claimed (I-72)", fetchUnpredicted))
 	}
 	return tr, rep, nil
 }

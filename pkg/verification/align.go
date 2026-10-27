@@ -194,10 +194,18 @@ type Options struct {
 }
 
 // implied reports whether a claim is harness-implied (V-33): marked by an
-// adapter and a file open. A marker on any other type is ignored, so the
-// claim is aligned as an ordinary one.
+// adapter and a file open, or a request or a connection of the agent's own
+// process (V-52). A marker on any other type is ignored, so the claim is
+// aligned as an ordinary one.
 func implied(c models.TrajectoryEntry) bool {
-	return c.ImpliedBy != "" && c.ActionType == models.FileOpen
+	if c.ImpliedBy == "" {
+		return false
+	}
+	switch c.ActionType {
+	case models.FileOpen, models.NetRequest, models.NetConnect:
+		return true
+	}
+	return false
 }
 
 // insertCost is the cost of leaving a claim unpaired: an ordinary claim is a
@@ -217,7 +225,20 @@ func insertCost(c models.TrajectoryEntry) int {
 // first by the command the claim names. Any other pairing is refused, so a
 // harness-implied claim is never Mismatched, never outside its interval and
 // never unverified.
+//
+// A harness-implied request or connection (V-52) pairs only with an event of
+// its own type whose target is exactly the claim's as a string and whose
+// body is the claim's (none for none), with the same conditions on content
+// and interval, and with no command to witness it: the
+// aligned sequence holds only the agent's own network events, a command's
+// being content of its subtree.
 func impliedPairs(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Options) bool {
+	if c.ActionType == models.NetRequest || c.ActionType == models.NetConnect {
+		if e.ActionType != c.ActionType || e.Target != c.Target || e.TargetTruncated || !eqPtr(e.RequestHash, c.RequestHash) {
+			return false
+		}
+		return len(contentDiffs(c, e, opts.Expresses)) == 0 && len(unverifiedFields(c, e)) == 0 && !outsideInterval(c, e, opts.IntervalSlack)
+	}
 	if e.ActionType != models.FileOpen || !samePath(c.Target, e.Target, opts.mounts) || e.PathIsAmbiguous || e.TargetTruncated {
 		return false
 	}

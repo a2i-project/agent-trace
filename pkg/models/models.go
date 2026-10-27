@@ -44,14 +44,16 @@ type TrajectoryEntry struct {
 	// being verified, so it is a hint and never a basis for trust.
 	Tool string `json:"tool,omitempty"`
 	// ImpliedBy marks a harness-implied claim (V-33): an action the harness
-	// may or may not perform on its own because of a call, here a read of the
-	// file a Bash command read, with the claimed command it follows. Only an
-	// adapter's derivation sets it, never the agent: it has no JSON form, so
-	// no trajectory read from JSON can carry it, and ParseTrajectory rejects
-	// input that names it. The verifier lets such a claim pair only with an
-	// open of exactly its target that the named command's subtree opened
-	// first, and costs nothing when it stays unpaired. Empty for every
-	// claim of the agent.
+	// may or may not perform on its own because of a call, such as a read of
+	// the file a Bash command read, with the claimed command it follows, or
+	// a request the harness makes for a WebFetch, with the call (V-52). Only
+	// an adapter's derivation sets it, never the agent: it has no JSON form,
+	// so no trajectory read from JSON can carry it, and ParseTrajectory
+	// rejects input that names it. The verifier lets an open pair only with
+	// an open of exactly its target that the named command's subtree opened
+	// first, and a request or a connection only with one of the agent's own
+	// process with exactly its target; it costs nothing when it stays
+	// unpaired. Empty for every claim of the agent.
 	ImpliedBy string `json:"-"`
 	// ImpliedBefore marks a harness-implied claim whose action comes before
 	// the command it names reads the same file, as Claude Code's Grep opens

@@ -357,6 +357,22 @@ func NormalizeGround(a Adapter, events models.GroundTruth) models.GroundTruth {
 	return ground
 }
 
+// ContentClaimer is implemented by an adapter some of whose claims only a
+// capture that read the agent's request content can witness, such as Claude
+// Code's WebFetch request (I-72). Without that content the probe emits no
+// request at all, so such a claim would be Unwitnessed for the capture's
+// limit, not the agent's; Prepare drops it, and the adapter keeps a claim the
+// capture can check, the connection, beside it.
+type ContentClaimer interface {
+	NeedsContent(models.TrajectoryEntry) bool
+}
+
+// contentRead reports whether the capture read the agent's request content:
+// the net probe's content capture was active (N-16).
+func contentRead(c *models.Coverage) bool {
+	return c != nil && c.Probes["net"].Content == models.ContentActive
+}
+
 // Prepare turns a capture and an adapter into verification input: observed
 // events are normalized, the adapter's noise filter and the measured baseline
 // are combined into one baseline, and the adapter's field declarations and
@@ -364,6 +380,15 @@ func NormalizeGround(a Adapter, events models.GroundTruth) models.GroundTruth {
 // was built from other runs, so it sees each event in its canonical form; the
 // events the verifier pairs keep their exact targets (I-41).
 func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, measured verification.Baseline, opts verification.Options) verification.Input {
+	if cc, ok := a.(ContentClaimer); ok && !contentRead(g.Coverage) {
+		kept := make(models.Trajectory, 0, len(claims))
+		for _, c := range claims {
+			if !cc.NeedsContent(c) {
+				kept = append(kept, c)
+			}
+		}
+		claims = kept
+	}
 	ground := NormalizeGround(a, g.Events)
 	baseline := func(e models.GroundTruthEvent) bool {
 		return a.IsHarnessNoise(e) || (measured != nil && measured(canonical(a, e)))
