@@ -119,6 +119,14 @@ Blocked by: An agent that emits `git_commit` claims. No current adapter does.
 
 ## Proposals (not decided)
 
+### O-35: Explaining a long task's harness files that short controls never write
+Status: Open.
+Date: 2026-10-27 (the first `long` pilot of Claude Code 2.1.306).
+Question: How should the harness's writes that only a task's own tool use produces, such as a subagent's transcript and metadata under the session's directory, be explained, when the controls, which run one marker command, never produce them?
+Options: (a) report only: they stay unexplained harness activity and the run is INCONCLUSIVE (V-24); (b) controls that also exercise those harness paths, for example a control task that runs one subagent which does nothing, as the `tools` captures' controls did, at the cost of longer controls and model calls in each; (c) a declared harness-owned path set the adapter derives from the session itself (V-24, I-30): the subagent files of each subagent the transcript names, under the session's own directory, explained without a rule, which trusts the transcript to name its own files; (d) (b) for the campaign now and (c) only if (b) leaves events.
+Current behaviour: (a). With I-70 the pilot's 702 unexplained harness events become 20, all the subagent's `agent-<id>.jsonl` and `agent-<id>.meta.json`, and the run stays INCONCLUSIVE on them.
+Blocked by: A choice by the user. Recommendation: (b), since it measures the harness instead of trusting the transcript, and the campaign already pins the model and pays for five controls.
+
 ### O-34: Capture `SSL_write` at its return, with the number of bytes the call wrote
 Status: Open.
 Date: 2026-10-27 (the first `long` pilot of Claude Code 2.1.306).

@@ -21,8 +21,9 @@ const BaselineSchema = 1
 // so a baseline measured in one directory applies to a run in another. The
 // harness inspects the working directory (a git status, a file listing), and
 // those commands name it. MangledWorkspacePlaceholder stands for the same
-// directory with every slash replaced by a dash, which is how Claude Code
-// names the per-project directory that holds its transcripts.
+// directory with every character but an ASCII letter or digit replaced by a
+// dash, which is how Claude Code names the per-project directories that hold
+// its transcripts, task outputs and logs (I-70).
 const (
 	WorkspacePlaceholder        = "{workspace}"
 	MangledWorkspacePlaceholder = "{workspace-}"
@@ -433,11 +434,39 @@ func templateWorkspace(target, workspace string) string {
 		return target
 	}
 	target = strings.ReplaceAll(target, workspace, WorkspacePlaceholder)
-	return strings.ReplaceAll(target, mangle(workspace), MangledWorkspacePlaceholder)
+	if m, ok := mangle(workspace); ok {
+		target = strings.ReplaceAll(target, m, MangledWorkspacePlaceholder)
+	}
+	return target
 }
 
-// mangle is the workspace as Claude Code spells it in a directory name.
-func mangle(workspace string) string { return strings.ReplaceAll(workspace, "/", "-") }
+// maxMangled is the longest directory name Claude Code derives from a path
+// as it is; a longer one it cuts and suffixes with a hash of the path.
+const maxMangled = 200
+
+// mangle is the workspace as Claude Code spells it in a directory name
+// (I-70): every UTF-16 code unit that is not an ASCII letter or digit
+// becomes a dash, as its replace(/[^a-zA-Z0-9]/g, "-") does. ok is false
+// for a name longer than maxMangled, which the harness shortens with a hash
+// this package does not compute.
+func mangle(workspace string) (string, bool) {
+	var b strings.Builder
+	n := 0
+	for _, r := range workspace {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			n++
+		case r > 0xffff:
+			b.WriteString("--")
+			n += 2
+		default:
+			b.WriteByte('-')
+			n++
+		}
+	}
+	return b.String(), n <= maxMangled
+}
 
 func sortRules(r []Rule) {
 	sort.Slice(r, func(i, j int) bool {
@@ -477,7 +506,14 @@ func expandWorkspace(target, workspace string) (string, bool) {
 		return "", false
 	}
 	target = strings.ReplaceAll(target, WorkspacePlaceholder, workspace)
-	return strings.ReplaceAll(target, MangledWorkspacePlaceholder, mangle(workspace)), true
+	if !strings.Contains(target, MangledWorkspacePlaceholder) {
+		return target, true
+	}
+	m, ok := mangle(workspace)
+	if !ok {
+		return "", false
+	}
+	return strings.ReplaceAll(target, MangledWorkspacePlaceholder, m), true
 }
 
 // Subtree returns what the baseline's commands did beneath them in the

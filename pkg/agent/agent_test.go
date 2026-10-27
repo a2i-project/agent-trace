@@ -351,6 +351,59 @@ func TestCaptureTemplatesTheMangledWorkspace(t *testing.T) {
 	}
 }
 
+// Claude Code turns every character of the path but an ASCII letter or digit
+// into a dash, not only the slashes (I-70): a workspace under a directory
+// with an underscore or a dot was not templated, so no rule for the
+// harness's per-project files matched a run in another workspace, and the
+// first long pilot of 2.1.306 left 702 such events unexplained.
+func TestCaptureTemplatesTheMangledWorkspaceWithAnyCharacter(t *testing.T) {
+	a := fake{name: "f"}
+	r := runFile(100, models.GroundTruth{
+		ev(models.FileWrite, "/home/u/.claude/projects/-tmp-my-runs-v2-1-306-ws-control-1/SESSION.jsonl", 100, 0),
+		ev(models.FileOpen, "/tmp/claude-1000/-tmp-my-runs-v2-1-306-ws-control-1/SESSION/tasks/N.output", 100, 0),
+	})
+	r.Workspace = "/tmp/my_runs/v2.1.306/ws-control-1"
+	b, err := Capture(a, "v", []models.GroundTruthFile{r}, t0, CaptureOptions{})
+	if err != nil || len(b.Rules) != 2 {
+		t.Fatalf("Capture = %+v, %v", b.Rules, err)
+	}
+	for _, r := range b.Rules {
+		if !strings.Contains(r.Target, "/"+MangledWorkspacePlaceholder+"/") {
+			t.Errorf("rule %q does not name the mangled placeholder", r.Target)
+		}
+	}
+	p := b.Predicate("/tmp/my_runs/v2.1.306/ws-long")
+	if !p(ev(models.FileWrite, "/home/u/.claude/projects/-tmp-my-runs-v2-1-306-ws-long/SESSION.jsonl", 100, 0)) {
+		t.Error("the rule does not match the task run's transcript directory")
+	}
+	if p(ev(models.FileWrite, "/home/u/.claude/projects/-tmp-my_runs-v2.1.306-ws-long/SESSION.jsonl", 100, 0)) {
+		t.Error("the rule matches a directory the harness would not name")
+	}
+}
+
+func TestMangleIsClaudeCodesProjectName(t *testing.T) {
+	long := "/" + strings.Repeat("a", maxMangled)
+	for in, want := range map[string]string{
+		"/ws/tools":                         "-ws-tools",
+		"/home/u/reproducible_trajectories": "-home-u-reproducible-trajectories",
+		"/r/claude-code-2.1.306/run-01":     "-r-claude-code-2-1-306-run-01",
+		"/w/caf\u00e9 x":                    "-w-caf--x",
+		"/w/\U0001F600":                     "-w---",
+		long[:maxMangled]:                   "-" + strings.Repeat("a", maxMangled-1),
+	} {
+		if got, ok := mangle(in); got != want || !ok {
+			t.Errorf("mangle(%q) = %q, %v, want %q", in, got, ok, want)
+		}
+	}
+	if _, ok := mangle(long); ok {
+		t.Errorf("a name over %d characters must not be mangled: the harness hashes it", maxMangled)
+	}
+	b := Baseline{Rules: []Rule{{ActionType: models.FileWrite, Target: "/h/.claude/projects/" + MangledWorkspacePlaceholder + "/S.jsonl"}}}
+	if p := b.Predicate(long); p(ev(models.FileWrite, "/h/.claude/projects/-"+strings.Repeat("a", maxMangled)+"/S.jsonl", 100, 0)) {
+		t.Error("a rule naming the mangled placeholder matched a workspace whose name the harness hashes")
+	}
+}
+
 // foldFake folds every pair of events on one target into the first, as a
 // stand-in for an adapter's atomic-write fold.
 type foldFake struct{ fake }
