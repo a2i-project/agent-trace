@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/asm"
 	"github.com/cilium/ebpf/ringbuf"
 )
 
@@ -119,5 +120,89 @@ func TestDrainRead(t *testing.T) {
 				t.Errorf("deadline set = %v, want %v", d.set, c.setDdl)
 			}
 		})
+	}
+}
+
+// hasCycle reports whether the instructions' control flow has a cycle: a
+// jump that reaches an instruction on its own path. Calls fall through.
+func hasCycle(insns asm.Instructions) bool {
+	index := map[asm.RawInstructionOffset]int{}
+	var raw []asm.RawInstructionOffset
+	iter := insns.Iterate()
+	for iter.Next() {
+		index[iter.Offset] = len(raw)
+		raw = append(raw, iter.Offset)
+	}
+	succ := func(i int) []int {
+		in := insns[i]
+		op := in.OpCode
+		var next []int
+		fall := i + 1
+		if op.Class().IsJump() {
+			switch op.JumpOp() {
+			case asm.Exit:
+				return nil
+			case asm.Call:
+			default:
+				target := raw[i] + asm.RawInstructionOffset(in.Size()/asm.InstructionSize) + asm.RawInstructionOffset(in.Offset)
+				if t, ok := index[target]; ok {
+					next = append(next, t)
+				}
+				if op.JumpOp() == asm.Ja {
+					return next
+				}
+			}
+		}
+		if fall < len(insns) {
+			next = append(next, fall)
+		}
+		return next
+	}
+	const white, grey, black = 0, 1, 2
+	color := make([]int, len(insns))
+	var visit func(int) bool
+	visit = func(i int) bool {
+		color[i] = grey
+		for _, j := range succ(i) {
+			if color[j] == grey || (color[j] == white && visit(j)) {
+				return true
+			}
+		}
+		color[i] = black
+		return false
+	}
+	for i := range insns {
+		if color[i] == white && visit(i) {
+			return true
+		}
+	}
+	return false
+}
+
+// No program holds a loop the verifier must walk path by path: the argument
+// loop is unrolled, and the path walk runs one step per bpf_loop call, whose
+// callback the verifier checks once (P-36). An open-coded walk exceeded the
+// verifier's million instructions on Linux 7.0. Runs without root; the load
+// itself is checked by the privileged tests.
+func TestSpec_NoOpenCodedLoops(t *testing.T) {
+	spec, err := loadBpf()
+	if err != nil {
+		t.Fatalf("loadBpf: %v", err)
+	}
+	for name, ps := range spec.Programs {
+		if hasCycle(ps.Instructions) {
+			t.Errorf("program %s has a loop in its control flow", name)
+		}
+	}
+	for _, name := range []string{"handle_exec_cwd", "handle_exec_ok"} {
+		loops := 0
+		for _, in := range spec.Programs[name].Instructions {
+			if in.IsBuiltinCall() && in.Constant == int64(asm.FnLoop) {
+				loops++
+			}
+		}
+		if loops != 1 {
+			t.Errorf("program %s calls bpf_loop %d times, want the path walk's one", name, loops)
+		}
 	}
 }

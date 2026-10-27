@@ -326,58 +326,122 @@ static __always_inline int kernel_nul_at(const char *s, __u32 i)
 	return !bpf_probe_read_kernel(&c, 1, s + i) && c == '\0';
 }
 
-// walk_path writes the path of dentry d on mount vm, as seen from the root
-// root_d on root_vm, into area: the names from d up, leaf first, each with
-// its NUL (P-36). It returns the bytes written and sets *cut unless the walk
-// reached the root. bpf_d_path is not available to a raw tracepoint (the
-// kernel allows it only to tracing and LSM programs on a list of functions),
-// so this is the walk prepend_path does, without its locks: a step that
-// meets the root of a mount continues at the mount point in the parent
-// mount, and a walk that meets the namespace's top without passing the
-// process's root ends there. A dentry that is its own parent without being
-// a mount root (a disconnected one) ends the walk cut. area must hold
-// PATH_AREA bytes.
-static __always_inline __u32 walk_path(char *area, struct dentry *d, struct vfsmount *vm,
+// The path walk (P-36). bpf_d_path is not available to a raw tracepoint
+// (the kernel allows it only to tracing and LSM programs on a list of
+// functions), so the probe makes the walk prepend_path makes, without its
+// locks: from a dentry up to the process's root, writing the names leaf
+// first, each with its NUL; a step that meets the root of a mount continues
+// at the mount point in the parent mount without a name, and a walk that
+// meets the namespace's top without passing the process's root ends there.
+// A dentry that is its own parent without being a mount root (a disconnected
+// one), a full area or a failed read ends the walk cut.
+//
+// Each step is one call of walk_step under bpf_loop, so the verifier checks
+// the step once, with its state at entry widened, instead of every path
+// through PATH_DEPTH copies of it: an open-coded loop, whose two ways
+// forward per step (a name or a mount crossed) the verifier kept apart,
+// exceeded its limit of a million instructions on Linux 7.0. bpf_loop is a
+// base helper, available to raw tracepoints since Linux 5.17.
+
+#define WALK_EXEC 0 // the area follows the arguments in heap's slot for this CPU
+#define WALK_OK   1 // the area is ok_heap's path
+
+struct walk_state {
+	__u64 d, vm, m; // the dentry, its vfsmount and its struct mount
+	__u64 root_d, root_vm; // the process's root
+	__u32 size; // bytes of names written
+	__u32 base; // WALK_EXEC: the offset of the area in args
+	__u8 cut; // 1 until the walk reaches the root
+	__u8 area; // WALK_EXEC or WALK_OK
+};
+
+// walk_area returns the area the walk writes in. The mask on base is the
+// bound the verifier sees; the barrier keeps the compiler from dropping it.
+static __always_inline char *walk_area(struct walk_state *w)
+{
+	if (w->area == WALK_OK) {
+		__u32 zero = 0;
+		struct exec_ok_scratch *s = bpf_map_lookup_elem(&ok_heap, &zero);
+		return s ? s->path : NULL;
+	}
+	struct exec_scratch *e = scratch();
+	if (!e)
+		return NULL;
+	__u32 base = w->base;
+	barrier_var(base);
+	base &= 2 * MAX_ARGS_BYTES - 1;
+	return &e->args[base];
+}
+
+// walk_step is one step of the walk; it returns 1 to end it.
+static long walk_step(__u32 i, void *ctx)
+{
+	struct walk_state *w = ctx;
+	if (w->d == w->root_d && w->vm == w->root_vm) {
+		w->cut = 0;
+		return 1;
+	}
+	struct dentry *d = (struct dentry *)w->d;
+	struct vfsmount *vm = (struct vfsmount *)w->vm;
+	if (w->d == (__u64)BPF_CORE_READ(vm, mnt_root)) {
+		struct mount *m = (struct mount *)w->m;
+		__u64 up = (__u64)BPF_CORE_READ(m, mnt_parent);
+		if (!up || up == w->m) {
+			w->cut = 0; // the top of the namespace
+			return 1;
+		}
+		w->d = (__u64)BPF_CORE_READ(m, mnt_mountpoint);
+		w->m = up;
+		w->vm = up + bpf_core_field_offset(struct mount, mnt);
+		return 0;
+	}
+	__u64 parent = (__u64)BPF_CORE_READ(d, d_parent);
+	__u32 off = w->size;
+	if (w->d == parent || off >= PATH_BYTES)
+		return 1;
+	char *area = walk_area(w);
+	if (!area)
+		return 1;
+	barrier_var(off);
+	off &= PATH_BYTES - 1;
+	long n = bpf_probe_read_kernel_str(area + off, NAME_LEN, BPF_CORE_READ(d, d_name.name));
+	if (n <= 0)
+		return 1;
+	w->size = off + n;
+	w->d = parent;
+	return 0;
+}
+
+// walk_path walks the path of dentry d on mount vm up to the root root_d on
+// root_vm into the area w names (walk_state.area, and base for WALK_EXEC).
+// It returns the bytes written and sets *cut unless the walk reached the
+// root. The area must hold PATH_AREA bytes.
+static __always_inline __u32 walk_path(__u8 area, __u32 base, struct dentry *d, struct vfsmount *vm,
 				       struct dentry *root_d, struct vfsmount *root_vm, __u8 *cut)
 {
-	__u32 size = 0;
 	*cut = 1;
 	if (!d || !vm)
 		return 0;
-	struct mount *m = (struct mount *)((char *)vm - bpf_core_field_offset(struct mount, mnt));
-	for (int i = 0; i < PATH_DEPTH; i++) {
-		if (d == root_d && vm == root_vm) {
-			*cut = 0;
-			return size;
-		}
-		struct dentry *parent = BPF_CORE_READ(d, d_parent);
-		if (d == BPF_CORE_READ(vm, mnt_root)) {
-			struct mount *up = BPF_CORE_READ(m, mnt_parent);
-			if (!up || up == m) {
-				*cut = 0; // the top of the namespace
-				return size;
-			}
-			d = BPF_CORE_READ(m, mnt_mountpoint);
-			m = up;
-			vm = (struct vfsmount *)((char *)m + bpf_core_field_offset(struct mount, mnt));
-			continue;
-		}
-		if (d == parent || size >= PATH_BYTES)
-			return size;
-		const unsigned char *name = BPF_CORE_READ(d, d_name.name);
-		// The mask, which the barrier keeps the compiler from dropping
-		// after the test above, is the bound the verifier sees.
-		__u32 off = size;
-		barrier_var(off);
-		off &= PATH_BYTES - 1;
-		long n = bpf_probe_read_kernel_str(area + off, NAME_LEN, name);
-		if (n <= 0)
-			return size;
-		size += n;
-		d = parent;
-	}
-	if (d == root_d && vm == root_vm)
-		*cut = 0;
+	struct walk_state w = {
+		.d = (__u64)d,
+		.vm = (__u64)vm,
+		.m = (__u64)vm - bpf_core_field_offset(struct mount, mnt),
+		.root_d = (__u64)root_d,
+		.root_vm = (__u64)root_vm,
+		.size = 0,
+		.base = base,
+		.cut = 1,
+		.area = area,
+	};
+	bpf_loop(PATH_DEPTH, walk_step, &w, 0);
+	// A walk that used every step ends cut unless its last step reached
+	// the root.
+	if (w.cut && w.d == w.root_d && w.vm == w.root_vm)
+		w.cut = 0;
+	*cut = w.cut;
+	__u32 size = w.size;
+	if (size > PATH_AREA)
+		size = PATH_AREA;
 	return size;
 }
 
@@ -616,7 +680,7 @@ int handle_exec_cwd(struct bpf_raw_tracepoint_args *ctx)
 	__u8 cut = 1;
 	__u32 n = 0;
 	if (fs)
-		n = walk_path(&e->args[args_size], BPF_CORE_READ(fs, pwd.dentry), BPF_CORE_READ(fs, pwd.mnt),
+		n = walk_path(WALK_EXEC, args_size, BPF_CORE_READ(fs, pwd.dentry), BPF_CORE_READ(fs, pwd.mnt),
 			      BPF_CORE_READ(fs, root.dentry), BPF_CORE_READ(fs, root.mnt), &cut);
 	e->hdr.path_size = n;
 	e->hdr.path_truncated = cut;
@@ -737,7 +801,7 @@ int handle_exec_ok(struct bpf_raw_tracepoint_args *ctx)
 	__u8 cut = 1;
 	__u32 p = 0;
 	if (file && fs)
-		p = walk_path(s->path, BPF_CORE_READ(file, f_path.dentry), BPF_CORE_READ(file, f_path.mnt),
+		p = walk_path(WALK_OK, 0, BPF_CORE_READ(file, f_path.dentry), BPF_CORE_READ(file, f_path.mnt),
 			      BPF_CORE_READ(fs, root.dentry), BPF_CORE_READ(fs, root.mnt), &cut);
 	s->hdr.path_size = p;
 	s->hdr.path_truncated = cut;
