@@ -893,7 +893,8 @@ func TestParseRealSessionsDoNotFail(t *testing.T) {
 // A subagent's transcript keeps no structured result, only the text the
 // harness sends the model. A Write's create or update is read from that text
 // when it names exactly the claimed path (I-35); otherwise the Write is
-// assumed to overwrite, as before.
+// assumed to overwrite, as before, unless the result is an error, when it
+// claims nothing (I-68).
 func TestWriteKindIsReadFromTheResultTextWhenThereIsNoStructuredResult(t *testing.T) {
 	dir := t.TempDir()
 	use := `{"type":"assistant","timestamp":"2026-10-12T10:00:00Z","sessionId":"s","version":"2.1.296","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"/ws/s.txt","content":"x"}}]}}`
@@ -903,16 +904,16 @@ func TestWriteKindIsReadFromTheResultTextWhenThereIsNoStructuredResult(t *testin
 		want                         []string // claimed action types
 		unknown                      bool     // the "no create or update result" degradation
 	}{
-		"create":                     {`"File created successfully at: /ws/s.txt (file state is current in your context)"`, "", "", []string{"file_write"}, false},
-		"create, bare":               {`"File created successfully at: /ws/s.txt"`, "", "", []string{"file_write"}, false},
-		"create, text blocks":        {`[{"type":"text","text":"File created successfully at: /ws/s.txt"}]`, "", "", []string{"file_write"}, false},
-		"update":                     {`"The file /ws/s.txt has been updated successfully. (file state is current in your context)"`, "", "", []string{"file_open", "file_write"}, false},
-		"create of another path":     {`"File created successfully at: /ws/s.txt.bak"`, "", "", []string{"file_open", "file_write"}, true},
-		"create of a longer path":    {`"File created successfully at: /ws/s.txt2"`, "", "", []string{"file_open", "file_write"}, true},
-		"an error":                   {`"File created successfully at: /ws/s.txt"`, `,"is_error":true`, "", []string{"file_open", "file_write"}, true},
-		"other text":                 {`"Done."`, "", "", []string{"file_open", "file_write"}, true},
-		"structured result wins":     {`"File created successfully at: /ws/s.txt"`, "", `,"toolUseResult":{"type":"update"}`, []string{"file_open", "file_write"}, false},
-		"structured result, no type": {`"File created successfully at: /ws/s.txt"`, "", `,"toolUseResult":{"filePath":"/ws/s.txt"}`, []string{"file_open", "file_write"}, true},
+		"create":                                {`"File created successfully at: /ws/s.txt (file state is current in your context)"`, "", "", []string{"file_write"}, false},
+		"create, bare":                          {`"File created successfully at: /ws/s.txt"`, "", "", []string{"file_write"}, false},
+		"create, text blocks":                   {`[{"type":"text","text":"File created successfully at: /ws/s.txt"}]`, "", "", []string{"file_write"}, false},
+		"update":                                {`"The file /ws/s.txt has been updated successfully. (file state is current in your context)"`, "", "", []string{"file_open", "file_write"}, false},
+		"create of another path":                {`"File created successfully at: /ws/s.txt.bak"`, "", "", []string{"file_open", "file_write"}, true},
+		"create of a longer path":               {`"File created successfully at: /ws/s.txt2"`, "", "", []string{"file_open", "file_write"}, true},
+		"an error, which claims nothing (I-68)": {`"File created successfully at: /ws/s.txt"`, `,"is_error":true`, "", nil, false},
+		"other text":                            {`"Done."`, "", "", []string{"file_open", "file_write"}, true},
+		"structured result wins":                {`"File created successfully at: /ws/s.txt"`, "", `,"toolUseResult":{"type":"update"}`, []string{"file_open", "file_write"}, false},
+		"structured result, no type":            {`"File created successfully at: /ws/s.txt"`, "", `,"toolUseResult":{"filePath":"/ws/s.txt"}`, []string{"file_open", "file_write"}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := filepath.Join(dir, strings.NewReplacer(" ", "-", ",", "").Replace(name)+".jsonl")

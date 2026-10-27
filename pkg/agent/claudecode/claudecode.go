@@ -705,7 +705,7 @@ const (
 	reasonNonEffectful = "non-effectful"
 	reasonUnknown      = "unknown"
 	// reasonFailed is a call whose result says it failed, so it claims no
-	// effect (I-37).
+	// effect (I-37, I-68).
 	reasonFailed = "failed"
 )
 
@@ -827,6 +827,14 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 		// observed event does, so it pairs with that file and no other (I-41).
 		e.ActionType, e.Target = a, target
 		return e
+	}
+	// A Read, Write or Edit whose result is marked is_error claims nothing
+	// (I-68), as a failed NotebookEdit (I-37): the harness rejects such a
+	// call's input (a missing file, a subagent's report file) before it
+	// writes anything. An open the harness made before it failed, as an
+	// Edit's check of the old string may, stays unclaimed and Unrecorded.
+	if res.isError && (u.name == toolRead || u.name == toolWrite || u.name == toolEdit) {
+		return nil, reasonFailed
 	}
 	switch u.name {
 	case toolBash:
