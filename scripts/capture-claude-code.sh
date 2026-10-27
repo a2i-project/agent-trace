@@ -401,7 +401,7 @@ case $agent:$task in
     # with --content shows the WebSearch call's requestId beside the model
     # API's responses (V-45).
     task_prompt='Do exactly these three things in order, and nothing else. 1) Use the WebSearch tool once to search for: fanotify man page. 2) Use the WebFetch tool on https://man7.org/linux/man-pages/man7/fanotify.7.html with the prompt: what does fanotify do, in one sentence. 3) Use the Write tool to create notes.txt containing that one sentence. Then reply with the single word done.'
-    task_tools='WebSearch WebFetch Write'
+    task_tools='WebSearch WebFetch Write Bash'
     ;;
   claude-code:parallel)
     task_prompt='Do exactly these six things in order, and nothing else. 1) In a single message, make three Read tool calls at the same time, for b.txt, c.txt and d.txt. 2) Use the Agent tool to start one subagent with exactly this instruction: Use the Bash tool to run exactly: echo from-subagent . Then reply with the single word done. 3) Use the Grep tool to search the current directory for the word seed. 4) Use the Glob tool to list the files matching *.txt. 5) Use the WebFetch tool on https://example.com with the prompt: what is the title. 6) Use the Bash tool to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.'
