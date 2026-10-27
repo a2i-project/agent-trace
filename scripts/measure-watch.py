@@ -15,7 +15,11 @@ What it writes (COST.json), in the units cmd/analyze reads:
 
   startup_s        COMMAND started to the held agent process leaving
                    watch's hold script (the agent's first instruction);
-                   includes sudo, the probes' start and watch's 200 ms wait
+                   includes sudo, the probes' start and watch's 200 ms wait.
+                   watch releases the hold about a millisecond after it
+                   starts it, so the process is usually first seen past the
+                   hold: the release is then taken as that first sight, at
+                   most one sampling interval late (release_seen "after")
   drain_s          the agent process ended to COMMAND ended: watch's trailing
                    300 ms, the probes' stop and the write of the capture
   agent_s          release to the end of the agent process (not in the
@@ -30,10 +34,16 @@ What it writes (COST.json), in the units cmd/analyze reads:
                    rusage of COMMAND's waited tree (sudo, watch and the agent
                    with its descendants): the CPU is exact but includes the
                    agent; the peak is the largest process of the tree, an
-                   upper bound of watch's own
+                   upper bound of watch's own. Under sudo the tree's usage
+                   was not seen to reach this process (the pilots measured
+                   sudo's own), so neither bounds watch's there
+
+The agent process is watch's child: watch starts no other process. A child
+whose arguments are still watch's own has not yet exec'd the hold script and
+is not taken.
 
 A field that could not be measured is null (the process was never found, no
-held agent was seen, /proc was unreadable): not measured, never zero. The
+agent process was seen, /proc was unreadable): not measured, never zero. The
 CPU the kernel spends in the probes' BPF programs runs in the context of the
 traced tasks, so it is charged to the agent's tree, not to watch, and is not
 separated here. Times have the sampling interval's resolution.
@@ -159,8 +169,9 @@ def main(argv):
         signal.signal(sig, lambda s, _f: proc.send_signal(s))
 
     me = {os.getpid()}  # sudo, when it is not replaced by watch, is skipped by name
-    watch = hold = None
-    t_hold = t_release = t_gone = None
+    watch = agent = watch_argv = None
+    t_release = t_gone = None
+    release_seen = None
     ticks = hwm = None
     last_scan = 0.0
     samples = 0
@@ -176,6 +187,8 @@ def main(argv):
                 if now - last_scan >= 0.02:
                     last_scan = now
                     watch = find_watch(a.gt, me)
+                    if watch is not None:
+                        watch_argv = argv_of(watch)
             else:
                 st = stat_of(watch)
                 if st is not None:
@@ -184,17 +197,24 @@ def main(argv):
                     if h is not None:
                         hwm = max(hwm or 0, h)
                     samples += 1
-                if hold is None:
+                if agent is None:
+                    # The hold lasts about a millisecond, so the child is
+                    # mostly first seen already running the agent.
                     for c in children(watch):
                         av = argv_of(c)
-                        if av and HOLD in av:
-                            hold, t_hold = c, now
-                            break
+                        if not av or av == watch_argv:
+                            continue  # not yet exec'd, or already gone
+                        agent = c
+                        if HOLD in av:
+                            release_seen = "held"
+                        else:
+                            t_release, release_seen = now, "after"
+                        break
                 elif t_gone is None:
-                    av = argv_of(hold)
+                    av = argv_of(agent)
                     if t_release is None and av and HOLD not in av:
                         t_release = now
-                    hs = stat_of(hold)
+                    hs = stat_of(agent)
                     if hs is None or hs[0] == "Z":
                         t_gone = now
             time.sleep(interval)
@@ -207,8 +227,8 @@ def main(argv):
     notes = []
     if watch is None:
         notes.append("the watch process was not found by its --out argument")
-    elif hold is None:
-        notes.append("no held agent process was seen under watch: start-up and drain not measured")
+    elif agent is None:
+        notes.append("no agent process was seen under watch: start-up and drain not measured")
     elif t_release is None:
         notes.append("the held agent process was seen but never left the hold script")
     elif t_gone is None:
@@ -223,6 +243,7 @@ def main(argv):
         "exit": rc,
         "wall_s": round(t_end - t0, 3),
         "startup_s": span(t0, t_release),
+        "release_seen": release_seen,
         "agent_s": span(t_release, t_gone),
         "drain_s": span(t_gone, t_end) if t_release is not None else None,
         "watch_cpu_s": round(ticks / CLK, 3) if ticks is not None else None,
