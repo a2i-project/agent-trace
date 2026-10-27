@@ -147,7 +147,9 @@
 #   events        the ground truth's events by type, and requests and
 #                 connections by target
 #   processes     the peak number of processes of the agent's tree alive at
-#                 once, counted from the fork and exit events
+#                 once, counted from the fork and exit events over the
+#                 processes that have both (and the root): a lower bound, since
+#                 a process that never exec'd has no exit event
 # Per run, besides the scale record:
 #   cost          (control_cost for each control run) what scripts/measure-watch.py
 #                 measured around each watch: start-up, drain, watch's own CPU
@@ -460,16 +462,25 @@ def diagnostics_of(cov):
 
 
 def peak_processes(events, root):
-    """The most processes of the tree alive at once, from fork and exit events."""
-    live = {root} if root else set()
-    peak = len(live)
+    """The most processes of the tree alive at once, from fork and exit
+    events, over the processes whose lifetime the events bound: the root,
+    alive throughout, and each process from its fork to its exit. A process
+    that never exec'd, or whose execs all failed, has no exit event (a known
+    limit of the proc probe), so it is left out rather than counted alive to
+    the end of the capture. The value is a lower bound; the proc probe's
+    tracked-set peak in the diagnostics counts every process."""
+    spans, forked = [], {}
     for e in sorted(events, key=lambda e: e.get("timestamp", "")):
         t, pid = e.get("action_type"), e.get("pid")
         if t == "process_fork":
-            live.add(pid)
-        elif t == "process_exit":
-            live.discard(pid)
-        peak = max(peak, len(live))
+            forked[pid] = e.get("timestamp", "")  # a reused pid: the old process exited unseen
+        elif t == "process_exit" and pid in forked:
+            spans.append((forked.pop(pid), e.get("timestamp", "")))
+    points = sorted([(a, 1) for a, _ in spans] + [(b, -1) for _, b in spans], key=lambda p: (p[0], p[1]))
+    alive = peak = 1 if root else 0
+    for _, d in points:
+        alive += d
+        peak = max(peak, alive)
     return peak
 
 
