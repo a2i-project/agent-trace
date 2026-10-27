@@ -14,7 +14,7 @@
 #                                  [--allow-unconfigured-version] [--content] [--check]
 #                                  [--no-build] [OUTPUT_DIR]
 #
-# Claude Code tasks: basic, parallel, project, edits, tools, shapes, long.
+# Claude Code tasks: basic, parallel, project, edits, tools, shapes, long, websearch.
 # Gemini tasks: basic, search, long.
 # Either agent also runs a held-out task, --task heldout:NAME with --heldout-dir DIR
 # (below).
@@ -240,7 +240,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 case $agent in
-  claude-code) case $task in basic|parallel|project|edits|tools|shapes|long|heldout:*) ;; *) echo "unknown task $task for claude-code" >&2; exit 2 ;; esac ;;
+  claude-code) case $task in basic|parallel|project|edits|tools|shapes|long|websearch|heldout:*) ;; *) echo "unknown task $task for claude-code" >&2; exit 2 ;; esac ;;
   gemini) case $task in basic|search|long|heldout:*) ;; *) echo "unknown task $task for gemini (basic, search, long or heldout:NAME)" >&2; exit 2 ;; esac ;;
   *) echo "unknown agent $agent (claude-code or gemini)" >&2; exit 2 ;;
 esac
@@ -395,6 +395,13 @@ case $agent:$task in
   claude-code:basic)
     task_prompt='Do exactly these five things in order, using the named tool for each, and nothing else. 1) Use the Read tool on b.txt. 2) Use the Write tool to create a.txt containing the single word hello. 3) Use the Edit tool to replace hello with world in a.txt. 4) Use the Write tool to overwrite b.txt with the single word again. 5) Use the Bash tool to run exactly: echo hi. Then reply with the single word done.'
     task_tools='Read Write Edit Bash'
+    ;;
+  claude-code:websearch)
+    # One server-side WebSearch and the fetch of a page it names, so a capture
+    # with --content shows the WebSearch call's requestId beside the model
+    # API's responses (V-45, OBS-2).
+    task_prompt='Do exactly these three things in order, and nothing else. 1) Use the WebSearch tool once to search for: fanotify man page. 2) Use the WebFetch tool on https://man7.org/linux/man-pages/man7/fanotify.7.html with the prompt: what does fanotify do, in one sentence. 3) Use the Write tool to create notes.txt containing that one sentence. Then reply with the single word done.'
+    task_tools='WebSearch WebFetch Write'
     ;;
   claude-code:parallel)
     task_prompt='Do exactly these six things in order, and nothing else. 1) In a single message, make three Read tool calls at the same time, for b.txt, c.txt and d.txt. 2) Use the Agent tool to start one subagent with exactly this instruction: Use the Bash tool to run exactly: echo from-subagent . Then reply with the single word done. 3) Use the Grep tool to search the current directory for the word seed. 4) Use the Glob tool to list the files matching *.txt. 5) Use the WebFetch tool on https://example.com with the prompt: what is the title. 6) Use the Bash tool to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.'
