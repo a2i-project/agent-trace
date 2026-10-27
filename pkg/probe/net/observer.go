@@ -222,20 +222,19 @@ type Observer struct {
 	conns  map[uint64]*connection // by socket inode number
 	dgrams map[dgramKey]bool      // datagram destinations already emitted (N-28)
 
-	// Content-capture state. tlsObjs and sslWriteLink are zero/nil when
+	// Content-capture state. tlsObjs and sslWriteLinks are zero/nil when
 	// cfg.ExePath is unset: Observer then runs identity-only.
-	tlsObjs      tlsbpfObjects
-	sslWriteLink link.Link
-	// sslWriteRetLink is the uretprobe at the validated SSL_write offset,
-	// and sslWrites reads its per-call counts (N-36); both nil until the
-	// offset validated and the uretprobe attached.
-	sslWriteRetLink link.Link
-	sslWrites       *sslWriteMeter
-	// firstLink is the uprobe New attaches at the first candidate, so a
+	// sslWriteLinks are the entry and return probes at the validated
+	// SSL_write offset (N-37), and sslWrites reads the return's per-call
+	// counts (N-36); nil until the offset validated.
+	tlsObjs       tlsbpfObjects
+	sslWriteLinks []link.Link
+	sslWrites     *sslWriteMeter
+	// firstLinks are the probes New attaches at the first candidate, so a
 	// tracked process's SSL_write between New and Start is captured and
-	// waits in ssl_events for validation. attachAndValidateTLS takes it
+	// waits in ssl_events for validation. attachAndValidateTLS takes them
 	// over (and clears the field) when it tries that candidate.
-	firstLink   link.Link
+	firstLinks  []link.Link
 	tlsForkLink link.Link
 	tlsExitLink link.Link
 	exe         *link.Executable
@@ -563,8 +562,8 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	o.readCands = dedupCandidates(readCands)
 	// A failed attach is not fatal here: attachAndValidateTLS tries the
 	// candidate again and reports the outcome.
-	if l, err := exe.Uprobe("", o.tlsObjs.ProbeSslWrite, &link.UprobeOptions{Address: candidates[0].FileOff}); err == nil {
-		o.firstLink = l
+	if ls, err := o.attachWrite(candidates[0].FileOff); err == nil {
+		o.firstLinks = ls
 	}
 	// The SSL_read probes at the first read candidate, for the same reason:
 	// the response to a request sent before Start must not be missed.
@@ -576,16 +575,16 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	return nil
 }
 
-// attachAndValidateTLS is the validation step (N-D4): attach
-// probe_ssl_write at each candidate in turn and require its first captured
+// attachAndValidateTLS is the validation step (N-D4): attach the
+// SSL_write probes at each candidate in turn and require its first captured
 // frame from a tracked process to look like an HTTP/1.x request line (D4:
 // runtime validation is authoritative, the ELF scan's score is only a
 // sorting hint). Called from Start, which blocks on it -- see Start's doc
 // comment for why that's acceptable despite Start having no error return.
 //
-// On success the validated offset is cached by build ID, o.sslWriteLink is
-// set and o.tlsActive becomes true. On failure (no candidate validates
-// within its timeout) it leaves o.sslWriteLink nil, closes o.sslReader, and
+// On success the validated offset is cached by build ID, o.sslWriteLinks
+// is set and o.tlsActive becomes true. On failure (no candidate validates
+// within its timeout) it leaves o.sslWriteLinks nil, closes o.sslReader, and
 // records the error in o.tlsAttachErr: Observer falls back to identity-only
 // operation exactly as if cfg.ExePath had never been set, rather than
 // failing the whole probe.
@@ -611,26 +610,25 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 		if stopped {
 			break
 		}
-		var l link.Link
-		if i == 0 && o.firstLink != nil {
-			l, o.firstLink = o.firstLink, nil // attached in New (prepareTLS)
+		var ls []link.Link
+		if i == 0 && o.firstLinks != nil {
+			ls, o.firstLinks = o.firstLinks, nil // attached in New (prepareTLS)
 		} else {
 			var err error
-			l, err = o.exe.Uprobe("", o.tlsObjs.ProbeSslWrite, &link.UprobeOptions{Address: cand.FileOff})
-			if err != nil {
+			if ls, err = o.attachWrite(cand.FileOff); err != nil {
 				continue
 			}
 		}
 		rec, seen, ok := o.validateSSLWriteCandidate(timeout)
 		framesSeen += seen
 		if ok {
-			o.sslWriteLink = l
+			o.sslWriteLinks = ls
 			o.replay = append(o.replay, rec)
 			chosen = cand
 			validated = true
 			break
 		}
-		_ = l.Close()
+		closeLinks(ls)
 	}
 	if !validated {
 		// Distinguish "the offset is wrong / nothing wrote" from "the
@@ -654,10 +652,11 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 
 	o.sslReader.SetDeadline(time.Time{}) // clear the validation deadline for normal operation
 	// The per-call counts of SSL_write (N-36) start here, at the validated
-	// offset only: a uretprobe at a wrong candidate would count another
-	// function's returns. A failed attach leaves the counts unmeasured.
-	if l, err := o.exe.Uretprobe("", o.tlsObjs.ProbeSslWriteReturn, &link.UprobeOptions{Address: chosen.FileOff}); err == nil {
-		o.sslWriteRetLink = l
+	// offset only: the return probe at a rejected candidate would have
+	// counted another function's returns. A failed switch leaves the
+	// counts unmeasured.
+	var zero, on uint32 = 0, 1
+	if err := o.tlsObjs.SslWriteCounting.Update(&zero, &on, ebpf.UpdateAny); err == nil {
 		o.sslWrites = &sslWriteMeter{stat: o.tlsObjs.SslWriteStat}
 	}
 	o.tlsActive = true
@@ -1024,15 +1023,8 @@ func (o *Observer) Stop() error {
 		}
 		<-o.tlsReady
 		// Start has returned, so the TLS write side's links are settled.
-		if o.sslWriteLink != nil {
-			_ = o.sslWriteLink.Close()
-		}
-		if o.sslWriteRetLink != nil {
-			_ = o.sslWriteRetLink.Close()
-		}
-		if o.firstLink != nil {
-			_ = o.firstLink.Close() // never taken over by a validation
-		}
+		closeLinks(o.sslWriteLinks)
+		closeLinks(o.firstLinks) // never taken over by a validation
 		if o.tlsForkLink != nil {
 			_ = o.tlsForkLink.Close()
 		}

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit e458804 on 2026-10-27.
+Checked against commit 35ab223 on 2026-10-27.
 
 ## Objective
 
@@ -117,7 +117,7 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 | `Rings` | `rings` | per kernel ring buffer, by map name (proc: `events`; net: `net_events`, and `ssl_events` with content capture): `size_bytes`; `peak_bytes`, the highest occupancy the reader saw, sampled at each record it read (the bytes not yet consumed, the record and its 8-byte header included), a lower bound short of the true peak by at most one record; `records`, the records read; `drops`, the records the kernel discarded because the ring was full (on `ssl_events`, write frames; `RingbufDrops` is the sum over the probe's rings); `read_drops`, on `ssl_events` only, the `SSL_read` frames discarded (part of `ResponseGaps`) |
 | `TrackedSets` | `tracked_sets` | per eBPF object's `tracked_pids` map (proc: `proc`; net: `net`, and `tls` with content capture): `capacity`; `peak`, the highest number of entries, counted by the kernel at each insert plus the pids userspace seeded; `at_stop`, the entries when the probe stopped. A `peak` equal to `capacity` means a further insert may have failed, which `UntrackedChildren` counts |
 | `NetContent` | `net_content` | net only: the correlator's counters, connections, hostnames, requests with content, h2 offered (`content_unsupported`) and seen (`h2_preface`, `h2_preface_unvalidated`, `frames_h2`), unattributed and truncated frames, dials, DNS, datagrams and the response counts ([13_probe_net.md](13_probe_net.md), N-33) |
-| `SSLWrites` | `ssl_writes` | net only, with content capture, once the `SSL_write` offset validated and its uretprobe attached (absent otherwise: not measured): per call of a tracked process whose return was seen, `calls`, `partial` (returned more than zero and less than asked), `failed` (returned zero or less, an error or a retry such as `SSL_ERROR_WANT_WRITE`), `bytes_requested` (the lengths asked, summed) and `bytes_written` (the positive returns, summed); the content capture copies at entry, so partial and failed calls are where it can repeat bytes (N-36, O-34) |
+| `SSLWrites` | `ssl_writes` | net only, with content capture, once the `SSL_write` offset validated and counting was switched on (absent otherwise: not measured): per call of a tracked process whose return was seen, `calls`, `partial` (returned more than zero and less than asked), `failed` (returned zero or less, an error or a retry such as `SSL_ERROR_WANT_WRITE`), `bytes_requested` (the lengths asked, summed) and `bytes_written` (the positive returns, summed); the content is copied at the return, as many bytes as written, so a partial or failed call contributes exactly what it wrote (N-36, N-37) |
 
 ### ground_truth.json
 

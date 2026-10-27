@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-35 (I-71).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29) and O-20 (N-31) are closed; the others are undecided.
 
@@ -118,14 +118,6 @@ Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, ne
 Blocked by: An agent that emits `git_commit` claims. No current adapter does.
 
 ## Proposals (not decided)
-
-### O-34: Capture `SSL_write` at its return, with the number of bytes the call wrote
-Status: Open. Narrowed 2026-10-27: decide after a capture shows the N-36 counters.
-Date: 2026-10-27 (the first `long` pilot of Claude Code 2.1.306).
-Question: Should `probe_ssl_write` copy the buffer at the call's return, as many bytes as it returned, instead of at its entry, as many as it was asked to write?
-Options: (a) keep the entry probe (N-16, N-D1), and rely on N-34 to drop a request line that stray bytes precede; (b) a uprobe at entry stores `ssl` and `buf`, a uretprobe at return copies the returned count, as `SSL_read` does since N-29; (c) both, the entry frame only when the return frame is missing.
-Current behaviour: (a). A call that writes part of its buffer, or fails with a retry the caller makes with the same bytes, would put those bytes in the request stream twice; on the pilot a request came out whose method was a run of JSON ahead of `POST`, which fits a body tail repeated past its `Content-Length` (**Unverified**: the plaintext is not kept). Since N-36 a capture with content records, in `diagnostics.ssl_writes`, the calls, partial and failed returns and the bytes asked and written of the hooked `SSL_write`.
-Blocked by: A content capture of Claude Code under N-36 (the next pilot): zero partial and zero failed calls refute the cause for that capture, and either above zero makes it possible. Then a choice by the user; option (b) also changes the order of a write frame against the reads of the same thread, which response pairing needs (N-29), and needs a CI run of the privileged net tests.
 
 ### O-18: Move net hooks to the kernel socket layer (fentry or LSM)
 Status: Proposed.

@@ -3,7 +3,9 @@ package net
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	stdnet "net"
@@ -26,8 +28,10 @@ import (
 // byte, then writes a body: its first 100 bytes with one blocking call, the
 // rest with SSL_MODE_ENABLE_PARTIAL_WRITE on a non-blocking socket to a peer
 // that does not read yet, so calls return short or fail with WANT_WRITE and
-// are retried with the remaining bytes. It prints its own tally of the calls
-// after the second byte.
+// are retried with the remaining bytes, each call asking at most the chunk
+// given (0: the whole rest). The body is bodyByte's sequence, so
+// a byte captured twice shifts every byte after it. It prints its own tally
+// of the calls after the second byte.
 const partialWriteClient = `
 #include <arpa/inet.h>
 #include <dlfcn.h>
@@ -59,7 +63,7 @@ static void wait_byte(void) {
 }
 
 int main(int argc, char **argv) {
-	if (argc != 5) return 2;
+	if (argc != 6) return 2;
 	void *h = dlopen(argv[1], RTLD_NOW);
 	if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 3; }
 	const void *(*client_method)(void) = sym(h, "TLS_client_method");
@@ -71,6 +75,7 @@ int main(int argc, char **argv) {
 	int (*ssl_write)(void *, const void *, int) = sym(h, "SSL_write");
 	int (*get_error)(const void *, int) = sym(h, "SSL_get_error");
 	long total = atol(argv[4]);
+	long chunk = atol(argv[5]);
 
 	wait_byte();
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -92,7 +97,11 @@ int main(int argc, char **argv) {
 
 	wait_byte();
 	char *body = malloc(total);
-	memset(body, 'x', total);
+	unsigned int s = 1;
+	for (long i = 0; i < total; i++) {
+		s = s * 1103515245u + 12345u;
+		body[i] = (char)(s >> 16);
+	}
 	long calls = 0, partial = 0, failed = 0, requested = 0, written = 0;
 	int r = ssl_write(ssl, body, 100);
 	calls++; requested += 100;
@@ -105,6 +114,7 @@ int main(int argc, char **argv) {
 	while (off < total) {
 		if (time(NULL) - start > 30) return 9;
 		long want = total - off;
+		if (chunk > 0 && want > chunk) want = chunk;
 		r = ssl_write(ssl, body + off, (int)want);
 		calls++; requested += want;
 		if (r > 0) {
@@ -123,6 +133,19 @@ int main(int argc, char **argv) {
 	return 0;
 }
 `
+
+// partialWriteBody is the body partialWriteClient writes: the high bytes of
+// a linear congruential sequence, with no period a repeated record could
+// line up with.
+func partialWriteBody(n int) []byte {
+	b := make([]byte, n)
+	s := uint32(1)
+	for i := range b {
+		s = s*1103515245 + 12345
+		b[i] = byte(s >> 16)
+	}
+	return b
+}
 
 // buildPartialWriteClient compiles partialWriteClient, or skips the test
 // when no C compiler is installed.
@@ -194,9 +217,29 @@ func startStalledTLSServer(t *testing.T, host string, release <-chan struct{}) (
 // failed returns and checks the uretprobe's counts (N-36) against the
 // client's own tally: every call after the offset validated, its partial
 // and failed returns, and the bytes asked and written. The first call, the
-// request head that validated the offset, returned before the uretprobe
-// was attached and is not counted, unless its return raced the attach.
+// request head that validated the offset, returned before counting was
+// switched on and is not counted. It also checks the content captured at
+// the return (N-37): the request parses, once, and its body hashes to the
+// bytes the client sent, so no failed or partial call put a byte in the
+// stream twice. The content is checked when each call asks at most 16 KiB,
+// the most a frame copies: asked for the whole rest, OpenSSL returns far
+// more, and a frame with bytes missing drops its stream (N-30). Asked for
+// one record at a time, the calls fail with WANT_WRITE and are retried with
+// the same bytes, the pattern the Claude Code pilot showed (N-37).
 func TestObserver_SSLWriteCountsPartialWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		chunk   int
+		content bool
+	}{
+		{"whole rest per call", 0, false},
+		{"one record per call", 16384, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) { testSSLWritePartial(t, tc.chunk, tc.content) })
+	}
+}
+
+func testSSLWritePartial(t *testing.T, chunk int, checkContent bool) {
 	skipUnprivileged(t)
 	libssl := findLibSSL(t)
 	client := buildPartialWriteClient(t)
@@ -213,7 +256,7 @@ func TestObserver_SSLWriteCountsPartialWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	cmd := exec.Command(client, libssl, port, host, strconv.Itoa(total))
+	cmd := exec.Command(client, libssl, port, host, strconv.Itoa(total), strconv.Itoa(chunk))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -230,8 +273,14 @@ func TestObserver_SSLWriteCountsPartialWrites(t *testing.T) {
 	if err := obs.TrackPID(int32(cmd.Process.Pid)); err != nil {
 		t.Fatalf("TrackPID: %v", err)
 	}
+	var requests []models.GroundTruthEvent
+	eventsDone := make(chan struct{})
 	go func() {
-		for range obs.Events() {
+		defer close(eventsDone)
+		for ev := range obs.Events() {
+			if ev.ActionType == models.NetRequest {
+				requests = append(requests, ev)
+			}
 		}
 	}()
 
@@ -283,13 +332,30 @@ func TestObserver_SSLWriteCountsPartialWrites(t *testing.T) {
 	}
 	got := *d.SSLWrites
 	t.Logf("probe:  %+v", got)
-	// The head's call counts too only if its return came after the attach.
-	if got.Calls == want.Calls+1 && got.BytesRequested == want.BytesRequested+head {
-		want.Calls++
-		want.BytesRequested += head
-		want.BytesWritten += head
-	}
 	if got != want {
 		t.Errorf("SSLWrites = %+v, want the client's tally %+v", got, want)
+	}
+
+	<-eventsDone
+	if !checkContent {
+		return
+	}
+	cov := obs.Coverage()
+	if cov.FramesTruncated != 0 || cov.FramesUnattributed != 0 || cov.FaultedReads != 0 || cov.TLSRingDrops != 0 {
+		t.Errorf("content lost: truncated %d, unattributed %d, faulted %d, ring drops %d; want 0 (a write over %d bytes is truncated)",
+			cov.FramesTruncated, cov.FramesUnattributed, cov.FaultedReads, cov.TLSRingDrops, 16384)
+	}
+	sum := sha256.Sum256(partialWriteBody(total))
+	wantHash := "sha256:" + hex.EncodeToString(sum[:])
+	wantTarget := models.CanonicalNetTarget("POST", host, 0, "/upload", "")
+	if len(requests) != 1 {
+		t.Fatalf("net_request events = %d (%+v), want 1: the request head and the body parse as one request", len(requests), requests)
+	}
+	r := requests[0]
+	if r.Target != wantTarget {
+		t.Errorf("request target = %q, want %q", r.Target, wantTarget)
+	}
+	if r.RequestHash == nil || *r.RequestHash != wantHash {
+		t.Errorf("request body hash = %v, want %s: the captured stream does not hold each byte of the body once", r.RequestHash, wantHash)
 	}
 }

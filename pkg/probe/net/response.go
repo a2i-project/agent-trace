@@ -33,6 +33,21 @@ const maxHeldReads = 256
 // N-29), as a request line validates the SSL_write offset.
 var httpStatusLineRE = regexp.MustCompile(`^HTTP/1\.[01] [1-5][0-9]{2}[ \r]`)
 
+// attachWrite attaches the SSL_write entry and return probes at off; the
+// return emits the write frame (N-37). Both or neither.
+func (o *Observer) attachWrite(off uint64) ([]link.Link, error) {
+	entry, err := o.exe.Uprobe("", o.tlsObjs.ProbeSslWrite, &link.UprobeOptions{Address: off})
+	if err != nil {
+		return nil, err
+	}
+	ret, err := o.exe.Uretprobe("", o.tlsObjs.ProbeSslWriteReturn, &link.UprobeOptions{Address: off})
+	if err != nil {
+		_ = entry.Close()
+		return nil, err
+	}
+	return []link.Link{entry, ret}, nil
+}
+
 // attachRead attaches the SSL_read entry probe and return probe at a file
 // offset of the executable.
 func (o *Observer) attachRead(off uint64) ([]link.Link, error) {

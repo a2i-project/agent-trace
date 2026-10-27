@@ -132,11 +132,11 @@ type ProbeDiagnostics struct {
 
 // SSLWriteCounts compares, per SSL_write call of a tracked process, the
 // length the caller asked to write with the value the call returned (N-36).
-// The content capture copies a call's buffer at its entry, so a call that
-// writes less than it was asked, or fails and is retried with the same
-// bytes, puts bytes in the captured stream more than once (O-34). Counted
-// from the moment the SSL_write offset validated; a call whose entry came
-// before that is not counted.
+// A call that writes less than it was asked, or fails and is retried with
+// the same bytes, put bytes in the stream twice while the content was copied
+// at the call's entry; since N-37 it is copied at the return. Counted from
+// the moment the SSL_write offset validated; a call that returned before
+// that is not counted.
 type SSLWriteCounts struct {
 	Calls          uint64 `json:"calls"`           // calls whose return was seen
 	Partial        uint64 `json:"partial"`         // returned 0 < ret < asked

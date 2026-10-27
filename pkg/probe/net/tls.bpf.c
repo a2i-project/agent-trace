@@ -9,16 +9,17 @@
 // The write-bracket join (an active_write map and a NET_BIND record) is
 // abandoned, see N-D1 in docs/decisions/network.md: on Bun, encrypted bytes are queued asynchronously, so the
 // write(2)/sendmsg(2) syscalls do not fire inside the SSL_write entry/return
-// window. SSL_write is therefore a single uprobe at its entry, and every
-// captured write is a self-contained ssl_frame; correlator.go in userspace
-// parses HTTP directly out of the plaintext and attributes it to a
-// connection by Host header, not by a kernel-side join. SSL_read needs its
-// return: the entry stashes the buffer, the return reads as many bytes as
-// the call returned. Both directions carry the SSL* pointer, which
-// userspace uses to keep the streams of one connection together (N-30).
-// A uretprobe on SSL_write counts, per call, the length asked against the
-// value returned (N-36); it is a diagnostic, and the content stays the
-// entry probe's.
+// window. Every captured write is therefore a self-contained ssl_frame;
+// correlator.go in userspace parses HTTP directly out of the plaintext and
+// attributes it to a connection by Host header, not by a kernel-side join.
+// Both directions are captured at the call's return: the entry stashes the
+// arguments, the return reads as many bytes as the call returned, so a
+// write that failed (and is retried with the same bytes) or wrote part of
+// its buffer contributes exactly the bytes it wrote (N-37; SSL_read since
+// N-29). Both directions carry the SSL* pointer, which userspace uses to
+// keep the streams of one connection together (N-30). The SSL_write return
+// also counts, per call, the length asked against the value returned
+// (N-36), once userspace has validated the offset.
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
@@ -91,18 +92,36 @@ struct {
 	__type(value, struct ssl_frame);
 } ssl_heap SEC(".maps");
 
-// ssl_write_args holds the length an SSL_write call asked to write, by
-// pid_tgid, from its entry to its return (N-36). LRU, as ssl_read_args.
+// ssl_write_args holds the arguments of an SSL_write call in flight, by
+// pid_tgid, from its entry to its return (N-36, N-37): the buffer and the
+// SSL* for the content, the length asked for the counts. LRU, as
+// ssl_read_args.
+struct ssl_write_arg {
+	__u64 buf;
+	__u64 ssl;
+	__u64 num;
+};
+
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, 8192);
 	__type(key, __u64);
-	__type(value, __u64);
+	__type(value, struct ssl_write_arg);
 } ssl_write_args SEC(".maps");
 
+// ssl_write_counting is set to 1 by userspace once the SSL_write offset
+// validated. Before that the return probe runs at candidates that may be
+// other functions, whose returns must not be counted as SSL_write's (N-36).
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u32);
+} ssl_write_counting SEC(".maps");
+
 // ssl_write_stat counts the SSL_write calls of tracked processes whose
-// return the uretprobe saw (N-36): calls, partial writes (0 < ret < num),
-// failed writes (ret <= 0, such as SSL_ERROR_WANT_WRITE, after which the
+// return the uretprobe saw after the offset validated (N-36): calls,
+// partial writes (0 < ret < num), failed writes (ret <= 0, such as SSL_ERROR_WANT_WRITE, after which the
 // caller must retry with the same bytes), and the bytes asked and
 // written. Userspace sums the percpu slots and snapshots them in Stop().
 struct ssl_write_counts {
@@ -256,38 +275,99 @@ static __always_inline int is_tracked(__u32 tgid)
 }
 
 // probe_ssl_write attaches at the entry of SSL_write(SSL *ssl, const void
-// *buf, int num). Per the x86_64 System V ABI, ssl is RDI, buf is RSI, num
-// is EDX -- PT_REGS_PARM1/2/3 below.
+// *buf, int num) and stashes ssl, buf and num for the return. Per the
+// x86_64 System V ABI, ssl is RDI, buf is RSI, num is EDX --
+// PT_REGS_PARM1/2/3 below. A length of zero or less is no write.
 SEC("uprobe/ssl_write")
 int probe_ssl_write(struct pt_regs *ctx)
+{
+	__u64 id = bpf_get_current_pid_tgid();
+	if (!is_tracked(id >> 32))
+		return 0;
+
+	int num = (int)PT_REGS_PARM3(ctx);
+	if (num <= 0)
+		return 0;
+
+	struct ssl_write_arg arg = {
+		.buf = (__u64)PT_REGS_PARM2(ctx),
+		.ssl = (__u64)PT_REGS_PARM1(ctx),
+		.num = (__u64)num,
+	};
+	bpf_map_update_elem(&ssl_write_args, &id, &arg, BPF_ANY);
+	return 0;
+}
+
+// count_write counts one SSL_write call against the length it asked (N-36),
+// once userspace has set ssl_write_counting. Atomic adds, as the other
+// percpu counters: a program runs with migration, not preemption, disabled,
+// so two tasks can interleave on one CPU.
+static __always_inline void count_write(__u64 num, int ret)
+{
+	__u32 zero = 0;
+	__u32 *on = bpf_map_lookup_elem(&ssl_write_counting, &zero);
+	if (!on || !*on)
+		return;
+	struct ssl_write_counts *st = bpf_map_lookup_elem(&ssl_write_stat, &zero);
+	if (!st)
+		return;
+	__sync_fetch_and_add(&st->calls, 1);
+	__sync_fetch_and_add(&st->bytes_requested, num);
+	if (ret <= 0) {
+		__sync_fetch_and_add(&st->failed, 1);
+		return;
+	}
+	__sync_fetch_and_add(&st->bytes_written, (__u64)ret);
+	if ((__u64)ret < num)
+		__sync_fetch_and_add(&st->partial, 1);
+}
+
+// probe_ssl_write_return attaches at SSL_write's return. It counts the call
+// (N-36) and, when the call returned more than zero, copies that many bytes
+// (at most SSL_CAP_LEN) from the buffer stashed at entry into a write frame
+// (N-37). A failed call (an error, or SSL_ERROR_WANT_WRITE, after which the
+// caller retries with the same bytes) emits nothing, so its bytes enter the
+// stream once, at the retry that wrote them. A call whose entry was not
+// seen (the probes were attached while it ran) has no stash and is neither
+// captured nor counted.
+SEC("uretprobe/ssl_write")
+int probe_ssl_write_return(struct pt_regs *ctx)
 {
 	__u64 id = bpf_get_current_pid_tgid();
 	__u32 tgid = id >> 32;
 	if (!is_tracked(tgid))
 		return 0;
 
-	void *buf = (void *)PT_REGS_PARM2(ctx);
-	__u32 num = (__u32)PT_REGS_PARM3(ctx);
-	if (num == 0)
+	struct ssl_write_arg *arg = bpf_map_lookup_elem(&ssl_write_args, &id);
+	if (!arg)
+		return 0;
+	void *buf = (void *)arg->buf;
+	__u64 ssl = arg->ssl;
+	__u64 num = arg->num;
+	bpf_map_delete_elem(&ssl_write_args, &id);
+
+	int ret = (int)PT_REGS_RC(ctx);
+	count_write(num, ret);
+	if (ret <= 0)
 		return 0;
 
-	// The length asked, for the return probe's count (N-36), whatever
-	// becomes of the content below. A negative length is no write.
-	if ((int)num > 0) {
-		__u64 asked = num;
-		bpf_map_update_elem(&ssl_write_args, &id, &asked, BPF_ANY);
-	}
+	// SSL_write never returns more than it was asked; a candidate that is
+	// another function might, and its frame must not claim more bytes
+	// than the buffer it was given.
+	__u32 total = (__u32)ret;
+	if ((__u64)total > num)
+		total = (__u32)num;
 
 	__u32 zero = 0;
 	struct ssl_frame *e = bpf_map_lookup_elem(&ssl_heap, &zero);
 	if (!e)
 		return 0;
 
-	__u32 len = num;
+	__u32 len = total;
 	if (len > SSL_CAP_LEN)
 		len = SSL_CAP_LEN;
 
-	// A faulting read (buffer not yet faulted in, bad pointer, or a call
+	// A faulting read (buffer released or unmapped, bad pointer, or a call
 	// shape this probe misidentified -- see N-D4)
 	// must not be silently reported as an empty write: the correlator
 	// could then read that as "SSL_write happened but carried nothing",
@@ -296,60 +376,20 @@ int probe_ssl_write(struct pt_regs *ctx)
 	// it so the operator is warned of a potential capture bypass, per
 	// N-D5's "warn, don't silently agree" resolution.
 	if (bpf_probe_read_user(e->payload, len, buf)) {
-		__u32 zero2 = 0;
-		__u64 *count = bpf_map_lookup_elem(&faulted_reads, &zero2);
-		if (count)
-			__sync_fetch_and_add(count, 1);
+		count_percpu(&faulted_reads);
 		return 0;
 	}
 
 	e->hdr.tgid = tgid;
 	e->hdr.tid = (__u32)id;
 	e->hdr.ts_ns = bpf_ktime_get_ns();
-	e->hdr.ssl = (__u64)PT_REGS_PARM1(ctx);
+	e->hdr.ssl = ssl;
 	e->hdr.len = len;
-	e->hdr.total = num;
+	e->hdr.total = total;
 	e->hdr.dir = SSL_DIR_WRITE;
 	e->hdr.pad = 0;
 	if (bpf_ringbuf_output(&ssl_events, e, sizeof(e->hdr) + len, 0))
 		count_drop();
-	return 0;
-}
-
-// probe_ssl_write_return attaches at SSL_write's return and counts the call
-// against the length its entry stashed (N-36). It reads no buffer and emits
-// nothing. A call whose entry was not seen (the uretprobe was attached
-// while the call ran) has no stash and is not counted.
-SEC("uretprobe/ssl_write")
-int probe_ssl_write_return(struct pt_regs *ctx)
-{
-	__u64 id = bpf_get_current_pid_tgid();
-	if (!is_tracked(id >> 32))
-		return 0;
-
-	__u64 *asked = bpf_map_lookup_elem(&ssl_write_args, &id);
-	if (!asked)
-		return 0;
-	__u64 num = *asked;
-	bpf_map_delete_elem(&ssl_write_args, &id);
-
-	__u32 zero = 0;
-	struct ssl_write_counts *st = bpf_map_lookup_elem(&ssl_write_stat, &zero);
-	if (!st)
-		return 0;
-	// Atomic adds, as the other percpu counters: a program runs with
-	// migration, not preemption, disabled, so two tasks can interleave on
-	// one CPU.
-	int ret = (int)PT_REGS_RC(ctx);
-	__sync_fetch_and_add(&st->calls, 1);
-	__sync_fetch_and_add(&st->bytes_requested, num);
-	if (ret <= 0) {
-		__sync_fetch_and_add(&st->failed, 1);
-		return 0;
-	}
-	__sync_fetch_and_add(&st->bytes_written, (__u64)ret);
-	if ((__u64)ret < num)
-		__sync_fetch_and_add(&st->partial, 1);
 	return 0;
 }
 

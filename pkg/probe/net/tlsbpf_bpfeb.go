@@ -37,6 +37,13 @@ type tlsbpfSslReadArg struct {
 	Ssl uint64
 }
 
+type tlsbpfSslWriteArg struct {
+	_   structs.HostLayout
+	Buf uint64
+	Ssl uint64
+	Num uint64
+}
+
 type tlsbpfSslWriteCounts struct {
 	_              structs.HostLayout
 	Calls          uint64
@@ -64,6 +71,7 @@ const (
 	tlsbpfMapSslHeap              = "ssl_heap"
 	tlsbpfMapSslReadArgs          = "ssl_read_args"
 	tlsbpfMapSslWriteArgs         = "ssl_write_args"
+	tlsbpfMapSslWriteCounting     = "ssl_write_counting"
 	tlsbpfMapSslWriteStat         = "ssl_write_stat"
 	tlsbpfMapTrackedPids          = "tracked_pids"
 	tlsbpfMapTrackedSeeded        = "tracked_seeded"
@@ -131,19 +139,20 @@ type tlsbpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tlsbpfMapSpecs struct {
-	DropCount      *ebpf.MapSpec `ebpf:"drop_count"`
-	FaultedReads   *ebpf.MapSpec `ebpf:"faulted_reads"`
-	ReadDropCount  *ebpf.MapSpec `ebpf:"read_drop_count"`
-	ReadFaultCount *ebpf.MapSpec `ebpf:"read_fault_count"`
-	SslEvents      *ebpf.MapSpec `ebpf:"ssl_events"`
-	SslHeap        *ebpf.MapSpec `ebpf:"ssl_heap"`
-	SslReadArgs    *ebpf.MapSpec `ebpf:"ssl_read_args"`
-	SslWriteArgs   *ebpf.MapSpec `ebpf:"ssl_write_args"`
-	SslWriteStat   *ebpf.MapSpec `ebpf:"ssl_write_stat"`
-	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
-	TrackedSeeded  *ebpf.MapSpec `ebpf:"tracked_seeded"`
-	TrackedStat    *ebpf.MapSpec `ebpf:"tracked_stat"`
-	UntrackedCount *ebpf.MapSpec `ebpf:"untracked_count"`
+	DropCount        *ebpf.MapSpec `ebpf:"drop_count"`
+	FaultedReads     *ebpf.MapSpec `ebpf:"faulted_reads"`
+	ReadDropCount    *ebpf.MapSpec `ebpf:"read_drop_count"`
+	ReadFaultCount   *ebpf.MapSpec `ebpf:"read_fault_count"`
+	SslEvents        *ebpf.MapSpec `ebpf:"ssl_events"`
+	SslHeap          *ebpf.MapSpec `ebpf:"ssl_heap"`
+	SslReadArgs      *ebpf.MapSpec `ebpf:"ssl_read_args"`
+	SslWriteArgs     *ebpf.MapSpec `ebpf:"ssl_write_args"`
+	SslWriteCounting *ebpf.MapSpec `ebpf:"ssl_write_counting"`
+	SslWriteStat     *ebpf.MapSpec `ebpf:"ssl_write_stat"`
+	TrackedPids      *ebpf.MapSpec `ebpf:"tracked_pids"`
+	TrackedSeeded    *ebpf.MapSpec `ebpf:"tracked_seeded"`
+	TrackedStat      *ebpf.MapSpec `ebpf:"tracked_stat"`
+	UntrackedCount   *ebpf.MapSpec `ebpf:"untracked_count"`
 }
 
 // tlsbpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -172,19 +181,20 @@ func (o *tlsbpfObjects) Close() error {
 //
 // It can be passed to loadTlsbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tlsbpfMaps struct {
-	DropCount      *ebpf.Map `ebpf:"drop_count"`
-	FaultedReads   *ebpf.Map `ebpf:"faulted_reads"`
-	ReadDropCount  *ebpf.Map `ebpf:"read_drop_count"`
-	ReadFaultCount *ebpf.Map `ebpf:"read_fault_count"`
-	SslEvents      *ebpf.Map `ebpf:"ssl_events"`
-	SslHeap        *ebpf.Map `ebpf:"ssl_heap"`
-	SslReadArgs    *ebpf.Map `ebpf:"ssl_read_args"`
-	SslWriteArgs   *ebpf.Map `ebpf:"ssl_write_args"`
-	SslWriteStat   *ebpf.Map `ebpf:"ssl_write_stat"`
-	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
-	TrackedSeeded  *ebpf.Map `ebpf:"tracked_seeded"`
-	TrackedStat    *ebpf.Map `ebpf:"tracked_stat"`
-	UntrackedCount *ebpf.Map `ebpf:"untracked_count"`
+	DropCount        *ebpf.Map `ebpf:"drop_count"`
+	FaultedReads     *ebpf.Map `ebpf:"faulted_reads"`
+	ReadDropCount    *ebpf.Map `ebpf:"read_drop_count"`
+	ReadFaultCount   *ebpf.Map `ebpf:"read_fault_count"`
+	SslEvents        *ebpf.Map `ebpf:"ssl_events"`
+	SslHeap          *ebpf.Map `ebpf:"ssl_heap"`
+	SslReadArgs      *ebpf.Map `ebpf:"ssl_read_args"`
+	SslWriteArgs     *ebpf.Map `ebpf:"ssl_write_args"`
+	SslWriteCounting *ebpf.Map `ebpf:"ssl_write_counting"`
+	SslWriteStat     *ebpf.Map `ebpf:"ssl_write_stat"`
+	TrackedPids      *ebpf.Map `ebpf:"tracked_pids"`
+	TrackedSeeded    *ebpf.Map `ebpf:"tracked_seeded"`
+	TrackedStat      *ebpf.Map `ebpf:"tracked_stat"`
+	UntrackedCount   *ebpf.Map `ebpf:"untracked_count"`
 }
 
 func (m *tlsbpfMaps) Close() error {
@@ -197,6 +207,7 @@ func (m *tlsbpfMaps) Close() error {
 		m.SslHeap,
 		m.SslReadArgs,
 		m.SslWriteArgs,
+		m.SslWriteCounting,
 		m.SslWriteStat,
 		m.TrackedPids,
 		m.TrackedSeeded,
