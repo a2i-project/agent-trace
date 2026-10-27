@@ -29,8 +29,8 @@ func fakeObjects(t *testing.T) (*bpfObjects, map[*ebpf.Program]string) {
 }
 
 // Every program in proc.bpf.c is a raw tracepoint, attached by New or
-// tail-called from the sys_enter dispatcher, in the slot order of enum
-// sys_slot (P-32). A perf-event tracepoint section would bring back the
+// tail-called in the sys_enter chain, in the slot order of enum sys_slot
+// (P-32, P-36). A perf-event tracepoint section would bring back the
 // kernel 7.0 exec loss and the slow detach. Runs without root.
 func TestHooks_EveryProgramIsARawTracepointAndIsWired(t *testing.T) {
 	spec, err := loadBpf()
@@ -67,8 +67,8 @@ func TestHooks_EveryProgramIsARawTracepointAndIsWired(t *testing.T) {
 		wired[got] = true
 	}
 
-	// enum sys_slot: SLOT_EXECVE, SLOT_EXECVEAT.
-	wantSlots := []string{"handle_execve", "handle_execveat"}
+	// enum sys_slot: SLOT_EXECVE, SLOT_EXECVEAT, SLOT_EXEC_CWD.
+	wantSlots := []string{"handle_execve", "handle_execveat", "handle_exec_cwd"}
 	slots := sysEnterPrograms(objs)
 	if got := spec.Maps["sys_enter_progs"].MaxEntries; int(got) != len(slots) {
 		t.Errorf("sys_enter_progs has %d slots, sysEnterPrograms fills %d", got, len(slots))

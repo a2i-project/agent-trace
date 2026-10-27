@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 35ab223 on 2026-10-27.
+Checked against commit 3f73cd4 on 2026-10-27.
 
 ## Objective
 
@@ -79,6 +79,8 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `PPID` | `ppid` | proc only, on fork, exec and exit records |
 | `PathIsAmbiguous` | `path_is_ambiguous` | fs, when only the parent directory resolved: the create, delete and rename records of captures made before P-25, which requested no entry names |
 | `TargetTruncated` | `target_truncated` | proc, when the command line or the program path did not fit the record (P-19) |
+| `Cwd`, `CwdTruncated` | `cwd`, `cwd_truncated` | proc, on `process_exec`: the working directory of the attempt, and whether the probe cut it (P-36) |
+| `Image` | `image` | proc, on a `process_exec` that took effect: the kernel's filename, whether it differs from the one read at entry, the interpreter a script named, the path of the file the new image runs, and whether any of them was cut (`ExecImage`, P-36); report only (V-51) |
 | `RequestHash` | `request_hash` | net, on `net_request` with a body |
 | `Response` | `response` | net, on `net_response` only: status, request id, content type and encoding, body length and hash, end time, completeness, pairing and the server-sent event counts ([13_probe_net.md](13_probe_net.md), N-29) |
 

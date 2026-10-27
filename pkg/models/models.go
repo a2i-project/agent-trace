@@ -113,6 +113,50 @@ type GroundTruthEvent struct {
 	// Response is the attestation record of a NetResponse event (N-29).
 	// Nil on every other action type.
 	Response *ResponseAttestation `json:"response,omitempty"`
+	// Cwd is the working directory of the process when it made a
+	// ProcessExec attempt, as an absolute path from the process's root
+	// directory (P-36). A relative program path or argument in Target is
+	// relative to it. Empty means not recorded: a capture made before P-36,
+	// or a probe that could not read it (CwdTruncated then says so).
+	Cwd string `json:"cwd,omitempty"`
+	// CwdTruncated is true when the probe could not record the whole
+	// working directory. Cwd then holds its last components without the
+	// leading ones and without a leading slash, or is empty.
+	CwdTruncated bool `json:"cwd_truncated,omitempty"`
+	// Image is what the kernel ran for a ProcessExec attempt that took
+	// effect, read once the new image was in place (P-36). Nil when the
+	// attempt failed, when the probe lost the record that says it took
+	// effect, and in captures made before P-36. Report only: no verdict
+	// reads it (V-51).
+	Image *ExecImage `json:"image,omitempty"`
+}
+
+// ExecImage is the proc probe's record of an exec that took effect, read
+// from the kernel after the new image replaced the old one (P-36). The
+// event's Target is read at syscall entry from the caller's memory; these
+// fields are the kernel's own.
+type ExecImage struct {
+	// Filename is the kernel's copy of the path the exec was asked for:
+	// the one in Target unless the caller changed its memory in between,
+	// /dev/fd/N for an exec through a descriptor, and /dev/fd/N/<path> for
+	// an execveat path relative to a directory descriptor.
+	Filename string `json:"filename"`
+	// FilenameChanged is true when Filename is not the path the probe read
+	// at syscall entry: the caller's memory changed in between. An exec
+	// through a descriptor never sets it.
+	FilenameChanged bool `json:"filename_changed,omitempty"`
+	// Interpreter is the interpreter a script's first line named, when the
+	// kernel ran one, as written there.
+	Interpreter string `json:"interpreter,omitempty"`
+	// Program is the absolute path, from the process's root directory, of
+	// the file the new image runs: the program the exec named, or a
+	// script's interpreter, with symbolic links resolved. Empty when the
+	// probe could not read it.
+	Program string `json:"program,omitempty"`
+	// Truncated is true when Filename, Interpreter or Program is
+	// incomplete; Program then holds its last components only, without a
+	// leading slash.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 func (e *TrajectoryEntry) Validate() error {

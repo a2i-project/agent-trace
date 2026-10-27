@@ -454,7 +454,7 @@ func printOrphans(w io.Writer, orphans []*verification.Process) {
 	for _, o := range orphans {
 		target := "(forked and never exec'd)"
 		if o.Exec != nil {
-			target = o.Exec.Target
+			target = execLabel(o.Exec)
 		}
 		_, _ = fmt.Fprintf(w, "  %s pid %d, parent %d: %s\n", o.Start.Format(time.RFC3339Nano), o.PID, o.PPID, target)
 	}
@@ -468,7 +468,7 @@ func printSubtrees(w io.Writer, cmds []*verification.Command) {
 	for _, c := range cmds {
 		target := "(forked and never exec'd)"
 		if c.Exec != nil {
-			target = c.Exec.Target
+			target = execLabel(c.Exec)
 		}
 		if c.Baseline || c.Harness {
 			// A baselined command, or a declared harness command, whose
@@ -685,7 +685,7 @@ func printCommands(w io.Writer, cmds []*verification.Command) {
 	for _, c := range cmds {
 		target := "(forked and never exec'd)"
 		if c.Exec != nil {
-			target = c.Exec.Target
+			target = execLabel(c.Exec)
 		}
 		status := "claimed"
 		if c.Baseline {
@@ -726,7 +726,7 @@ func printCommands(w io.Writer, cmds []*verification.Command) {
 			case models.FileDelete:
 				add("files deleted", e.Target)
 			case models.ProcessExec:
-				add("programs run", e.Target)
+				add("programs run", execLabel(&e))
 			case models.NetConnect:
 				add("connections", e.Target)
 			case models.NetRequest:
@@ -787,6 +787,44 @@ func printCommands(w io.Writer, cmds []*verification.Command) {
 			_, _ = fmt.Fprintln(w, "    nothing observed beneath it")
 		}
 	}
+}
+
+// execLabel is an exec's target as the text report prints it, with what the
+// proc probe recorded around it (P-36, V-51) in brackets: the working
+// directory a relative program path resolves against, and the kernel's own
+// record where it says more than the target: the program an exec through a
+// descriptor ran, a script's interpreter, a filename the caller changed
+// after the probe read it. A capture without these fields prints the target
+// alone, as before.
+func execLabel(e *models.GroundTruthEvent) string {
+	prog, _, _ := strings.Cut(e.Target, " ")
+	var notes []string
+	if e.Cwd != "" && prog != "" && !strings.HasPrefix(prog, "/") && prog != "(fexecve)" {
+		if e.CwdTruncated {
+			notes = append(notes, "in .../"+e.Cwd)
+		} else {
+			notes = append(notes, "in "+e.Cwd)
+		}
+	}
+	if im := e.Image; im != nil {
+		if im.FilenameChanged {
+			notes = append(notes, "kernel ran "+im.Filename)
+		}
+		if im.Interpreter != "" {
+			notes = append(notes, "interpreter "+im.Interpreter)
+		}
+		if im.Program != "" && (prog == "(fexecve)" || im.FilenameChanged || im.Interpreter != "") {
+			p := im.Program
+			if !strings.HasPrefix(p, "/") {
+				p = ".../" + p
+			}
+			notes = append(notes, "runs "+p)
+		}
+	}
+	if len(notes) == 0 {
+		return e.Target
+	}
+	return e.Target + " [" + strings.Join(notes, "; ") + "]"
 }
 
 // jsonCommand is one command in the JSON report.

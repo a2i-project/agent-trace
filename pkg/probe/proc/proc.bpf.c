@@ -15,11 +15,29 @@ char LICENSE[] SEC("license") = "GPL";
 #define MAX_ARGS_BYTES 131072
 #define FILENAME_LEN 256
 
+// A path the probe walks from a dentry up to the process's root (P-36): the
+// names leaf first, each with its NUL, packed into PATH_BYTES plus one name
+// of slack, so the last name read never runs past the area. NAME_LEN is
+// NAME_MAX plus the NUL, so a name is never cut. PATH_DEPTH bounds the walk:
+// one step per name and one per mount crossed.
+#define PATH_BYTES 4096
+#define NAME_LEN 256
+#define PATH_AREA (PATH_BYTES + NAME_LEN)
+#define PATH_DEPTH 32
+
 #define KIND_EXEC 0
 #define KIND_EXIT 1
 #define KIND_FORK 2 // a tracked process created a child; header only, no filename or args
-#define KIND_EXEC_OK 3 // an exec took effect; header only, tid names the thread whose attempt it was
+#define KIND_EXEC_OK 3 // an exec took effect; tid names the thread whose attempt it was
 
+// The records that follow the header:
+//   KIND_EXEC     filename[FILENAME_LEN], args[args_size] (nargs strings),
+//                 then the working directory, path[path_size]
+//   KIND_EXEC_OK  the kernel's filename (bprm->filename) in filename[FILENAME_LEN],
+//                 the interpreter (bprm->interp) in interp[FILENAME_LEN] with
+//                 args_size its length (0 when it is the filename), then the
+//                 file the new image runs, path[path_size]
+//   KIND_EXIT, KIND_FORK  nothing
 struct event_hdr {
 	__u32 pid;
 	__u32 ppid; // parent tgid when the process exec'd, from the task struct
@@ -28,18 +46,29 @@ struct event_hdr {
 	__s64 ts_ns;
 	__s32 exit_code;
 	__u8  has_exit_code;
-	__u8  args_truncated; // the filename or the arguments did not fit
-	__u16 pad0;
+	__u8  args_truncated; // the filename, the arguments or the interpreter did not fit
+	__u8  path_truncated; // the path is incomplete: the walk did not reach the root (P-36)
+	__u8  via_fd; // KIND_EXEC: an exec through a descriptor, the filename is "(fexecve)"
 	__u32 filename_len;
 	__u32 args_size;
 	__u32 tid; // the thread that made the exec attempt (KIND_EXEC, KIND_EXEC_OK)
-	__u32 pad1;
+	__u32 path_size; // bytes of the path at the end of the record; 0 and not truncated: none recorded
 };
 
 struct exec_scratch {
 	struct event_hdr hdr;
 	char filename[FILENAME_LEN];
-	char args[MAX_ARGS_BYTES * 2]; // Padded to satisfy verifier worst-case offset+size bounds
+	// Padded to satisfy verifier worst-case offset+size bounds; the
+	// working directory follows the arguments, at an offset the verifier
+	// bounds by 2 * MAX_ARGS_BYTES, hence the PATH_AREA beyond it.
+	char args[MAX_ARGS_BYTES * 2 + PATH_AREA];
+};
+
+struct exec_ok_scratch {
+	struct event_hdr hdr;
+	char filename[FILENAME_LEN];
+	char interp[FILENAME_LEN];
+	char path[PATH_AREA];
 };
 
 // tracked_pids holds the tgids of the root and its descendants in filtered
@@ -208,6 +237,15 @@ static __always_inline struct exec_scratch *scratch(void)
 	return bpf_map_lookup_elem(&heap, &cpu);
 }
 
+// ok_heap is handle_exec_ok's scratch record (P-36). It fits a per-CPU value,
+// and sched_process_exec runs the program with preemption disabled.
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, struct exec_ok_scratch);
+} ok_heap SEC(".maps");
+
 // execs keeps, per tracked process, a header from the latest exec that took
 // effect until it exits: the exit code lands here and the exit record is this
 // header. A process whose exec attempts all failed has no entry, as one that
@@ -281,12 +319,116 @@ static __always_inline int nul_at(const char *s, __u32 i)
 	return !bpf_probe_read_user(&c, 1, s + i) && c == '\0';
 }
 
+// kernel_nul_at is nul_at for a kernel string.
+static __always_inline int kernel_nul_at(const char *s, __u32 i)
+{
+	char c = 1;
+	return !bpf_probe_read_kernel(&c, 1, s + i) && c == '\0';
+}
+
+// walk_path writes the path of dentry d on mount vm, as seen from the root
+// root_d on root_vm, into area: the names from d up, leaf first, each with
+// its NUL (P-36). It returns the bytes written and sets *cut unless the walk
+// reached the root. bpf_d_path is not available to a raw tracepoint (the
+// kernel allows it only to tracing and LSM programs on a list of functions),
+// so this is the walk prepend_path does, without its locks: a step that
+// meets the root of a mount continues at the mount point in the parent
+// mount, and a walk that meets the namespace's top without passing the
+// process's root ends there. A dentry that is its own parent without being
+// a mount root (a disconnected one) ends the walk cut. area must hold
+// PATH_AREA bytes.
+static __always_inline __u32 walk_path(char *area, struct dentry *d, struct vfsmount *vm,
+				       struct dentry *root_d, struct vfsmount *root_vm, __u8 *cut)
+{
+	__u32 size = 0;
+	*cut = 1;
+	if (!d || !vm)
+		return 0;
+	struct mount *m = (struct mount *)((char *)vm - bpf_core_field_offset(struct mount, mnt));
+	for (int i = 0; i < PATH_DEPTH; i++) {
+		if (d == root_d && vm == root_vm) {
+			*cut = 0;
+			return size;
+		}
+		struct dentry *parent = BPF_CORE_READ(d, d_parent);
+		if (d == BPF_CORE_READ(vm, mnt_root)) {
+			struct mount *up = BPF_CORE_READ(m, mnt_parent);
+			if (!up || up == m) {
+				*cut = 0; // the top of the namespace
+				return size;
+			}
+			d = BPF_CORE_READ(m, mnt_mountpoint);
+			m = up;
+			vm = (struct vfsmount *)((char *)m + bpf_core_field_offset(struct mount, mnt));
+			continue;
+		}
+		if (d == parent || size >= PATH_BYTES)
+			return size;
+		const unsigned char *name = BPF_CORE_READ(d, d_name.name);
+		// The mask, which the barrier keeps the compiler from dropping
+		// after the test above, is the bound the verifier sees.
+		__u32 off = size;
+		barrier_var(off);
+		off &= PATH_BYTES - 1;
+		long n = bpf_probe_read_kernel_str(area + off, NAME_LEN, name);
+		if (n <= 0)
+			return size;
+		size += n;
+		d = parent;
+	}
+	if (d == root_d && vm == root_vm)
+		*cut = 0;
+	return size;
+}
+
+// Slots of sys_enter_progs. sysEnterPrograms in observer.go fills them in
+// this order. The dispatcher tail-calls the exec programs; they tail-call
+// SLOT_EXEC_CWD (P-36).
+enum sys_slot {
+	SLOT_EXECVE,
+	SLOT_EXECVEAT,
+	SLOT_EXEC_CWD,
+	SLOT_COUNT,
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__uint(max_entries, SLOT_COUNT);
+	__type(key, __u32);
+	__type(value, __u32);
+} sys_enter_progs SEC(".maps");
+
+static __always_inline void exec_tail_call(struct bpf_raw_tracepoint_args *ctx)
+{
+	bpf_tail_call(ctx, &sys_enter_progs, SLOT_EXEC_CWD);
+}
+
+// emit_exec outputs the exec record in e: the header, the filename, the
+// arguments and the working directory the header says it holds.
+static __always_inline void emit_exec(struct exec_scratch *e)
+{
+	__u32 args_size = e->hdr.args_size;
+	if (args_size > MAX_ARGS_BYTES)
+		args_size = MAX_ARGS_BYTES;
+	__u32 path_size = e->hdr.path_size;
+	if (path_size > PATH_AREA)
+		path_size = PATH_AREA;
+	__u32 out_size = sizeof(struct event_hdr) + FILENAME_LEN + args_size + path_size;
+	if (out_size > sizeof(struct exec_scratch))
+		out_size = sizeof(struct exec_scratch);
+
+	if (bpf_ringbuf_output(&events, e, out_size, 0))
+		count_drop();
+}
+
 // record_exec records one exec attempt at syscall entry, whether it then
 // succeeds or not (P-4): the filename as the kernel was asked for it (or
 // "(fexecve)" for an exec through a descriptor, which names no path), then
-// argv. Shared by execve and execveat (P-21). handle_exec_ok says which
-// attempt took effect (P-31).
-static __always_inline int record_exec(const char *filename, const char *const *argv, int via_fd)
+// argv, then (in handle_exec_cwd) the working directory (P-36). Shared by
+// execve and execveat (P-21). handle_exec_ok says which attempt took effect
+// (P-31).
+static __always_inline int record_exec(struct bpf_raw_tracepoint_args *ctx, const char *filename,
+				       const char *const *argv, int via_fd)
 {
 	__u64 pid_tgid = bpf_get_current_pid_tgid();
 	__u32 pid = pid_tgid >> 32;
@@ -297,7 +439,6 @@ static __always_inline int record_exec(const char *filename, const char *const *
 
 	e->hdr.pid = pid;
 	e->hdr.tid = (__u32)pid_tgid;
-	e->hdr.pad1 = 0;
 	// The parent as the kernel sees it now, so it is correct whether or not
 	// tracked_pids is in use.
 	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
@@ -309,7 +450,9 @@ static __always_inline int record_exec(const char *filename, const char *const *
 	e->hdr.args_size = 0;
 	e->hdr.nargs = 0;
 	e->hdr.args_truncated = 0;
-	e->hdr.pad0 = 0;
+	e->hdr.path_truncated = 0;
+	e->hdr.via_fd = via_fd ? 1 : 0;
+	e->hdr.path_size = 0;
 
 	e->filename[0] = '\0';
 	long fn_len;
@@ -380,12 +523,12 @@ static __always_inline int record_exec(const char *filename, const char *const *
 	e->hdr.args_size = args_size;
 	e->hdr.nargs = nargs;
 
-	__u32 out_size = sizeof(struct event_hdr) + FILENAME_LEN + args_size;
-	if (out_size > sizeof(struct exec_scratch))
-		out_size = sizeof(struct exec_scratch);
-
-	if (bpf_ringbuf_output(&events, e, out_size, 0))
-		count_drop();
+	// handle_exec_cwd appends the working directory and outputs the record;
+	// the walk does not fit this program beside the argument loop. A tail
+	// call cannot fail once New filled the slot; if it did, the record goes
+	// out without a working directory.
+	exec_tail_call(ctx);
+	emit_exec(e);
 	return 0;
 }
 
@@ -409,21 +552,6 @@ static __always_inline int record_exec(const char *filename, const char *const *
 #define NR_exit_group 231
 #define NR_execveat   322
 
-// Slots of sys_enter_progs. sysEnterPrograms in observer.go fills them in
-// this order.
-enum sys_slot {
-	SLOT_EXECVE,
-	SLOT_EXECVEAT,
-	SLOT_COUNT,
-};
-
-struct {
-	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
-	__uint(max_entries, SLOT_COUNT);
-	__type(key, __u32);
-	__type(value, __u32);
-} sys_enter_progs SEC(".maps");
-
 #define TS_COMPAT 0x0002 // thread_info.status: a 32-bit syscall is running
 
 static __always_inline struct pt_regs *sys_regs(struct bpf_raw_tracepoint_args *ctx)
@@ -442,7 +570,7 @@ int handle_execve(struct bpf_raw_tracepoint_args *ctx)
 	struct pt_regs *regs = sys_regs(ctx);
 	const char *filename = (const char *)SYS_ARG1(regs);
 	const char *const *argv = (const char *const *)SYS_ARG2(regs);
-	return record_exec(filename, argv, 0);
+	return record_exec(ctx, filename, argv, 0);
 }
 
 // execveat(2): fd, pathname, argv, envp, flags. With AT_EMPTY_PATH and an
@@ -462,7 +590,38 @@ int handle_execveat(struct bpf_raw_tracepoint_args *ctx)
 	// as an exec through the descriptor, as before (P-21).
 	char first = 0;
 	int via_fd = bpf_probe_read_user(&first, 1, filename) || first == '\0';
-	return record_exec(filename, argv, via_fd);
+	return record_exec(ctx, filename, argv, via_fd);
+}
+
+// handle_exec_cwd ends an exec record that record_exec left in the scratch
+// slot: it appends the working directory, from the task's fs->pwd up to its
+// fs->root, after the arguments, and outputs the record (P-36). It runs in
+// the same tail-call chain on the same CPU, so the slot is the one
+// record_exec filled. A record whose walk did not reach the root is flagged
+// path_truncated and keeps the names it read.
+SEC("raw_tracepoint/sys_enter")
+int handle_exec_cwd(struct bpf_raw_tracepoint_args *ctx)
+{
+	struct exec_scratch *e = scratch();
+	if (!e)
+		return 0;
+	// args_size is at most MAX_ARGS_BYTES; the mask is the bound the
+	// verifier sees.
+	__u32 args_size = e->hdr.args_size;
+	barrier_var(args_size);
+	args_size &= 2 * MAX_ARGS_BYTES - 1;
+
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	struct fs_struct *fs = BPF_CORE_READ(task, fs);
+	__u8 cut = 1;
+	__u32 n = 0;
+	if (fs)
+		n = walk_path(&e->args[args_size], BPF_CORE_READ(fs, pwd.dentry), BPF_CORE_READ(fs, pwd.mnt),
+			      BPF_CORE_READ(fs, root.dentry), BPF_CORE_READ(fs, root.mnt), &cut);
+	e->hdr.path_size = n;
+	e->hdr.path_truncated = cut;
+	emit_exec(e);
+	return 0;
 }
 
 // handle_exit_group stores the exit code of a process that calls
@@ -522,6 +681,10 @@ int trace_sys_enter(struct bpf_raw_tracepoint_args *ctx)
 // (old_pid: a non-leader thread that execs takes the leader's pid), and
 // userspace joins it to that thread's latest attempt. The execs entry is
 // created or replaced here, so the exit record carries the image that exited.
+// The record also carries what the kernel ran (P-36): its own copy of the
+// filename, the interpreter a script named, and the path of the file the new
+// image runs (bprm->file, which becomes mm->exe_file), walked from the
+// process's root.
 // sched_process_exec(struct task_struct *p, pid_t old_pid, struct
 // linux_binprm *bprm) fires in the task that exec'd.
 SEC("raw_tracepoint/sched_process_exec")
@@ -544,7 +707,45 @@ int handle_exec_ok(struct bpf_raw_tracepoint_args *ctx)
 
 	if (bpf_map_update_elem(&execs, &tgid, &h, BPF_ANY))
 		count_state_lost();
-	if (bpf_ringbuf_output(&events, &h, sizeof(h), 0))
+
+	__u32 zero = 0;
+	struct exec_ok_scratch *s = bpf_map_lookup_elem(&ok_heap, &zero);
+	if (!s) {
+		if (bpf_ringbuf_output(&events, &h, sizeof(h), 0))
+			count_drop();
+		return 0;
+	}
+	s->hdr = h;
+	struct linux_binprm *bprm = (struct linux_binprm *)ctx->args[2];
+	const char *fn = BPF_CORE_READ(bprm, filename);
+	const char *interp = BPF_CORE_READ(bprm, interp);
+	long n = bpf_probe_read_kernel_str(s->filename, FILENAME_LEN, fn);
+	s->hdr.filename_len = n > 0 ? n : 0;
+	if (n <= 0 || (n >= FILENAME_LEN && !kernel_nul_at(fn, FILENAME_LEN - 1)))
+		s->hdr.args_truncated = 1;
+	// interp is the filename itself unless a binary handler (a script's
+	// #!) replaced it.
+	if (interp && interp != fn) {
+		long m = bpf_probe_read_kernel_str(s->interp, FILENAME_LEN, interp);
+		s->hdr.args_size = m > 0 ? m : 0;
+		if (m <= 0 || (m >= FILENAME_LEN && !kernel_nul_at(interp, FILENAME_LEN - 1)))
+			s->hdr.args_truncated = 1;
+	}
+
+	struct file *file = BPF_CORE_READ(bprm, file);
+	struct fs_struct *fs = BPF_CORE_READ(task, fs);
+	__u8 cut = 1;
+	__u32 p = 0;
+	if (file && fs)
+		p = walk_path(s->path, BPF_CORE_READ(file, f_path.dentry), BPF_CORE_READ(file, f_path.mnt),
+			      BPF_CORE_READ(fs, root.dentry), BPF_CORE_READ(fs, root.mnt), &cut);
+	s->hdr.path_size = p;
+	s->hdr.path_truncated = cut;
+
+	__u32 out_size = sizeof(struct event_hdr) + 2 * FILENAME_LEN + p;
+	if (out_size > sizeof(struct exec_ok_scratch))
+		out_size = sizeof(struct exec_ok_scratch);
+	if (bpf_ringbuf_output(&events, s, out_size, 0))
 		count_drop();
 	return 0;
 }

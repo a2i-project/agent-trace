@@ -1184,3 +1184,91 @@ func TestDeclaredHarnessBookkeepingIsReported(t *testing.T) {
 		t.Errorf("JSON: %+v", r)
 	}
 }
+
+// The text report labels an exec with the process context the proc probe
+// recorded (P-36), where it says more than the target: a relative program
+// resolves against the working directory, and the kernel's record names an
+// exec through a descriptor's program, a script's interpreter, or a changed
+// filename. Report only (V-51): a target without these fields prints as
+// before.
+func TestExecLabel(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		e    models.GroundTruthEvent
+		want string
+	}{
+		{"a capture without the fields", models.GroundTruthEvent{Target: "./run.sh a"}, "./run.sh a"},
+		{"an absolute program", models.GroundTruthEvent{Target: "/bin/true a", Cwd: "/w"}, "/bin/true a"},
+		{"a relative program", models.GroundTruthEvent{Target: "./run.sh a", Cwd: "/w"}, "./run.sh a [in /w]"},
+		{"a bare relative program", models.GroundTruthEvent{Target: "tool a", Cwd: "/w"}, "tool a [in /w]"},
+		{"a cut cwd", models.GroundTruthEvent{Target: "./x", Cwd: "b/c", CwdTruncated: true}, "./x [in .../b/c]"},
+		{
+			"an ordinary image adds nothing",
+			models.GroundTruthEvent{Target: "/bin/true", Image: &models.ExecImage{Filename: "/bin/true", Program: "/usr/bin/true"}},
+			"/bin/true",
+		},
+		{
+			"an exec through a descriptor names its program",
+			models.GroundTruthEvent{Target: "(fexecve) a", Cwd: "/w", Image: &models.ExecImage{Filename: "/dev/fd/3", Program: "/usr/bin/true"}},
+			"(fexecve) a [runs /usr/bin/true]",
+		},
+		{
+			"a script names its interpreter",
+			models.GroundTruthEvent{Target: "./run.sh", Cwd: "/w", Image: &models.ExecImage{Filename: "./run.sh", Interpreter: "/bin/sh", Program: "/usr/bin/dash"}},
+			"./run.sh [in /w; interpreter /bin/sh; runs /usr/bin/dash]",
+		},
+		{
+			"a changed filename",
+			models.GroundTruthEvent{Target: "/bin/true", Image: &models.ExecImage{Filename: "/bin/false", FilenameChanged: true, Program: "/usr/bin/false"}},
+			"/bin/true [kernel ran /bin/false; runs /usr/bin/false]",
+		},
+		{
+			"a cut program path",
+			models.GroundTruthEvent{Target: "(fexecve)", Image: &models.ExecImage{Filename: "/dev/fd/3", Program: "bin/true", Truncated: true}},
+			"(fexecve) [runs .../bin/true]",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := execLabel(&c.e); got != c.want {
+				t.Errorf("execLabel = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The process context changes no pairing: a claim of an exec through a
+// descriptor still pairs by its target, and the forensic view shows the
+// program the kernel ran (V-51).
+func TestProcessContextIsReportOnly(t *testing.T) {
+	dir := t.TempDir()
+	const root, sh, child = 100, 200, 300
+	ev := func(ms int, typ models.ActionType, target string, pid, ppid uint32) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: t0.Add(time.Duration(ms) * time.Millisecond), ActionType: typ, Target: target, PID: pid, PPID: ppid}
+	}
+	shExec := ev(1, models.ProcessExec, "/bin/sh -c run", sh, root)
+	shExec.Cwd = "/w"
+	shExec.Image = &models.ExecImage{Filename: "/bin/sh", Program: "/usr/bin/dash"}
+	inner := ev(3, models.ProcessExec, "(fexecve) a", child, sh)
+	inner.Cwd = "/w"
+	inner.Image = &models.ExecImage{Filename: "/dev/fd/3", Program: "/usr/bin/true"}
+	g := models.GroundTruthFile{RootPID: root, Coverage: completeCov(), Workspace: "/w", Events: models.GroundTruth{
+		ev(0, models.ProcessFork, "200", sh, root),
+		shExec,
+		ev(2, models.ProcessFork, "300", child, sh),
+		inner,
+	}}
+	tr := models.Trajectory{{Timestamp: t0, ActionType: models.ProcessExec, Target: "/bin/sh -c run"}}
+	exitCode, out, errOut := verify(t, "--trajectory", writeJSON(t, dir, "t.json", tr), "--ground-truth", writeJSON(t, dir, "g.json", g), "--ignore-exits")
+	if exitCode != 0 {
+		t.Fatalf("exit %d, stderr %s\n%s", exitCode, errOut, out)
+	}
+	for _, want := range []string{
+		"pid 200 [claimed] /bin/sh -c run\n",
+		"programs run (1): (fexecve) a [runs /usr/bin/true]",
+		"VERDICT: FAITHFUL",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report lacks %q\n%s", want, out)
+		}
+	}
+}

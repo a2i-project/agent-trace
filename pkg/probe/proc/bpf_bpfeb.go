@@ -23,18 +23,27 @@ type bpfEventHdr struct {
 	ExitCode      int32
 	HasExitCode   uint8
 	ArgsTruncated uint8
-	Pad0          uint16
+	PathTruncated uint8
+	ViaFd         uint8
 	FilenameLen   uint32
 	ArgsSize      uint32
 	Tid           uint32
-	Pad1          uint32
+	PathSize      uint32
+}
+
+type bpfExecOkScratch struct {
+	_        structs.HostLayout
+	Hdr      bpfEventHdr
+	Filename [256]int8
+	Interp   [256]int8
+	Path     [4352]int8
 }
 
 type bpfExecScratch struct {
 	_        structs.HostLayout
 	Hdr      bpfEventHdr
 	Filename [256]int8
-	Args     [262144]int8
+	Args     [266496]int8
 }
 
 type bpfTrackedStat struct {
@@ -52,12 +61,14 @@ const (
 	bpfMapEvents          = "events"
 	bpfMapExecs           = "execs"
 	bpfMapHeap            = "heap"
+	bpfMapOkHeap          = "ok_heap"
 	bpfMapStateLostCount  = "state_lost_count"
 	bpfMapSysEnterProgs   = "sys_enter_progs"
 	bpfMapTrackedPids     = "tracked_pids"
 	bpfMapTrackedSeeded   = "tracked_seeded"
 	bpfMapTrackedStat     = "tracked_stat"
 	bpfMapUntrackedCount  = "untracked_count"
+	bpfProgHandleExecCwd  = "handle_exec_cwd"
 	bpfProgHandleExecOk   = "handle_exec_ok"
 	bpfProgHandleExecve   = "handle_execve"
 	bpfProgHandleExecveat = "handle_execveat"
@@ -108,6 +119,7 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
+	HandleExecCwd  *ebpf.ProgramSpec `ebpf:"handle_exec_cwd"`
 	HandleExecOk   *ebpf.ProgramSpec `ebpf:"handle_exec_ok"`
 	HandleExecve   *ebpf.ProgramSpec `ebpf:"handle_execve"`
 	HandleExecveat *ebpf.ProgramSpec `ebpf:"handle_execveat"`
@@ -125,6 +137,7 @@ type bpfMapSpecs struct {
 	Events         *ebpf.MapSpec `ebpf:"events"`
 	Execs          *ebpf.MapSpec `ebpf:"execs"`
 	Heap           *ebpf.MapSpec `ebpf:"heap"`
+	OkHeap         *ebpf.MapSpec `ebpf:"ok_heap"`
 	StateLostCount *ebpf.MapSpec `ebpf:"state_lost_count"`
 	SysEnterProgs  *ebpf.MapSpec `ebpf:"sys_enter_progs"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
@@ -164,6 +177,7 @@ type bpfMaps struct {
 	Events         *ebpf.Map `ebpf:"events"`
 	Execs          *ebpf.Map `ebpf:"execs"`
 	Heap           *ebpf.Map `ebpf:"heap"`
+	OkHeap         *ebpf.Map `ebpf:"ok_heap"`
 	StateLostCount *ebpf.Map `ebpf:"state_lost_count"`
 	SysEnterProgs  *ebpf.Map `ebpf:"sys_enter_progs"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
@@ -179,6 +193,7 @@ func (m *bpfMaps) Close() error {
 		m.Events,
 		m.Execs,
 		m.Heap,
+		m.OkHeap,
 		m.StateLostCount,
 		m.SysEnterProgs,
 		m.TrackedPids,
@@ -198,6 +213,7 @@ type bpfVariables struct {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
+	HandleExecCwd  *ebpf.Program `ebpf:"handle_exec_cwd"`
 	HandleExecOk   *ebpf.Program `ebpf:"handle_exec_ok"`
 	HandleExecve   *ebpf.Program `ebpf:"handle_execve"`
 	HandleExecveat *ebpf.Program `ebpf:"handle_execveat"`
@@ -208,6 +224,7 @@ type bpfPrograms struct {
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
+		p.HandleExecCwd,
 		p.HandleExecOk,
 		p.HandleExecve,
 		p.HandleExecveat,

@@ -242,12 +242,15 @@ func procRawTracepoints(objs *bpfObjects) []rawTracepoint {
 	}
 }
 
-// sysEnterPrograms lists the programs the sys_enter dispatcher tail-calls,
-// indexed by their slot (enum sys_slot in proc.bpf.c, same order).
+// sysEnterPrograms lists the programs of the sys_enter tail calls, indexed
+// by their slot (enum sys_slot in proc.bpf.c, same order): the exec programs
+// the dispatcher calls, and the one they call to add the working directory
+// (P-36).
 func sysEnterPrograms(objs *bpfObjects) []*ebpf.Program {
 	return []*ebpf.Program{
 		objs.HandleExecve,
 		objs.HandleExecveat,
+		objs.HandleExecCwd,
 	}
 }
 
@@ -400,17 +403,23 @@ func (o *Observer) Stop() error {
 // emitForkEdge sends a ProcessFork event: PID is the new process, PPID its
 // parent. The target is the child's pid, since a fork has no command line.
 func (o *Observer) emitForkEdge(hdr *bpfEventHdr) {
-	event := models.GroundTruthEvent{
+	o.emit(models.GroundTruthEvent{
 		Timestamp:  time.Unix(0, hdr.TsNs+o.bootOffsetNs),
 		ActionType: models.ProcessFork,
 		Target:     strconv.FormatUint(uint64(hdr.Pid), 10),
 		PID:        hdr.Pid,
 		PPID:       hdr.Ppid,
-	}
-	select {
-	case o.events <- event:
-	default:
-		o.dropped.Add(1)
+	})
+}
+
+// emit sends events without blocking; a full channel counts in Dropped.
+func (o *Observer) emit(events ...models.GroundTruthEvent) {
+	for _, event := range events {
+		select {
+		case o.events <- event:
+		default:
+			o.dropped.Add(1)
+		}
 	}
 }
 
@@ -469,13 +478,45 @@ func (j *joiner) exit(tgid uint32) (execLine, bool) {
 	return l, ok
 }
 
+// filenameLen matches FILENAME_LEN in proc.bpf.c.
+const filenameLen = 256
+
+// execImage decodes a success record's payload (P-36): the kernel's
+// filename, the interpreter when args_size says there is one, and the path
+// of the file the new image runs. Nil for a record that is the header only.
+func execImage(hdr *bpfEventHdr, payload []byte) *models.ExecImage {
+	if len(payload) < 2*filenameLen {
+		return nil
+	}
+	img := &models.ExecImage{
+		Filename:  cString(payload[:filenameLen]),
+		Truncated: hdr.ArgsTruncated != 0 || hdr.PathTruncated != 0,
+	}
+	if hdr.ArgsSize > 0 {
+		img.Interpreter = cString(payload[filenameLen : 2*filenameLen])
+	}
+	img.Program = walkedPath(clip(payload[2*filenameLen:], hdr.PathSize), hdr.PathTruncated != 0)
+	return img
+}
+
+// clip returns the first n bytes of b, or all of b when it is shorter.
+func clip(b []byte, n uint32) []byte {
+	if uint64(n) < uint64(len(b)) {
+		return b[:n]
+	}
+	return b
+}
+
 func (o *Observer) readLoop() {
 	defer close(o.stopped)
 
 	var hdr bpfEventHdr
 	hdrSize := binary.Size(hdr)
-	const filenameLen = 256 // Matches FILENAME_LEN in proc.bpf.c
 	join := newJoiner()
+	// Exec events wait for their outcome (P-36); whatever is still held
+	// when the loop ends is released before Stop closes the channel.
+	held := &holder{}
+	defer func() { o.emit(held.flush()...) }()
 
 	for {
 		record, err := o.reader.Read()
@@ -508,37 +549,44 @@ func (o *Observer) readLoop() {
 		case kindFork:
 			// A header-only record: the edge parent -> child, for the
 			// process tree. It has no command line, so it skips the payload
-			// handling below.
+			// handling below. A held attempt of an earlier process with the
+			// child's pid is over: that process has exited.
+			o.emit(held.process(hdr.Pid)...)
 			if o.cfg.CommandFilter != "" {
 				continue
 			}
 			o.emitForkEdge(&hdr)
 			continue
 		case kindExecOK:
-			// A header-only record: the attempt that took effect. It is no
-			// event of its own; it decides what the exit is joined to.
+			// The attempt that took effect. It is no event of its own: it
+			// decides what the exit is joined to, and its kernel record
+			// goes on the attempt's event (P-36).
 			join.succeeded(hdr.Pid, hdr.Tid)
+			o.emit(held.succeeded(hdr.Pid, hdr.Tid, execImage(&hdr, record.RawSample[hdrSize:]))...)
 			continue
 		default:
 			continue
 		}
 
-		var target string
+		var target, filename, cwd string
 		truncated := hdr.ArgsTruncated != 0
+		cwdCut := false
 		if actionType == models.ProcessExit {
 			// A header-only record: the command line is that of the exec
 			// that took effect last (P-31). An exit whose exec this reader
 			// never saw (the ring dropped it, which drop_count counted) has
 			// no command line and is not emitted, as before, when the
 			// kernel kept the exec record itself.
+			o.emit(held.process(hdr.Pid)...)
 			l, ok := join.exit(hdr.Pid)
 			if !ok {
 				continue
 			}
 			target, truncated = l.target, l.truncated
 		} else {
-			// Extract filename and args from the payload
-			var fnBytes, argsBytes []byte
+			// Extract filename, args and the working directory from the
+			// payload
+			var fnBytes, argsBytes, cwdBytes []byte
 			if len(record.RawSample) >= hdrSize+filenameLen {
 				fnBytes = record.RawSample[hdrSize : hdrSize+filenameLen]
 				argsStart := hdrSize + filenameLen
@@ -549,8 +597,19 @@ func (o *Observer) readLoop() {
 				if argsStart < argsEnd {
 					argsBytes = record.RawSample[argsStart:argsEnd]
 				}
+				cwdBytes = clip(record.RawSample[argsEnd:], hdr.PathSize)
 			}
-			target = commandLine(cString(fnBytes), argsBytes, hdr.Nargs)
+			// The thread's previous attempt is over, whether or not this
+			// one passes the filters below.
+			o.emit(held.thread(hdr.Tid)...)
+			filename = cString(fnBytes)
+			target = commandLine(filename, argsBytes, hdr.Nargs)
+			// A record with no path and no flag has no working directory:
+			// the tail call that adds it did not run.
+			if hdr.PathSize > 0 || hdr.PathTruncated != 0 {
+				cwdCut = hdr.PathTruncated != 0
+				cwd = walkedPath(cwdBytes, cwdCut)
+			}
 			join.attempt(hdr.Tid, execLine{target: target, truncated: truncated})
 		}
 		if target == "" {
@@ -567,17 +626,18 @@ func (o *Observer) readLoop() {
 			TargetTruncated: truncated,
 			PID:             hdr.Pid,
 			PPID:            hdr.Ppid,
+			Cwd:             cwd,
+			CwdTruncated:    cwdCut,
 		}
 		if hdr.HasExitCode != 0 {
 			code := hdr.ExitCode
 			event.ExitCode = &code
 		}
-
-		select {
-		case o.events <- event:
-		default:
-			o.dropped.Add(1)
+		if actionType == models.ProcessExec {
+			o.emit(held.hold(heldExec{event: event, tid: hdr.Tid, filename: filename, viaFD: hdr.ViaFd != 0})...)
+			continue
 		}
+		o.emit(event)
 	}
 }
 
