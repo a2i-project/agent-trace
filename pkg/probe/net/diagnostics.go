@@ -123,6 +123,58 @@ func (c *trackedCounter) snapshot() {
 	c.final = &s
 }
 
+// sslWriteMeter reads tls.bpf.c's ssl_write_stat, the per-call counts of
+// SSL_write against the length asked (N-36): live while the map is open,
+// and the snapshot Stop takes before it closes the map afterwards.
+type sslWriteMeter struct {
+	stat *ebpf.Map
+
+	mu      sync.Mutex
+	snapped bool
+	final   *models.SSLWriteCounts
+}
+
+// read sums the percpu slots.
+func (m *sslWriteMeter) read() (*models.SSLWriteCounts, error) {
+	var perCPU []tlsbpfSslWriteCounts
+	var zero uint32
+	if err := m.stat.Lookup(&zero, &perCPU); err != nil {
+		return nil, err
+	}
+	c := &models.SSLWriteCounts{}
+	for _, v := range perCPU {
+		c.Calls += v.Calls
+		c.Partial += v.Partial
+		c.Failed += v.Failed
+		c.BytesRequested += v.BytesRequested
+		c.BytesWritten += v.BytesWritten
+	}
+	return c, nil
+}
+
+// counts returns the counts, or nil when they could not be read.
+func (m *sslWriteMeter) counts() *models.SSLWriteCounts {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snapped {
+		return m.final
+	}
+	c, err := m.read()
+	if err != nil {
+		return nil
+	}
+	return c
+}
+
+// snapshot stores the final counts; Stop calls it before closing the maps.
+// A failed read stores nil: not measured.
+func (m *sslWriteMeter) snapshot() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.final, _ = m.read()
+	m.snapped = true
+}
+
 // h2ClientPreface is the HTTP/2 client connection preface (RFC 9113, section
 // 3.4): the first bytes a client writes on a connection that negotiated h2.
 var h2ClientPreface = []byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")

@@ -37,6 +37,15 @@ type tlsbpfSslReadArg struct {
 	Ssl uint64
 }
 
+type tlsbpfSslWriteCounts struct {
+	_              structs.HostLayout
+	Calls          uint64
+	Partial        uint64
+	Failed         uint64
+	BytesRequested uint64
+	BytesWritten   uint64
+}
+
 type tlsbpfTrackedStat struct {
 	_    structs.HostLayout
 	Live int64
@@ -47,22 +56,25 @@ type tlsbpfTrackedStat struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	tlsbpfMapDropCount           = "drop_count"
-	tlsbpfMapFaultedReads        = "faulted_reads"
-	tlsbpfMapReadDropCount       = "read_drop_count"
-	tlsbpfMapReadFaultCount      = "read_fault_count"
-	tlsbpfMapSslEvents           = "ssl_events"
-	tlsbpfMapSslHeap             = "ssl_heap"
-	tlsbpfMapSslReadArgs         = "ssl_read_args"
-	tlsbpfMapTrackedPids         = "tracked_pids"
-	tlsbpfMapTrackedSeeded       = "tracked_seeded"
-	tlsbpfMapTrackedStat         = "tracked_stat"
-	tlsbpfMapUntrackedCount      = "untracked_count"
-	tlsbpfProgHandleExit         = "handle_exit"
-	tlsbpfProgHandleFork         = "handle_fork"
-	tlsbpfProgProbeSslReadEntry  = "probe_ssl_read_entry"
-	tlsbpfProgProbeSslReadReturn = "probe_ssl_read_return"
-	tlsbpfProgProbeSslWrite      = "probe_ssl_write"
+	tlsbpfMapDropCount            = "drop_count"
+	tlsbpfMapFaultedReads         = "faulted_reads"
+	tlsbpfMapReadDropCount        = "read_drop_count"
+	tlsbpfMapReadFaultCount       = "read_fault_count"
+	tlsbpfMapSslEvents            = "ssl_events"
+	tlsbpfMapSslHeap              = "ssl_heap"
+	tlsbpfMapSslReadArgs          = "ssl_read_args"
+	tlsbpfMapSslWriteArgs         = "ssl_write_args"
+	tlsbpfMapSslWriteStat         = "ssl_write_stat"
+	tlsbpfMapTrackedPids          = "tracked_pids"
+	tlsbpfMapTrackedSeeded        = "tracked_seeded"
+	tlsbpfMapTrackedStat          = "tracked_stat"
+	tlsbpfMapUntrackedCount       = "untracked_count"
+	tlsbpfProgHandleExit          = "handle_exit"
+	tlsbpfProgHandleFork          = "handle_fork"
+	tlsbpfProgProbeSslReadEntry   = "probe_ssl_read_entry"
+	tlsbpfProgProbeSslReadReturn  = "probe_ssl_read_return"
+	tlsbpfProgProbeSslWrite       = "probe_ssl_write"
+	tlsbpfProgProbeSslWriteReturn = "probe_ssl_write_return"
 )
 
 // loadTlsbpf returns the embedded CollectionSpec for tlsbpf.
@@ -107,11 +119,12 @@ type tlsbpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tlsbpfProgramSpecs struct {
-	HandleExit         *ebpf.ProgramSpec `ebpf:"handle_exit"`
-	HandleFork         *ebpf.ProgramSpec `ebpf:"handle_fork"`
-	ProbeSslReadEntry  *ebpf.ProgramSpec `ebpf:"probe_ssl_read_entry"`
-	ProbeSslReadReturn *ebpf.ProgramSpec `ebpf:"probe_ssl_read_return"`
-	ProbeSslWrite      *ebpf.ProgramSpec `ebpf:"probe_ssl_write"`
+	HandleExit          *ebpf.ProgramSpec `ebpf:"handle_exit"`
+	HandleFork          *ebpf.ProgramSpec `ebpf:"handle_fork"`
+	ProbeSslReadEntry   *ebpf.ProgramSpec `ebpf:"probe_ssl_read_entry"`
+	ProbeSslReadReturn  *ebpf.ProgramSpec `ebpf:"probe_ssl_read_return"`
+	ProbeSslWrite       *ebpf.ProgramSpec `ebpf:"probe_ssl_write"`
+	ProbeSslWriteReturn *ebpf.ProgramSpec `ebpf:"probe_ssl_write_return"`
 }
 
 // tlsbpfMapSpecs contains maps before they are loaded into the kernel.
@@ -125,6 +138,8 @@ type tlsbpfMapSpecs struct {
 	SslEvents      *ebpf.MapSpec `ebpf:"ssl_events"`
 	SslHeap        *ebpf.MapSpec `ebpf:"ssl_heap"`
 	SslReadArgs    *ebpf.MapSpec `ebpf:"ssl_read_args"`
+	SslWriteArgs   *ebpf.MapSpec `ebpf:"ssl_write_args"`
+	SslWriteStat   *ebpf.MapSpec `ebpf:"ssl_write_stat"`
 	TrackedPids    *ebpf.MapSpec `ebpf:"tracked_pids"`
 	TrackedSeeded  *ebpf.MapSpec `ebpf:"tracked_seeded"`
 	TrackedStat    *ebpf.MapSpec `ebpf:"tracked_stat"`
@@ -164,6 +179,8 @@ type tlsbpfMaps struct {
 	SslEvents      *ebpf.Map `ebpf:"ssl_events"`
 	SslHeap        *ebpf.Map `ebpf:"ssl_heap"`
 	SslReadArgs    *ebpf.Map `ebpf:"ssl_read_args"`
+	SslWriteArgs   *ebpf.Map `ebpf:"ssl_write_args"`
+	SslWriteStat   *ebpf.Map `ebpf:"ssl_write_stat"`
 	TrackedPids    *ebpf.Map `ebpf:"tracked_pids"`
 	TrackedSeeded  *ebpf.Map `ebpf:"tracked_seeded"`
 	TrackedStat    *ebpf.Map `ebpf:"tracked_stat"`
@@ -179,6 +196,8 @@ func (m *tlsbpfMaps) Close() error {
 		m.SslEvents,
 		m.SslHeap,
 		m.SslReadArgs,
+		m.SslWriteArgs,
+		m.SslWriteStat,
 		m.TrackedPids,
 		m.TrackedSeeded,
 		m.TrackedStat,
@@ -196,11 +215,12 @@ type tlsbpfVariables struct {
 //
 // It can be passed to loadTlsbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tlsbpfPrograms struct {
-	HandleExit         *ebpf.Program `ebpf:"handle_exit"`
-	HandleFork         *ebpf.Program `ebpf:"handle_fork"`
-	ProbeSslReadEntry  *ebpf.Program `ebpf:"probe_ssl_read_entry"`
-	ProbeSslReadReturn *ebpf.Program `ebpf:"probe_ssl_read_return"`
-	ProbeSslWrite      *ebpf.Program `ebpf:"probe_ssl_write"`
+	HandleExit          *ebpf.Program `ebpf:"handle_exit"`
+	HandleFork          *ebpf.Program `ebpf:"handle_fork"`
+	ProbeSslReadEntry   *ebpf.Program `ebpf:"probe_ssl_read_entry"`
+	ProbeSslReadReturn  *ebpf.Program `ebpf:"probe_ssl_read_return"`
+	ProbeSslWrite       *ebpf.Program `ebpf:"probe_ssl_write"`
+	ProbeSslWriteReturn *ebpf.Program `ebpf:"probe_ssl_write_return"`
 }
 
 func (p *tlsbpfPrograms) Close() error {
@@ -210,6 +230,7 @@ func (p *tlsbpfPrograms) Close() error {
 		p.ProbeSslReadEntry,
 		p.ProbeSslReadReturn,
 		p.ProbeSslWrite,
+		p.ProbeSslWriteReturn,
 	)
 }
 

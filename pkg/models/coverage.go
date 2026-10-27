@@ -124,6 +124,25 @@ type ProbeDiagnostics struct {
 	TrackedSets map[string]TrackedSetStats `json:"tracked_sets,omitempty"`
 	// NetContent holds the net probe's correlator counters. Net probe only.
 	NetContent *NetContentCounts `json:"net_content,omitempty"`
+	// SSLWrites holds the net probe's per-call SSL_write counts (N-36). Nil
+	// means not measured: no content capture, an offset that never
+	// validated, or a capture written before the field. Net probe only.
+	SSLWrites *SSLWriteCounts `json:"ssl_writes,omitempty"`
+}
+
+// SSLWriteCounts compares, per SSL_write call of a tracked process, the
+// length the caller asked to write with the value the call returned (N-36).
+// The content capture copies a call's buffer at its entry, so a call that
+// writes less than it was asked, or fails and is retried with the same
+// bytes, puts bytes in the captured stream more than once (O-34). Counted
+// from the moment the SSL_write offset validated; a call whose entry came
+// before that is not counted.
+type SSLWriteCounts struct {
+	Calls          uint64 `json:"calls"`           // calls whose return was seen
+	Partial        uint64 `json:"partial"`         // returned 0 < ret < asked
+	Failed         uint64 `json:"failed"`          // returned ret <= 0 (an error or a retry such as WANT_WRITE)
+	BytesRequested uint64 `json:"bytes_requested"` // sum of the lengths asked
+	BytesWritten   uint64 `json:"bytes_written"`   // sum of the positive returns
 }
 
 // RingStats describes one kernel ring buffer over a capture.

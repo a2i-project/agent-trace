@@ -157,7 +157,8 @@ func TestGroundTruthFileRootPID(t *testing.T) {
 
 // Schema 2 adds Diagnostics and nothing else: a schema 1 record still reads,
 // with nil Diagnostics (not measured), and a schema 2 record keeps its
-// diagnostics, a measured zero included, through a write and a read.
+// diagnostics, a measured zero and the SSL_write counts included, through a
+// write and a read.
 func TestParseGroundTruthFile_SchemaVersions(t *testing.T) {
 	events := sampleEvents()
 	for _, tc := range []struct {
@@ -180,9 +181,10 @@ func TestParseGroundTruthFile_SchemaVersions(t *testing.T) {
 		Rings:       map[string]RingStats{"ssl_events": {SizeBytes: 4 << 20, PeakBytes: 1234, Records: 9, Drops: 0, ReadDrops: &zero}},
 		TrackedSets: map[string]TrackedSetStats{"tls": {Capacity: 4096, Peak: 3, AtStop: 1}},
 		NetContent:  &NetContentCounts{Connections: 5, ContentUnsupported: 2, H2Preface: 1},
+		SSLWrites:   &SSLWriteCounts{Calls: 4, Failed: 1, BytesRequested: 300, BytesWritten: 200},
 	}
 	data, _ := json.Marshal(GroundTruthFile{Events: events, Coverage: &Coverage{Schema: CoverageSchema, Probes: map[string]ProbeCoverage{"net": {Ran: true, Diagnostics: d}}}})
-	for _, key := range []string{`"read_drops":0`, `"drops":0`, `"with_content":0`, `"h2_preface":1`, `"at_stop":1`} {
+	for _, key := range []string{`"read_drops":0`, `"drops":0`, `"with_content":0`, `"h2_preface":1`, `"at_stop":1`, `"ssl_writes":{"calls":4,"partial":0,"failed":1,"bytes_requested":300,"bytes_written":200}`} {
 		if !strings.Contains(string(data), key) {
 			t.Errorf("%s missing from %s", key, data)
 		}
@@ -197,6 +199,12 @@ func TestParseGroundTruthFile_SchemaVersions(t *testing.T) {
 	plain, _ := json.Marshal(ProbeCoverage{Ran: true})
 	if strings.Contains(string(plain), "diagnostics") {
 		t.Errorf("nil Diagnostics was written: %s", plain)
+	}
+	// Unmeasured SSL_write counts (N-36) are left out, so a record without
+	// them reads as before the field.
+	noWrites, _ := json.Marshal(ProbeDiagnostics{NetContent: &NetContentCounts{}})
+	if strings.Contains(string(noWrites), "ssl_writes") {
+		t.Errorf("nil SSLWrites was written: %s", noWrites)
 	}
 }
 

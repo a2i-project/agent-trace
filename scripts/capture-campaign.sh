@@ -140,8 +140,10 @@
 #   diagnostics   from the ground truth (schema 2): per probe, each ring
 #                 buffer's size, peak occupancy, records and drops, and each
 #                 tracked_pids map's capacity, peak and entries at stop, with
-#                 the peak as a fraction of the size; a schema 1 capture has
-#                 none (not measured)
+#                 the peak as a fraction of the size, and the net probe's
+#                 SSL_write counts (calls, partial, failed, bytes asked and
+#                 written, N-36) where it measured them; a schema 1 capture
+#                 has none (not measured)
 #   events        the ground truth's events by type, and requests and
 #                 connections by target
 #   processes     the peak number of processes of the agent's tree alive at
@@ -451,6 +453,9 @@ def diagnostics_of(cov):
         for k, t in sorted((d.get("tracked_sets") or {}).items()):
             sets[k] = dict(t, peak_fraction=frac(t.get("peak", 0), t.get("capacity", 0)))
         out["probes"][name] = {"rings": rings, "tracked_sets": sets}
+        # The net probe's per-call SSL_write counts (N-36), where measured.
+        if d.get("ssl_writes") is not None:
+            out["probes"][name]["ssl_writes"] = d["ssl_writes"]
     return out
 
 

@@ -110,7 +110,7 @@ func TestNetContentCounts_CopiesEveryField(t *testing.T) {
 
 // The diagnostics report the net ring and drops split by ring, with the
 // legacy sum unchanged; the TLS ring and tracked set appear only with
-// content capture.
+// content capture, and the SSL_write counts only with their uretprobe.
 func TestCaptureCoverage_DiagnosticsSplitDropsByRing(t *testing.T) {
 	o := &Observer{netRingSize: 1 << 20, coverage: Coverage{Connections: 3, ContentUnsupported: 1}}
 	o.finalNetDrops.Store(4)
@@ -147,6 +147,20 @@ func TestCaptureCoverage_DiagnosticsSplitDropsByRing(t *testing.T) {
 	}
 	if got := d.TrackedSets["tls"]; got.Peak != 2 || got.AtStop != 1 {
 		t.Errorf("tracked tls = %+v, want the snapshot", got)
+	}
+	if d.SSLWrites != nil {
+		t.Errorf("SSLWrites = %+v without the uretprobe, want nil (not measured)", d.SSLWrites)
+	}
+
+	// With the uretprobe attached, the snapshot Stop took is reported (N-36).
+	w := &models.SSLWriteCounts{Calls: 5, Partial: 1, Failed: 2, BytesRequested: 900, BytesWritten: 500}
+	o.sslWrites = &sslWriteMeter{snapped: true, final: w}
+	if got := o.CaptureCoverage().Diagnostics.SSLWrites; got == nil || *got != *w {
+		t.Errorf("SSLWrites = %+v, want %+v", got, w)
+	}
+	o.sslWrites = &sslWriteMeter{snapped: true}
+	if got := o.CaptureCoverage().Diagnostics.SSLWrites; got != nil {
+		t.Errorf("SSLWrites = %+v after a failed snapshot, want nil", got)
 	}
 }
 

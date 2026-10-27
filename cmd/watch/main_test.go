@@ -623,6 +623,12 @@ func TestDiagnosticsLine(t *testing.T) {
 	if got := diagnosticsLine("net", d); got != want {
 		t.Errorf("diagnosticsLine =\n%s\nwant\n%s", got, want)
 	}
+	// The SSL_write counts (N-36) close the line where they were measured.
+	d.SSLWrites = &models.SSLWriteCounts{Calls: 9, Partial: 2, Failed: 3, BytesRequested: 70000, BytesWritten: 50000}
+	want += "; sslWrites calls=9 partial=2 failed=3 bytesRequested=70000 bytesWritten=50000"
+	if got := diagnosticsLine("net", d); got != want {
+		t.Errorf("diagnosticsLine with sslWrites =\n%s\nwant\n%s", got, want)
+	}
 }
 
 // Diagnostics are measurement only: a record with them, however close to
@@ -633,6 +639,7 @@ func TestDiagnosticsDoNotChangeAssess(t *testing.T) {
 		Rings:       map[string]models.RingStats{"events": {SizeBytes: 4096, PeakBytes: 4096, Records: 1, Drops: 5, ReadDrops: &readDrops}},
 		TrackedSets: map[string]models.TrackedSetStats{"proc": {Capacity: 4, Peak: 4, AtStop: 4}},
 		NetContent:  &models.NetContentCounts{Connections: 9, ContentUnsupported: 9, H2Preface: 9, H2PrefaceUnvalidated: 9, FramesUnattributed: 9},
+		SSLWrites:   &models.SSLWriteCounts{Calls: 9, Partial: 9, Failed: 9, BytesRequested: 9},
 	}
 	for _, pc := range []models.ProbeCoverage{
 		{Ran: true},

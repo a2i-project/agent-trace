@@ -226,6 +226,11 @@ type Observer struct {
 	// cfg.ExePath is unset: Observer then runs identity-only.
 	tlsObjs      tlsbpfObjects
 	sslWriteLink link.Link
+	// sslWriteRetLink is the uretprobe at the validated SSL_write offset,
+	// and sslWrites reads its per-call counts (N-36); both nil until the
+	// offset validated and the uretprobe attached.
+	sslWriteRetLink link.Link
+	sslWrites       *sslWriteMeter
 	// firstLink is the uprobe New attaches at the first candidate, so a
 	// tracked process's SSL_write between New and Start is captured and
 	// waits in ssl_events for validation. attachAndValidateTLS takes it
@@ -648,6 +653,13 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 	}
 
 	o.sslReader.SetDeadline(time.Time{}) // clear the validation deadline for normal operation
+	// The per-call counts of SSL_write (N-36) start here, at the validated
+	// offset only: a uretprobe at a wrong candidate would count another
+	// function's returns. A failed attach leaves the counts unmeasured.
+	if l, err := o.exe.Uretprobe("", o.tlsObjs.ProbeSslWriteReturn, &link.UprobeOptions{Address: chosen.FileOff}); err == nil {
+		o.sslWriteRetLink = l
+		o.sslWrites = &sslWriteMeter{stat: o.tlsObjs.SslWriteStat}
+	}
 	o.tlsActive = true
 	o.writeOffset = chosen.FileOff
 	target := tlsoffset.Target{Path: cfg.ExePath, BuildID: o.tlsBuildID, SSLWrite: chosen.FileOff}
@@ -928,6 +940,9 @@ func (o *Observer) diagnostics(cov Coverage) *models.ProbeDiagnostics {
 		}
 		d.TrackedSets["tls"] = o.tlsTracked.stats()
 	}
+	if o.sslWrites != nil {
+		d.SSLWrites = o.sslWrites.counts()
+	}
 	return d
 }
 
@@ -1012,6 +1027,9 @@ func (o *Observer) Stop() error {
 		if o.sslWriteLink != nil {
 			_ = o.sslWriteLink.Close()
 		}
+		if o.sslWriteRetLink != nil {
+			_ = o.sslWriteRetLink.Close()
+		}
 		if o.firstLink != nil {
 			_ = o.firstLink.Close() // never taken over by a validation
 		}
@@ -1051,6 +1069,9 @@ func (o *Observer) Stop() error {
 		}
 		if o.tlsTracked != nil {
 			o.tlsTracked.snapshot()
+		}
+		if o.sslWrites != nil {
+			o.sslWrites.snapshot()
 		}
 		closeLinks(o.readLinks)
 		_ = o.reader.Close()

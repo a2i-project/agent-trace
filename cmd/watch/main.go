@@ -136,8 +136,9 @@ func responseLine(state string, nc probenet.Coverage) string {
 
 // diagnosticsLine is a probe's occupancy and content counters on one line
 // (P-34, N-33): each ring's size, high-water mark, records read and drops,
-// each tracked set's capacity, peak and entries at the stop, and the net
-// probe's content counters. Empty when the probe recorded none.
+// each tracked set's capacity, peak and entries at the stop, the net
+// probe's content counters, and its SSL_write counts where measured (N-36).
+// Empty when the probe recorded none.
 func diagnosticsLine(name string, d *models.ProbeDiagnostics) string {
 	if d == nil {
 		return ""
@@ -159,6 +160,10 @@ func diagnosticsLine(name string, d *models.ProbeDiagnostics) string {
 	if c := d.NetContent; c != nil {
 		fmt.Fprintf(&b, " content connections=%d withHostname=%d withContent=%d contentUnsupported=%d h2Preface=%d h2PrefaceUnvalidated=%d framesH2=%d framesUnattributed=%d framesTruncated=%d dials=%d responses=%d;",
 			c.Connections, c.WithHostname, c.WithContent, c.ContentUnsupported, c.H2Preface, c.H2PrefaceUnvalidated, c.FramesH2, c.FramesUnattributed, c.FramesTruncated, c.Dials, c.Responses)
+	}
+	if w := d.SSLWrites; w != nil {
+		fmt.Fprintf(&b, " sslWrites calls=%d partial=%d failed=%d bytesRequested=%d bytesWritten=%d;",
+			w.Calls, w.Partial, w.Failed, w.BytesRequested, w.BytesWritten)
 	}
 	return strings.TrimSuffix(b.String(), ";")
 }

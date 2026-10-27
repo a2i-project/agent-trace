@@ -120,12 +120,12 @@ Blocked by: An agent that emits `git_commit` claims. No current adapter does.
 ## Proposals (not decided)
 
 ### O-34: Capture `SSL_write` at its return, with the number of bytes the call wrote
-Status: Open.
+Status: Open. Narrowed 2026-10-27: decide after a capture shows the N-36 counters.
 Date: 2026-10-27 (the first `long` pilot of Claude Code 2.1.306).
 Question: Should `probe_ssl_write` copy the buffer at the call's return, as many bytes as it returned, instead of at its entry, as many as it was asked to write?
 Options: (a) keep the entry probe (N-16, N-D1), and rely on N-34 to drop a request line that stray bytes precede; (b) a uprobe at entry stores `ssl` and `buf`, a uretprobe at return copies the returned count, as `SSL_read` does since N-29; (c) both, the entry frame only when the return frame is missing.
-Current behaviour: (a). A call that writes part of its buffer, or fails with a retry the caller makes with the same bytes, would put those bytes in the request stream twice; on the pilot a request came out whose method was a run of JSON ahead of `POST`, which fits a body tail repeated past its `Content-Length` (**Unverified**: the plaintext is not kept).
-Blocked by: Evidence: a privileged run that counts, per `SSL_write` of the hooked harness, the bytes asked and returned (for example a test against a TLS client that sets partial writes and a slow peer), to show whether Bun's BoringSSL returns short or retries; and a CI run of the privileged net tests after the change. Option (b) also changes the order of a write frame against the reads of the same thread, which response pairing needs (N-29).
+Current behaviour: (a). A call that writes part of its buffer, or fails with a retry the caller makes with the same bytes, would put those bytes in the request stream twice; on the pilot a request came out whose method was a run of JSON ahead of `POST`, which fits a body tail repeated past its `Content-Length` (**Unverified**: the plaintext is not kept). Since N-36 a capture with content records, in `diagnostics.ssl_writes`, the calls, partial and failed returns and the bytes asked and written of the hooked `SSL_write`.
+Blocked by: A content capture of Claude Code under N-36 (the next pilot): zero partial and zero failed calls refute the cause for that capture, and either above zero makes it possible. Then a choice by the user; option (b) also changes the order of a write frame against the reads of the same thread, which response pairing needs (N-29), and needs a CI run of the privileged net tests.
 
 ### O-18: Move net hooks to the kernel socket layer (fentry or LSM)
 Status: Proposed.
