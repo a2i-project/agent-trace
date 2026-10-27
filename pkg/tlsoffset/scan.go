@@ -5,6 +5,7 @@ import (
 	"debug/elf"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"sort"
 )
 
@@ -105,23 +106,12 @@ func scanCluster(f *elf.File) ([]Candidate, error) {
 	if text == nil {
 		return nil, fmt.Errorf("no .text section")
 	}
-	code, err := text.Data()
+
+	// 3. Scan .text for xrefs to strVA, and 4. find their function starts,
+	// reading the section a window at a time (N-35).
+	funcStarts, err := scanText(text, strVA)
 	if err != nil {
 		return nil, fmt.Errorf("read .text: %w", err)
-	}
-
-	// 3. Scan .text for xrefs to strVA
-	var sites []uint64
-	sites = append(sites, scanLEA(code, text.Addr, strVA)...)
-	sites = append(sites, scanAbsolute(code, text.Addr, strVA)...)
-
-	// 4. Find function starts
-	funcStarts := make(map[uint64]int)
-	for _, site := range sites {
-		funcVA := findFunctionStart(code, text.Addr, site, 4096)
-		if funcVA != 0 {
-			funcStarts[funcVA]++
-		}
 	}
 
 	var candidates []Candidate
@@ -232,21 +222,143 @@ func findString(f *elf.File, needle string) (uint64, error) {
 		if s.Type != elf.SHT_PROGBITS || s.Flags&elf.SHF_ALLOC == 0 {
 			continue
 		}
-		data, err := s.Data()
-		if err != nil {
+		start, ok, err := stringStart(sectionOf(s), []byte(needle))
+		if err != nil || !ok {
 			continue
-		}
-		idx := bytes.Index(data, []byte(needle))
-		if idx < 0 {
-			continue
-		}
-		start := idx
-		for start > 0 && data[start-1] != 0 {
-			start--
 		}
 		return s.Addr + uint64(start), nil
 	}
 	return 0, fmt.Errorf("string %q not found", needle)
+}
+
+// scanChunk is how much of a section the scan reads at once (N-35). Reading
+// a whole section held the harness's .text (86 MB in Claude Code 2.1.306)
+// and its .rodata in memory at once, which made the scan the largest part
+// of watch's resident set. A variable so that tests can make it small.
+var scanChunk = 4 << 20
+
+// section is a section's bytes read through ReadAt, or, for a section that
+// offers none (a compressed one), its data held whole.
+type section struct {
+	r    io.ReaderAt
+	size int
+}
+
+func sectionOf(s *elf.Section) section {
+	if s.ReaderAt != nil && s.Type != elf.SHT_NOBITS {
+		return section{r: s.ReaderAt, size: int(s.Size)}
+	}
+	data, err := s.Data()
+	if err != nil {
+		return section{r: errReader{err}, size: int(s.Size)}
+	}
+	return section{r: bytes.NewReader(data), size: len(data)}
+}
+
+type errReader struct{ err error }
+
+func (e errReader) ReadAt([]byte, int64) (int, error) { return 0, e.err }
+
+// read returns the section's bytes in [from, to), clipped to the section.
+func (s section) read(from, to int) ([]byte, error) {
+	if from < 0 {
+		from = 0
+	}
+	if to > s.size {
+		to = s.size
+	}
+	if to <= from {
+		return nil, nil
+	}
+	buf := make([]byte, to-from)
+	n, err := s.r.ReadAt(buf, int64(from))
+	if n == len(buf) {
+		return buf, nil
+	}
+	if err == nil {
+		err = io.ErrUnexpectedEOF
+	}
+	return nil, err
+}
+
+// stringStart finds the first occurrence of needle in the section and
+// returns the offset of the NUL-terminated string that holds it, as
+// bytes.Index over the whole section and a walk back to the previous NUL
+// would. Windows overlap by len(needle)-1 bytes, so no occurrence is split.
+func stringStart(s section, needle []byte) (int, bool, error) {
+	if len(needle) == 0 {
+		return 0, false, nil
+	}
+	for start := 0; start < s.size; start += scanChunk {
+		w, err := s.read(start, start+scanChunk+len(needle)-1)
+		if err != nil {
+			return 0, false, err
+		}
+		i := bytes.Index(w, needle)
+		if i < 0 {
+			continue
+		}
+		at := start + i
+		for at > 0 {
+			from := at - 4096
+			b, err := s.read(from, at)
+			if err != nil {
+				return 0, false, err
+			}
+			z := bytes.LastIndexByte(b, 0)
+			if z >= 0 {
+				return at - len(b) + z + 1, true, nil
+			}
+			at -= len(b)
+		}
+		return 0, true, nil
+	}
+	return 0, false, nil
+}
+
+// scanText is steps 3 and 4 of scanCluster over the .text section a window
+// at a time: the LEA and immediate references to target in each window, and
+// the function start of each, counted. A window carries 3 bytes before and 8
+// after the positions it owns, the most an instruction pattern reads around
+// a position, so every position is judged on the bytes the whole section
+// would show it; a function start is looked for in the 4096 bytes before
+// its reference and the 4 after.
+func scanText(text *elf.Section, target uint64) (map[uint64]int, error) {
+	return scanSection(sectionOf(text), text.Addr, target)
+}
+
+func scanSection(s section, addr, target uint64) (map[uint64]int, error) {
+	var sites []uint64
+	for start := 0; start < s.size; start += scanChunk {
+		end := min(start+scanChunk, s.size)
+		from := max(start-3, 0)
+		w, err := s.read(from, end+8)
+		if err != nil {
+			return nil, err
+		}
+		base := addr + uint64(from)
+		lo, hi := addr+uint64(start), addr+uint64(end)
+		for _, found := range [][]uint64{scanLEA(w, base, target), scanAbsolute(w, base, target)} {
+			for _, site := range found {
+				if site >= lo && site < hi {
+					sites = append(sites, site)
+				}
+			}
+		}
+	}
+	funcStarts := make(map[uint64]int)
+	for _, site := range sites {
+		off := int(site - addr)
+		from := max(off-4096, 0)
+		w, err := s.read(from, off+4)
+		if err != nil {
+			return nil, err
+		}
+		if funcVA := findFunctionStart(w, addr+uint64(from), site, 4096); funcVA != 0 {
+			funcStarts[funcVA]++
+		}
+	}
+	return funcStarts, nil
 }
 
 func getBuildID(f *elf.File) string {
