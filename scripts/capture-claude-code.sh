@@ -319,13 +319,19 @@ set -e
 case $check in
   0) ;;
   3)
-    echo "WARNING: $agent version '$version' is not configured in $agent_config (configured: $configured)" >&2
-    echo "the adapter was verified on those versions only and may not fit this one (I-57)" >&2
-    if [ -z "$allow_unconfigured" ]; then
-      echo "to capture it anyway, to verify the new version, pass --allow-unconfigured-version" >&2
-      exit 1
+    # The campaign runner shows this once per invocation, at its own checks,
+    # and sets AGENT_TRACE_VERSION_WARNED for the runs after them.
+    if [ -n "$allow_unconfigured" ] && [ "${AGENT_TRACE_VERSION_WARNED:-}" = 1 ]; then
+      :
+    else
+      echo "WARNING: $agent version '$version' is not configured in $agent_config (configured: $configured)" >&2
+      echo "the adapter was verified on those versions only and may not fit this one (I-57)" >&2
+      if [ -z "$allow_unconfigured" ]; then
+        echo "to capture it anyway, to verify the new version, pass --allow-unconfigured-version" >&2
+        exit 1
+      fi
+      echo "continuing (--allow-unconfigured-version): the report's verify runs use --strict-version and read INCONCLUSIVE until this version is configured" >&2
     fi
-    echo "continuing (--allow-unconfigured-version): the report's verify runs use --strict-version and read INCONCLUSIVE until this version is configured" >&2
     ;;
   *) echo "could not read $agent_config" >&2; exit 1 ;;
 esac

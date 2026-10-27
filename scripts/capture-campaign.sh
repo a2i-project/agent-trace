@@ -261,6 +261,13 @@ CONTROL_TURNS = {"tools": 5}
 MAX_X4 = 3
 AUTH = re.compile(r"not logged in|please run /login|/login|authentication_error|invalid api key|oauth token has expired|invalid bearer|401 unauthorized|login expired|not authenticated", re.I)
 QUOTA = re.compile(r"rate.?limit|usage limit|quota|resource.?exhausted|\b429\b|credit balance|overloaded", re.I)
+# The probes' event lines in a watch log: a time, two spaces, an action.
+EVENT_LINE = re.compile(r"^\d\d:\d\d:\d\d\.\d{3}  \S")
+# An account error in a session that still left a transcript. Stricter than
+# QUOTA, since a completed run's output is the agent's own text and may name a
+# rate limit in passing.
+ACCOUNT_AUTH = re.compile(r"not logged in|not logged into|please run /login|oauth token has expired|invalid api key|authentication_error|401 unauthorized", re.I)
+ACCOUNT_QUOTA = re.compile(r"RESOURCE_EXHAUSTED|quota (?:reached|exceeded)|usage limit (?:reached|exceeded)|you(?:'ve| have) (?:hit|reached) your (?:usage )?limit|credit balance is too low|rate limit exceeded", re.I)
 
 
 def label(task):
@@ -646,18 +653,28 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
         log = open(os.path.join(run_dir, "campaign.log"), encoding="utf-8", errors="replace").read()
     except OSError:
         log = ""
-    # The agent's own error text is in the watch logs (stderr goes there).
+    # The agent's own error text is in the watch logs (stderr goes there),
+    # between the probes' event lines, which name files and hosts that can
+    # contain any word (an npm package called rate-limit): only the other
+    # lines are read.
     for wl in sorted(glob.glob(os.path.join(run_dir, "*.watch.log"))):
         try:
-            log += "\n" + open(wl, encoding="utf-8", errors="replace").read(200000)
+            text = open(wl, encoding="utf-8", errors="replace").read()
         except OSError:
-            pass
+            continue
+        log += "\n" + "\n".join(l for l in text.splitlines() if not EVENT_LINE.match(l))
     order = read_order(run_dir)
     meta = read_kv(os.path.join(run_dir, "task-meta.txt"))
     co = read_kv_pairs(os.path.join(run_dir, "control-order.txt"))
     task_row = next((r for r in order if r["role"] == "task"), None)
     changed = bool(version_after) and version_after != version
-    ok = exit_status == 0 and not changed
+    # A session can end with a transcript although the account stopped it: a
+    # quota or login error in the task's or any control's output means the
+    # task did not run to its end or a control recorded nothing, so the run
+    # fails and the campaign stops (the agy pilot of 2026-10-27 hit its quota
+    # mid-task and in three controls and was read as complete).
+    account = "auth" if ACCOUNT_AUTH.search(log) else ("quota" if ACCOUNT_QUOTA.search(log) else None)
+    ok = exit_status == 0 and not changed and account is None
     r = {
         "agent": agent, "version": version, "version_after": version_after, "task": task, "run": int(idx),
         "mode": mode, "dir": run_dir,
@@ -692,7 +709,12 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
         r["control_cost"] = control_cost
     r["watch_exit"] = {"task": task_row["watch_exit"] if task_row else None,
                        "controls": {o["label"]: o["watch_exit"] for o in order if o["role"] == "control"}}
-    exclusion = None if ok else classify(exit_status, log, version, version_after)
+    if ok:
+        exclusion = None
+    elif exit_status == 0 and not changed and account:
+        exclusion = {"rule": "X4", "reason": account}
+    else:
+        exclusion = classify(exit_status, log, version, version_after)
     if exclusion:
         r["exclusion"] = exclusion
     with open(os.path.join(run_dir, "run.json"), "w", encoding="utf-8") as fh:
@@ -1102,6 +1124,10 @@ while IFS=$'\t' read -r agent task reps mode split model; do
     slots+=("$agent"$'\t'"$task"$'\t'"$mode"$'\t'"$i"$'\t'"$split"$'\t'"$model")
   done
 done <<<"$entries"
+# Each entry's check above showed the unconfigured-version warning once; the
+# capture script stays quiet about it for the runs (it still refuses without
+# --allow-unconfigured-version).
+export AGENT_TRACE_VERSION_WARNED=1
 for agent in "${!agent_version_of[@]}"; do
   other=$(helper versions "$out" "$agent" "${agent_version_of[$agent]}")
   if [ -n "$other" ] && [ -z "$new_stratum" ]; then
