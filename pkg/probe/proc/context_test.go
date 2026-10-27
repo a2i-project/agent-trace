@@ -107,7 +107,8 @@ func TestObserver_CwdAcrossMounts(t *testing.T) {
 }
 
 // A working directory deeper than the walk's 32 steps is flagged, and the
-// probe keeps its deepest names (P-36).
+// probe keeps its deepest names (P-36): 40 names below the temporary
+// directory, itself at least two below the root.
 func TestObserver_DeepCwdIsFlagged(t *testing.T) {
 	skipUnprivileged(t)
 	deep := realPath(t, t.TempDir())
@@ -119,10 +120,14 @@ func TestObserver_DeepCwdIsFlagged(t *testing.T) {
 	}
 	nonce := fmt.Sprintf("agenttrace-deep-%d", time.Now().UnixNano())
 	got := execsWithNonce(t, nonce, exec.Command("/bin/sh", "-c", fmt.Sprintf("cd '%s' && /bin/true %s", deep, nonce)))
-	if len(got) == 0 {
-		t.Fatal("no exec of /bin/true")
-	}
+	seen := false
 	for _, e := range got {
+		// The shell's own exec names the nonce too, in its command
+		// string, and runs in the test's directory.
+		if e.Target != "/bin/true "+nonce {
+			continue
+		}
+		seen = true
 		if !e.CwdTruncated {
 			t.Errorf("cwd %q of a %d-byte path not flagged", e.Cwd, len(deep))
 			continue
@@ -130,6 +135,9 @@ func TestObserver_DeepCwdIsFlagged(t *testing.T) {
 		if e.Cwd == "" || strings.HasPrefix(e.Cwd, "/") || !strings.HasSuffix(deep, "/"+e.Cwd) {
 			t.Errorf("cut cwd %q is not the end of %q without a leading slash", e.Cwd, deep)
 		}
+	}
+	if !seen {
+		t.Errorf("no exec of /bin/true %s among %+v", nonce, got)
 	}
 }
 
