@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-35 (I-71).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29) and O-20 (N-31) are closed; the others are undecided.
 
@@ -118,14 +118,6 @@ Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, ne
 Blocked by: An agent that emits `git_commit` claims. No current adapter does.
 
 ## Proposals (not decided)
-
-### O-35: Explaining a long task's harness files that short controls never write
-Status: Open.
-Date: 2026-10-27 (the first `long` pilot of Claude Code 2.1.306).
-Question: How should the harness's writes that only a task's own tool use produces, such as a subagent's transcript and metadata under the session's directory, be explained, when the controls, which run one marker command, never produce them?
-Options: (a) report only: they stay unexplained harness activity and the run is INCONCLUSIVE (V-24); (b) controls that also exercise those harness paths, for example a control task that runs one subagent which does nothing, as the `tools` captures' controls did, at the cost of longer controls and model calls in each; (c) a declared harness-owned path set the adapter derives from the session itself (V-24, I-30): the subagent files of each subagent the transcript names, under the session's own directory, explained without a rule, which trusts the transcript to name its own files; (d) (b) for the campaign now and (c) only if (b) leaves events.
-Current behaviour: (a). With I-70 the pilot's 702 unexplained harness events become 20, all the subagent's `agent-<id>.jsonl` and `agent-<id>.meta.json`, and the run stays INCONCLUSIVE on them.
-Blocked by: A choice by the user. Recommendation: (b), since it measures the harness instead of trusting the transcript, and the campaign already pins the model and pays for five controls.
 
 ### O-34: Capture `SSL_write` at its return, with the number of bytes the call wrote
 Status: Open.

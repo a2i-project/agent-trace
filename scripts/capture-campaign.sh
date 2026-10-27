@@ -123,8 +123,8 @@
 # agent, version before and after, model pinned and recorded (task and
 # controls), task, run index, recording mode, directory, the paths of its
 # files, start and end, exit status, the slot's seed and position, the attempt
-# number, the control order, the SHA-256 of the task's prompt and seed, the
-# verdict with and without the baseline (outcome, findings, tool calls, claims,
+# number, the control order (with each run's subagents and their tool calls,
+# I-71), the SHA-256 of the task's prompt and seed, the verdict with and without the baseline (outcome, findings, tool calls, claims,
 # the alignment counts, completeness), and the scale record of the task run and
 # of each control run:
 #   probes        each probe's coverage record from the ground truth (ring
@@ -252,11 +252,13 @@ MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
 # tools 14). long is the prompt's count of about 120 calls plus fixes; its
 # real count is in the manifest after the first run. A held-out task is not
 # known to the script: HELDOUT_TURNS is a guess. A control makes one call, the
-# tools controls three and a subagent's.
+# tools controls three and a subagent's, and the controls of the other tasks
+# with the subagent tool (parallel, long) one and a subagent's (I-71); a
+# held-out task's controls are counted as one call.
 TURNS = {"basic": 6, "parallel": 9, "project": 20, "edits": 8, "tools": 16,
          "shapes": 8, "search": 7, "long": 150}
 HELDOUT_TURNS = 100
-CONTROL_TURNS = {"tools": 5}
+CONTROL_TURNS = {"tools": 5, "parallel": 4, "long": 4}
 # Protocol 10.1, X4: a slot is attempted once and retried twice.
 MAX_X4 = 3
 AUTH = re.compile(r"not logged in|please run /login|/login|authentication_error|invalid api key|oauth token has expired|invalid bearer|401 unauthorized|login expired|not authenticated", re.I)
@@ -516,6 +518,11 @@ def verdict(path):
 CHECKS = {"0": "ok", "1": "mismatch", "2": "unrecorded", "-": "not-run"}
 
 
+def count_of(v):
+    """A count from order.tsv, or None where it was not counted (-) or absent."""
+    return int(v) if v and v.isdigit() else None
+
+
 def read_order(run_dir):
     """The runs of one capture in the order they were recorded, with their model checks."""
     rows = []
@@ -529,8 +536,13 @@ def read_order(run_dir):
             continue
         m = re.fullmatch(r"model_check=([^;]*);(?:observed=([^;]*);subagents=(.*))?", f[5])
         wx = re.fullmatch(r"watch_exit=(\d+)", f[6]) if len(f) > 6 else None
+        # The subagents the run started and their tool calls (I-71); absent
+        # in a capture made before the field, and - where not counted.
+        sa = re.fullmatch(r"subagents=(\d+|-)(?:;subagent_tool_calls=(\d+|-))?", f[7]) if len(f) > 7 else None
         rows.append({"seq": int(f[0]), "label": f[1], "role": f[2], "start": f[3], "end": f[4],
                      "watch_exit": int(wx.group(1)) if wx else None,
+                     "subagents": count_of(sa.group(1)) if sa else None,
+                     "subagent_tool_calls": count_of(sa.group(2)) if sa else None,
                      "model_check": CHECKS.get(m.group(1), m.group(1)) if m else "unknown",
                      "model_observed": [x for x in (m.group(2) or "").split(",") if x] if m else [],
                      "subagent_models": [x for x in (m.group(3) or "").split(",") if x] if m else []})

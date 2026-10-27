@@ -104,7 +104,8 @@
 #             make and Grep; a subagent that runs the suite and Writes a
 #             report; a build and two runs of the built application. About 120
 #             tool calls by the prompt's count, more with fixes. No network.
-#             Its controls make the one Bash call, with the task's tool set.
+#             Its controls make the one Bash call and start one subagent that
+#             only replies, with the task's tool set (below).
 #
 # The adapters were verified on the agent versions config/agents.json lists
 # (I-57; $AGENT_TRACE_CONFIG overrides the file). Before it asks for sudo, the
@@ -127,7 +128,9 @@
 #   <task>.session/subagents  its subagent transcripts, when there are any
 #   <task>.ground_truth.json  what the probes saw during it (G)
 #   control-N.*               the same for CONTROLS runs that claim nothing (one no-op Bash
-#                             call; for tools, also that call in the background and a subagent)
+#                             call; for a task whose tools include the subagent tool, also
+#                             a subagent that only replies; for tools, also that call in
+#                             the background)
 #   control-tools.txt, control-prompt.txt  the tool set and prompt the controls ran with
 #   control-agent.txt, control-version.txt, control-watch.txt  their agent, version
 #                             and recording mode (identity or content)
@@ -136,7 +139,9 @@
 #   task-meta.txt             the task, the SHA-256 of its prompt and seed, its tools, the model
 #   order.tsv                 each run in the order it was recorded: number, label, role
 #                             (task or control), start, end, the model check and the models
-#                             the transcript recorded, and watch's exit status
+#                             the transcript recorded, watch's exit status, and the number of
+#                             subagents the run started with the tool calls they made (for
+#                             agy, the subagent databases copied, calls not counted: -)
 #   <label>.cost.json         what scripts/measure-watch.py measured around that run's watch
 #                             (start-up, drain, watch's CPU and peak RSS; H4b), and
 #   <label>.watch.exit        watch's exit status (non-zero when the agent exited with an
@@ -191,7 +196,17 @@
 #             view_file, replace_file_content, write_to_file, run_command,
 #             grep_search, find_by_name and invoke_subagent. agy's print mode
 #             gets 90 minutes for it instead of 10. No network.
-# The controls run the no-op command with run_command.
+# The controls run the no-op command with run_command; for long, whose tools
+# include invoke_subagent, they also start one subagent that only replies.
+#
+# Controls and subagents (I-71): the controls of any task whose tool set holds
+# the subagent tool (Claude Code Agent, agy invoke_subagent) also start one
+# subagent that only replies, so the baseline measures the harness's own
+# subagent bookkeeping (Claude Code: the subagent's agent-<id>.jsonl and
+# .meta.json under the session's directory). After each control the script
+# counts the subagents the run started and, for Claude Code, the tool calls
+# they made, writes both to order.tsv and prints a WARNING when a control
+# started other than one subagent or its subagent used a tool; the run is kept.
 set -euo pipefail
 # Ctrl+C reaches watch, which stops the agent and writes what it recorded; the
 # script then stops too, before it would start the next run.
@@ -460,20 +475,36 @@ control_prompt="Use the Bash tool to run exactly this no-op command: $control_co
 # Gemini's command tool is run_command. The harness writes its agentapi shim and
 # opens a pseudo-terminal before every command (I-48), so the controls run one.
 [ "$agent" != gemini ] || control_prompt="Use run_command to run exactly this no-op command: $control_command . Then reply with the single word ok. Do not use any other tool."
-# The tools task makes the harness work around a background command (its output
-# file under /tmp/claude-<uid>) and a subagent (its transcript and metadata under
-# ~/.claude/projects), which a control that makes one Bash call never shows. Its
-# controls therefore also run the same no-op command in the background, whose
-# output they do not need, and start one subagent that only replies. The
-# background call runs the marker command, so the one exclusion below covers it.
-if [ "$task" = tools ]; then
-  control_prompt="Do exactly these three things in order, and nothing else. 1) Use the Bash tool to run exactly this no-op command: $control_command . 2) Use the Bash tool with run_in_background set to true to run exactly the same command again: $control_command . Do not wait for it, check on it or read its output. 3) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then reply with the single word ok. Do not use any other tool."
-fi
 # The control runs must enable the same tools as the task. The shell snapshot
 # command the harness runs at the first Bash call differs with the tool set (it
 # shadows find and grep only when Grep and Glob are disabled), so a baseline
 # measured with one tool set does not explain the other's setup commands.
 control_tools=$task_tools
+# A task whose tool set holds the subagent tool may start a subagent, and the
+# harness then writes the subagent's own files (for Claude Code its transcript
+# agent-<id>.jsonl and agent-<id>.meta.json under the session's directory),
+# which a control that makes one command call never shows. Its controls
+# therefore also start one subagent that only replies and uses no tool (I-71),
+# so the baseline measures that bookkeeping, and the subagent itself makes no
+# action a rule could take.
+subagent_tool=Agent
+[ "$agent" != gemini ] || subagent_tool=invoke_subagent
+control_subagent=
+case " $control_tools " in *" $subagent_tool "*) control_subagent=1 ;; esac
+if [ "$task" = tools ]; then
+  # The tools task also makes the harness work around a background command
+  # (its output file under /tmp/claude-<uid>). Its controls therefore also run
+  # the same no-op command in the background, whose output they do not need.
+  # The background call runs the marker command, so the one exclusion below
+  # covers it.
+  control_prompt="Do exactly these three things in order, and nothing else. 1) Use the Bash tool to run exactly this no-op command: $control_command . 2) Use the Bash tool with run_in_background set to true to run exactly the same command again: $control_command . Do not wait for it, check on it or read its output. 3) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then reply with the single word ok. Do not use any other tool."
+elif [ -n "$control_subagent" ] && [ "$agent" = gemini ]; then
+  # An agy subagent answers its caller with a send_message call, so its
+  # instruction forbids commands and files rather than every tool.
+  control_prompt="Do exactly these two things in order, and nothing else. 1) Use run_command to run exactly this no-op command: $control_command . 2) Use invoke_subagent to start one subagent with exactly this instruction: Reply with the single word ok. Do not run any command and do not read or write any file. Then reply with the single word ok. Do not use any other tool."
+elif [ -n "$control_subagent" ]; then
+  control_prompt="Do exactly these two things in order, and nothing else. 1) Use the Bash tool to run exactly this no-op command: $control_command . 2) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then reply with the single word ok. Do not use any other tool."
+fi
 # A control makes one command call, so its tool set must offer one.
 need_tool=Bash
 [ "$agent" != gemini ] || need_tool=run_command
@@ -497,7 +528,7 @@ if [ -n "$baseline_from" ]; then
     exit 1
   fi
   # A capture made before the control prompt was recorded used the one-call
-  # prompt, which every task but tools still uses.
+  # prompt, which every task without the subagent tool still uses.
   earlier=$(cat "$baseline_from/control-prompt.txt" 2>/dev/null || echo "Use the Bash tool to run exactly this no-op command: $control_command . Then reply with the single word ok. Do not use any other tool.")
   if [ "$earlier" != "$control_prompt" ]; then
     echo "the control runs in $baseline_from were told: $earlier" >&2
@@ -762,11 +793,44 @@ sys.exit(2 if not main else (0 if main == {want} else 1))
 PY
 }
 
+# The subagents a recorded run started (I-71): for Claude Code the subagent
+# transcripts copied beside the run's and the tool calls their assistant
+# records make; for agy the subagent databases copied, whose calls are not
+# counted (-). Prints subagents=N;subagent_tool_calls=M.
+subagents_seen() { # label
+  python3 - "$agent" "$out/$1" <<'PY'
+import glob, json, os, sys
+agent, base = sys.argv[1:]
+if agent == "gemini":
+    print("subagents=%d;subagent_tool_calls=-" % len(glob.glob(base + ".conversation/subagents/*.db")))
+    sys.exit(0)
+files = sorted(glob.glob(base + ".session/subagents/*.jsonl"))
+calls = 0
+for f in files:
+    try:
+        lines = open(f, encoding="utf-8", errors="replace").readlines()
+    except OSError:
+        continue
+    for line in lines:
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(r, dict) or r.get("type") != "assistant":
+            continue
+        content = (r.get("message") or {}).get("content")
+        if isinstance(content, list):
+            calls += sum(1 for c in content if isinstance(c, dict) and c.get("type") == "tool_use")
+print("subagents=%d;subagent_tool_calls=%d" % (len(files), calls))
+PY
+}
+
 # capture LABEL ROLE PROMPT TOOLS: one recorded run, then its model check, and a
-# line of order.tsv: the order the runs were recorded in (D11), their times and
-# the models their transcripts recorded.
+# line of order.tsv: the order the runs were recorded in (D11), their times,
+# the models their transcripts recorded, watch's exit status and the
+# subagents the run started.
 capture() {
-  local label=$1 role=$2 started ended rc=0 seen= mrc=0 file
+  local label=$1 role=$2 started ended rc=0 seen= mrc=0 file subs=subagents=-
   started=$(date --iso-8601=seconds)
   capture_one "$label" "$3" "$4" || rc=$?
   ended=$(date --iso-8601=seconds)
@@ -774,11 +838,21 @@ capture() {
     file=$out/$label.session.jsonl
     [ "$agent" != gemini ] || file=$out/$label.conversation.db
     seen=$(model_seen "$file") || mrc=$?
+    subs=$(subagents_seen "$label") || subs=subagents=-
   else
     mrc=-
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(($(wc -l <"$out/order.tsv" 2>/dev/null || echo 0) + 1))" "$label" "$role" "$started" "$ended" "model_check=$mrc;$seen" "watch_exit=$(tr -d '\n' <"$out/$label.watch.exit" 2>/dev/null || echo -)" >>"$out/order.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(($(wc -l <"$out/order.tsv" 2>/dev/null || echo 0) + 1))" "$label" "$role" "$started" "$ended" "model_check=$mrc;$seen" "watch_exit=$(tr -d '\n' <"$out/$label.watch.exit" 2>/dev/null || echo -)" "$subs" >>"$out/order.tsv"
   [ "$rc" -eq 0 ] || return "$rc"
+  # A control that did not start exactly one subagent, or whose subagent used
+  # a tool, measured another harness path than the one its prompt asks for.
+  # The run is kept and the deviation is in order.tsv.
+  if [ "$role" = control ] && [ -n "$control_subagent" ]; then
+    case $subs in
+      subagents=1\;subagent_tool_calls=0 | subagents=1\;subagent_tool_calls=-) ;;
+      *) echo "   WARNING: control $label was asked for one subagent that uses no tool, and recorded $subs" >&2 ;;
+    esac
+  fi
   case $mrc in
     0) ;;
     1) echo "   MODEL MISMATCH: $label recorded $seen, the pinned model is $model" >&2; return 1 ;;
