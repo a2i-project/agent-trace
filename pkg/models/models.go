@@ -53,11 +53,22 @@ type TrajectoryEntry struct {
 	// first, and costs nothing when it stays unpaired. Empty for every
 	// claim of the agent.
 	ImpliedBy string `json:"-"`
+	// ImpliedBefore marks a harness-implied claim whose action comes before
+	// the command it names reads the same file, as Claude Code's Grep opens
+	// the file it searches and hands it to its ripgrep (I-69). The verifier
+	// then lets it pair only with an open no later than one beneath the
+	// command (V-48). False for a read that follows its command (I-46).
+	// Ignored without ImpliedBy; like it, it has no JSON form.
+	ImpliedBefore bool `json:"-"`
 }
 
-// impliedByKey is the name a harness-implied marker would have in a
-// trajectory read from JSON. ParseTrajectory refuses it (V-33).
-const impliedByKey = "implied_by"
+// impliedByKey and impliedBeforeKey are the names the harness-implied
+// markers would have in a trajectory read from JSON. ParseTrajectory refuses
+// them (V-33, V-48).
+const (
+	impliedByKey     = "implied_by"
+	impliedBeforeKey = "implied_before"
+)
 
 // GroundTruthEvent is an independently observed action from the host-level probes.
 type GroundTruthEvent struct {
@@ -155,8 +166,10 @@ func ParseTrajectory(data []byte) (Trajectory, error) {
 		return nil, err
 	}
 	for i, k := range keys {
-		if _, ok := k[impliedByKey]; ok {
-			return nil, fmt.Errorf("entry %d: %s is set only by an adapter, never read from a trajectory", i, impliedByKey)
+		for _, key := range []string{impliedByKey, impliedBeforeKey} {
+			if _, ok := k[key]; ok {
+				return nil, fmt.Errorf("entry %d: %s is set only by an adapter, never read from a trajectory", i, key)
+			}
 		}
 	}
 	for i := range t {

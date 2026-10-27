@@ -620,6 +620,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		if why == "" && u.name == toolBash && hasResult && harnessReadVersions[rep.AgentVersion] {
 			entries = append(entries, harnessReadClaims(u, base, res)...)
 		}
+		if why == "" && u.name == toolGrep && hasResult && grepOpenVersions[rep.AgentVersion] {
+			entries = append(entries, grepOpenClaims(u, base, res)...)
+		}
 		if u.name == toolWrite && why == "" && res.kind != "create" && res.kind != "update" {
 			writeUnknown++
 		}

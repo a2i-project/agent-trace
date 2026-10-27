@@ -605,11 +605,15 @@ func Verify(in Input) Verdict {
 // has an open of exactly the claim's path among the events beneath it, no
 // later than the event the claim would pair with. The harness reads a file
 // after the command that read it finished, so its open never precedes the
-// command's.
+// command's. A claim marked ImpliedBefore (V-48) is the harness's open of a
+// file it then hands to the command, so the command's open must come no
+// earlier than the event instead.
 func impliedWitness(cmds []*Command, mounts *matching.Mounts) func(models.TrajectoryEntry, models.GroundTruthEvent) bool {
-	// first[command text][path] is the earliest open of the path beneath a
-	// command with that text.
+	// first[command text][path] and last[command text][path] are the
+	// earliest and the latest open of the path beneath a command with that
+	// text.
 	first := map[string]map[string]time.Time{}
+	last := map[string]map[string]time.Time{}
 	for _, cmd := range cmds {
 		if cmd.Exec == nil || cmd.Baseline || cmd.Harness || cmd.Exec.TargetTruncated {
 			continue
@@ -618,23 +622,35 @@ func impliedWitness(cmds []*Command, mounts *matching.Mounts) func(models.Trajec
 			if e.ActionType != models.FileOpen || e.PathIsAmbiguous {
 				continue
 			}
-			byPath := first[cmd.Exec.Target]
+			byPath, lastByPath := first[cmd.Exec.Target], last[cmd.Exec.Target]
 			if byPath == nil {
-				byPath = map[string]time.Time{}
-				first[cmd.Exec.Target] = byPath
+				byPath, lastByPath = map[string]time.Time{}, map[string]time.Time{}
+				first[cmd.Exec.Target], last[cmd.Exec.Target] = byPath, lastByPath
 			}
 			if t, ok := byPath[e.Target]; !ok || e.Timestamp.Before(t) {
 				byPath[e.Target] = e.Timestamp
 			}
+			if t, ok := lastByPath[e.Target]; !ok || e.Timestamp.After(t) {
+				lastByPath[e.Target] = e.Timestamp
+			}
 		}
 	}
 	return func(c models.TrajectoryEntry, e models.GroundTruthEvent) bool {
-		t, ok := first[c.ImpliedBy][c.Target]
+		// A claim whose harness acts first (V-48) needs the command's open
+		// at or after the event, any other the command's open at or before.
+		opens := first
+		if c.ImpliedBefore {
+			opens = last
+		}
+		t, ok := opens[c.ImpliedBy][c.Target]
 		if !ok {
 			// The claim's path through another mount (V-46).
 			if n, canon := mounts.Canonical(c.Target); canon {
-				t, ok = first[c.ImpliedBy][n]
+				t, ok = opens[c.ImpliedBy][n]
 			}
+		}
+		if c.ImpliedBefore {
+			return ok && !t.Before(e.Timestamp)
 		}
 		return ok && !t.After(e.Timestamp)
 	}

@@ -541,14 +541,19 @@ func printPairs(w io.Writer, label string, pairs []verification.MatchedPair) {
 }
 
 // printImplied lists the harness-implied claims that paired, each with the
-// call that implied it and the open it explains (V-33).
+// call that implied it, whether the harness acted after or before it
+// (V-48), and the open it explains (V-33).
 func printImplied(w io.Writer, pairs []verification.MatchedPair) {
 	if len(pairs) == 0 {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nHarness implied:")
 	for _, p := range pairs {
-		_, _ = fmt.Fprintf(w, "  %s %-14s %s  (after %q)\n", p.Event.Timestamp.Format(time.RFC3339Nano), p.Event.ActionType, p.Event.Target, p.Entry.ImpliedBy)
+		order := "after"
+		if p.Entry.ImpliedBefore {
+			order = "before"
+		}
+		_, _ = fmt.Fprintf(w, "  %s %-14s %s  (%s %q)\n", p.Event.Timestamp.Format(time.RFC3339Nano), p.Event.ActionType, p.Event.Target, order, p.Entry.ImpliedBy)
 	}
 }
 
@@ -871,9 +876,12 @@ type jsonSensitive struct {
 // jsonImplied is a harness-implied claim with the call that implied it, which
 // the claim's own JSON form does not carry, and the open it paired with.
 type jsonImplied struct {
-	ImpliedBy string                   `json:"implied_by"`
-	Claim     models.TrajectoryEntry   `json:"claim"`
-	Event     *models.GroundTruthEvent `json:"event,omitempty"`
+	ImpliedBy string `json:"implied_by"`
+	// Before is set when the harness acts before the command reads the
+	// file (V-48).
+	Before bool                     `json:"implied_before,omitempty"`
+	Claim  models.TrajectoryEntry   `json:"claim"`
+	Event  *models.GroundTruthEvent `json:"event,omitempty"`
 }
 
 type jsonCoverage struct {
@@ -935,10 +943,10 @@ func writeJSONReport(path string, r reportInput) error {
 		}
 	}
 	for _, p := range v.HarnessImplied {
-		rep.Alignment.HarnessImplied = append(rep.Alignment.HarnessImplied, jsonImplied{ImpliedBy: p.Entry.ImpliedBy, Claim: p.Entry, Event: &p.Event})
+		rep.Alignment.HarnessImplied = append(rep.Alignment.HarnessImplied, jsonImplied{ImpliedBy: p.Entry.ImpliedBy, Before: p.Entry.ImpliedBefore, Claim: p.Entry, Event: &p.Event})
 	}
 	for _, c := range v.HarnessImpliedUnpaired {
-		rep.Alignment.HarnessImpliedUnpaired = append(rep.Alignment.HarnessImpliedUnpaired, jsonImplied{ImpliedBy: c.ImpliedBy, Claim: c})
+		rep.Alignment.HarnessImpliedUnpaired = append(rep.Alignment.HarnessImpliedUnpaired, jsonImplied{ImpliedBy: c.ImpliedBy, Before: c.ImpliedBefore, Claim: c})
 	}
 	for _, c := range v.Coverage.UnexplainedSubtrees {
 		rep.Coverage.UnexplainedSubtrees = append(rep.Coverage.UnexplainedSubtrees, c.Process.PID)

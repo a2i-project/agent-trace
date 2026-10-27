@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit f4da861 on 2026-10-26.
+Checked against commit 6415e81 on 2026-10-27.
 
 ## Objective
 
@@ -13,7 +13,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | `pkg/probe/probe.go` | `probe.Observer` and `probe.CoverageReporter` interfaces |
 | `cmd/watch/main.go` | `probeBuilders` registry, `runWatch`, `buildCoverage`; writes `ground_truth.json` |
 | `pkg/models/action.go` | `ActionType` values, `IsClaimable`, `IsStructural` |
-| `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry`, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
+| `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry` with its harness-implied markers, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
 | `pkg/models/coverage.go` | `ProbeCoverage`, `ProbeDiagnostics` (with `RingStats`, `TrackedSetStats`, `NetContentCounts`), `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema`, `MinCoverageSchema` |
 | `pkg/models/fsmounts.go` | `FSMounts`, `Mount`: the fs probe's mount table in `fs_scope` (P-33) |
 | `pkg/models/response.go` | `ResponseAttestation`, `SSESummary`: the record a `net_response` event carries (N-29) |

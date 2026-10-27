@@ -758,7 +758,7 @@ func collapseOpenClaims(t models.Trajectory) models.Trajectory {
 			out = append(out, e)
 			continue
 		}
-		if lastFile >= 0 && e.ActionType == models.FileOpen && out[lastFile].ActionType == models.FileOpen && out[lastFile].Target == e.Target && out[lastFile].ImpliedBy == e.ImpliedBy {
+		if lastFile >= 0 && e.ActionType == models.FileOpen && out[lastFile].ActionType == models.FileOpen && out[lastFile].Target == e.Target && out[lastFile].ImpliedBy == e.ImpliedBy && out[lastFile].ImpliedBefore == e.ImpliedBefore {
 			if e.End != nil && (out[lastFile].End == nil || e.End.After(*out[lastFile].End)) {
 				end := *e.End
 				out[lastFile].End = &end

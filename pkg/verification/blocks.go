@@ -591,7 +591,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 // changes no cost and no finding. Time is left out, except for a
 // harness-implied claim, whose interval decides whether it may pair at all.
 func interchangeable(a, b models.TrajectoryEntry) bool {
-	same := a.ActionType == b.ActionType && a.Target == b.Target && a.Tool == b.Tool && a.ImpliedBy == b.ImpliedBy &&
+	same := a.ActionType == b.ActionType && a.Target == b.Target && a.Tool == b.Tool && a.ImpliedBy == b.ImpliedBy && a.ImpliedBefore == b.ImpliedBefore &&
 		eqPtr(a.InputHash, b.InputHash) && eqPtr(a.OutputHash, b.OutputHash) &&
 		eqPtr(a.ExitCode, b.ExitCode) && eqPtr(a.RequestHash, b.RequestHash)
 	if same && implied(a) {
