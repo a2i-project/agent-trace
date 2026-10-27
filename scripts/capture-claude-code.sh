@@ -255,6 +255,9 @@ task_label=${task//:/-}
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
+# Every later step names the output by this path, some after changing
+# directory, so a relative path is made absolute here.
+out=$(realpath -m -- "$out")
 if [ -n "$content" ] && [ "$agent" = gemini ]; then
   echo "--content needs a TLS library the net probe can hook; agy has none (Go's own TLS), so its connections stay identity-only" >&2
   exit 1

@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit e43634b on 2026-10-27.
+Checked against commit 947acb2 on 2026-10-27.
 
 ## Objective
 
