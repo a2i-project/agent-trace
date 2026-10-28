@@ -394,7 +394,8 @@ type Surface struct {
 // generators refuse.
 func (s *Session) SurfaceOf(b *agent.Baseline) (Surface, verification.Verdict, verification.Baseline) {
 	claims, _ := attack.WithoutImplied(s.Claims)
-	in := s.input(claims, b)
+	// The honest run as the sweep reads it: with the harness-implied claims.
+	in := s.input(attack.WithImplied(s.Claims, claims, attack.Record{}), b)
 	honest := verification.Verify(in)
 	res := attack.Result{Kind: attack.Omission}
 	for i := range claims {

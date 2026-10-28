@@ -109,6 +109,105 @@ func WithoutImplied(t models.Trajectory) (models.Trajectory, int) {
 	return out, len(t) - len(out)
 }
 
+// WithImplied puts the harness-implied claims of full back into mutated, a
+// trajectory a generator produced from WithoutImplied(full) with the record
+// rec, so the attacked run is read as the adapter would read the forged
+// session: with the harness's own predicted actions still claimed (V-33). An
+// evaluation that verifies the mutated claims without them reads every
+// harness action they absorb as an unrecorded finding on the honest run too.
+//
+// Each implied claim is placed where it stood: right after the claim of the
+// agent's own that preceded it in full, or, when that claim was omitted,
+// after the nearest earlier one that remains, and before every claim when
+// none does. Positions come from the record, so a retimed omission (whose
+// later claims change time) keeps them. An implied claim is dropped, as the
+// adapter would derive none, when its call (the own claims with its tool and
+// timestamp) was omitted entirely, or when a substitution changed the target
+// of one of that call's claims, the text the adapter derives it from.
+// WithImplied(full, WithoutImplied(full), Record{}) is full.
+func WithImplied(full, mutated models.Trajectory, rec Record) models.Trajectory {
+	type call struct {
+		tool string
+		at   int64
+	}
+	callOf := func(e models.TrajectoryEntry) call { return call{e.Tool, e.Timestamp.UnixNano()} }
+	// after[k] holds the implied claims that followed own claim k (input
+	// position in WithoutImplied(full)); lead those before every own claim.
+	var own []models.TrajectoryEntry
+	after := map[int][]models.TrajectoryEntry{}
+	var lead []models.TrajectoryEntry
+	for _, e := range full {
+		if e.ImpliedBy == "" {
+			own = append(own, e)
+			continue
+		}
+		if len(own) == 0 {
+			lead = append(lead, e)
+		} else {
+			after[len(own)-1] = append(after[len(own)-1], e)
+		}
+	}
+	omitted := map[int]bool{}
+	fabricated := map[int]bool{}
+	gone := map[call]bool{}
+	for _, m := range rec.Mutations {
+		switch {
+		case m.Before == nil && m.Index >= 0:
+			fabricated[m.Index] = true
+		case m.After == nil && m.OriginalIndex >= 0:
+			omitted[m.OriginalIndex] = true
+		}
+		if m.Kind == Substitution && m.Field == FieldTarget && m.Before != nil {
+			gone[callOf(*m.Before)] = true
+		}
+	}
+	survives := map[call]bool{}
+	for k, e := range own {
+		if !omitted[k] {
+			survives[callOf(e)] = true
+		}
+	}
+	keep := func(e models.TrajectoryEntry) bool { c := callOf(e); return survives[c] && !gone[c] }
+	// An omitted claim's implied claims move to the nearest earlier own
+	// claim that remains, or to the front.
+	prev := -1
+	for k := range own {
+		if !omitted[k] {
+			prev = k
+			continue
+		}
+		if prev >= 0 {
+			after[prev] = append(after[prev], after[k]...)
+		} else {
+			lead = append(lead, after[k]...)
+		}
+		delete(after, k)
+	}
+	out := make(models.Trajectory, 0, len(mutated)+len(full)-len(own))
+	for _, e := range lead {
+		if keep(e) {
+			out = append(out, e)
+		}
+	}
+	next := 0 // the next own claim of the input that remains
+	for p, e := range mutated {
+		out = append(out, e)
+		if fabricated[p] {
+			continue
+		}
+		for next < len(own) && omitted[next] {
+			next++
+		}
+		for _, x := range after[next] {
+			if keep(x) {
+				out = append(out, x)
+			}
+		}
+		next++
+	}
+	return out
+}
+
 func refuseImplied(t models.Trajectory) error {
 	for i, e := range t {
 		if e.ImpliedBy != "" {

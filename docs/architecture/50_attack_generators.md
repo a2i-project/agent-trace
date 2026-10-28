@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit 7034001 on 2026-10-28.
+Checked against commit 425e0cb on 2026-10-28.
 
 ## Objective
 
@@ -12,7 +12,7 @@ Generators work on the normalized `models.Trajectory`, so they apply to any agen
 
 | File | Main symbols |
 |---|---|
-| `pkg/attack/attack.go` | `Kind`, `Options`, `Mutation`, `Record`, `ErrTooMany`, `ErrImplied`, `WithoutImplied`, `choose`, `clone` |
+| `pkg/attack/attack.go` | `Kind`, `Options`, `Mutation`, `Record`, `ErrTooMany`, `ErrImplied`, `WithoutImplied`, `WithImplied`, `choose`, `clone` |
 | `pkg/attack/omit.go` | `Omit` |
 | `pkg/attack/fabricate.go` | `Fabricate` |
 | `pkg/attack/substitute.go` | `Substitute`, `SubstituteOptions`, the `Field*` names |
@@ -57,6 +57,8 @@ Detected without classified is the failure the scorer exists to expose: the righ
 `Diagnose(record, result, verdict, mutated)` builds the record a localisation investigation needs: each mutation with its positions, field, values, entries and scores; every finding of the verdict as a `Finding` (its kind: `unrecorded`, `unexplained_subtree`, `unwitnessed`, `mismatched` or `outside_interval`; the position in the mutated trajectory of the claim it names, or -1; the claim, the observed event and the differing fields; and whether a mutation explains it, by the same rules as `Unaccounted`); the count of unaccounted findings; and each lane's `Optimal` count of minimum-cost alignments and its ambiguity flag. `NeedsDiagnosis` selects the results worth recording: an ambiguous alignment, an unaccounted finding, or a mutation not undetectable by design that is not detected, classified and located.
 
 ### The command
+
+`WithImplied(full, mutated, record)` puts the harness-implied claims of `full` back into a trajectory a generator made from `WithoutImplied(full)`: each right after the claim of the agent's own it followed (after the nearest earlier remaining one when that claim was omitted), placed by the record's positions so a retimed omission keeps them, and dropped when its call (the own claims of its tool and timestamp) was omitted entirely or had a target substituted, since the adapter would then derive none. `WithImplied(full, WithoutImplied(full), Record{})` is `full`. `cmd/analyze`'s sweep verifies every attacked run this way ([40_tools.md](40_tools.md)); `attack` cannot, since normalized JSON carries no implied claim.
 
 `attack` reads a session through an adapter (or normalized JSON with `--normalized`, which refuses a trajectory naming `implied_by`), drops the harness-implied claims the adapter derived (`WithoutImplied`, with a note on standard error), applies one generator, writes the mutated trajectory as normalized JSON and the record as JSON. `--select sensitive` restricts the choice, `--field` and `--retime` apply to substitution and omission, and `--avoid-ground-truth FILE` forbids any fabricated or substituted target that the capture observed, so a mutation cannot be true by accident. `verify --normalized --agent NAME` then verifies the mutated claims, using the adapter for the observed side. See [40_tools.md](40_tools.md).
 
@@ -137,6 +139,7 @@ Since V-56 (2026-10-28) the agent's Read of the background command's output file
 
 ## Known limits
 
+- `WithImplied` does not derive implied claims for what a mutation says: a fabricated or substituted Bash command that reads a file, or a fabricated WebFetch, gets no implied claim, where the adapter reading a forged session would derive one; the harness's own action for it, if the forgery could cause one, would read as Unrecorded.
 - A mutated or fabricated WebFetch `net_request` claim run through `verify --normalized --agent claude-code` on a capture that did not read request content is dropped before alignment (`claudecode.NeedsContent`, I-72), so it cannot be found there.
 - A mutation of a `git_commit` claim is set aside as out of capture before alignment (V-47), so it can never be detected; `MarkUndetectableByDesign` does not mark it. No fixture has such a claim.
 

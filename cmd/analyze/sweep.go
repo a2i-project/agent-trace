@@ -244,24 +244,35 @@ func generate(spec GenSpec, claims models.Trajectory, seed uint64, pos int, avoi
 // Sweep runs every registered mutation over one session. b is the baseline
 // from the run's own controls at the primary agreement.
 func (s *Session) Sweep(b *agent.Baseline, opts SweepOptions) *AttackRun {
+	// The generators mutate the agent's own claims; the attacked run is
+	// verified with the adapter's harness-implied claims put back
+	// (attack.WithImplied), as the adapter would derive them from the forged
+	// session, so the harness actions they explain are no finding.
 	claims, _ := attack.WithoutImplied(s.Claims)
+	attacked := func(mut models.Trajectory, rec attack.Record) models.Trajectory {
+		return attack.WithImplied(s.Claims, mut, rec)
+	}
 	run := &AttackRun{Claims: len(claims), VariantDistinct: map[string]int{}}
 	vseen := map[string]map[string]bool{}
 	avoid := s.observed()
 
-	in := s.input(claims, b)
+	honestClaims := attacked(claims, attack.Record{})
+	in := s.input(honestClaims, b)
 	honest := verification.Verify(in)
 	rule := in.BaselineInEffect()
 	// Premise check (5.2): the same honest run through the adapter path.
 	adapterV := s.verify(s.Claims, b)
-	run.Premise = CompareHonest(claims, honest, s.Claims, adapterV)
+	run.Premise = CompareHonest(honestClaims, honest, s.Claims, adapterV)
 	honestKeys := map[string]bool{}
-	for _, k := range findingKeys(honest, claims) {
+	for _, k := range findingKeys(honest, honestClaims) {
 		honestKeys[k] = true
 	}
 	run.PathArtifacts = len(honestKeys)
 
-	verify := func(c models.Trajectory) verification.Verdict { return s.verify(c, b) }
+	verify := func(mut models.Trajectory, rec attack.Record) (verification.Verdict, models.Trajectory) {
+		full := attacked(mut, rec)
+		return s.verify(full, b), full
+	}
 
 	for _, spec := range GenSpecs() {
 		if vseen[spec.Variant] == nil {
@@ -302,9 +313,9 @@ func (s *Session) Sweep(b *agent.Baseline, opts SweepOptions) *AttackRun {
 				t.addNotGenerated(reason)
 				break // every seed fails the same way
 			}
-			v := verify(mut)
+			v, full := verify(mut, rec)
 			res := attack.MarkUndetectableByDesign(attack.Score(rec, v), honest, rule)
-			run.account(s.ID, spec, u.seed, t, rec, res, v, mut, honest, honestKeys, opts.Diagnostics)
+			run.account(s.ID, spec, u.seed, t, rec, res, v, full, honest, honestKeys, opts.Diagnostics)
 		}
 		t.seen, t.vseen = nil, nil
 	}
@@ -586,14 +597,14 @@ func categoryOfFinding(f attack.Finding, rec attack.Record, spec GenSpec) (int, 
 // a4 runs the H2d checks: every single widening leaves the verdict as the
 // honest run's, and every omission with its neighbours widened over it is
 // still found.
-func (r *AttackRun) a4(claims models.Trajectory, honest verification.Verdict, verify func(models.Trajectory) verification.Verdict, rule verification.Baseline) {
+func (r *AttackRun) a4(claims models.Trajectory, honest verification.Verdict, verify func(models.Trajectory, attack.Record) (verification.Verdict, models.Trajectory), rule verification.Baseline) {
 	for i := range claims {
-		mut, _, err := attack.Widen(claims, attack.Options{Indices: []int{i}})
+		mut, rec, err := attack.Widen(claims, attack.Options{Indices: []int{i}})
 		if err != nil {
 			continue // widening changes nothing at this position
 		}
 		r.A4.Positions++
-		v := verify(mut)
+		v, _ := verify(mut, rec)
 		if !suppressedNothing(honest, v) {
 			r.A4.Violations = append(r.A4.Violations, fmt.Sprintf("claim %d (%s %s): outcome %s (honest %s), %d findings (honest %d), %d outside interval (honest %d)",
 				i, claims[i].ActionType, claims[i].Target, v.Outcome, honest.Outcome, v.Findings(), honest.Findings(), len(v.OutsideInterval), len(honest.OutsideInterval)))
@@ -615,7 +626,9 @@ func (r *AttackRun) a4(claims models.Trajectory, honest verification.Verdict, ve
 			}
 		}
 		r.A4.ComposedPositions++
-		v := verify(widened)
+		// The widenings keep every position, so the omission's record places
+		// the implied claims.
+		v, _ := verify(widened, orec)
 		res := attack.MarkUndetectableByDesign(attack.Score(orec, v), honest, rule)
 		mr := res.Mutations[0]
 		if mr.UndetectableByDesign {

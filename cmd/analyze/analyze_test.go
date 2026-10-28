@@ -500,7 +500,7 @@ func TestComposedA4CoversEveryInnerPosition(t *testing.T) {
 	}
 	run := &AttackRun{}
 	honest := verification.Verdict{}
-	run.a4(claims, honest, func(models.Trajectory) verification.Verdict { return honest }, nil)
+	run.a4(claims, honest, func(c models.Trajectory, _ attack.Record) (verification.Verdict, models.Trajectory) { return honest, c }, nil)
 	if run.A4.ComposedPositions != 2 {
 		t.Errorf("both inner positions must be checked, got %d", run.A4.ComposedPositions)
 	}
