@@ -195,6 +195,7 @@ func loadSession(t *testing.T, c capture) session {
 func (s session) input(claims models.Trajectory) verification.Input {
 	in := agent.PrepareWithBaseline(s.adapter, claims, s.g, &s.base, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.adapter, s.sessionVersion, s.g)
+	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.adapter, s.sessionVersion)
 	return in
 }
 

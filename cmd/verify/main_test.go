@@ -1185,6 +1185,69 @@ func TestDeclaredHarnessBookkeepingIsReported(t *testing.T) {
 	}
 }
 
+// V-54: cmd/verify passes the adapter's housekeeping declaration for the
+// version the session records, and prints and writes the explained events
+// only when there are some.
+func TestDeclaredHarnessHousekeepingIsReported(t *testing.T) {
+	dir := t.TempDir()
+	ts := time.Date(2026, 10, 28, 10, 7, 22, 0, time.UTC)
+	hash := "sha256:f2"
+	ev := func(ms int, typ models.ActionType, target string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: ts.Add(time.Duration(ms) * time.Millisecond), ActionType: typ, Target: target, PID: 100}
+	}
+	post := ev(11, models.NetRequest, "POST https://platform.claude.com/v1/oauth/token")
+	post.RequestHash = &hash
+	g := models.GroundTruthFile{RootPID: 100, Coverage: completeCov(), Events: models.GroundTruth{
+		ev(0, models.NetConnect, "platform.claude.com"), post, ev(363, models.NetRequest, "GET https://api.anthropic.com/api/oauth/profile"),
+	}}
+	gp := writeJSON(t, dir, "g.json", g)
+	session := func(version string) string {
+		p := filepath.Join(dir, version+".jsonl")
+		line := `{"type":"assistant","timestamp":"2026-10-28T10:07:23Z","sessionId":"s","version":"` + version + `","message":{"id":"m1","content":[{"type":"text","text":"done"}]}}` + "\n"
+		if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	type report struct {
+		Alignment struct {
+			Housekeeping *models.GroundTruth `json:"harness_housekeeping"`
+			Unrecorded   models.GroundTruth  `json:"unrecorded"`
+		} `json:"alignment"`
+	}
+	read := func(p string) report {
+		var r report
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	jsonOut := filepath.Join(dir, "a.json")
+	code, out, errOut := verify(t, "--agent", "claude-code", "--trajectory", session("2.1.306"), "--ground-truth", gp, "--json", jsonOut)
+	if code != 0 || !strings.Contains(out, "  Declared harness housekeeping: 3  (") ||
+		!strings.Contains(out, "\nDeclared harness housekeeping:\n  2026-10-28T10:07:22Z net_connect    platform.claude.com\n") ||
+		!strings.Contains(out, "Unrecorded:   0  (") || !strings.Contains(out, "VERDICT: FAITHFUL") {
+		t.Fatalf("exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	if r := read(jsonOut); r.Alignment.Housekeeping == nil || len(*r.Alignment.Housekeeping) != 3 || len(r.Alignment.Unrecorded) != 0 {
+		t.Errorf("JSON: %+v", r)
+	}
+
+	jsonOut = filepath.Join(dir, "b.json")
+	code, out, errOut = verify(t, "--agent", "claude-code", "--trajectory", session("2.1.305"), "--ground-truth", gp, "--json", jsonOut)
+	if code != 1 || strings.Contains(out, "housekeeping") || !strings.Contains(out, "Unrecorded:   3  (") {
+		t.Fatalf("exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	if r := read(jsonOut); r.Alignment.Housekeeping != nil || len(r.Alignment.Unrecorded) != 3 {
+		t.Errorf("JSON: %+v", r)
+	}
+}
+
 // The text report labels an exec with the process context the proc probe
 // recorded (P-36), where it says more than the target: a relative program
 // resolves against the working directory, and the kernel's record names an

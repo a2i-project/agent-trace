@@ -238,6 +238,7 @@ func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verificatio
 	in := agent.PrepareWithBaseline(s.Adapter, claims, s.G, b, verification.Options{IntervalSlack: IntervalSlack})
 	// The session's own version, as cmd/verify takes it (V-50).
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, s.Report.AgentVersion, s.G)
+	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.Adapter, s.Report.AgentVersion) // V-54
 	return in
 }
 

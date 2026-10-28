@@ -138,6 +138,65 @@ func HarnessBookkeeping(a Adapter, version string, g models.GroundTruthFile) fun
 	return hb.HarnessBookkeeping(version, home)
 }
 
+// Housekeeping is one network action the harness itself performs as
+// housekeeping (V-54): a net_connect to Target, a host as the net probe
+// writes a connection's target, or a net_request whose target is exactly
+// Target, "<METHOD> <URL>" as the probe writes it, with a body when Body is
+// true and with none when it is false. A connection has no body.
+type Housekeeping struct {
+	ActionType models.ActionType
+	Target     string
+	Body       bool
+}
+
+// HarnessHousekeeper is implemented by an adapter that can name the exact
+// network actions its harness performs on its own only sometimes, such as
+// Claude Code's renewal of its login token. Given the harness version the
+// session records, it returns them, or nothing for a version whose binary
+// and captures were not read. The verifier explains a level-0 connection or
+// request that equals one of them, whose target no claim names, as declared
+// harness housekeeping: not a finding and no reason for INCONCLUSIVE
+// (V-54). Like HarnessBookkeeper this explains, so a declaration names exact
+// targets of one version, never a host's requests in general.
+type HarnessHousekeeper interface {
+	HarnessHousekeeping(version string) []Housekeeping
+}
+
+// HarnessHousekeeping is the adapter's housekeeping declaration for the
+// harness version its session records (Report.AgentVersion), as the
+// verifier takes it (verification.Options.HarnessHousekeeping, V-54): a
+// predicate that recognises a net_connect or net_request equal to a
+// declared action, with an untruncated target and, for a request, a body
+// exactly when the declaration says so. Nil when the adapter declares
+// nothing for the version or the session states none.
+func HarnessHousekeeping(a Adapter, version string) func(models.GroundTruthEvent) bool {
+	hk, ok := a.(HarnessHousekeeper)
+	if !ok || version == "" {
+		return nil
+	}
+	type key struct {
+		t      models.ActionType
+		target string
+	}
+	declared := map[key]bool{}
+	for _, h := range hk.HarnessHousekeeping(version) {
+		switch {
+		case h.Target == "":
+		case h.ActionType == models.NetConnect && !h.Body:
+			declared[key{h.ActionType, h.Target}] = false
+		case h.ActionType == models.NetRequest:
+			declared[key{h.ActionType, h.Target}] = h.Body
+		}
+	}
+	if len(declared) == 0 {
+		return nil
+	}
+	return func(e models.GroundTruthEvent) bool {
+		body, ok := declared[key{e.ActionType, e.Target}]
+		return ok && !e.TargetTruncated && (e.RequestHash != nil) == body
+	}
+}
+
 // HarnessCommand recognises, among a capture's normalized events, the execs
 // of the adapter's declared harness commands (V-43): an exec whose raw
 // target, before Normalize, is exactly a declared command line, not

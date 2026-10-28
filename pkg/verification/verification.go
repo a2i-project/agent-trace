@@ -146,6 +146,13 @@ type Verdict struct {
 	// finding and no reason for INCONCLUSIVE; listed so none is lost from
 	// view (V-50).
 	HarnessBookkeeping []models.GroundTruthEvent
+	// HarnessHousekeeping: level-0 connections and requests equal to the
+	// exact network actions the adapter declares as the harness's own
+	// housekeeping (Options.HarnessHousekeeping), such as a renewal of its
+	// login token, that no baseline rule explains and whose target no
+	// network claim names. Explained by the declaration: not a finding and
+	// no reason for INCONCLUSIVE; listed so none is lost from view (V-54).
+	HarnessHousekeeping []models.GroundTruthEvent
 	// OutOfScope: file claims naming a path the capture could not have
 	// observed, by its fs_scope record (an unmarked filesystem, or, for a
 	// capture without the record, a path outside the workspace). They are
@@ -460,6 +467,11 @@ func Verify(in Input) Verdict {
 	// bookkeeping, that no rule explains and no claim names, is explained by
 	// the declaration and leaves the sequence (V-50).
 	part, v.HarnessBookkeeping = part.setAsideBookkeeping(in.Options.HarnessBookkeeping, in.Options.HarnessOwned, claimed)
+	// A level-0 connection or request equal to an action the adapter
+	// declares as the harness's own network housekeeping, that no rule
+	// explains and whose target no claim names, is explained the same way
+	// (V-54).
+	part, v.HarnessHousekeeping = part.setAsideHousekeeping(in.Options.HarnessHousekeeping, claimedNetTargets(claims))
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in
 	// the sequence it could pair with a claim and leave a real one unpaired at
@@ -755,6 +767,43 @@ func (p Partition) setAsideBookkeeping(bookkeeping func(models.GroundTruthEvent)
 	var aside []models.GroundTruthEvent
 	for i, e := range p.Observed {
 		if p.Owner[i] == nil && isHarnessOwned(e, owned) && !e.PathIsAmbiguous && !e.TargetTruncated && !claimed[e.Target] && bookkeeping(e) {
+			aside = append(aside, e)
+			continue
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	if aside == nil {
+		return p, nil
+	}
+	return out, aside
+}
+
+// claimedNetTargets is the set of targets the connection and request claims
+// name, harness-implied ones included.
+func claimedNetTargets(claims models.Trajectory) map[string]bool {
+	set := map[string]bool{}
+	for _, c := range claims {
+		if c.ActionType == models.NetConnect || c.ActionType == models.NetRequest {
+			set[c.Target] = true
+		}
+	}
+	return set
+}
+
+// setAsideHousekeeping removes from the aligned sequence every level-0
+// connection or request the adapter's housekeeping declaration recognises
+// and whose target no claim names, and returns them (V-54). An event of a
+// command is never taken: it is content of that command's subtree.
+func (p Partition) setAsideHousekeeping(housekeeping func(models.GroundTruthEvent) bool, claimed map[string]bool) (Partition, []models.GroundTruthEvent) {
+	if housekeeping == nil {
+		return p, nil
+	}
+	out := p
+	out.Observed, out.Owner = nil, nil
+	var aside []models.GroundTruthEvent
+	for i, e := range p.Observed {
+		if p.Owner[i] == nil && (e.ActionType == models.NetConnect || e.ActionType == models.NetRequest) && !e.TargetTruncated && !claimed[e.Target] && housekeeping(e) {
 			aside = append(aside, e)
 			continue
 		}

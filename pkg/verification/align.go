@@ -171,6 +171,16 @@ type Options struct {
 	// harness bookkeeping, neither a finding nor a reason for INCONCLUSIVE.
 	// Nil declares nothing.
 	HarnessBookkeeping func(models.GroundTruthEvent) bool
+	// HarnessHousekeeping recognises a connection or a request that equals
+	// one of the exact network actions the adapter declares as the
+	// harness's own housekeeping, such as Claude Code's renewal of its login
+	// token, built for the session's own harness version (V-54). A level-0
+	// net_connect or net_request it recognises, that no baseline rule
+	// explains and whose target no network claim names, is explained: it
+	// leaves the sequence before alignment and is listed as declared harness
+	// housekeeping, neither a finding nor a reason for INCONCLUSIVE. Nil
+	// declares nothing.
+	HarnessHousekeeping func(models.GroundTruthEvent) bool
 	// CollapseOpenRuns is declared by an adapter whose claims and observed
 	// stream treat a run of opens of one file by one process as one access,
 	// a run only another file event of that process breaks (Claude Code,
