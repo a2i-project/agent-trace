@@ -251,7 +251,7 @@ func (s *Session) Sweep(b *agent.Baseline, opts SweepOptions) *AttackRun {
 
 	in := s.input(claims, b)
 	honest := verification.Verify(in)
-	rule := in.Baseline
+	rule := in.BaselineInEffect()
 	// Premise check (5.2): the same honest run through the adapter path.
 	adapterV := s.verify(s.Claims, b)
 	run.Premise = CompareHonest(claims, honest, s.Claims, adapterV)

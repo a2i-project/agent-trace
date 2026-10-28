@@ -400,7 +400,7 @@ func (s *Session) SurfaceOf(b *agent.Baseline) (Surface, verification.Verdict, v
 	for i := range claims {
 		res.Mutations = append(res.Mutations, attack.MutationResult{Mutation: attack.Mutation{Kind: attack.Omission, OriginalIndex: i, Index: -1, Before: &claims[i]}})
 	}
-	res = attack.MarkUndetectableByDesign(res, honest, in.Baseline)
+	res = attack.MarkUndetectableByDesign(res, honest, in.BaselineInEffect())
 	sf := Surface{Claims: len(claims)}
 	for i, m := range res.Mutations {
 		sens := attack.Sensitive(claims[i])
@@ -416,7 +416,7 @@ func (s *Session) SurfaceOf(b *agent.Baseline) (Surface, verification.Verdict, v
 	}
 	sf.UndetectableFraction = ratioPtr(sf.Undetectable, sf.Claims)
 	sf.RestingReads, sf.RestingWrites = RestingPaths(b, s.G.Workspace)
-	return sf, honest, in.Baseline
+	return sf, honest, in.BaselineInEffect()
 }
 
 // Difference is one way the attack path and the adapter path read the honest

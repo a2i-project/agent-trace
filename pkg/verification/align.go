@@ -189,6 +189,15 @@ type Options struct {
 	// aside, since those were still there to break a run when the adapter
 	// folded it (V-49). False folds nothing.
 	CollapseOpenRuns bool
+	// BackgroundOutput declares the files the harness writes a background
+	// command's output to and opens itself only while it writes them, such
+	// as Claude Code's task output files (I-73): true for a path of that
+	// family. An open of such a file more than a second after every
+	// write-class event the capture holds on that exact path is not the
+	// harness's: the baseline
+	// does not explain it and it is not harness-owned activity, so an
+	// unclaimed one is Unrecorded (V-56). Nil declares nothing.
+	BackgroundOutput func(path string) bool
 
 	// impliedWitness says whether the command a harness-implied claim names
 	// opened the claim's file no later than the event (V-33). Verify sets it

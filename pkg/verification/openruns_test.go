@@ -90,7 +90,7 @@ func TestCollapseOpenRuns(t *testing.T) {
 				owner = make([]*Command, len(tc.observed))
 			}
 			p := Partition{Observed: tc.observed, Owner: owner}
-			out, folded := p.collapseOpenRuns(owned)
+			out, folded := p.collapseOpenRuns(harnessOwnedEvents(owned, nil))
 			if len(folded) != tc.folded || len(out.Observed) != len(tc.observed)-tc.folded || len(out.Owner) != len(out.Observed) {
 				t.Errorf("folded %v, kept %d events and %d owners, want %d folded", folded, len(out.Observed), len(out.Owner), tc.folded)
 			}

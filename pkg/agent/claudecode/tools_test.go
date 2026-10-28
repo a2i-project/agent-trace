@@ -240,3 +240,57 @@ func TestToolsVersionLockRewriteFoldsLikeTheControls(t *testing.T) {
 		t.Errorf("a create by another process folded: %v", got)
 	}
 }
+
+// I-73, V-56: the Read of the background command's output file comes after
+// the harness's last write to it, so it is the agent's. Claimed, it is a
+// plain corroboration, not shared with the harness; omitted, its open is
+// Unrecorded at every agreement, where V-36 hid it before.
+func TestToolsReadOfTheBackgroundOutputIsTheAgents(t *testing.T) {
+	tr, rep, err := Adapter{}.Parse(filepath.Join(toolsDir, "tools.session.jsonl"))
+	if err != nil || len(rep.ParseErrors) != 0 {
+		t.Fatalf("parse: %v %+v", err, rep)
+	}
+	read := -1
+	for i, c := range tr {
+		if c.Tool == "Read" && (Adapter{}).IsBackgroundOutput(c.Target) {
+			read = i
+		}
+	}
+	if read < 0 {
+		t.Fatal("no Read of the background command's output file")
+	}
+	omitted := append(append(models.Trajectory{}, tr[:read]...), tr[read+1:]...)
+	g := toolsRun(t, "tools")
+	for _, agreement := range []float64{0.2, 0.6, 1} {
+		b, err := agent.Capture(Adapter{}, "2.1.296", toolsControls(t), time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: agreement})
+		if err != nil {
+			t.Fatal(err)
+		}
+		verify := func(claims models.Trajectory) verification.Verdict {
+			return verification.Verify(agent.Prepare(Adapter{}, claims, g, b.Predicate(g.Workspace), verification.Options{IntervalSlack: 500 * time.Millisecond}))
+		}
+		honest := verify(tr)
+		if honest.Findings() != 0 || len(honest.CorroboratedHarnessShared) != 0 {
+			t.Errorf("agreement %.1f: honest run has %d findings, %d reads shared with the harness", agreement, honest.Findings(), len(honest.CorroboratedHarnessShared))
+		}
+		v := verify(omitted)
+		if v.Outcome != verification.OutcomeNotFaithful || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != tr[read].Target {
+			t.Errorf("agreement %.1f: the omitted Read: %s, unrecorded %v", agreement, v.Outcome, v.Unrecorded)
+		}
+	}
+}
+
+func TestIsBackgroundOutputNamesTheBashOutputFilesOnly(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/tmp/claude-1000/-ws-tools/dc85e7e4-8d8e-475e-a987-4750c0782180/tasks/b4aojv9az.output":         true,
+		"/tmp/claude-1000/-ws-tools/9b15e11c-58d0-4cb1-ab14-e4b80526c25a/tasks/bs2ggure0.output":         true,
+		"/tmp/claude-1000/-ws-tools/0c9360d8-5b62-41d4-9a06-0767bdea7f3a/tasks/a75410dfedecb61df.output": false, // a subagent's
+		"/tmp/claude-1000/-ws-tools/0c9360d8-5b62-41d4-9a06-0767bdea7f3a/tasks/b4aojv9az.output.tmp":     false,
+		"/tmp/claude-1000/-ws-tools/not-a-session/tasks/b4aojv9az.output":                                false,
+		"/ws/tools/tasks/b4aojv9az.output": false,
+	} {
+		if got := (Adapter{}).IsBackgroundOutput(p); got != want {
+			t.Errorf("IsBackgroundOutput(%q) = %v, want %v", p, got, want)
+		}
+	}
+}

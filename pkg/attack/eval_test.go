@@ -181,7 +181,7 @@ func loadSession(t *testing.T, c capture) session {
 	}
 	s := session{adapter: c.adapter, claims: claims, g: loadRun(t, c, c.label), base: base, observed: map[string]bool{}, sessionVersion: rep.AgentVersion}
 	in := s.input(claims)
-	s.rule = in.Baseline
+	s.rule = in.BaselineInEffect()
 	s.honest = verification.Verify(in)
 	for _, e := range in.Ground {
 		s.observed[e.Target] = true

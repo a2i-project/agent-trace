@@ -77,6 +77,15 @@ type OpenCollapser interface {
 	CollapsesOpenRuns() bool
 }
 
+// BackgroundOutputter is implemented by an adapter that can name the files
+// its harness writes a background command's output to and opens itself only
+// while it writes them (I-73). An open of such a file after the last write
+// the capture holds on it is then the agent's: the baseline does not explain
+// it and it is not harness-owned activity (V-56).
+type BackgroundOutputter interface {
+	IsBackgroundOutput(path string) bool
+}
+
 // HarnessHoster is implemented by an adapter that can name the harness's own
 // service hosts: exact host names, as the net probe reports a connection's
 // target (its TLS SNI), that the harness itself connects to only sometimes,
@@ -462,6 +471,9 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 	}
 	if oc, ok := a.(OpenCollapser); ok {
 		opts.CollapseOpenRuns = oc.CollapsesOpenRuns()
+	}
+	if bo, ok := a.(BackgroundOutputter); ok {
+		opts.BackgroundOutput = bo.IsBackgroundOutput
 	}
 	opts.HarnessCommand = HarnessCommand(a, g.Events)
 	return verification.Input{

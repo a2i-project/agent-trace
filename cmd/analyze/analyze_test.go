@@ -281,7 +281,7 @@ func TestSweepAgreesWithTheAttackPackageTally(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want.Add(attack.MarkUndetectableByDesign(attack.Score(rec, verification.Verify(s.input(mut, b))), honest, in.Baseline))
+			want.Add(attack.MarkUndetectableByDesign(attack.Score(rec, verification.Verify(s.input(mut, b))), honest, in.BaselineInEffect()))
 		}
 		var got *Tally
 		for _, tl := range run.Tallies {

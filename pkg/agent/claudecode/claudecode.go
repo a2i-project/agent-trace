@@ -142,6 +142,22 @@ var harnessOwned = regexp.MustCompile(`^(?:/(?:home/[^/]+|root)/(?:\.claude(?:/|
 // directories.
 func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchString(path) }
 
+// backgroundOutput is the output file of a Bash command, measured on the
+// tools captures of 2.1.296 and 2.1.306:
+// /tmp/claude-<uid>/<workspace>/<session id>/tasks/b<8 letters or digits>.output.
+// For a background command the harness creates it, opens it while the
+// command runs and once more when it ends, and writes and closes it then;
+// 2.1.306 gives a foreground command one too and deletes it when the
+// command ends. No control and no task run opened such a file after its
+// last write, and the agent's Read of a background command's output came
+// 14 s to 17 s later (I-73). A subagent's output in the same directory
+// (a<16 hex digits>.output) is not in the family.
+var backgroundOutput = regexp.MustCompile(`^/tmp/claude-\d+/[^/]+/` + uuidPattern + `/tasks/b[0-9a-z]{8}\.output$`)
+
+// IsBackgroundOutput reports whether path is the output file of a Bash
+// command (I-73, V-56).
+func (Adapter) IsBackgroundOutput(path string) bool { return backgroundOutput.MatchString(path) }
+
 // HarnessHosts are Claude Code's own service hosts that it connects to only
 // sometimes (V-34, I-53). downloads.claude.ai is where the harness fetches
 // its releases: its own process connected to it in 2 of the 48 runs of the
