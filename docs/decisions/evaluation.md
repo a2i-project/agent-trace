@@ -2,7 +2,7 @@
 
 Why the attack generators and their scoring are what they are. Entries use the prefix E-. The as-built description is [../architecture/50_attack_generators.md](../architecture/50_attack_generators.md).
 
-Entries carry their own dates. Statuses reconciled with the code at commit 1391cbe on 2026-10-11.
+Entries carry their own dates. Statuses reconciled with the code at commit d223e7d on 2026-10-28.
 
 ## Attack definitions
 

@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Checked against commit f4da861 on 2026-10-11.
+Checked against commit d223e7d on 2026-10-28.
 
 This page states what agent-trace is for, the threat model it assumes, the
 properties it claims, and how its components fit together. Each component has
@@ -49,7 +49,7 @@ after its code identifier. Identifiers without a package are in
 |---|---|---|
 | claim | one action the agent's trajectory (T) reports, as an adapter produced it | `models.TrajectoryEntry` |
 | observed event | one event a probe recorded; the ground truth (G) is the list of them | `models.GroundTruthEvent` |
-| capture | the file `watch` writes: the observed events, the coverage record, the root pid, the workspace and the fs scope record | `models.GroundTruthFile` |
+| capture | the file `watch` writes: the observed events, the coverage record, the root pid, the workspace, the fs scope record and the snapshot of the harness's sensitive files | `models.GroundTruthFile` |
 | fs scope record, scope rule | the capture's `fs_scope`: which filesystems the fs probe marked and which rule `watch` applied to file events ([10_probes_common.md](10_probes_common.md#ground_truthjson)) | `models.FSScope` |
 | level | a process's depth in the agent's process tree: level 0 is the agent process, level 1 a command it started, level 2 and below that command's descendants, -1 a process whose chain does not reach the agent | `Process.Level` |
 | command | a level-1 process with everything beneath it (its subtree) | `Command` |
@@ -59,7 +59,7 @@ after its code identifier. Identifiers without a package are in
 | aligned sequence | the observed events claims are aligned against: level-0 events and each command's own first exec and exit, in time order | `Partition.Observed` |
 | top-level action | one event of the aligned sequence | an element of `Partition.Observed` |
 | lane | a group of action types aligned on its own: `fs` (the file types), `proc` (`process_exec`, `process_exit`), `net` (`net_request`, `net_connect`, `net_dns`), `other` (every other type; of the claimable ones only `git_commit`, which is set aside before alignment, V-47) | `Lane`, `LaneOf` |
-| capability evidence | observed events of the unclaimable types `net_bind`, `net_listen`, `net_unix_connect`, `net_dns` and `net_dial`: listeners, Unix socket connections, connections to port 53 and connections that sent nothing. Reported, never aligned, never a finding | `Verdict.Capability`, `Command.Capability`, `models.ActionType.IsClaimable` |
+| capability evidence | observed events of the unclaimable types `net_bind`, `net_listen`, `net_unix_connect`, `net_dns`, `net_dial` and `net_response`: listeners, Unix socket connections, connections to port 53, connections that sent nothing and responses read over TLS. Reported, never aligned, never a finding | `Verdict.Capability`, `Command.Capability`, `models.ActionType.IsClaimable` |
 | structural event | `process_fork`: builds the tree, neither aligned nor counted as capability evidence | `models.ActionType.IsStructural` |
 | outside write | a write-class file event (`file_write`, `file_close`, `file_rename`, `file_delete`) under the workspace by an outside process | `Verdict.OutsideWrites` |
 | outside its interval | a pair whose claim has an end and whose observed event lies outside the claim's interval widened by the slack | `Verdict.OutsideInterval` |
@@ -67,7 +67,7 @@ after its code identifier. Identifiers without a package are in
 | out of scope | a file claim on a path the capture could not observe, by its fs scope record | `Verdict.OutOfScope`, `FSScope` |
 | out of capture | a claim of a type no probe observes (`git_commit`) | `Verdict.OutOfCapture` |
 | dropped by the scope rule | a file event `watch` left out of the capture: caused by no process of the agent's tree, on a path outside the workspace | `models.FSScope.DroppedOutside` |
-| finding | a discrepancy counted against the agent: a mismatched pair, an unwitnessed claim, an unrecorded top-level action, a pair outside its interval, or an unexplained subtree | `Verdict.Findings` |
+| finding | a discrepancy counted against the agent: a mismatched pair, an unwitnessed claim, an unrecorded top-level action, a pair outside its interval, an unexplained subtree, or an unexplained change to a sensitive file of the harness | `Verdict.Findings` |
 | outcome | the conclusion of a run: FAITHFUL, NOT FAITHFUL or INCONCLUSIVE | `Outcome` |
 | verdict | the whole result of a run: the outcome, the finding lists, the coverage check, the commands and the reasons | `Verdict` |
 
@@ -85,7 +85,7 @@ a level-0 event is one caused by the agent process.
 | P4 | Agent independence | verification uses host observations only. Adapters read the agent's own session files and require no change to the agent |
 | P5 | Deterministic verdict | the verdict is a pure function of the trajectory, the ground truth, the baseline and the options. It has three outcomes, FAITHFUL, NOT FAITHFUL and INCONCLUSIVE, and no score |
 | P6 | Composability | agent-trace provides recording-time faithfulness. Integrity of the stored record, anomaly detection and authorization are separate layers it composes with |
-| P7 | Content-level verification | file content hashes, command lines as the kernel resolved them, and request body hashes for HTTP/1.x over a hookable TLS library. Coverage of content is partial and is reported per probe |
+| P7 | Content-level verification | file content hashes, command lines as the process passed them to the kernel, and request body hashes for HTTP/1.x over a hookable TLS library. Coverage of content is partial and is reported per probe |
 
 P5 is worded as restated in V-27
 ([`../decisions/verification.md`](../decisions/verification.md)).
@@ -109,7 +109,7 @@ does. The report lists the command's subtree and its
 | Network probe | `pkg/probe/net`, `pkg/tlsoffset`, `pkg/tlsparse` | [13_probe_net.md](13_probe_net.md) |
 | Verifier | `pkg/verification`, `pkg/matching` | [20_verifier.md](20_verifier.md) |
 | Agent adapters, baseline and configured agent versions | `pkg/agent`, `pkg/config`, `config/agents.json` | [30_agent_adapters.md](30_agent_adapters.md) |
-| Command-line tools | `cmd/watch`, `cmd/verify`, `cmd/baseline`, `cmd/status`, `cmd/attack`, `cmd/simagent` | [40_tools.md](40_tools.md) |
+| Command-line tools | `cmd/watch`, `cmd/verify`, `cmd/baseline`, `cmd/status`, `cmd/attack`, `cmd/simagent`, `cmd/analyze` | [40_tools.md](40_tools.md) |
 | Attack generators and scoring | `pkg/attack`, `cmd/attack` | [50_attack_generators.md](50_attack_generators.md) |
 
 ## End-to-end workflow
@@ -117,8 +117,9 @@ does. The report lists the command's subtree and its
 1. **Record.** `watch` loads the requested probes, launches the agent (or
    attaches to `--root-pid`), and tracks its process tree in the kernel. When
    the agent exits it writes `ground_truth.json`: every observed event with the
-   pid that caused it, a coverage record of what each probe may have lost, and
-   the root pid.
+   pid that caused it, a coverage record of what each probe may have lost, the
+   root pid, the fs scope record and the snapshot of the harness's sensitive
+   files.
 2. **Read the claims.** An adapter reads the agent's native session file into
    an ordered list of claims, each with a time interval, and declares which
    fields its format can express. It also rewrites observed events into the
@@ -129,7 +130,7 @@ does. The report lists the command's subtree and its
    such as its model API connection.
 4. **Verify.** `verify` builds the process forest from fork and exec records,
    attributes every event by ancestry, removes baseline events, sets aside
-   out-of-scope file claims, aligns the other claims against the aligned
+   out-of-scope file claims and claims no probe observes, aligns the other claims against the aligned
    sequence one lane at a time (`fs`, `proc`, `net`, `other`), and checks that
    every observed event is explained.
 5. **Conclude.** `verify` prints the verdict: the outcome, the edit script,
@@ -156,7 +157,7 @@ builder and the attack generators are implemented and tested against a
 simulated agent (`cmd/simagent`) and against fixtures. Paired captures of real
 Claude Code sessions and two of Gemini (agy 1.3.4) are checked in; each one,
 its agent version and its outcome are listed in
-[30_agent_adapters.md](30_agent_adapters.md#objective). One fixture, a Claude Code capture, was recorded with the filesystem
+[30_agent_adapters.md](30_agent_adapters.md#objective). Two fixtures, both Claude Code captures, were recorded with the filesystem
 probe's entry names (P-25); otherwise those shapes are checked by the probe's
 and end-to-end tests. Still
 unchecked: Gemini beyond those two tasks, Claude Code versions other than

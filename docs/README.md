@@ -30,8 +30,8 @@ them for a fact a reader needs.
 | [12_probe_fs.md](architecture/12_probe_fs.md) | filesystem probe (fanotify) |
 | [13_probe_net.md](architecture/13_probe_net.md) | network probe (eBPF tracepoints, `SSL_write` uprobe) |
 | [20_verifier.md](architecture/20_verifier.md) | process forest, alignment, coverage, verdict |
-| [30_agent_adapters.md](architecture/30_agent_adapters.md) | adapters for Claude Code and Gemini, harness baseline |
-| [40_tools.md](architecture/40_tools.md) | `watch`, `verify`, `baseline`, `attack`, `simagent` |
+| [30_agent_adapters.md](architecture/30_agent_adapters.md) | adapters for Claude Code, Gemini and the generic format, harness baseline, configured agent versions |
+| [40_tools.md](architecture/40_tools.md) | `watch`, `verify`, `baseline`, `status`, `attack`, `simagent`, `analyze`; capture and campaign scripts, overhead benchmark, comparison tools |
 | [50_attack_generators.md](architecture/50_attack_generators.md) | attack generators A1 to A4, scoring against a mutation record |
 
 ## Decision files

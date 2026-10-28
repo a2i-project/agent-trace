@@ -1,6 +1,6 @@
 # Process probe
 
-Checked against commit cbb01b1 on 2026-10-27.
+Checked against commit d223e7d on 2026-10-28.
 
 ## Objective
 

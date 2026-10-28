@@ -144,9 +144,9 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 
 // HarnessHosts are Claude Code's own service hosts that it connects to only
 // sometimes (V-34, I-53). downloads.claude.ai is where the harness fetches
-// its releases: its own process connected to it in one of the 42 runs of the
-// checked captures (a control of the parallel capture of 2.1.286,
-// 2026-10-07), and a control runs no task. api.anthropic.com,
+// its releases: its own process connected to it in 2 of the 48 runs of the
+// checked-in captures (a control of the parallel capture of 2.1.286,
+// 2026-10-07, and the task run of the tools-named capture of 2.1.296). api.anthropic.com,
 // mcp-proxy.anthropic.com and the datadog intake
 // http-intake.logs.us5.datadoghq.com were in every run, so the baseline
 // explains them and they are not declared.
