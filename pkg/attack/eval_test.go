@@ -18,24 +18,25 @@ import (
 )
 
 // The evaluation tests run every generator over the real paired captures
-// checked in under pkg/agent/claudecode/testdata (three of Claude Code 2.1.286
-// and the edits task of 2.1.296) and pkg/agent/gemini/testdata (the basic and
-// search tasks of agy 1.3.4), each read and verified through its own adapter,
-// and score the verifier's verdicts against each mutation's record. They are
+// checked in under pkg/agent/claudecode/testdata (three of Claude Code 2.1.286,
+// the edits task of 2.1.296 and the tools task of 2.1.296 and 2.1.306) and
+// pkg/agent/gemini/testdata (the basic and search tasks of agy 1.3.4), each
+// read and verified through its own adapter, and score the verifier's
+// verdicts against each mutation's record. They are
 // the Tier 8 acceptance: detection, classification and localization against the
 // record, no false findings on the honest control, and A4 suppressing nothing.
-// They are a check of the machinery on six short real sessions, not an
+// They are a check of the machinery on nine short real sessions, not an
 // evaluation of the verifier on a population: the claim count is small, two
-// agents, three agent versions and one machine. See
+// agents, four agent versions and one machine. See
 // docs/methodology/being_data_driven.md before quoting a rate.
 //
-// The three tools captures, two of 2.1.296 and one of 2.1.306, are evaluated
-// and reported, not gated (E-5): their numbers are logged, and what would fail
-// a gated capture is logged as "not gated" instead, until the mislocated
-// fabrications and substitutions on them are explained. On the 2.1.306 one the
-// harness's package-manager probe, which one control did not run, is no rule
-// at full agreement; it is a declared harness command (V-43), so the honest
-// control is INCONCLUSIVE with no finding.
+// Every capture is gated. The three tools captures, two of 2.1.296 and one of
+// 2.1.306, were reported and not gated until V-55 and V-56 explained their
+// mislocated fabrications and substitutions and their hidden Read of the
+// background output (E-5). On the 2.1.306 one the harness's package-manager
+// probe, which one control did not run, is no rule at full agreement; it is a
+// declared harness command (V-43), so the honest control is INCONCLUSIVE with
+// no finding.
 
 // diagnostics names a file to write the E-5 diagnostics to, as JSON: every
 // run of TestAttacksAreDetectedClassifiedAndLocated whose alignment is
@@ -83,17 +84,15 @@ var captures = existing([]capture{
 	// One Write and five Edits with their content hashes (I-31): the first
 	// capture on which a substitution of an Edit's content is exercised.
 	claude("edits", "paired-2.1.296-edits", "edits", true),
-	// The tools task of 2.1.296, unnamed and named: reported, not gated
-	// (E-5). Their omitted Read of the background command's output file is
-	// undetectable by design (V-36), and their fabrications and substitutions
-	// are detected but not always located; the diagnostics record why.
-	claude("tools", "paired-2.1.296-tools", "tools", false),
-	claude("tools-named", "paired-2.1.296-tools-named", "tools", false),
+	// The tools task of 2.1.296, unnamed and named: a background Bash, its
+	// output file read after it ended (V-56), a subagent and NotebookEdit.
+	// Gated since V-55 and V-56 (E-5).
+	claude("tools", "paired-2.1.296-tools", "tools", true),
+	claude("tools-named", "paired-2.1.296-tools-named", "tools", true),
 	// The same task on 2.1.306, the first version that copies API requests
-	// into the transcript (I-62): reported, not gated, like the tools
-	// captures of 2.1.296 (E-5). Its honest control is INCONCLUSIVE at full
+	// into the transcript (I-62). Its honest control is INCONCLUSIVE at full
 	// agreement on an occasional harness command (I-63, V-43).
-	claude("tools-2.1.306", "paired-2.1.306-tools", "tools", false),
+	claude("tools-2.1.306", "paired-2.1.306-tools", "tools", true),
 	// The two paired captures of agy 1.3.4: the first scored on an agent other
 	// than Claude Code, gated since they met every acceptance check.
 	gem("agy-basic", "paired-agy-1.3.4-basic", "basic", true),

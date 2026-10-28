@@ -315,3 +315,15 @@ why.
   (measured on a local transcript corpus, design input only). Replaced by the
   process forest, per-lane alignment and coverage check (commits `eec9735`,
   `5e17be5`). Rationale in `docs/decisions/verification.md`.
+
+* **2026-10-28, two rejected approaches for the `tools` captures and a
+  corrected localisation rate.** Counting the harness's opens of a
+  background command's output file in the controls was refuted: the count
+  grows with the command's duration (3 or 4 for the controls' instant
+  command, 4 or 5 for the task's three-second one), so it would have made two
+  honest fixtures findings. A tie-break alone could not relocate fabrications,
+  which were cheaper as substitutions than as an insertion and a deletion.
+  The reported localisation of fabrications and substitutions on those
+  captures (0.79 to 0.85) was a cost-model artefact of kept baseline events,
+  not a property of the claims: with V-55 and V-56 it is 1.000 and the
+  captures are gated (E-5).
