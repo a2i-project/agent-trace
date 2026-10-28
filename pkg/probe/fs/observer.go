@@ -198,11 +198,15 @@ type Observer struct {
 	// unread record of its creation, ahead of the file's open, write and
 	// close; the removal happened after those. holdRemoval and placeHeld
 	// decide; releaseHeld emits what is left at the end of a drain.
-	held []models.GroundTruthEvent
+	held []heldRemoval
 	// fromsInFlight counts, per pid, the moved-from records emitted in place
 	// whose moved-to record has not been read, so that moved-to is not taken
 	// for the place of a held one.
 	fromsInFlight map[uint32]int
+	// movedTo holds, per pid, the paths its moved-to records named since the
+	// last release: the records a later moved-to of the same name may have
+	// merged into (P-38).
+	movedTo map[uint32]map[string]bool
 	// lastStamp is the timestamp of the last record processed, for a release
 	// at the end of a drain.
 	lastStamp time.Time
@@ -211,6 +215,9 @@ type Observer struct {
 	// on a held delete's name floats ahead of the delete only when it is not,
 	// since a file still there was created again after the delete.
 	fileNamed func(e *rawEvent) bool
+	// fileAt returns the path at which the file a content record's handle
+	// names is now, "" when it does not resolve; nil uses pathNow.
+	fileAt func(e *rawEvent) string
 
 	// settleDelay is how long a path must be quiet (no write-class event,
 	// see lastWriteAt) before a pending close for it is hashed. Defaults to
@@ -235,6 +242,16 @@ type Observer struct {
 	hashFD func(int) (string, error)
 
 	mu sync.Mutex
+}
+
+// heldRemoval is a removal held by P-27. For a held moved-from, dest is
+// where its file was when the first content record on the source's name was
+// read, and looked says that record came: the destination of a moved-to that
+// merged into an earlier record of its name (P-38).
+type heldRemoval struct {
+	ev     models.GroundTruthEvent
+	dest   string
+	looked bool
 }
 
 // emitted is what lastEmitted remembers for a path.
@@ -863,16 +880,17 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	}
 
 	o.placeHeld(e, ts)
+	o.locateHeld(e)
 	o.lastStamp = ts
 	hold := holdRemoval(e.Mask)
 	for _, actionType := range maskToActionTypes(e.Mask) {
 		if actionType == hold {
-			o.held = append(o.held, models.GroundTruthEvent{
+			o.held = append(o.held, heldRemoval{ev: models.GroundTruthEvent{
 				ActionType:      actionType,
 				Target:          e.Path,
 				PathIsAmbiguous: e.Ambiguous,
 				PID:             pidOf(e),
-			})
+			}})
 			continue
 		}
 		if o.repeats(e.Path, actionType, pidOf(e)) {
@@ -934,15 +952,15 @@ func (o *Observer) placeHeld(e *rawEvent, ts time.Time) {
 	pid := pidOf(e)
 	entry := e.Mask & dirEntryBits
 	if len(o.held) > 0 {
-		var keep []models.GroundTruthEvent
+		var keep []heldRemoval
 		placedRename := false
 		for _, h := range o.held {
 			release := false
-			switch h.ActionType {
+			switch h.ev.ActionType {
 			case models.FileDelete:
-				release = entry != 0 || e.Path != h.Target || o.stillNamed(e)
+				release = entry != 0 || e.Path != h.ev.Target || o.stillNamed(e)
 			case models.FileRename:
-				if !placedRename && entry == unix.FAN_MOVED_TO && h.PID == pid && o.fromsInFlight[pid] == 0 {
+				if !placedRename && entry == unix.FAN_MOVED_TO && h.ev.PID == pid && o.fromsInFlight[pid] == 0 {
 					release, placedRename = true, true
 				}
 			}
@@ -950,10 +968,7 @@ func (o *Observer) placeHeld(e *rawEvent, ts time.Time) {
 				keep = append(keep, h)
 				continue
 			}
-			h.Timestamp = ts
-			if !o.repeats(h.Target, h.ActionType, h.PID) {
-				o.events <- h
-			}
+			o.emitHeld(h.ev, ts)
 		}
 		o.held = keep
 	}
@@ -968,21 +983,69 @@ func (o *Observer) placeHeld(e *rawEvent, ts time.Time) {
 			o.fromsInFlight[pid]--
 		}
 	}
+	if e.Mask&unix.FAN_MOVED_TO != 0 && e.Path != "" {
+		if o.movedTo == nil {
+			o.movedTo = make(map[uint32]map[string]bool)
+		}
+		if o.movedTo[pid] == nil {
+			o.movedTo[pid] = make(map[string]bool)
+		}
+		o.movedTo[pid][e.Path] = true
+	}
+}
+
+// emitHeld emits a held removal at ts unless it repeats its path's last
+// event (P-18).
+func (o *Observer) emitHeld(h models.GroundTruthEvent, ts time.Time) {
+	h.Timestamp = ts
+	if !o.repeats(h.Target, h.ActionType, h.PID) {
+		o.events <- h
+	}
+}
+
+// locateHeld records, for each held moved-from on the name content record e
+// names, by the same process, where e's file is now. The first such record
+// is the file's content record that followed its merged creation (P-27); the
+// file left the name by the rename, so where it is now is where the rename
+// took it, unless it moved again before the read. One resolution per held
+// moved-from.
+func (o *Observer) locateHeld(e *rawEvent) {
+	if len(o.held) == 0 || e.Mask&dirEntryBits != 0 || len(e.HandleData) == 0 {
+		return
+	}
+	pid := pidOf(e)
+	for i := range o.held {
+		h := &o.held[i]
+		if h.looked || h.ev.ActionType != models.FileRename || h.ev.PID != pid || h.ev.Target != e.Path {
+			continue
+		}
+		h.looked = true
+		h.dest = o.whereNow(e)
+	}
 }
 
 // releaseHeld emits every held removal, in order, one nanosecond after the
 // last record processed: the end of a drain, where the record that would
 // have marked its place did not come (a moved-to merged into an earlier
-// record of its name, or a delete with nothing after it).
+// record of its name, or a delete with nothing after it). A held moved-from
+// whose file is now at a path that a moved-to record of its process named in
+// this drain is followed by a moved-to on that path: the kernel merged the
+// rename's moved-to into that earlier unread record, since it merges only
+// records of one process on one directory and name (P-38).
 func (o *Observer) releaseHeld() {
+	ts := o.lastStamp.Add(time.Nanosecond)
 	for _, h := range o.held {
-		h.Timestamp = o.lastStamp.Add(time.Nanosecond)
-		if !o.repeats(h.Target, h.ActionType, h.PID) {
-			o.events <- h
+		o.emitHeld(h.ev, ts)
+		if h.ev.ActionType == models.FileRename && h.dest != "" && h.dest != h.ev.Target && o.movedTo[h.ev.PID][h.dest] {
+			to := h.ev
+			to.Target = h.dest
+			to.PathIsAmbiguous = false
+			o.emitHeld(to, ts)
 		}
 	}
 	o.held = nil
 	o.fromsInFlight = nil
+	o.movedTo = nil
 }
 
 // stillNamed reports whether the file content record e names, by its handle,
@@ -998,17 +1061,37 @@ func (o *Observer) stillNamed(e *rawEvent) bool {
 // the record's. A handle that does not resolve, a deleted file included, is
 // not named there.
 func (o *Observer) namedNow(e *rawEvent) bool {
+	p := o.pathNow(e)
+	return p != "" && p == e.Path
+}
+
+// whereNow returns the path at which the file content record e names is now
+// (fileAt, or pathNow).
+func (o *Observer) whereNow(e *rawEvent) string {
+	if o.fileAt != nil {
+		return o.fileAt(e)
+	}
+	return o.pathNow(e)
+}
+
+// pathNow resolves e's file handle to the file's current path through the
+// probe's mount for its filesystem, or "" when it does not resolve. A file
+// with no name left (the kernel's " (deleted)" suffix) has no path.
+func (o *Observer) pathNow(e *rawEvent) string {
 	mountFD := o.mountFor(e.FSID)
 	if len(e.HandleData) == 0 || mountFD < 0 {
-		return false
+		return ""
 	}
 	fd, err := o.open(mountFD, e.HandleType, e.HandleData)
 	if err != nil {
-		return false
+		return ""
 	}
 	defer func() { _ = unix.Close(fd) }()
 	p, err := os.Readlink(procFD(fd))
-	return err == nil && p == e.Path
+	if err != nil || strings.HasSuffix(p, " (deleted)") {
+		return ""
+	}
+	return p
 }
 
 // repeats records that actionType is being emitted for path by pid and
