@@ -174,16 +174,11 @@ func TestEndToEndOnPairedFixtures(t *testing.T) {
 	if t3.Detectable == 0 || t3.Detected != t3.Detectable || t3.Classified != t3.Detectable || t3.Located != t3.Detectable {
 		t.Errorf("gemini primary tally: %+v", t3)
 	}
-	// The tools capture shows mislocation cases, none of them a path artefact.
-	rm := 0
+	// Since V-55 no fabrication on the tools capture pairs with the harness's
+	// kept open of the background output file, so no mutation is assigned a
+	// mislocation category (protocol 5.7).
 	for _, c := range res.H2.MislocationCases {
-		rm++
-		if c.Category < Mis1 || c.Category > Mis6 {
-			t.Errorf("category %d", c.Category)
-		}
-	}
-	if rm == 0 {
-		t.Error("the tools capture has fabrications paired as mismatches (protocol 5.7), none was assigned")
+		t.Errorf("a mislocation case on the paired fixtures: %+v", c)
 	}
 	if len(res.H2.Surface) != 2 || res.H2.Surface[0].Claims == 0 {
 		t.Errorf("the attack surface: %+v", res.H2.Surface)

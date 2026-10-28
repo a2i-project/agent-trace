@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit 43c981c on 2026-10-28.
+Checked against commit 7034001 on 2026-10-28.
 
 ## Objective
 
@@ -123,6 +123,8 @@ On `paired-2.1.306-tools`, reported and not gated (I-63; **Verified** on 2026-10
 
 - Distinct mutations: 16 omissions, 15 to 20 fabrications, 80 to 146 substitutions, as on the 2.1.296 captures; the omissions undetectable by design are again the omitted Read of the background command's output file. Before V-43 the probe's Unrecorded exec and unexplained subtree added 200 unaccounted findings to every cell and the ambiguous runs were 34 / 61 / 72 (fabricate) and 50 / 75 / 80 (substitute): the probe's exec sat in the process lane's aligned sequence. Detection, classification and location are unchanged by it.
 - Widening puts no claim outside its interval and leaves the honest outcome, INCONCLUSIVE with no finding, unchanged; the omission with widened neighbours is found at 13 of 14 positions (the output file's Read is undetectable by design); retimed omissions are found apart from the 5 of 100 undetectable by design; 60 target and 60 output_hash substitutions of the per-field check run, 12 of the target ones not located, as on the 2.1.296 captures.
+
+Since V-55 (2026-10-28) a kept baseline event pairs only with a claim on its own target, which changes the two tables above (**Verified** at commit 7034001 plus V-55: `go test ./pkg/attack -v`; every line of the six gated captures and every omission line is unchanged). On all three `tools` captures every fabrication is detected, classified and located, with no ambiguous run and no unaccounted finding; substitutions are classified and located at 0.950 (n=1 to 3), with 0 / 2 / 11 ambiguous runs. The 5% left are the target substitutions of the output file's Read, read as fabrications; the per-field check leaves 1 of 60 target substitutions not located on each capture.
 
 ## Guarantees and loss accounting
 

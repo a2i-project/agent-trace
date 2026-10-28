@@ -198,6 +198,11 @@ func refAlignBlocks(la LaneAlignment, claims models.Trajectory, observed models.
 			fl, layers = 1, 2
 		}
 	}
+	for _, j := range ei {
+		if opts.keptAt(j) {
+			fl, layers = 1, 2
+		}
+	}
 	if states > maxCells/w/layers {
 		return la, ErrTooLarge
 	}
@@ -215,7 +220,7 @@ func refAlignBlocks(la LaneAlignment, claims models.Trajectory, observed models.
 	pair := make([]int8, n*m)
 	for p := 0; p < n; p++ {
 		for j := 0; j < m; j++ {
-			pc, ok := pairCostOf(claims[ci[p]], observed[ei[j]], opts)
+			pc, ok := pairCostOf(claims[ci[p]], observed[ei[j]], opts.keptAt(ei[j]), opts)
 			if !ok {
 				pc = -1
 			}

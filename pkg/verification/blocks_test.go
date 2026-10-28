@@ -372,6 +372,12 @@ func runsOf(c models.Trajectory) []int {
 // (pairCostOf, insertCost: a harness-implied claim costs nothing unpaired and
 // is refused most pairs, V-33).
 func bruteForceBlocks(c models.Trajectory, o models.GroundTruth) (best int, pairings map[string]bool, bestViol int) {
+	return bruteForceBlocksWith(c, o, Options{})
+}
+
+// bruteForceBlocksWith is bruteForceBlocks with the options' refusals, such
+// as V-55's kept events (opts.kept indexes o).
+func bruteForceBlocksWith(c models.Trajectory, o models.GroundTruth, opts Options) (best int, pairings map[string]bool, bestViol int) {
 	class := classes(c, runsOf(c))
 	var runs [][]int
 	for i := 0; i < len(c); {
@@ -429,7 +435,7 @@ func bruteForceBlocks(c models.Trajectory, o models.GroundTruth) (best int, pair
 				return
 			}
 			if i < len(order) && j < len(o) {
-				if pc, ok := pairCostOf(c[order[i]], o[j], Options{}); ok {
+				if pc, ok := pairCostOf(c[order[i]], o[j], opts.keptAt(j), opts); ok {
 					v := 0
 					if outsideInterval(c[order[i]], o[j], 0) {
 						v = 1

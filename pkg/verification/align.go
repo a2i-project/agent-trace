@@ -201,7 +201,16 @@ type Options struct {
 	// Input.FSScope; nil, as when Align is called on its own, matches by
 	// path only.
 	mounts *matching.Mounts
+	// kept marks, by index into the observed sequence given to Align, the
+	// level-0 baseline events kept for a claim on their path (V-30). Such an
+	// event pairs only with a claim on its own target (V-55). Verify sets
+	// it; nil, as when Align is called on its own, marks none.
+	kept []bool
 }
+
+// keptAt reports whether observed event j is a baseline event kept for a
+// claim on its path (V-30, V-55).
+func (o Options) keptAt(j int) bool { return j >= 0 && j < len(o.kept) && o.kept[j] }
 
 // implied reports whether a claim is harness-implied (V-33): marked by an
 // adapter and a file open, or a request or a connection of the agent's own
@@ -261,14 +270,26 @@ func impliedPairs(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Opti
 	return opts.impliedWitness == nil || opts.impliedWitness(c, e)
 }
 
-// pairCostOf is pairCost with V-33's refusal: ok is false when the claim is
-// harness-implied and may not pair with the event. An ordinary claim pairs
-// with any event of its lane.
-func pairCostOf(c models.TrajectoryEntry, e models.GroundTruthEvent, opts Options) (cost int, ok bool) {
+// pairCostOf is pairCost with the refusals of V-33 and V-55: ok is false
+// when the claim is harness-implied and may not pair with the event, or when
+// the event is a baseline event kept for a claim on its path (kept) and the
+// claim names another target. An ordinary claim pairs with any other event
+// of its lane.
+func pairCostOf(c models.TrajectoryEntry, e models.GroundTruthEvent, kept bool, opts Options) (cost int, ok bool) {
 	if implied(c) {
 		return 0, impliedPairs(c, e, opts)
 	}
+	if kept && !sameTarget(c, e, opts.mounts) {
+		return 0, false
+	}
 	return pairCostOnly(c, e, opts.Expresses, opts.mounts), true
+}
+
+// sameTarget reports whether a claim names the event's target as the pair
+// comparison reads it: equal, equal after normalization or through the mount
+// table (V-46), or a truncated record the claim's target extends (V-26).
+func sameTarget(c models.TrajectoryEntry, e models.GroundTruthEvent, m *matching.Mounts) bool {
+	return c.Target == e.Target || m.TargetsMatch(c, e) || truncatedPrefix(c, e)
 }
 
 // samePath reports whether a claimed path is exactly an observed name, or,

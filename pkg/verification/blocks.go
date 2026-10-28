@@ -129,8 +129,11 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	if states > maxCells {
 		return la, ErrTooLarge
 	}
-	// fl is the layer a flush writes: 0 when no member is harness-implied, so
-	// the program has one layer and reads as before V-33.
+	// fl is the layer a flush writes: 0 when no member is harness-implied and
+	// no event is a kept baseline event, so the program has one layer and
+	// reads as before V-33. Both make a pair refusable, so an unpaired claim
+	// can lie beside an unpaired event at minimum cost; the second layer
+	// counts that pairing once (V-33, V-55).
 	fl, layers := 0, 1
 	ins := make([]int32, n)
 	ordinaryClaims := 0
@@ -140,6 +143,11 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 			fl, layers = 1, 2
 		} else {
 			ordinaryClaims++
+		}
+	}
+	for _, j := range ei {
+		if opts.keptAt(j) {
+			fl, layers = 1, 2
 		}
 	}
 
@@ -249,7 +257,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	var pair []int8
 	var pairLo, pairHi, pairBase []int
 	pairCode := func(p, e int) int8 {
-		pc, ok := pairCostOf(claims[ci[p]], observed[ei[e]], opts)
+		pc, ok := pairCostOf(claims[ci[p]], observed[ei[e]], opts.keptAt(ei[e]), opts)
 		if !ok {
 			return -1
 		}

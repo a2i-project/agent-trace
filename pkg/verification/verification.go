@@ -506,6 +506,12 @@ func Verify(in Input) Verdict {
 	opts := in.Options
 	opts.impliedWitness = impliedWitness(part.Commands, mounts)
 	opts.mounts = mounts
+	// A baseline event kept for a claim on its path pairs only with a claim
+	// on its target (V-55).
+	opts.kept = make([]bool, len(part.Observed))
+	for i := range part.Observed {
+		opts.kept[i] = keptBaseline(part, i, in.Baseline)
+	}
 	alignments, err := Align(claims, part.Observed, opts)
 	if err != nil {
 		if errors.Is(err, ErrTooLarge) {

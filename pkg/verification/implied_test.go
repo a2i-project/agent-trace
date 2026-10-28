@@ -336,7 +336,7 @@ func TestAlign_ImpliedClaimsAgreeWithBruteForce(t *testing.T) {
 				cost += costIndel
 				deletions++
 			default:
-				pc, ok := pairCostOf(*e.Claim, *e.Event, Options{})
+				pc, ok := pairCostOf(*e.Claim, *e.Event, false, Options{})
 				if !ok {
 					t.Fatalf("trial %d: a refused pair was taken: %+v", trial, e)
 				}
