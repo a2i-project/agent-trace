@@ -54,7 +54,7 @@ The verifier is tested against a simulated agent (`cmd/simagent`) and against re
 ## Build and test
 
 ```sh
-make build            # watch, verify, baseline, simagent, status in the repo root (not attack or analyze)
+make build            # every command in the repo root
 make generate         # regenerate eBPF bindings after editing a .bpf.c file
 go test ./...
 ```

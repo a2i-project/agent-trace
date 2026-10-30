@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 425e0cb on 2026-10-28.
+Checked against commit 16efbee on 2026-10-30.
 
 ## Objective
 
@@ -239,7 +239,7 @@ Not computed: whether a mutation changes the replayed final state (the H1 edit-c
 
 ## Technologies
 
-Go with the standard `flag` package. `watch` needs root for fanotify and the eBPF programs and links the probe packages; `verify` and `baseline` are unprivileged and read files only; `status` is unprivileged and runs only the agents' `--version`. `make build` builds `watch`, `verify`, `baseline`, `simagent` and `status` into the repository root; it does not build `attack` or `analyze` (`go build -o attack ./cmd/attack/`, `go build -o analyze ./cmd/analyze/`).
+Go with the standard `flag` package. `watch` needs root for fanotify and the eBPF programs and links the probe packages; `verify` and `baseline` are unprivileged and read files only; `status` is unprivileged and runs only the agents' `--version`. `make build` builds `watch`, `verify`, `baseline`, `simagent`, `status`, `attack` and `analyze` into the repository root, and `make clean` removes them.
 
 ## Workflow
 
