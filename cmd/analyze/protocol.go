@@ -10,7 +10,7 @@ import (
 // Every threshold, seed, selection and stratum of the registered experiment
 // lives in this file, and nowhere else in the command, so the freeze pins the
 // registration by pinning one file. Each constant names the section of
-// docs/eval/experiment_protocol.md (the protocol) or of
+// docs/eval/experiment_protocol_v2.md (the protocol) or of
 // docs/eval/decisions-2026-10-26.md (the decisions, which override it) it
 // mirrors. A bar that moves after the first campaign run is a deviation
 // (protocol 11.2), not an edit of this file.
