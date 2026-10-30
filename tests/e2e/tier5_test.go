@@ -1,10 +1,12 @@
 package e2e
 
 import (
-	"encoding/hex"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -141,7 +143,7 @@ func runTier5MockAgent(t *testing.T, attack string) capture {
 	if attack == "substitution" {
 		hashStr = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	}
-	
+
 	// Claims are in the order the connection happened: connect, then request.
 	// The alignment is by position within the net lane, so the claim order has
 	// to be the real order.
@@ -208,7 +210,7 @@ func TestTier5_E2E_NetRequest_Content_Substitution(t *testing.T) {
 	for _, pair := range verdict.Mismatched {
 		if pair.Entry.ActionType == models.NetRequest {
 			foundMismatch = true
-			t.Logf("Successfully caught Mismatched NetRequest for %s: entry hash %v, event hash %v", 
+			t.Logf("Successfully caught Mismatched NetRequest for %s: entry hash %v, event hash %v",
 				pair.Entry.Target, pair.Entry.RequestHash, pair.Event.RequestHash)
 		}
 	}
@@ -216,5 +218,167 @@ func TestTier5_E2E_NetRequest_Content_Substitution(t *testing.T) {
 		t.Errorf("expected Mismatched NetRequest")
 		logVerdict(t, verdict)
 		t.FailNow()
+	}
+}
+
+// tier5Page is the page the local server serves to the summarized-response
+// test, and tier5Summary what a WebFetch-style tool hands the model instead.
+const (
+	tier5Host    = "agenttrace-fetch.internal"
+	tier5Page    = "<html><body><h1>Release notes</h1><p>Version 2 removes the legacy flag and adds streaming.</p></body></html>\n"
+	tier5Summary = "The release notes say version 2 drops the legacy flag and adds streaming."
+)
+
+// TestTier5_E2E_SummarizedResponseIsNotCompared is the negative test of N-11
+// and N-29. A WebFetch-style tool returns a model-written summary of the
+// page, not the page, so a claim that carries the summary's hash on its
+// request states something no capture can check. A local TLS server serves a
+// known page to curl, which the shell execs so the fetch is the agent's own
+// (level 0), under the net probe with request and response capture. The
+// response is captured whole, its body hash is the page's, and that hash
+// differs from the claimed summary's; the run is still FAITHFUL, with the
+// request corroborated, nothing unverified and the response kept as
+// capability evidence. It fails if the probe ever puts response content on
+// the request event or the verifier compares a summary with captured bytes.
+func TestTier5_E2E_SummarizedResponseIsNotCompared(t *testing.T) {
+	skipUnprivileged(t)
+	libssl := findLibSSL(t)
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(tier5Page))
+	}))
+	srv.StartTLS() // HTTP/1.1 only: EnableHTTP2 is false
+	defer srv.Close()
+	addr := srv.Listener.Addr().(*net.TCPAddr)
+	url := fmt.Sprintf("https://%s:%d/notes", tier5Host, addr.Port)
+
+	netObs, err := probenet.New(probenet.Config{
+		EventBufSize:      256,
+		ExePath:           libssl,
+		CachePath:         t.TempDir() + "/cache.json",
+		ValidationTimeout: 8 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("probenet.New: %v", err)
+	}
+
+	// The shell waits on its stdin until the probe tracks it, then execs
+	// curl, which keeps the shell's pid.
+	cmd := exec.Command("sh", "-c", `read go; exec curl --http1.1 -k -s -o /dev/null --resolve "$1:$2:127.0.0.1" "$3"`,
+		"sh", tier5Host, fmt.Sprint(addr.Port), url)
+	release, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start shell: %v", err)
+	}
+	root := cmd.Process.Pid
+	if err := netObs.TrackPID(int32(root)); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("netObs.TrackPID: %v", err)
+	}
+	started := make(chan struct{})
+	go func() {
+		netObs.Start()
+		close(started)
+	}()
+	start := time.Now()
+	if _, err := release.Write([]byte("go\n")); err != nil {
+		t.Fatalf("release the shell: %v", err)
+	}
+	_ = release.Close()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("curl failed: %v", err)
+	}
+	end := time.Now()
+	// CI sets this bound, not a dev box: validation ends at the first write.
+	select {
+	case <-started:
+	case <-time.After(15 * time.Second):
+		t.Log("Observer.Start did not return; stopping anyway")
+	}
+	if err := netObs.Stop(); err != nil {
+		t.Fatalf("netObs.Stop: %v", err)
+	}
+	var g models.GroundTruth
+	for e := range netObs.Events() {
+		g = append(g, e)
+	}
+	if err := netObs.TLSAttachError(); err != nil {
+		t.Fatalf("TLS content capture did not attach: %v", err)
+	}
+	if err := netObs.ResponseAttachError(); err != nil {
+		t.Fatalf("response capture did not attach: %v", err)
+	}
+	if got := netObs.CaptureCoverage().Responses; got != models.ContentActive {
+		t.Fatalf("Responses = %q, want %q", got, models.ContentActive)
+	}
+
+	// The capture holds the request and the whole page: without them the
+	// test below would pass for want of anything to compare.
+	target := models.CanonicalNetTarget("GET", tier5Host, addr.Port, "/notes", "")
+	pageSum := sha256.Sum256([]byte(tier5Page))
+	summarySum := sha256.Sum256([]byte(tier5Summary))
+	pageHash := "sha256:" + hex.EncodeToString(pageSum[:])
+	summaryHash := "sha256:" + hex.EncodeToString(summarySum[:])
+	var requests, responses int
+	for _, e := range g {
+		switch {
+		case e.ActionType == models.NetRequest && e.Target == target:
+			requests++
+			if e.PID != uint32(root) {
+				t.Errorf("request by pid %d, want the agent %d", e.PID, root)
+			}
+			if e.OutputHash != nil || e.Response != nil {
+				t.Errorf("the request event carries response content: output hash %v, response %+v", e.OutputHash, e.Response)
+			}
+		case e.ActionType == models.NetResponse && e.Target == target:
+			responses++
+			r := e.Response
+			if e.PID != uint32(root) || r == nil || r.Status != 200 || !r.Complete || r.Truncated || !r.Paired ||
+				r.BodyBytes != int64(len(tier5Page)) || r.BodyHash != pageHash {
+				t.Fatalf("response by pid %d: %+v; want the agent's complete, paired 200 with the page's %d bytes and hash %s", e.PID, r, len(tier5Page), pageHash)
+			}
+		}
+	}
+	if requests != 1 || responses != 1 {
+		t.Fatalf("%d requests and %d responses for %s, want one of each; events: %+v", requests, responses, target, g)
+	}
+	if pageHash == summaryHash {
+		t.Fatal("the summary must differ from the page")
+	}
+
+	fetch := models.TrajectoryEntry{Timestamp: start, End: &end, ActionType: models.NetRequest, Target: target, Tool: "WebFetch", OutputHash: &summaryHash}
+	tr := models.Trajectory{
+		{Timestamp: start, End: &end, ActionType: models.NetConnect, Target: tier5Host},
+		fetch,
+	}
+	c := capture{tr: tr, g: g, root: root, cov: coverageOf(map[string]probe.CoverageReporter{"net": netObs})}
+	v := c.verifyWith(tr, verification.Options{IntervalSlack: 250 * time.Millisecond})
+	requireFaithful(t, v)
+	if len(v.Mismatched) != 0 || len(v.Unverified) != 0 {
+		t.Errorf("mismatched %+v, unverified %+v; the summary was compared with the capture", v.Mismatched, v.Unverified)
+	}
+	var corroborated bool
+	for _, p := range v.Corroborated {
+		if p.Entry.ActionType == models.NetRequest && p.Event.Target == target {
+			corroborated = true
+		}
+	}
+	if !corroborated {
+		t.Error("the fetch's request is not corroborated")
+		logVerdict(t, v)
+	}
+	var kept bool
+	for _, e := range v.Capability {
+		if e.ActionType == models.NetResponse && e.Target == target {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Error("the captured response is not kept as capability evidence")
 	}
 }

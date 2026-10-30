@@ -307,6 +307,40 @@ func TestVerify_UnverifiedIsOnlyAStatedValueTheProbeMissed(t *testing.T) {
 	}
 }
 
+// N-11, N-29: a WebFetch-style tool hands the model a summary of the page,
+// not the page. A claim that carries the summary's hash on its request states
+// nothing the verifier checks: the request event carries no response content,
+// and the captured response is attested, never compared with a claim. The
+// summary differs from the captured body and the run is FAITHFUL, with the
+// request corroborated, nothing unverified and the response kept as
+// capability evidence; a response the probe did not capture changes nothing.
+func TestVerify_ASummarizedResponseIsNeverComparedWithTheCapturedBody(t *testing.T) {
+	const host, target = "docs.example", "GET https://docs.example/page"
+	page, summary := "sha256:"+strings.Repeat("ab", 32), "sha256:"+strings.Repeat("cd", 32)
+	resp := agentEv(30, models.NetResponse, target)
+	resp.Response = &models.ResponseAttestation{Status: 200, ContentType: "text/html", BodyBytes: 5120, BodyHash: page, End: at(40), Complete: true, Paired: true}
+	fetch := claimAt(20, models.NetRequest, target)
+	fetch.Tool, fetch.OutputHash = "WebFetch", &summary
+	claims := models.Trajectory{claimAt(0, models.NetConnect, host), fetch}
+	request := models.GroundTruth{agentEv(0, models.NetConnect, host), agentEv(20, models.NetRequest, target)}
+
+	for name, g := range map[string]models.GroundTruth{
+		"response captured":     append(append(models.GroundTruth{}, request...), resp),
+		"response not captured": request,
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := Verify(Input{Claims: claims, Ground: g, RootPID: agentPID, Coverage: responsesActive()})
+			wantOutcome(t, v, OutcomeFaithful)
+			if v.Findings() != 0 || len(v.Unverified) != 0 || len(v.Corroborated) != 2 {
+				t.Errorf("findings %d, unverified %+v, corroborated %d; want 0, none and 2", v.Findings(), v.Unverified, len(v.Corroborated))
+			}
+			if want := len(g) - len(request); len(v.Capability) != want {
+				t.Errorf("capability = %+v, want the %d response(s) and nothing else", v.Capability, want)
+			}
+		})
+	}
+}
+
 // V-28: an adapter that claims a write's content on the file_write, as Claude
 // Code does for Write and Edit, cannot drop the hash of a tool whose format
 // states it. A Write claim with no output_hash against a write the probe
