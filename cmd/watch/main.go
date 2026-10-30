@@ -200,6 +200,17 @@ func sortGround(g models.GroundTruth) {
 	sort.SliceStable(g, func(i, j int) bool { return g[i].Timestamp.Before(g[j].Timestamp) })
 }
 
+// hashlessCloses counts the file closes in g that carry no content hash.
+func hashlessCloses(g models.GroundTruth) uint64 {
+	var n uint64
+	for _, e := range g {
+		if e.ActionType == models.FileClose && e.OutputHash == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // passthrough hides the *os.File behind an io.Writer, so os/exec gives the
 // child a pipe and copies from it, instead of handing the child the file
 // descriptor itself.
@@ -805,6 +816,14 @@ func runWatch(opts watchOptions) error {
 		} else {
 			ground = resolved
 		}
+		// The probe counts every close it published without a hash, on any
+		// marked filesystem; the capture holds only those the scope rule kept,
+		// and the coverage record counts those (P-40).
+		fsCov := cov.Probes["fs"]
+		host := fsCov.HashlessCloses
+		fsCov.HashlessCloses = hashlessCloses(ground)
+		cov.Probes["fs"] = fsCov
+		fmt.Printf("fs probe: %d close(s) in the capture have no content hash, of %d the probe published without one on every marked filesystem\n", fsCov.HashlessCloses, host)
 		for typ, n := range scope.Unresolved {
 			log.Printf("fs probe: %d %s event(s) had no resolvable path and are counted, not recorded", n, typ)
 		}

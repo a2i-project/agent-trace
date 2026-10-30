@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit db520ef on 2026-10-30.
+Checked against commit c097f33 on 2026-10-30.
 
 ## Objective
 
@@ -100,7 +100,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `UndrainedRecords` | `undrained_records` | fs | records still queued when the stop drain's time budget ran out, never read (P-24); a lower bound | Reason |
 | `UnresolvedPaths` | `unresolved_paths` | fs | file events whose path no handle resolved, by any process but the recorder, one per action type of each record; `watch` leaves them out of the capture | Note (V-35) |
 | `UnresolvedInTree` | `unresolved_in_tree` | `cmd/watch`, for fs | of those, the events the process forest places in the agent's tree, one per action type; written by `watch` after the scope rule, not by the probe, which does not know the tree; zero without a root pid | Reason (V-39) |
-| `HashlessCloses` | `hashless_closes` | fs | a close was published without a content hash (P-16, or a failed read) | Note (content gap) |
+| `HashlessCloses` | `hashless_closes` | `cmd/watch`, for fs | closes in the capture that carry no content hash (P-16, P-26, P-35, P-39, or a failed read); `watch` counts them after the scope rule, while the probe's own count covers every close it published on any marked filesystem (P-40); a capture written before P-40 holds the probe's count | Note (content gap) |
 | `FaultedReads` | `faulted_reads` | net (TLS) | `SSL_write` plaintext read faulted | Note (content gap) |
 | `Content` | `content` | net | `active`, `identity_only` or `attach_failed` | `attach_failed` is a Note |
 | `HelloFaults` | `hello_faults` | net | the read of a connection's first bytes faulted; the connection is recorded and counts as written, its hostname may be missing (an upper bound on the connections affected) | Note (content gap) |

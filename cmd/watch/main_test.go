@@ -352,6 +352,30 @@ func TestScopeFSEvents_KeepsTheTreeAnywhereAndTheWorkspaceForEveryone(t *testing
 	}
 }
 
+// The coverage record counts the hashless closes the capture keeps, not
+// those the probe published for other processes elsewhere (P-40).
+func TestHashlessCloses_CountsTheClosesTheScopeRuleKept(t *testing.T) {
+	const root, stranger = 100, 900
+	ts := time.Now()
+	hash := "sha256:x"
+	g := models.GroundTruth{
+		{Timestamp: ts, ActionType: models.FileClose, Target: "/ws/a", PID: root},                    // kept, no hash
+		{Timestamp: ts, ActionType: models.FileClose, Target: "/ws/b", PID: root, OutputHash: &hash}, // kept, hashed
+		{Timestamp: ts, ActionType: models.FileClose, Target: "/home/u/.cfg", PID: root},             // the tree, elsewhere: kept
+		{Timestamp: ts, ActionType: models.FileClose, Target: "/ws/c", PID: stranger},                // the workspace: kept
+		{Timestamp: ts, ActionType: models.FileClose, Target: "/var/log/x", PID: stranger},           // dropped
+		{Timestamp: ts, ActionType: models.FileClose, Target: "/etc/y", PID: stranger},               // dropped
+		{Timestamp: ts, ActionType: models.FileWrite, Target: "/ws/a", PID: root},                    // not a close
+	}
+	if got := hashlessCloses(g); got != 5 {
+		t.Errorf("before the scope rule: %d, want 5", got)
+	}
+	kept, _, _ := scopeFSEvents(g, root, "/ws")
+	if got := hashlessCloses(kept); got != 3 {
+		t.Errorf("after the scope rule: %d, want 3", got)
+	}
+}
+
 // The recorder's own file events are never the agent's. Before this, watch
 // printing an event to a log on a marked filesystem produced the event it
 // printed, without end (2.7 MB of its own log lines in one short capture).
