@@ -403,7 +403,8 @@ func TestObserver_StalledRewriteNeverPublishesAnIntermediateHash(t *testing.T) {
 // within the settle window keeps its hash, the content of the close (P-39);
 // a file the closing process opens again within the window is published
 // without one, as before. The settle window is lengthened to two seconds so
-// both opens land inside it on a slow runner.
+// both opens land inside it on a slow runner. The reader is another process,
+// so its open is a record of its own and never merges into the close's.
 func TestObserver_AReaderWithinTheSettleWindowKeepsTheHash(t *testing.T) {
 	skipUnprivileged(t)
 	if _, err := exec.LookPath("cat"); err != nil {
@@ -430,6 +431,10 @@ func TestObserver_AReaderWithinTheSettleWindowKeepsTheHash(t *testing.T) {
 	if err := os.WriteFile(reopened, written, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Left unread, the writer's next open would merge into its close's
+	// record (P-26) and no open record would follow the close. Give the
+	// read loop time to read the close first; the window is far longer.
+	time.Sleep(200 * time.Millisecond)
 	f, err := os.Open(reopened)
 	if err != nil {
 		t.Fatal(err)
