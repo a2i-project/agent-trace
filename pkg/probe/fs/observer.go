@@ -150,6 +150,15 @@ type Observer struct {
 	// target are two paths for one file (P-26). Grows like pathGeneration.
 	handleGeneration map[string]uint64
 
+	// openGeneration counts, per path and per file handle and per process,
+	// the records that hold an open and no write-class bit. Such a record
+	// changes no content: a truncating open is reported with FAN_MODIFY,
+	// as a record of its own or merged into the opener's (P-39). Only the
+	// closing process's opens, and those of a process the record does not
+	// name (pid 0), drop a pending close's hash (openedSince); another
+	// process reading the file leaves it. Grows like pathGeneration.
+	openGeneration map[openKey]uint64
+
 	// writerHolds reports whether process pid still holds the file behind
 	// pathFD open for writing, or whether that cannot be told. The kernel
 	// merges an open, a truncation and a write by the closing process into
@@ -279,6 +288,25 @@ type pendingClose struct {
 	// handle, and hgen the file's handleGeneration at registration.
 	handle string
 	hgen   uint64
+	// opens is openedSince's count for this close at registration.
+	opens uint64
+}
+
+// openKey names one process's opens of one file, by path or by handle.
+type openKey struct {
+	key string
+	pid uint32
+}
+
+// openedSince sums the open-only records on path and on handle by process
+// pid and by pid 0, the opens that may be the closing process's (P-39). The
+// caller holds o.mu.
+func (o *Observer) openedSince(path, handle string, pid uint32) uint64 {
+	n := o.openGeneration[openKey{path, pid}] + o.openGeneration[openKey{path, 0}]
+	if handle != "" {
+		n += o.openGeneration[openKey{"\x00" + handle, pid}] + o.openGeneration[openKey{"\x00" + handle, 0}]
+	}
+	return n
 }
 
 // New creates an Observer. The caller must call Start to begin receiving
@@ -379,6 +407,7 @@ func assemble(cfg Config, fd int, set markedSet, mountFD int, dirs *dirCache) (*
 		shadowHashesByInode: make(map[inodeKey]string),
 		pathGeneration:      make(map[string]uint64),
 		handleGeneration:    make(map[string]uint64),
+		openGeneration:      make(map[openKey]uint64),
 		writerHolds:         openForWriteBy,
 		pendingCloses:       make(map[string]*pendingClose),
 		lastWriteAt:         make(map[string]time.Time),
@@ -849,8 +878,13 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	}
 
 	// Bump the per-path write generation before dispatching anything. A
-	// write-class event (now including FAN_OPEN to catch open(O_TRUNC) TOCTOU
-	// races) means the file's content just changed, or is about to. hashSettled
+	// write-class event (FAN_CREATE, FAN_MODIFY, FAN_CLOSE_WRITE) means the
+	// file's content just changed. A record that holds an open and none of
+	// those counts as an open of its process instead (openGeneration): an
+	// open(O_TRUNC) truncates inside the open call and the truncation is a
+	// FAN_MODIFY of the opener, merged into its record or queued after it,
+	// so an open alone changes nothing; only the closing process's own open
+	// still drops its close's hash (P-39, amending P-16). hashSettled
 	// snapshots this value before reading a close's content and compares it
 	// again afterward (via a synchronous catch-up drain, not just whatever
 	// this call happened to see), to detect a write landing in the TOCTOU
@@ -860,7 +894,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 	// below carries the real guarantee for closes. The observer's own
 	// hash-read FAN_OPEN is already stripped above and never reaches here.
 	handle := handleKey(e.FSID, e.HandleType, e.HandleData)
-	if e.Mask&(unix.FAN_CREATE|unix.FAN_MODIFY|unix.FAN_CLOSE_WRITE|unix.FAN_OPEN) != 0 {
+	if e.Mask&(unix.FAN_CREATE|unix.FAN_MODIFY|unix.FAN_CLOSE_WRITE) != 0 {
 		o.mu.Lock()
 		if o.pathGeneration == nil {
 			o.pathGeneration = make(map[string]uint64)
@@ -875,6 +909,17 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 				o.handleGeneration = make(map[string]uint64)
 			}
 			o.handleGeneration[handle]++
+		}
+		o.mu.Unlock()
+	} else if e.Mask&unix.FAN_OPEN != 0 {
+		o.mu.Lock()
+		if o.openGeneration == nil {
+			o.openGeneration = make(map[openKey]uint64)
+		}
+		pid := pidOf(e)
+		o.openGeneration[openKey{e.Path, pid}]++
+		if handle != "" {
+			o.openGeneration[openKey{"\x00" + handle, pid}]++
 		}
 		o.mu.Unlock()
 	}
@@ -1351,7 +1396,7 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 	} else if o.mountFD == -1 {
 		pathFD, _ = unix.Open(path, unix.O_RDONLY|unix.O_PATH, 0)
 	}
-	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle]}
+	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle], opens: o.openedSince(path, handle, pid)}
 	o.mu.Unlock()
 
 	if existed {
@@ -1409,14 +1454,17 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 		if settled && quiet {
 			pathFD = entry.pathFD
 			// A write-class event after this close was registered means the
-			// content it described may no longer be there. An open is such an
-			// event because open(O_TRUNC) truncates and fanotify cannot say
-			// which flags an open had. Quiet time does not help: a writer
-			// stalled between the truncate and its write leaves the path quiet
-			// while the file is empty, and a read then would be trusted.
-			// The file may have been opened under another name since (P-26).
+			// content it described may no longer be there, and so does an
+			// open by the closing process: its truncation can be merged into
+			// a record the probe already read (P-26), and the rule stays
+			// conservative there. Quiet time does not help: a writer stalled
+			// between the truncate and its write leaves the path quiet while
+			// the file is empty. An open by another process changes nothing,
+			// since its truncation would be a FAN_MODIFY of its own (P-39).
+			// The file may have been written under another name since (P-26).
 			changed = o.pathGeneration[path] != entry.gen ||
-				(entry.handle != "" && o.handleGeneration[entry.handle] != entry.hgen)
+				(entry.handle != "" && o.handleGeneration[entry.handle] != entry.hgen) ||
+				o.openedSince(path, entry.handle, entry.pid) != entry.opens
 			delete(o.pendingCloses, path)
 		}
 		o.mu.Unlock()
@@ -1489,6 +1537,7 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 	o.mu.Lock()
 	gen := o.pathGeneration[target]
 	hgen := o.handleGeneration[handle]
+	opens := o.openedSince(target, handle, pid)
 	o.mu.Unlock()
 
 	if pathFD >= 0 && o.writerHolds != nil && o.writerHolds(pid, pathFD) {
@@ -1541,7 +1590,8 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 
 	o.mu.Lock()
 	raced := !emptied || o.pathGeneration[target] != gen ||
-		(handle != "" && o.handleGeneration[handle] != hgen)
+		(handle != "" && o.handleGeneration[handle] != hgen) ||
+		o.openedSince(target, handle, pid) != opens
 	if err != nil && suppressPath != "" {
 		o.pendingHashOpens[suppressPath]--
 		if o.pendingHashOpens[suppressPath] == 0 {

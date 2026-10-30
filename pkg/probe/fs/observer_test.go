@@ -1155,6 +1155,45 @@ func TestObserver_OpenAfterCloseDropsHash(t *testing.T) {
 	}
 }
 
+// An open by another process changes no content: a truncating open is
+// reported with FAN_MODIFY (TestKernelATruncatingOpenByAnotherProcessIsAModify),
+// so a plain open after the close, before the read or during it, leaves the
+// hash. The closing process's own open during the read still drops it (P-39).
+func TestObserver_AnotherProcessOpenKeepsTheHash(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		pid      int32
+		duringIt bool
+		wantHash bool
+	}{
+		{"another process, before the read", 99, false, true},
+		{"another process, during the read", 99, true, true},
+		{"the closer, during the read", 4242, true, false},
+		{"no process named, during the read", 0, true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "read-back.txt")
+			var obs *Observer
+			obs = newHashSeamObserver(t, dir, func(int) (string, error) {
+				if c.duringIt {
+					obs.processRawEvent(&rawEvent{Mask: unix.FAN_OPEN, PID: c.pid, Path: target}, time.Now())
+				}
+				return "sha256:written", nil
+			})
+			obs.processRawEvent(&rawEvent{Mask: unix.FAN_CLOSE_WRITE, PID: 4242, Path: target}, time.Now())
+			if !c.duringIt {
+				obs.processRawEvent(&rawEvent{Mask: unix.FAN_OPEN, PID: c.pid, Path: target}, time.Now())
+			}
+			obs.resolveSettled(obs.settleSnapshot(), hashSeamBuf(), false)
+			closes := closeEvents(obs)
+			if len(closes) != 1 || (closes[0].OutputHash != nil) != c.wantHash {
+				t.Fatalf("closes = %+v, want one with a hash: %v", closes, c.wantHash)
+			}
+		})
+	}
+}
+
 // The same holds for a modify after the close.
 func TestObserver_ModifyAfterCloseDropsHash(t *testing.T) {
 	dir := t.TempDir()
