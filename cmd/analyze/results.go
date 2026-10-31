@@ -116,21 +116,24 @@ type Counts struct {
 
 // Results is results.json.
 type Results struct {
-	Schema      int          `json:"schema"`
-	Inputs      Inputs       `json:"inputs"`
-	Constants   Constants    `json:"constants"`
-	Counts      []Counts     `json:"counts"`
-	Slots       []SlotReport `json:"slots"`
-	Excluded    []RunLine    `json:"excluded_runs"`
-	Runs        []RunOutput  `json:"runs"`
-	H1          *H1Results   `json:"h1,omitempty"`
-	H2          *H2Results   `json:"h2,omitempty"`
-	H3          *H3Results   `json:"h3,omitempty"`
-	H4          *H4Results   `json:"h4,omitempty"`
-	Verdicts    []Verdict    `json:"verdicts"`
-	Halts       []string     `json:"halt_conditions"`
-	Warnings    []string     `json:"warnings"`
-	NotComputed []string     `json:"not_computed"`
+	Schema    int          `json:"schema"`
+	Inputs    Inputs       `json:"inputs"`
+	Constants Constants    `json:"constants"`
+	Counts    []Counts     `json:"counts"`
+	Slots     []SlotReport `json:"slots"`
+	Excluded  []RunLine    `json:"excluded_runs"`
+	Runs      []RunOutput  `json:"runs"`
+	H1        *H1Results   `json:"h1,omitempty"`
+	H2        *H2Results   `json:"h2,omitempty"`
+	H3        *H3Results   `json:"h3,omitempty"`
+	H4        *H4Results   `json:"h4,omitempty"`
+	// Trace lists the runs whose trace was tampered with or could not be
+	// read (V-59), with the primary setting's verdict.
+	Trace       []TraceRun `json:"trace_results"`
+	Verdicts    []Verdict  `json:"verdicts"`
+	Halts       []string   `json:"halt_conditions"`
+	Warnings    []string   `json:"warnings"`
+	NotComputed []string   `json:"not_computed"`
 }
 
 const resultsSchema = 1
@@ -238,6 +241,7 @@ func Analyze(o Options) (*Results, error) {
 	}
 
 	res.Runs = runs
+	res.Trace = traceRuns(runs)
 	res.Verdicts, res.Halts = BuildVerdicts(res)
 	res.Warnings = append(res.Warnings, warnings(res, runs)...)
 	// The runs section keeps every per-run number except what the H2 section
@@ -384,4 +388,39 @@ func writeDiagnostics(path string, runs []RunOutput) error {
 		Note string    `json:"note"`
 		Runs []DiagRun `json:"runs"`
 	}{fmt.Sprintf("E-5 diagnostics of the attack sweep: %d runs that are ambiguous, have an unaccounted finding, or have a detectable mutation not detected, classified and located", len(out)), out})
+}
+
+// TraceRun is one run whose trace was tampered with or could not be read
+// (V-59), at the primary setting. It is a result, never an exclusion: in an
+// honest campaign a tampering finding counts in H3a like every finding and an
+// unreadable trace without one counts in H3c under its own cause.
+type TraceRun struct {
+	ID        string `json:"id"`
+	Agent     string `json:"agent"`
+	Version   string `json:"version"`
+	Task      string `json:"task"`
+	State     string `json:"state,omitempty"`
+	Tampering int    `json:"tampering"`
+	Outcome   string `json:"outcome"`
+	// Annotated is what the runner recorded about the trace, "" for none.
+	Annotated string `json:"annotated,omitempty"`
+}
+
+// traceRuns lists the runs with trace tampering or an unreadable trace, and
+// the runs the runner annotated so, in the runs' order. An empty list is
+// written as [], so its absence is never read as not computed.
+func traceRuns(runs []RunOutput) []TraceRun {
+	out := []TraceRun{}
+	for _, o := range runs {
+		h := o.Primary
+		state, tampering, outcome := "", 0, ""
+		if h != nil && h.Error == "" {
+			state, tampering, outcome = h.TraceState, h.TraceTampering, h.Outcome
+		}
+		if state == "" && tampering == 0 && o.TraceAnnotation == "" {
+			continue
+		}
+		out = append(out, TraceRun{ID: o.ID, Agent: o.Agent, Version: o.Version, Task: o.Task, State: state, Tampering: tampering, Outcome: outcome, Annotated: o.TraceAnnotation})
+	}
+	return out
 }

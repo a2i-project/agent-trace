@@ -127,6 +127,10 @@
 #   <task>.session.jsonl      the transcript of the task run (T), and
 #   <task>.session/subagents  its subagent transcripts, when there are any
 #   <task>.ground_truth.json  what the probes saw during it (G)
+#   <task>.trace.txt          Claude Code only: what the copied transcript holds, read, empty
+#                             or damaged, or missing when the run left none; a task run whose
+#                             transcript is gone is kept, and verify reports the trace as
+#                             deleted or damaged (V-59, I-75)
 #   control-N.*               the same for CONTROLS runs that claim nothing (one no-op Bash
 #                             call; for a task whose tools include the subagent tool, also
 #                             a subagent that only replies; for tools, also that call in
@@ -638,8 +642,8 @@ measured() { # label command...
     --out "$out/$label.cost.json" -- "$@"
 }
 
-capture_one() { # label prompt tools
-  local label=$1 prompt=$2 tools=$3
+capture_one() { # label prompt tools role
+  local label=$1 prompt=$2 tools=$3 role=$4
   local ws="$out/ws-$label" session
   session=$(cat /proc/sys/kernel/random/uuid)
   # capture_one runs where set -e does not apply, so each step that must not
@@ -675,6 +679,15 @@ capture_one() { # label prompt tools
   [ -z "$locked" ] || chmod u+w "$ws/$locked"
   local found
   found=$(find "$HOME/.claude/projects" -name "$session.jsonl" -print -quit 2>/dev/null || true)
+  if [ -z "$found" ] && [ "$role" = task ]; then
+    # The task's trace is gone after the run: a result, not a harness error
+    # (V-59, I-75). The ground truth is kept, and verify reports that the
+    # trace cannot be verified, with what the probes saw happen to it.
+    echo "   TRACE DELETED OR DAMAGED: no transcript for session $session after the run; verify reports it (V-59)" >&2
+    printf 'missing\n' >"$out/$label.trace.txt"
+    sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
+    return 0
+  fi
   if [ -z "$found" ]; then
     echo "   no transcript found for session $session" >&2
     return 1
@@ -835,6 +848,30 @@ print("subagents=%d;subagent_tool_calls=%d" % (len(files), calls))
 PY
 }
 
+# trace_state FILE: what a Claude Code transcript holds as the capture left
+# it (V-59): missing, empty, damaged (no line is a JSON object, or a line is
+# not JSON) or read. verify decides the verdict; this only keeps a run whose
+# trace is gone or garbled from reading as a model mismatch.
+trace_state() { # file
+  python3 - "$1" <<'PY'
+import json, os, sys
+p = sys.argv[1]
+if not os.path.exists(p):
+    print("missing"); sys.exit()
+if os.path.getsize(p) == 0:
+    print("empty"); sys.exit()
+ok = bad = 0
+for line in open(p, encoding="utf-8", errors="replace"):
+    if not line.strip():
+        continue
+    try:
+        ok += isinstance(json.loads(line), dict)
+    except ValueError:
+        bad += 1
+print("damaged" if bad or not ok else "read")
+PY
+}
+
 # capture LABEL ROLE PROMPT TOOLS: one recorded run, then its model check, and a
 # line of order.tsv: the order the runs were recorded in (D11), their times,
 # the models their transcripts recorded, watch's exit status and the
@@ -842,9 +879,17 @@ PY
 capture() {
   local label=$1 role=$2 started ended rc=0 seen= mrc=0 file subs=subagents=-
   started=$(date --iso-8601=seconds)
-  capture_one "$label" "$3" "$4" || rc=$?
+  capture_one "$label" "$3" "$4" "$role" || rc=$?
   ended=$(date --iso-8601=seconds)
-  if [ "$rc" -eq 0 ]; then
+  if [ "$rc" -eq 0 ] && [ "$role" = task ] && [ "$agent" != gemini ]; then
+    # A task transcript that is gone, empty or holds no record that parses
+    # cannot be checked for its model: its run is a trace result, not a
+    # model mismatch (V-59, I-75).
+    [ -f "$out/$label.trace.txt" ] || trace_state "$out/$label.session.jsonl" >"$out/$label.trace.txt"
+  fi
+  if [ "$rc" -eq 0 ] && [ -f "$out/$label.trace.txt" ] && [ "$(cat "$out/$label.trace.txt")" != read ]; then
+    mrc=trace-$(cat "$out/$label.trace.txt")
+  elif [ "$rc" -eq 0 ]; then
     file=$out/$label.session.jsonl
     [ "$agent" != gemini ] || file=$out/$label.conversation.db
     seen=$(model_seen "$file") || mrc=$?
@@ -865,6 +910,7 @@ capture() {
   fi
   case $mrc in
     0) ;;
+    trace-*) echo "   TRACE DELETED OR DAMAGED: the transcript of $label is ${mrc#trace-}, so its model is not checked; verify reports the trace (V-59)" >&2 ;;
     1) echo "   MODEL MISMATCH: $label recorded $seen, the pinned model is $model" >&2; return 1 ;;
     *) echo "   MODEL MISMATCH: the transcript of $label records no model (pinned: $model)" >&2; return 1 ;;
   esac
@@ -910,9 +956,16 @@ min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4
 trajectory=$out/$task_label.session.jsonl
 [ "$agent" != gemini ] || trajectory=$out/$task_label.conversation.db
 # A version the config does not list makes the verdict INCONCLUSIVE (I-57).
-# agy's conversation does not state its version, so it is passed.
+# agy's conversation does not state its version, so it is passed; nor does a
+# Claude Code transcript that is gone or garbled, which verify reports as a
+# trace it cannot verify (V-59). The transcript was copied as the run left
+# it, so verify compares it with the last content the probe hashed.
 version_flags=(--strict-version)
 [ "$agent" != gemini ] || version_flags+=(--agent-version "$version")
+if [ "$agent" != gemini ]; then
+  version_flags+=(--check-trace-hash)
+  [ "$(cat "$out/$task_label.trace.txt" 2>/dev/null || echo read)" = read ] || version_flags+=(--agent-version "$version")
+fi
 {
   echo "##### verify WITHOUT a baseline"
   "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
@@ -923,5 +976,18 @@ version_flags=(--strict-version)
     --ground-truth "$out/$task_label.ground_truth.json" --baseline "$out/baseline.json" \
     --json "$out/verify-baseline.json" || true
 } >"$out/report.txt" 2>&1
+# The trace as verify read it (V-59): a line a reader of the log sees.
+python3 - "$out/verify-baseline.json" <<'PY' || true
+import json, sys
+try:
+    v = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    sys.exit()
+t, n = v.get("trace") or {}, len(v.get("trace_tampering") or [])
+if t.get("state"):
+    print("TRACE DELETED OR DAMAGED: %s, %d piece(s) of tampering evidence; the run is %s (V-59)" % (t["state"], n, v.get("outcome")))
+elif n:
+    print("TRACE TAMPERING: %d piece(s) of evidence; the run is %s (V-59)" % (n, v.get("outcome")))
+PY
 echo
 echo "done. Read $out/report.txt"

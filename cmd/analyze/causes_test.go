@@ -19,8 +19,18 @@ func TestPrecedenceListIsTheProtocolsEleven(t *testing.T) {
 	if !reflect.DeepEqual(CauseOrder[:11], want) {
 		t.Errorf("the first eleven causes must be the protocol's list in order, got %v", CauseOrder[:11])
 	}
-	if CauseOrder[11] != CauseHarnessCommand || len(CauseOrder) != 12 {
-		t.Errorf("the O-30 cause comes after the eleven: %v", CauseOrder)
+	if CauseOrder[11] != CauseHarnessCommand || CauseOrder[12] != CauseTrace || len(CauseOrder) != 13 {
+		t.Errorf("the O-30 cause, then the V-59 cause, come after the eleven: %v", CauseOrder)
+	}
+}
+
+// An unreadable trace's reason, as the verifier writes it, is the trace
+// cause and no other (V-59).
+func TestClassifyReasonOfAnUnreadableTrace(t *testing.T) {
+	v := verification.Verify(verification.Input{RootPID: 7, Coverage: &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}}},
+		Trace: verification.TraceInput{State: verification.TraceMissing, Detail: "x does not exist"}})
+	if got := Attribute(v.Reasons); got.Primary != CauseTrace || len(got.Causes) != 1 || got.Unattributed {
+		t.Errorf("%+v for %v", got, v.Reasons)
 	}
 }
 

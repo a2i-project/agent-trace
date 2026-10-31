@@ -13,6 +13,7 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/config"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 // RunOutput is everything computed about one manifest run. It holds
@@ -32,6 +33,9 @@ type RunOutput struct {
 	Claims     int         `json:"claims"`
 	// Completed is the annotation's word on task completion (nil: not said).
 	Completed *bool `json:"completed,omitempty"`
+	// TraceAnnotation is the runner's record of a missing or damaged trace
+	// (I-75), "" for none.
+	TraceAnnotation string `json:"trace_annotation,omitempty"`
 	// Controls the baseline was built from, and those dropped for loss (X2).
 	ControlsUsed    int      `json:"controls_used"`
 	ControlsDropped int      `json:"controls_dropped"`
@@ -170,7 +174,7 @@ type ProcessOptions struct {
 func ProcessRun(c *Campaign, rec RunRecord, o ProcessOptions) RunOutput {
 	id := c.ID(rec)
 	ann := c.Annotations.Runs[id]
-	out := RunOutput{ID: id, Agent: rec.Agent, Version: rec.Version, Task: rec.Task, Mode: rec.Mode, Status: rec.Status, Completed: ann.Completed, Recorded: rec.Verdict.WithBaseline}
+	out := RunOutput{ID: id, Agent: rec.Agent, Version: rec.Version, Task: rec.Task, Mode: rec.Mode, Status: rec.Status, Completed: ann.Completed, TraceAnnotation: ann.Trace, Recorded: rec.Verdict.WithBaseline}
 	s, err := LoadSession(c, rec)
 	if err != nil {
 		// A message names files by their path under the campaign directory.
@@ -234,7 +238,11 @@ func ProcessRun(c *Campaign, rec RunRecord, o ProcessOptions) RunOutput {
 		}
 	}
 	if o.Sweep && out.Scope.Kept {
-		if ex, skip := H2Excluded(s.Claims); skip {
+		if s.Trace.State != verification.TraceRead {
+			// No attacked trajectory of a trace that cannot be read can be
+			// verified (V-59).
+			out.SweepExclusion = &Exclusion{X5, "the trace cannot be verified (" + string(s.Trace.State) + ", V-59), so no attacked trajectory can be"}
+		} else if ex, skip := H2Excluded(s.Claims); skip {
 			out.SweepExclusion = &ex
 		} else {
 			out.Attack = s.Sweep(baseline, o.SweepOpts)

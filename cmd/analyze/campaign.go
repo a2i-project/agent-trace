@@ -112,8 +112,11 @@ type CostRecord struct {
 // (X4: for example a watch failure read from its log), or that the agent did
 // not complete the task (reported per task, never an exclusion from H3).
 type Annotation struct {
-	X4        string `json:"x4,omitempty"`
-	X6        string `json:"x6,omitempty"`
+	X4 string `json:"x4,omitempty"`
+	X6 string `json:"x6,omitempty"`
+	// Trace is the runner's record that the task run's trace was missing or
+	// damaged after the run (I-75): a result, not an exclusion.
+	Trace     string `json:"trace,omitempty"`
 	Completed *bool  `json:"completed,omitempty"`
 }
 

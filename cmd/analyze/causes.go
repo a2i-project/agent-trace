@@ -3,6 +3,8 @@ package main
 import (
 	"regexp"
 	"strings"
+
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 // The causes of an INCONCLUSIVE outcome, read from the verdict's Reasons
@@ -26,13 +28,17 @@ const (
 	// apart, a reason for INCONCLUSIVE, so it is appended after the eleven
 	// registered ones.
 	CauseHarnessCommand = "unexplained_harness_command"
+	// CauseTrace is the thirteenth cause: a trace that cannot be read whole,
+	// with no evidence in the capture of who changed it (V-59). Appended
+	// after the registered ones, as the twelfth was.
+	CauseTrace = "trace_deleted_or_damaged"
 )
 
 // CauseOrder is the precedence list.
 var CauseOrder = []string{
 	CauseNoRoot, CauseTooLarge, CauseEventLoss, CauseIOUring, CauseVersion,
 	CauseUnverified, CauseTruncatedTarget, CauseOutOfScope, CauseOutsideWrite,
-	CauseHarnessFile, CauseHarnessNet, CauseHarnessCommand,
+	CauseHarnessFile, CauseHarnessNet, CauseHarnessCommand, CauseTrace,
 }
 
 // HarnessCommandMarker is the part of the verifier's reason for an
@@ -131,6 +137,9 @@ func ClassifyReason(reason string) []Hit {
 	}
 	if strings.Contains(r, HarnessCommandMarker) {
 		add(CauseHarnessCommand, "")
+	}
+	if strings.Contains(r, verification.TraceDeletedOrDamaged) {
+		add(CauseTrace, "")
 	}
 	return hits
 }

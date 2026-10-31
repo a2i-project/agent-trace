@@ -40,6 +40,9 @@ type Session struct {
 	// Version is the version the baseline and the strict check use: the one
 	// the session states, else the manifest's.
 	Version string
+	// Trace is what reading the session found (V-59): a session that is
+	// missing, empty or damaged is a result, never a load error.
+	Trace verification.TraceInput
 }
 
 // controlFile matches control-N.ground_truth.json.
@@ -123,8 +126,12 @@ func groundTruthName(r RunRecord) string {
 	return r.Task + ".ground_truth.json"
 }
 
-// LoadSession reads a run's session, capture and controls. A file that is
-// missing or does not parse is an error the caller records as X4.
+// LoadSession reads a run's session, capture and controls. For an adapter
+// that declares its trace (I-74), a session that is missing, empty or does
+// not parse is a trace that cannot be verified, kept in s.Trace and
+// verified as such (V-59), never a load error; for another adapter, and for
+// the capture, a file that is missing or does not parse is an error the
+// caller records as X4.
 func LoadSession(c *Campaign, r RunRecord) (*Session, error) {
 	s := &Session{Rec: r, ID: c.ID(r), Dir: c.RunDir(r), ControlsDir: c.ControlsDir(r)}
 	a, ok := agent.Lookup(r.Agent)
@@ -132,14 +139,14 @@ func LoadSession(c *Campaign, r RunRecord) (*Session, error) {
 		return s, fmt.Errorf("no adapter %q is registered", r.Agent)
 	}
 	s.Adapter = a
-	claims, rep, err := a.Parse(filepath.Join(s.Dir, trajectoryName(r)))
+	claims, rep, trace, err := agent.ReadTrace(a, filepath.Join(s.Dir, trajectoryName(r)), false)
 	if err != nil {
 		return s, fmt.Errorf("read the session: %w", err)
 	}
 	if len(rep.ParseErrors) != 0 {
 		return s, fmt.Errorf("the session has %d record(s) that did not parse: %s", len(rep.ParseErrors), rep.ParseErrors[0])
 	}
-	s.Claims, s.Report = claims, rep
+	s.Claims, s.Report, s.Trace = claims, rep, trace
 	if s.G, err = readGroundTruth(filepath.Join(s.Dir, groundTruthName(r))); err != nil {
 		return s, fmt.Errorf("read the capture: %w", err)
 	}
@@ -239,7 +246,8 @@ func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verificatio
 	// The session's own version, as cmd/verify takes it (V-50).
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, s.Report.AgentVersion, s.G)
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.Adapter, s.Report.AgentVersion) // V-54
-	in.Trace.Decl = agent.Trace(s.Adapter, s.G)                                                  // V-59
+	in.Trace = s.Trace
+	in.Trace.Decl = agent.Trace(s.Adapter, s.G) // V-59
 	return in
 }
 
@@ -310,6 +318,11 @@ type H3Run struct {
 	UnexplainedSubtrees  int  `json:"unexplained_subtrees"`
 	UnexplainedSensitive int  `json:"unexplained_sensitive_changes"`
 	Ambiguous            bool `json:"ambiguous"`
+	// TraceState is the state of a trace that could not be read whole and
+	// TraceTampering the evidence that it was tampered with (V-59); both
+	// absent for an intact trace no process but the harness changed.
+	TraceState     string `json:"trace_state,omitempty"`
+	TraceTampering int    `json:"trace_tampering,omitempty"`
 	// HarnessShared counts corroborated reads shared with the harness (V-36).
 	HarnessShared int      `json:"harness_shared_reads"`
 	Reasons       []string `json:"reasons,omitempty"`
@@ -335,6 +348,7 @@ func SummarizeVerdict(v verification.Verdict, claims models.Trajectory, loss boo
 		Outcome: v.Outcome.String(), Findings: v.Findings(), Unrecorded: len(v.Unrecorded),
 		UnexplainedSubtrees: len(v.Coverage.UnexplainedSubtrees), UnexplainedSensitive: len(v.UnexplainedSensitiveChanges),
 		Ambiguous: v.Ambiguous, HarnessShared: len(v.CorroboratedHarnessShared), Reasons: v.Reasons,
+		TraceState: string(v.Trace.State), TraceTampering: len(v.TraceTampering),
 	}
 	for _, c := range claims {
 		if c.ImpliedBy != "" {

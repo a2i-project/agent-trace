@@ -531,6 +531,24 @@ def verdict(path):
     }
 
 
+def trace_result(path, run_dir, lab):
+    """What happened to the task run's trace (V-59, I-75): the state verify
+    read it in (read when the report has no trace object), the capture
+    script's own reading of the file it copied, and the number of pieces of
+    tampering evidence. None when verify wrote no report."""
+    v = load(path)
+    if v is None:
+        return None
+    t = v.get("trace") or {}
+    try:
+        copied = open(os.path.join(run_dir, f"{lab}.trace.txt"), encoding="utf-8").read().strip() or None
+    except OSError:
+        copied = None
+    return {"state": t.get("state") or "read", "detail": t.get("detail"), "copied": copied,
+            "tampering": len(v.get("trace_tampering") or []), "compared": bool(t.get("compared")),
+            "outcome": v.get("outcome")}
+
+
 CHECKS = {"0": "ok", "1": "mismatch", "2": "unrecorded", "-": "not-run"}
 
 
@@ -735,6 +753,8 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
             control_cost.append(dict(c, label=cs["label"]))
     if control_cost:
         r["control_cost"] = control_cost
+    # The trace is a result, never an exclusion (V-59, I-75).
+    r["trace"] = trace_result(os.path.join(run_dir, "verify-baseline.json"), run_dir, lab)
     r["watch_exit"] = {"task": task_row["watch_exit"] if task_row else None,
                        "controls": {o["label"]: o["watch_exit"] for o in order if o["role"] == "control"}}
     if ok:
@@ -757,6 +777,12 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
         # its status is a note the analysis does not read. Only watch's own
         # failure is a harness error.
         auto["agent_exit_status" if kind == "agent" else "x4"] = what
+    tr = r["trace"]
+    if ok and tr and (tr["state"] != "read" or tr["tampering"]):
+        # cmd/analyze recomputes the verdict and lists the run under the
+        # trace results; the annotation records what the runner saw.
+        auto["trace"] = "%s, %d piece(s) of tampering evidence, %s%s" % (
+            tr["state"], tr["tampering"], tr["outcome"], (": " + tr["detail"]) if tr.get("detail") else "")
     update_annotations(out_root, os.path.relpath(run_dir, out_root), auto)
     print("\t".join([r["status"], exclusion["rule"] if exclusion else "-", exclusion["reason"] if exclusion else "-"]))
 
@@ -814,7 +840,12 @@ def manifest(out, plan_path, commit, dirty, seed):
          "seed": int(seed) if seed else None, "invocations": invocations, "validations": validations,
          "runs": runs, "attempts": attempts,
          "slots": sorted(slots.values(), key=lambda s: (s["agent"], s["task"], s["mode"], s["run"])),
-         "exclusions": {"by_rule": dict(by_rule), "list": excluded}}
+         "exclusions": {"by_rule": dict(by_rule), "list": excluded},
+         # Runs whose trace was tampered with or could not be read: results,
+         # never exclusions (V-59, I-75).
+         "trace_results": [{"dir": r.get("dir"), "agent": r.get("agent"), "task": r.get("task"), "run": r.get("run"),
+                            **r["trace"]} for r in runs
+                           if r.get("trace") and (r["trace"].get("state") != "read" or r["trace"].get("tampering"))]}
     with open(os.path.join(out, "manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(m, fh, indent=2)
         fh.write("\n")
@@ -854,6 +885,9 @@ def manifest(out, plan_path, commit, dirty, seed):
             fh.write("  ".join(c.ljust(w) for c, w in zip(row, widths)).rstrip() + "\n")
         failed = [s for s in m["slots"] if s["state"] == "failed"]
         fh.write(f"\nattempts excluded: {dict(by_rule) or 'none'}; slots failed three times: {len(failed)}\n")
+        fh.write(f"trace deleted, damaged or tampered with (results, not exclusions, V-59): {len(m['trace_results'])}\n")
+        for t in m["trace_results"]:
+            fh.write(f"  trace: {os.path.relpath(t['dir'], out)} {t['state']}, {t['tampering']} piece(s) of tampering evidence, {t['outcome']}\n")
         for s in failed:
             fh.write(f"  failed slot: {s['agent']} {s['version']} {s['task']} {s['mode']} run {s['run']}\n")
 
