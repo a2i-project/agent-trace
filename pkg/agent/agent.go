@@ -131,22 +131,58 @@ type HarnessBookkeeper interface {
 	HarnessBookkeeping(version, home string) func(models.GroundTruthEvent) bool
 }
 
+// CaptureBookkeeper is implemented by an adapter that declares bookkeeping
+// whose shape it can recognise only in the capture as the probe reported
+// it, before NormalizeStream folded it (V-58): given the version, the home
+// as for HarnessBookkeeper and the capture's raw events, it returns a
+// predicate over the normalized events, or nil to declare nothing. A
+// normalized event is recognised only by its own fields and raw events of
+// the same process, so the join is exact.
+type CaptureBookkeeper interface {
+	CaptureBookkeeping(version, home string, raw models.GroundTruth) func(models.GroundTruthEvent) bool
+}
+
 // HarnessBookkeeping is the adapter's bookkeeping declaration for a capture
 // and the harness version its session records (Report.AgentVersion), as
-// the verifier takes it (verification.Options.HarnessBookkeeping, V-50).
-// Nil when the adapter declares nothing or the session states no version:
-// a declaration is keyed by the version, and a version from anywhere else
-// (a configuration, a flag) is not the one the harness ran.
+// the verifier takes it (verification.Options.HarnessBookkeeping, V-50):
+// what HarnessBookkeeper declares and what CaptureBookkeeper declares for
+// the capture's raw events (V-58). Nil when the adapter declares nothing or
+// the session states no version: a declaration is keyed by the version,
+// and a version from anywhere else (a configuration, a flag) is not the one
+// the harness ran.
 func HarnessBookkeeping(a Adapter, version string, g models.GroundTruthFile) func(models.GroundTruthEvent) bool {
-	hb, ok := a.(HarnessBookkeeper)
-	if !ok || version == "" {
+	if version == "" {
 		return nil
 	}
 	home := ""
 	if g.Sensitive != nil {
 		home = g.Sensitive.Home
 	}
-	return hb.HarnessBookkeeping(version, home)
+	var preds []func(models.GroundTruthEvent) bool
+	if hb, ok := a.(HarnessBookkeeper); ok {
+		if p := hb.HarnessBookkeeping(version, home); p != nil {
+			preds = append(preds, p)
+		}
+	}
+	if cb, ok := a.(CaptureBookkeeper); ok {
+		if p := cb.CaptureBookkeeping(version, home, g.Events); p != nil {
+			preds = append(preds, p)
+		}
+	}
+	switch len(preds) {
+	case 0:
+		return nil
+	case 1:
+		return preds[0]
+	}
+	return func(e models.GroundTruthEvent) bool {
+		for _, p := range preds {
+			if p(e) {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 // Housekeeping is one network action the harness itself performs as
