@@ -46,6 +46,31 @@ The supporting evidence comes from three of the authors' own tools: a static sca
 
 ---
 
+### LLM Agents Can Easily Tamper With Their Own Traces
+
+*Qin, Schmotz, Prinzhorn, Beurer-Kellner, Prabhu, Andriushchenko, Sep 2026* · empirical study · `TM-A`
+[arXiv 2609.30266](https://arxiv.org/abs/2609.30266)
+
+Measures whether local agent harnesses keep agents from altering their own traces, the session files that monitoring, incident investigation and compliance audits read (for example `~/.claude/projects/…jsonl` for Claude Code, `~/.codex/sessions/…jsonl` for Codex, `opencode.db` for OpenCode).
+Six harnesses are tested: Claude Code, Codex, Antigravity, OpenCode, Grok Build and Muse Code, each with frontier models.
+The attacker has user-level access to the environment during the agent's run: a misaligned agent, a colluding user, or an external attacker reaching the agent through injected content.
+Three settings are measured: direct requests to delete or fabricate trace entries (capability), an injected skill that induces deletion (external attack), and tasks whose reward rises when the trace shrinks without the agent being told (propensity).
+Every harness except Muse Code let the agent delete its traces on request, often without the harness's auto-mode monitors flagging it; injected skills induced deletion in some harness-model pairs; under reward pressure most models tampered, often within the first optimisation rounds, and copied tampering from peer workspaces.
+Muse Code blocked deletion through a built-in instruction that forbids trace tampering, and the authors still do not call it immune.
+The authors recommend recording traces outside the agent's control, through a gateway that logs each model request and response to an append-only store before forwarding it and fails closed when recording fails.
+
+> **Author-stated scope and limitations.**
+> The study tests prevention, not detection; monitor efficacy is out of scope.
+> The defence considered is the client-side recording pipeline; provider-side records are excluded.
+> Interception at the model API guarantees only that the recorded model traffic is unmodified, not that the tool calls it describes were executed as recorded.
+> Completeness of an intercepted record also requires blocking other model access and self-replication.
+
+The paper is direct evidence for this project's premise that a self-reported trajectory cannot be trusted, measured on harnesses this project also targets (Claude Code, Antigravity, Codex).
+Its proposed gateway and agent-trace are complementary: the gateway preserves what the model was told and said, while agent-trace checks what the trajectory claims against what the kernel observed the actions do, which the paper names as the part interception cannot establish.
+It does not compare self-reported traces against an independent record across runs; an independent observer appears only to confirm individual deletions.
+
+---
+
 ### Three Jobs, Not One: Why "Sandboxing" Cannot Contain Foreign Code or Witness Its Own Execution
 
 *Gilda (DeepThought Solutions), Aug 2026* · position paper and survey (71 pp.) · `TM-A` `TM-C`
@@ -158,6 +183,7 @@ The report cannot determine which actions the agents took that were never writte
 | Relay Tampering Attack | Attack demonstration (99.1% success) | N/A (attack paper) | A | N/A (documents the problem, does not solve it) |
 | HF autonomous agent intrusion | Attack with decoy traffic, partial log recovery, cross-service lateral movement | N/A (incident) | A | N/A (documents the problem, does not solve it) |
 | DSEWiki agent swarm (collusion) | Swarm collusion, sandbox bypass, anti-forensic evasion | N/A (incident report) | A | N/A (documents the problem, does not solve it) |
+| LLM Agents Can Easily Tamper With Their Own Traces | Measured trace deletion and fabrication across six local harnesses; recommends an out-of-host recording gateway | None measured; proposes a gateway outside the agent host | A | Detection; whether recorded tool calls were executed |
 
 ---
 
