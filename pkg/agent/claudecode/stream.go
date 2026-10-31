@@ -292,7 +292,7 @@ func foldAtomicWrites(g models.GroundTruth) models.GroundTruth {
 		// A temporary whose create the probe named comes from a capture with
 		// names (P-25): foldReplacesWithNames judged it already, and what it
 		// left stays as it is.
-		if p := previousOf(g, used, o, pid); p >= 0 && g[p].Target == open.Target {
+		if p := previousOnReplace(g, used, o, pid, open.Target, target); p >= 0 && g[p].Target == open.Target {
 			continue
 		}
 
@@ -428,10 +428,12 @@ func foldReplacesWithNames(g models.GroundTruth, used []bool, replace map[int]mo
 
 		// Backwards: the create, and before the open the source when the
 		// kernel merged it into the create's record (same record, same time).
-		create, source := previousOf(g, used, o, pid), -1
+		// Events of the process on other paths may lie between, as forwards
+		// (I-76).
+		create, source := previousOnReplace(g, used, o, pid, tmp, target), -1
 		if create >= 0 && is(create, models.FileRename, tmp) {
 			source = create
-			create = previousOf(g, used, create, pid)
+			create = previousOnReplace(g, used, create, pid, tmp, target)
 		}
 		if !is(create, models.FileWrite, tmp) || g[create].OutputHash != nil ||
 			(source >= 0 && !g[source].Timestamp.Equal(g[create].Timestamp)) {
@@ -491,12 +493,22 @@ func foldReplacesWithNames(g models.GroundTruth, used []bool, replace map[int]mo
 	}
 }
 
-// previousOf returns the index of pid's last event before i that no fold has
-// taken, or -1.
-func previousOf(g models.GroundTruth, used []bool, i int, pid uint32) int {
+// previousOnReplace returns the index of pid's last event before i that no
+// fold has taken and that names tmp or target, or -1. The process's events on
+// other paths are passed over, since its other threads share its pid; an event
+// of it on another temporary of target ends the search, as it ends the
+// forward one (I-76).
+func previousOnReplace(g models.GroundTruth, used []bool, i int, pid uint32, tmp, target string) int {
 	for j := i - 1; j >= 0; j-- {
-		if g[j].PID == pid && !used[j] {
+		e := g[j]
+		if used[j] || e.PID != pid {
+			continue
+		}
+		if e.Target == tmp || e.Target == target {
 			return j
+		}
+		if n := tmpName.FindStringSubmatch(e.Target); n != nil && n[1] == target {
+			return -1
 		}
 	}
 	return -1

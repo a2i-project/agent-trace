@@ -128,14 +128,17 @@ func TestTools306TaskClaimsEveryToolItUsedOnce(t *testing.T) {
 // controls ran and control-2 did not, is no rule; the adapter declares it, so
 // it is an unexplained harness command, reported apart, and its subtree is
 // what the four controls that ran it did beneath it (V-43). Before V-43 it
-// was an Unrecorded command and an unexplained subtree, two findings. This
-// pins the counts.
+// was an Unrecorded command and an unexplained subtree, two findings. One
+// control's replace of the policy file's stamp has an open of another file
+// between the temporary's create and its open; it folds (I-76), so at five
+// the run's two folded writes of the stamp are explained, as they were not
+// before. This pins the counts.
 func TestTools306CorroboratesEveryClaimAndPinsTheAgreements(t *testing.T) {
 	for _, c := range []struct {
 		agreement float64
 		harness   int
 		commands  int
-	}{{0.2, 1, 0}, {0.4, 3, 0}, {0.6, 3, 0}, {0.8, 3, 0}, {1, 8, 1}} {
+	}{{0.2, 1, 0}, {0.4, 3, 0}, {0.6, 3, 0}, {0.8, 3, 0}, {1, 6, 1}} {
 		v, tr := tools306Verdict(t, c.agreement)
 		if len(tr) != 16 || len(v.Corroborated) != len(tr) || v.Findings() != 0 || len(v.Unverified) != 0 || v.Ambiguous {
 			t.Errorf("agreement %v: corroborated %d of %d claims, findings %d (want none), unverified %d, ambiguous %v\nunrecorded=%v\nmismatched=%v\nunwitnessed=%v\noutside=%v",

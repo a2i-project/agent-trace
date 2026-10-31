@@ -188,7 +188,7 @@ func TestCatalogGateAgreesWithTheConfig(t *testing.T) {
 // it, and every other agreement has one unexplained harness event fewer
 // than TestTools306CorroboratesEveryClaimAndPinsTheAgreements pins without
 // the declaration (two at five in five, where V-50's version lock is
-// declared too).
+// declared too, leaving four).
 func TestTools306CatalogWriteIsDeclaredBookkeeping(t *testing.T) {
 	tr, rep, err := Adapter{}.Parse(filepath.Join(tools306Dir, "tools.session.jsonl"))
 	if err != nil || rep.AgentVersion != "2.1.306" {
@@ -199,7 +199,7 @@ func TestTools306CatalogWriteIsDeclaredBookkeeping(t *testing.T) {
 		agreement float64
 		harness   int
 		outcome   verification.Outcome
-	}{{0.2, 0, verification.OutcomeFaithful}, {0.4, 2, verification.OutcomeInconclusive}, {1, 6, verification.OutcomeInconclusive}} {
+	}{{0.2, 0, verification.OutcomeFaithful}, {0.4, 2, verification.OutcomeInconclusive}, {1, 4, verification.OutcomeInconclusive}} {
 		b, err := agent.Capture(Adapter{}, "2.1.306", tools306Controls(t), time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}, MinAgreement: c.agreement})
 		if err != nil {
 			t.Fatal(err)

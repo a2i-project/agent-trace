@@ -1,0 +1,123 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-10-31T16:59:24.864394606+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3784119.e6e269b5c7be",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.864394607+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude.json.tmp.3784119.e6e269b5c7be",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.864816483+01:00",
+      "action_type": "file_close",
+      "target": "/tmp/claude-1000/fswatch-probe-R5u9tG/probe",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.865147757+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3784119.e6e269b5c7be",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.873355725+01:00",
+      "action_type": "file_open",
+      "target": "/tmp/claude-1000/fswatch-probe-R5u9tG/probe",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.873723424+01:00",
+      "action_type": "file_write",
+      "target": "/tmp/claude-1000/fswatch-probe-R5u9tG/probe",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.873723424+01:00",
+      "action_type": "file_close",
+      "target": "/tmp/claude-1000/fswatch-probe-R5u9tG/probe",
+      "output_hash": "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.879585135+01:00",
+      "action_type": "file_close",
+      "target": "/home/user/.claude.json.tmp.3784119.e6e269b5c7be",
+      "output_hash": "sha256:90115921bd82e5c790ed69348e0d70d9b05005d619ce191be2eb22f6b6c08891",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.879585136+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude/projects/-ws-control-2/5e1f5206-f267-4b9e-aaac-30e3d496c02b.jsonl",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.879585137+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/projects/-ws-control-2/5e1f5206-f267-4b9e-aaac-30e3d496c02b.jsonl",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.879854182+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude/projects/-ws-control-2/5e1f5206-f267-4b9e-aaac-30e3d496c02b.jsonl",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.879854182+01:00",
+      "action_type": "file_close",
+      "target": "/home/user/.claude/projects/-ws-control-2/5e1f5206-f267-4b9e-aaac-30e3d496c02b.jsonl",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.879854183+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json.tmp.3784119.e6e269b5c7be",
+      "pid": 3784119
+    },
+    {
+      "timestamp": "2026-10-31T16:59:24.879854184+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json",
+      "pid": 3784119
+    }
+  ],
+  "coverage": {
+    "schema": 2,
+    "probes": {
+      "fs": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0,
+        "hashless_closes": 32
+      },
+      "net": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0,
+        "content": "active",
+        "responses": "active"
+      },
+      "proc": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0
+      }
+    }
+  },
+  "root_pid": 3784119,
+  "workspace": "/ws/control-2"
+}

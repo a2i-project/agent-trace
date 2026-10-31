@@ -1,0 +1,155 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-10-31T17:04:02.990126247+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3784893.62ad0d2fa4b4",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.990166002+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude.json.tmp.3784893.62ad0d2fa4b4",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.992515386+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/.credentials.json",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.993029245+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/.credentials.json",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.994089931+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3784893.62ad0d2fa4b4",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.995676703+01:00",
+      "action_type": "file_write",
+      "target": "/tmp/claude-1000/fswatch-probe-dXzUa3/probe",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.995801284+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/plugins/known_marketplaces.json",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.995974595+01:00",
+      "action_type": "file_close",
+      "target": "/tmp/claude-1000/fswatch-probe-dXzUa3/probe",
+      "output_hash": "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:02.99762586+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/plugins/known_marketplaces.json",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.018776489+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/mcp-needs-auth-cache.json",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.029892289+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude/projects/-ws-control-4/b38a7d0d-80b0-4d5c-8ad2-07e51175bf27.jsonl",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.02989229+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/projects/-ws-control-4/b38a7d0d-80b0-4d5c-8ad2-07e51175bf27.jsonl",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.03013421+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude/projects/-ws-control-4/b38a7d0d-80b0-4d5c-8ad2-07e51175bf27.jsonl",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.03013421+01:00",
+      "action_type": "file_close",
+      "target": "/home/user/.claude/projects/-ws-control-4/b38a7d0d-80b0-4d5c-8ad2-07e51175bf27.jsonl",
+      "output_hash": "sha256:9c8b2be03b690c12d83e55ad4a30e138785c70778677c39d21c527e85e4b1edf",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.030174173+01:00",
+      "action_type": "file_close",
+      "target": "/home/user/.claude.json.tmp.3784893.62ad0d2fa4b4",
+      "output_hash": "sha256:878c2e4f4a09534131d5aad8336b9725d17593f177d2c6abc600b94e8cd0e20b",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.065980781+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/state/mcp-discover-verdicts.json",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.066735742+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/projects/-ws-control-4/b38a7d0d-80b0-4d5c-8ad2-07e51175bf27.jsonl",
+      "input_hash": "sha256:9c8b2be03b690c12d83e55ad4a30e138785c70778677c39d21c527e85e4b1edf",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.067719838+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json.tmp.3784893.62ad0d2fa4b4",
+      "pid": 3784893
+    },
+    {
+      "timestamp": "2026-10-31T17:04:03.067719839+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json",
+      "pid": 3784893
+    }
+  ],
+  "coverage": {
+    "schema": 2,
+    "probes": {
+      "fs": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0,
+        "hashless_closes": 32
+      },
+      "net": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0,
+        "content": "active",
+        "responses": "active"
+      },
+      "proc": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0
+      }
+    }
+  },
+  "root_pid": 3784893,
+  "workspace": "/ws/control-4"
+}

@@ -97,8 +97,10 @@ func TestToolsNamedCaptureHasNamesAndOneSocketPerRun(t *testing.T) {
 // harness activity no or too few controls made: at one control in five the
 // write of the policy file and the refresh of the plugin marketplace under
 // ~/.claude, and the connection to the release download host (V-34); from two
-// also a backup of ~/.claude.json, and at five the folded write of the
-// subagent's metadata, whose replace one control left raw (I-56). The socket
+// also a backup of ~/.claude.json. One control's replace of the subagent's
+// metadata has the harness's write of the task's output file between the
+// temporary's create and its open; it folds (I-76), so at five the run's
+// folded write of the metadata is explained, as it was not before. The socket
 // is explained at every agreement (I-58). The three whole-text Reads claim
 // their content (I-40) and are corroborated on it. This pins the counts.
 func TestToolsNamedCorroboratesEveryClaimAtEveryAgreement(t *testing.T) {
@@ -115,7 +117,7 @@ func TestToolsNamedCorroboratesEveryClaimAtEveryAgreement(t *testing.T) {
 	for _, c := range []struct {
 		agreement float64
 		harness   int
-	}{{0.2, 4}, {0.4, 9}, {0.6, 9}, {0.8, 9}, {1, 10}} {
+	}{{0.2, 4}, {0.4, 9}, {0.6, 9}, {0.8, 9}, {1, 9}} {
 		v, tr := toolsNamedVerdict(t, c.agreement)
 		if len(tr) != 16 || len(v.Corroborated) != len(tr) || v.Findings() != 0 || len(v.Unverified) != 0 || v.Ambiguous {
 			t.Errorf("agreement %v: corroborated %d of %d claims, findings %d, unverified %d, ambiguous %v\nunrecorded=%v\nmismatched=%v",

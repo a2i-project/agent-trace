@@ -1,0 +1,168 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-10-31T16:59:14.984103796+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3783933.cb0343bbd153",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:14.984142979+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude.json.tmp.3783933.cb0343bbd153",
+      "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:14.98414298+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/policy-limits.json.signature-iat.json",
+      "input_hash": "sha256:bcb6867d7182ecfa74a69cc0ac4e8091f0f727b2cd14330ac0f6bb2dde6548c0",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:14.987721546+01:00",
+      "action_type": "file_close",
+      "target": "/tmp/claude-1000/fswatch-probe-2vEpP5/probe",
+      "output_hash": "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:14.988230372+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/plugins/known_marketplaces.json",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:14.988284613+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3783933.cb0343bbd153",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.00389538+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/projects/-ws-control-1/1ddf4270-e857-43de-88d0-adfb7287956d.jsonl",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.00389538+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude/projects/-ws-control-1/1ddf4270-e857-43de-88d0-adfb7287956d.jsonl",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.00389538+01:00",
+      "action_type": "file_close",
+      "target": "/home/user/.claude/projects/-ws-control-1/1ddf4270-e857-43de-88d0-adfb7287956d.jsonl",
+      "output_hash": "sha256:f19ae8c579c98898edebda7e9978d370f98d8fcee7eb78af67c5ba21286f2bd7",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.009499037+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/plugins/known_marketplaces.json",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.011103134+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/policy-limits.json.stamp.json",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.011103135+01:00",
+      "action_type": "file_close",
+      "target": "/home/user/.claude.json.tmp.3783933.cb0343bbd153",
+      "output_hash": "sha256:60ec1020bd1398a181e98847d7bc8c1eaaef5a779b442ecc1577d304247b6cf9",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.075563255+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude/mcp-needs-auth-cache.json",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.089771814+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json.tmp.3783933.cb0343bbd153",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:15.089867893+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:21.449704285+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3783933.1353a83b2876",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:21.449704286+01:00",
+      "action_type": "file_open",
+      "target": "/home/user/.claude.json.tmp.3783933.1353a83b2876",
+      "input_hash": "sha256:647224d7c4b5f5a8fecc91f986ef933d1ea7fa701e74c84aacc4b9158353c55d",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:21.450164661+01:00",
+      "action_type": "file_write",
+      "target": "/home/user/.claude.json.tmp.3783933.1353a83b2876",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:21.455445866+01:00",
+      "action_type": "file_close",
+      "target": "/home/user/.claude.json.tmp.3783933.1353a83b2876",
+      "output_hash": "sha256:d399ef0afa0d4c2db58b185d08c5c99814e59a2e8dc3483d2d74e863a8279c37",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:21.455695794+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json.tmp.3783933.1353a83b2876",
+      "pid": 3783933
+    },
+    {
+      "timestamp": "2026-10-31T16:59:21.455695795+01:00",
+      "action_type": "file_rename",
+      "target": "/home/user/.claude.json",
+      "pid": 3783933
+    }
+  ],
+  "coverage": {
+    "schema": 2,
+    "probes": {
+      "fs": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0,
+        "hashless_closes": 31
+      },
+      "net": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0,
+        "content": "active",
+        "responses": "active"
+      },
+      "proc": {
+        "ran": true,
+        "ringbuf_drops": 0,
+        "untracked_children": 0,
+        "state_map_full": 0,
+        "channel_drops": 0
+      }
+    }
+  },
+  "root_pid": 3783933,
+  "workspace": "/ws/control-1"
+}

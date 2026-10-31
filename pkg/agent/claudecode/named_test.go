@@ -199,6 +199,58 @@ func TestNamedFoldIgnoresInterleavedEvents(t *testing.T) {
 	}
 }
 
+// I-76: the process's events on other paths may also lie between the create
+// and the open, and between a merged source and the create, as they may
+// after the open. They stay; any event of the process on the target or on
+// another temporary of it there ends the shape.
+func TestNamedFoldTakesACreateWithOtherPathsBeforeTheOpen(t *testing.T) {
+	const tmp, x = "/w/a.txt.tmp.100.5b5474087431", "/w/a.txt"
+	other := fev(10, models.FileClose, "/tmp/claude-1000/fswatch-probe-x/probe", 100)
+	r := namedWrite(10, x, "100.5b5474087431", "sha256:h", 100)
+	m := namedWriteMerged(10, x, "100.5b5474087431", "sha256:h", 100)
+	for name, g := range map[string]models.GroundTruth{
+		"before the open":              {r[0], other, r[1], r[2], r[3], r[4], r[5]},
+		"two before the open":          {r[0], other, fev(10, models.FileOpen, "/w/b", 100), r[1], r[2], r[3], r[4], r[5]},
+		"before the open, merged":      {m[0], m[1], other, m[2], m[3], m[4], m[5]},
+		"before a merged source":       {m[0], other, m[1], m[2], m[3], m[4], m[5]},
+		"and another process's events": {r[0], fev(10, models.FileOpen, x, 200), r[1], r[2], r[3], r[4], r[5]},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := Adapter{}.NormalizeStream(g)
+			var folded []models.GroundTruthEvent
+			for _, e := range got {
+				if e.Target == x && e.ActionType == models.FileWrite {
+					folded = append(folded, e)
+				}
+				if e.Target == tmp || (e.Target == x && e.ActionType != models.FileWrite && e.PID == 100) {
+					t.Errorf("an event of the replace stayed: %v", targets(got))
+				}
+			}
+			if len(folded) != 1 || folded[0].OutputHash == nil || *folded[0].OutputHash != "sha256:h" || !folded[0].Timestamp.Equal(at(10)) {
+				t.Errorf("folded = %v, want one write of %s at the create's time with the close's hash", targets(got), x)
+			}
+			if len(got) != len(g)-5 {
+				t.Errorf("got %v: the events on other paths must stay", targets(got))
+			}
+		})
+	}
+	for name, g := range map[string]models.GroundTruth{
+		"an open of the target":        {r[0], fev(10, models.FileOpen, x, 100), r[1], r[2], r[3], r[4], r[5]},
+		"a write of the target":        {r[0], fev(10, models.FileWrite, x, 100), r[1], r[2], r[3], r[4], r[5]},
+		"another temporary's create":   {r[0], fev(10, models.FileWrite, x+".tmp.100.000000000000", 100), r[1], r[2], r[3], r[4], r[5]},
+		"a merged source at its time":  {m[0], other, fev(11, models.FileRename, tmp, 100), m[2], m[3], m[4], m[5]},
+		"a create with a hash":         {hashed(r[0], "sha256:h"), other, r[1], r[2], r[3], r[4], r[5]},
+		"a create by another process":  {fev(10, models.FileWrite, tmp, 200), other, r[1], r[2], r[3], r[4], r[5]},
+		"no create, only another path": {other, r[1], r[2], r[3], r[4], r[5]},
+	} {
+		t.Run("not with "+name, func(t *testing.T) {
+			if got := foldAtomicWrites(g); joined(got) != joined(g) {
+				t.Errorf("folded: %v, want %v", targets(got), targets(g))
+			}
+		})
+	}
+}
+
 func TestNamedFoldOnlyRecognisesTheHarnessTemporaryName(t *testing.T) {
 	for _, tmp := range []string{"/w/a.txt.tmp", "/w/a.tmp.1.5b5474087431x", "/w/a.txt.tmp.abc.5b5474087431", "/w/a.txt.tmp.100.SHORT"} {
 		g := models.GroundTruth{fev(0, models.FileWrite, tmp, 100), fev(0, models.FileOpen, tmp, 100), fev(1, models.FileWrite, tmp, 100),
