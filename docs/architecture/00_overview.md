@@ -67,7 +67,7 @@ after its code identifier. Identifiers without a package are in
 | out of scope | a file claim on a path the capture could not observe, by its fs scope record | `Verdict.OutOfScope`, `FSScope` |
 | out of capture | a claim of a type no probe observes (`git_commit`) | `Verdict.OutOfCapture` |
 | dropped by the scope rule | a file event `watch` left out of the capture: caused by no process of the agent's tree, on a path outside the workspace | `models.FSScope.DroppedOutside` |
-| finding | a discrepancy counted against the agent: a mismatched pair, an unwitnessed claim, an unrecorded top-level action, a pair outside its interval, an unexplained subtree, or an unexplained change to a sensitive file of the harness | `Verdict.Findings` |
+| finding | a discrepancy counted against the agent: a mismatched pair, an unwitnessed claim, an unrecorded top-level action, a pair outside its interval, an unexplained subtree, an unexplained change to a sensitive file of the harness, or a write to the agent's own trace by a process other than the harness, or a claim of one (V-59) | `Verdict.Findings` |
 | outcome | the conclusion of a run: FAITHFUL, NOT FAITHFUL or INCONCLUSIVE | `Outcome` |
 | verdict | the whole result of a run: the outcome, the finding lists, the coverage check, the commands and the reasons | `Verdict` |
 
