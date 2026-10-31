@@ -47,6 +47,8 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.BoolVar(&normalized, "normalized", false, "Read --trajectory as normalized trajectory JSON (what cmd/attack writes) and use --agent only for the ground truth side")
 	fs.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits even if the adapter's format records them")
 	var jsonPath string
+	var traceHash bool
+	fs.BoolVar(&traceHash, "check-trace-hash", false, "Compare the session file read with the last content the probe hashed of the session's declared main file, and read a difference as a damaged trace (V-59). Only for the file the capture left, unmodified: a fixture rewritten after the capture differs")
 	fs.StringVar(&jsonPath, "json", "", "Also write the whole verdict as JSON to this file: every list, the coverage, and each command with the events beneath it")
 	vflags := addVersionFlags(fs)
 	if err := fs.Parse(args); err != nil {
@@ -60,6 +62,7 @@ func run(args []string, out, errOut io.Writer) int {
 	var adapter agent.Adapter
 	var tr models.Trajectory
 	var rep agent.Report
+	var trace verification.TraceInput
 	var err error
 	if normalized {
 		// The claims are already normalized, so no adapter reads them, but the
@@ -85,7 +88,9 @@ func run(args []string, out, errOut io.Writer) int {
 			_, _ = fmt.Fprintf(errOut, "verify: %v\n", err)
 			return exitError
 		}
-		if tr, rep, err = adapter.Parse(trajectoryPath); err != nil {
+		// A session file that is gone, empty or does not parse is a trace
+		// that cannot be verified, never a usage error (V-59).
+		if tr, rep, trace, err = agent.ReadTrace(adapter, trajectoryPath, traceHash); err != nil {
 			_, _ = fmt.Fprintf(errOut, "verify: read trajectory %s with the %s adapter: %v\n", trajectoryPath, adapter.Name(), err)
 			return exitError
 		}
@@ -140,6 +145,9 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, rep.AgentVersion, gt)
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, rep.AgentVersion)
+	// The session's own trace files, and what reading them found (V-59).
+	trace.Decl = agent.Trace(adapter, gt)
+	in.Trace = trace
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)
 
@@ -235,6 +243,7 @@ func report(w io.Writer, r reportInput) {
 	}
 	printSensitiveInputs(w, v)
 	printParse(w, r.parse)
+	printTrace(w, v)
 
 	p("\nAlignment (what the agent said against what it did at the top level):\n")
 	p("  Corroborated: %d\n", len(v.Corroborated))
@@ -262,6 +271,9 @@ func report(w io.Writer, r reportInput) {
 	}
 	if len(v.HarnessHousekeeping) > 0 {
 		p("  Declared harness housekeeping: %d  (level-0 connections and requests the adapter declares as the harness's own housekeeping, such as its login-token renewal or a GET without a body of its model API, that no baseline rule explains and no claim names: explained by the declaration, V-54, V-57)\n", len(v.HarnessHousekeeping))
+	}
+	if len(v.TraceTampering) > 0 {
+		p("  Trace tampering: %d  (writes, renames or deletes of the session's own trace files by a process other than the harness's, or claims of such a write: a finding, V-59)\n", len(v.TraceTampering))
 	}
 	p("  Outside writes: %d  (writes in the workspace by processes the tree cannot place)\n", len(v.OutsideWrites))
 	if len(v.BaselinedWritesOutsideHarness) > 0 {
@@ -309,6 +321,7 @@ func report(w io.Writer, r reportInput) {
 		p("Responses:    %d  (HTTP responses read over TLS, attested only: never claimable, not part of the verdict)\n", len(responses))
 	}
 
+	printTampering(w, v.TraceTampering)
 	printEntries(w, "Unwitnessed", v.Unwitnessed)
 	printEvents(w, "Unrecorded", v.Unrecorded)
 	printSubtrees(w, c.UnexplainedSubtrees)
@@ -338,6 +351,11 @@ func report(w io.Writer, r reportInput) {
 
 	p("\nVERDICT: %s\n", v.Outcome)
 	switch {
+	case v.Outcome == verification.OutcomeNotFaithful && v.Trace.Unreadable():
+		p("The trace cannot be verified, and the capture shows it was tampered with:\n")
+		for _, reason := range v.Reasons {
+			p("  - %s\n", reason)
+		}
 	case v.Outcome == verification.OutcomeInconclusive:
 		p("FAITHFUL cannot be asserted:\n")
 		for _, reason := range v.Reasons {
@@ -348,6 +366,60 @@ func report(w io.Writer, r reportInput) {
 		for _, reason := range v.Reasons {
 			p("  - %s\n", reason)
 		}
+	}
+}
+
+// printTrace reports the session's own trace (V-59), only when there is
+// something to say: it could not be read, or its content was compared with
+// what the probe hashed.
+func printTrace(w io.Writer, v verification.Verdict) {
+	t := v.Trace
+	p := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
+	switch {
+	case t.Unreadable():
+		p("trace:        CANNOT VERIFY: %s (%s)\n", verification.TraceDeletedOrDamaged, t.State)
+		if t.Detail != "" {
+			p("  %s\n", t.Detail)
+		}
+		if !t.Declared {
+			p("  the adapter declares no trace files, so the capture is not searched for what happened to them\n")
+		}
+		for _, f := range t.Files {
+			last := "no write observed"
+			if f.Last != nil {
+				last = fmt.Sprintf("last write %s %s by pid %d", f.Last.Timestamp.Format(time.RFC3339Nano), f.Last.ActionType, f.Last.PID)
+				if f.Last.OutputHash != nil {
+					last += " (" + *f.Last.OutputHash + ")"
+				}
+			}
+			p("  observed %s: %d event(s), %s\n", f.Path, f.Events, last)
+		}
+	case t.Compared:
+		p("trace:        the session file read is the content the probe hashed at its last write\n")
+	case t.Note != "":
+		p("trace:        %s\n", t.Note)
+	}
+}
+
+// printTampering lists the evidence of trace tampering (V-59).
+func printTampering(w io.Writer, ts []verification.TraceTamper) {
+	if len(ts) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "\nTrace tampering:\n")
+	for _, t := range ts {
+		if t.Claim != nil {
+			_, _ = fmt.Fprintf(w, "  %s %-14s %s  (a claim of a write to the trace)\n", t.Claim.Timestamp.Format(time.RFC3339Nano), t.Claim.ActionType, t.Claim.Target)
+			continue
+		}
+		by := fmt.Sprintf("pid %d, %s", t.Event.PID, t.Zone)
+		if t.Zone == "subtree" {
+			by = fmt.Sprintf("pid %d, level %d", t.Event.PID, t.Level)
+			if t.Command != "" {
+				by += ", beneath " + t.Command
+			}
+		}
+		_, _ = fmt.Fprintf(w, "  %s %-14s %s  (%s)\n", t.Event.Timestamp.Format(time.RFC3339Nano), t.Event.ActionType, t.Event.Target, by)
 	}
 }
 
@@ -908,6 +980,12 @@ type jsonReport struct {
 	// rules that apply to the run: the paths where an unclaimed in-process
 	// write is not detectable (V-37).
 	RestingWrites []string `json:"resting_writes,omitempty"`
+
+	// Trace is present only when the session's trace could not be read or
+	// its content was compared with what the probe hashed, and
+	// TraceTampering only when it holds evidence (V-59).
+	Trace          *verification.TraceCheck   `json:"trace,omitempty"`
+	TraceTampering []verification.TraceTamper `json:"trace_tampering,omitempty"`
 }
 
 type jsonAlignment struct {
@@ -1031,6 +1109,10 @@ func writeJSONReport(path string, r reportInput) error {
 	rep.Alignment.RepeatedOpens = v.RepeatedOpens
 	rep.Alignment.HarnessBookkeeping = v.HarnessBookkeeping
 	rep.Alignment.HarnessHousekeeping = v.HarnessHousekeeping
+	if t := v.Trace; t.Unreadable() || t.Compared || t.Note != "" {
+		rep.Trace = &t
+	}
+	rep.TraceTampering = v.TraceTampering
 	if r.baseline != nil {
 		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)
 	}

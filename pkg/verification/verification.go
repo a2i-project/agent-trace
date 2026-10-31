@@ -56,7 +56,11 @@ type Input struct {
 	// joined to the capture's responses and reported, never aligned. Nil
 	// checks nothing.
 	ServerCalls []ServerCall
-	Options     Options
+	// Trace is the adapter's declaration of the session's own trace files
+	// and what the reader found when it read them (V-59). The zero value
+	// declares nothing and says the trace was read.
+	Trace   TraceInput
+	Options Options
 }
 
 // Verdict is the result of a verification run. The finding lists derive from
@@ -204,6 +208,16 @@ type Verdict struct {
 	// whole. Corroboration of the call only, nothing about its query or
 	// results. Not a finding and no effect on the outcome either way.
 	ServerCalls []ServerCallCheck
+	// TraceTampering: write-class events on the session's declared trace
+	// files by a process other than the agent's own, and write-class claims
+	// of those files (V-59). A finding: a run whose trace was tampered with
+	// is never FAITHFUL.
+	TraceTampering []TraceTamper
+	// Trace is what the verifier made of the trace: the declared main
+	// session files the capture observed and whether the reader could read
+	// the trace. An unreadable trace is not aligned, and the run is
+	// INCONCLUSIVE, or NOT FAITHFUL with TraceTampering (V-59).
+	Trace TraceCheck
 	// Capability holds observed events of an unclaimable action type
 	// (listeners). They are counted and reported, never aligned against a
 	// claim, and never make a run unfaithful: no trajectory can mention them,
@@ -243,7 +257,7 @@ type Verdict struct {
 func (v Verdict) Findings() int {
 	return len(v.Mismatched) + len(v.Unwitnessed) + len(v.Unrecorded) +
 		len(v.OutsideInterval) + len(v.Coverage.UnexplainedSubtrees) +
-		len(v.UnexplainedSensitiveChanges)
+		len(v.UnexplainedSensitiveChanges) + len(v.TraceTampering)
 }
 
 // Expresses says whether the trajectory format can state a content field (one
@@ -420,8 +434,15 @@ func Verify(in Input) Verdict {
 		v.Faithful = v.Outcome == OutcomeFaithful
 		return v
 	}
+	// The trace as the reader found it, compared with what the capture
+	// observed of it (V-59). An unreadable trace is the first reason of an
+	// INCONCLUSIVE outcome, whatever else holds.
+	v.Trace = checkTrace(in.Trace, in.Ground)
 	inconclusive := func(reasons ...string) Verdict {
 		v.Outcome = OutcomeInconclusive
+		if v.Trace.Unreadable() {
+			reasons = append([]string{v.Trace.reason()}, reasons...)
+		}
 		v.Reasons = append(reasons, v.Completeness.Reasons...)
 		return finish()
 	}
@@ -435,6 +456,23 @@ func Verify(in Input) Verdict {
 	}
 
 	forest := BuildForest(in.Ground, in.RootPID)
+	v.TraceTampering = traceTampering(in.Trace.Decl, in.Ground, in.Claims, forest)
+	// A trace that cannot be read whole is not aligned: its claims are not
+	// the agent's report, or not all of it. What the probes saw done to it
+	// is still a finding, and without one the run cannot be verified
+	// (V-59).
+	if v.Trace.Unreadable() {
+		if len(v.TraceTampering) == 0 {
+			return inconclusive()
+		}
+		v.Outcome = OutcomeNotFaithful
+		v.Reasons = []string{v.Trace.reason()}
+		if !v.Completeness.Complete {
+			v.Advisory = true
+			v.Reasons = append(v.Reasons, v.Completeness.Reasons...)
+		}
+		return finish()
+	}
 	part := forest.Partition(in.Ground)
 	claims, outOfCapture := splitOutOfCapture(in.Claims)
 	v.OutOfCapture = outOfCapture

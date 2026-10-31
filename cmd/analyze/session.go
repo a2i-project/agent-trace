@@ -239,6 +239,7 @@ func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verificatio
 	// The session's own version, as cmd/verify takes it (V-50).
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, s.Report.AgentVersion, s.G)
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.Adapter, s.Report.AgentVersion) // V-54
+	in.Trace.Decl = agent.Trace(s.Adapter, s.G)                                                  // V-59
 	return in
 }
 
