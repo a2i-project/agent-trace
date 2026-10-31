@@ -198,6 +198,79 @@ func TestAWebFetchIsVerifiedEndToEnd(t *testing.T) {
 	}
 }
 
+// V-57 does not weaken I-72 and V-52: with the housekeeping declaration of
+// 2.1.306 in effect, a claimed WebFetch is verified as before; its domain
+// check, the GET the declaration excepts, stays Unrecorded when its claim is
+// missing; an unreported WebFetch of another host leaves its check, its
+// connection and its GET Unrecorded; an unreported WebFetch of a URL of the
+// model API's host leaves its check Unrecorded while its connection is the
+// baseline's and its GET is declared housekeeping; and the GET of a claimed
+// fetch of such a URL pairs with its claim. Known limit: a fetch of the model API's
+// host the harness makes without a check, because a claimed fetch checked
+// that host within five minutes, is hidden whole.
+func TestTheHousekeepingDeclarationKeepsAnUnreportedWebFetchAFinding(t *testing.T) {
+	const root = 100
+	const apiURL = "https://api.anthropic.com/v1/models?payload=x"
+	t0 := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
+	at := func(ms int) time.Time { return t0.Add(time.Duration(ms) * time.Millisecond) }
+	req := func(ms int, target string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at(ms), ActionType: models.NetRequest, Target: target, PID: root}
+	}
+	model := models.GroundTruthEvent{Timestamp: at(-100), ActionType: models.NetConnect, Target: modelAPIHost, PID: root}
+	check := req(13, "GET "+domainCheckURL+"man7.org")
+	connect := models.GroundTruthEvent{Timestamp: at(380), ActionType: models.NetConnect, Target: "man7.org", PID: root}
+	get := req(440, "GET "+manURL)
+	apiCheck := req(13, "GET "+domainCheckURL+modelAPIHost)
+	apiConnect := models.GroundTruthEvent{Timestamp: at(380), ActionType: models.NetConnect, Target: modelAPIHost, PID: root}
+	apiGet := req(440, "GET "+apiURL)
+	capture := func(events ...models.GroundTruthEvent) models.GroundTruthFile {
+		return models.GroundTruthFile{RootPID: root, Events: append(models.GroundTruth{model}, events...), Coverage: &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{
+			"fs": {Ran: true}, "proc": {Ran: true}, "net": {Ran: true, Content: models.ContentActive}}}}
+	}
+	measured := func(e models.GroundTruthEvent) bool {
+		return e.ActionType == models.NetConnect && e.Target == modelAPIHost
+	}
+	verify := func(claims models.Trajectory, g models.GroundTruthFile) verification.Verdict {
+		in := agent.Prepare(Adapter{}, claims, g, measured, verification.Options{IntervalSlack: 500 * time.Millisecond})
+		in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(Adapter{}, "2.1.306")
+		return verification.Verify(in)
+	}
+	targets := func(g models.GroundTruth) []string {
+		var out []string
+		for _, e := range g {
+			out = append(out, e.Target)
+		}
+		return out
+	}
+	tr, _ := fetchSession(t, "2.1.306", fetchCall{url: manURL})
+	apiTr, _ := fetchSession(t, "2.1.306", fetchCall{url: apiURL})
+
+	v := verify(tr, capture(check, connect, get))
+	if v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 2 || len(v.HarnessImplied) != 1 || len(v.HarnessHousekeeping) != 0 {
+		t.Errorf("claimed: outcome %s, corroborated %v, implied %v, housekeeping %v", v.Outcome, v.Corroborated, v.HarnessImplied, v.HarnessHousekeeping)
+	}
+	v = verify(tr[1:], capture(check, connect, get))
+	if v.Outcome != verification.OutcomeNotFaithful || strings.Join(targets(v.Unrecorded), " ") != check.Target || len(v.HarnessHousekeeping) != 0 {
+		t.Errorf("without the check's claim: outcome %s, unrecorded %v, housekeeping %v", v.Outcome, v.Unrecorded, v.HarnessHousekeeping)
+	}
+	v = verify(nil, capture(check, connect, get))
+	if v.Outcome != verification.OutcomeNotFaithful || strings.Join(targets(v.Unrecorded), " ") != strings.Join([]string{check.Target, connect.Target, get.Target}, " ") || len(v.HarnessHousekeeping) != 0 {
+		t.Errorf("unreported: outcome %s, unrecorded %v, housekeeping %v", v.Outcome, v.Unrecorded, v.HarnessHousekeeping)
+	}
+	v = verify(nil, capture(apiCheck, apiConnect, apiGet))
+	if v.Outcome != verification.OutcomeNotFaithful || strings.Join(targets(v.Unrecorded), " ") != apiCheck.Target || strings.Join(targets(v.HarnessHousekeeping), " ") != apiGet.Target {
+		t.Errorf("unreported, the model API's host: outcome %s, unrecorded %v, housekeeping %v", v.Outcome, v.Unrecorded, v.HarnessHousekeeping)
+	}
+	v = verify(apiTr, capture(apiCheck, apiConnect, apiGet))
+	if corr := v.Corroborated; len(corr) != 1 || corr[0].Event.Target != apiGet.Target || len(v.HarnessHousekeeping) != 0 || len(v.HarnessImplied) != 1 || len(v.Unrecorded) != 0 {
+		t.Errorf("claimed, the model API's host: corroborated %v, housekeeping %v, implied %v, unrecorded %v", v.Corroborated, v.HarnessHousekeeping, v.HarnessImplied, v.Unrecorded)
+	}
+	v = verify(nil, capture(apiGet))
+	if v.Outcome != verification.OutcomeFaithful || strings.Join(targets(v.HarnessHousekeeping), " ") != apiGet.Target {
+		t.Errorf("known limit, a fetch with no check: outcome %s, housekeeping %v, unrecorded %v", v.Outcome, v.HarnessHousekeeping, v.Unrecorded)
+	}
+}
+
 // webFetchNotGated are configured versions without I-72's claims, each with
 // why.
 var webFetchNotGated = map[string]string{

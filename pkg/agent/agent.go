@@ -7,6 +7,8 @@
 package agent
 
 import (
+	"strings"
+
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
@@ -152,10 +154,20 @@ func HarnessBookkeeping(a Adapter, version string, g models.GroundTruthFile) fun
 // writes a connection's target, or a net_request whose target is exactly
 // Target, "<METHOD> <URL>" as the probe writes it, with a body when Body is
 // true and with none when it is false. A connection has no body.
+//
+// With Origin, a request declaration covers every body-less request of one
+// method to one origin (V-57): Target is "<METHOD> https://<host>/", and the
+// declaration recognises a request without a body whose target starts with
+// it, whatever its path and query, unless its path (the target after the
+// host, up to a '?') is one of Except. Origin never covers a request with a
+// body: an Origin declaration with Body, of a connection, or whose Target
+// is not of that form declares nothing.
 type Housekeeping struct {
 	ActionType models.ActionType
 	Target     string
 	Body       bool
+	Origin     bool
+	Except     []string
 }
 
 // HarnessHousekeeper is implemented by an adapter that can name the exact
@@ -163,10 +175,11 @@ type Housekeeping struct {
 // Claude Code's renewal of its login token. Given the harness version the
 // session records, it returns them, or nothing for a version whose binary
 // and captures were not read. The verifier explains a level-0 connection or
-// request that equals one of them, whose target no claim names, as declared
-// harness housekeeping: not a finding and no reason for INCONCLUSIVE
-// (V-54). Like HarnessBookkeeper this explains, so a declaration names exact
-// targets of one version, never a host's requests in general.
+// request that one of them recognises, whose target no claim names, as
+// declared harness housekeeping: not a finding and no reason for
+// INCONCLUSIVE (V-54). Like HarnessBookkeeper this explains, so a
+// declaration names exact targets of one version; only a body-less request
+// may be declared for a whole origin (V-57).
 type HarnessHousekeeper interface {
 	HarnessHousekeeping(version string) []Housekeeping
 }
@@ -176,8 +189,9 @@ type HarnessHousekeeper interface {
 // verifier takes it (verification.Options.HarnessHousekeeping, V-54): a
 // predicate that recognises a net_connect or net_request equal to a
 // declared action, with an untruncated target and, for a request, a body
-// exactly when the declaration says so. Nil when the adapter declares
-// nothing for the version or the session states none.
+// exactly when the declaration says so, or a body-less request of a
+// declared origin outside its excepted paths (V-57). Nil when the adapter
+// declares nothing for the version or the session states none.
 func HarnessHousekeeping(a Adapter, version string) func(models.GroundTruthEvent) bool {
 	hk, ok := a.(HarnessHousekeeper)
 	if !ok || version == "" {
@@ -187,23 +201,71 @@ func HarnessHousekeeping(a Adapter, version string) func(models.GroundTruthEvent
 		t      models.ActionType
 		target string
 	}
+	type origin struct {
+		prefix string
+		except map[string]bool
+	}
 	declared := map[key]bool{}
+	var origins []origin
 	for _, h := range hk.HarnessHousekeeping(version) {
 		switch {
 		case h.Target == "":
+		case h.Origin:
+			if h.ActionType == models.NetRequest && !h.Body && isOriginTarget(h.Target) {
+				o := origin{prefix: h.Target, except: map[string]bool{}}
+				for _, p := range h.Except {
+					o.except[p] = true
+				}
+				origins = append(origins, o)
+			}
 		case h.ActionType == models.NetConnect && !h.Body:
 			declared[key{h.ActionType, h.Target}] = false
 		case h.ActionType == models.NetRequest:
 			declared[key{h.ActionType, h.Target}] = h.Body
 		}
 	}
-	if len(declared) == 0 {
+	if len(declared) == 0 && len(origins) == 0 {
 		return nil
 	}
 	return func(e models.GroundTruthEvent) bool {
-		body, ok := declared[key{e.ActionType, e.Target}]
-		return ok && !e.TargetTruncated && (e.RequestHash != nil) == body
+		if e.TargetTruncated {
+			return false
+		}
+		if body, ok := declared[key{e.ActionType, e.Target}]; ok && (e.RequestHash != nil) == body {
+			return true
+		}
+		if e.ActionType != models.NetRequest || e.RequestHash != nil {
+			return false
+		}
+		for _, o := range origins {
+			rest, ok := strings.CutPrefix(e.Target, o.prefix)
+			if !ok {
+				continue
+			}
+			path, _, _ := strings.Cut("/"+rest, "?")
+			if !o.except[path] {
+				return true
+			}
+		}
+		return false
 	}
+}
+
+// isOriginTarget reports whether target has the form of an origin
+// declaration, "<METHOD> https://<host>/": a method of capital letters, the
+// https scheme, a host with no slash, query, fragment, user information or
+// space, and the root path (V-57).
+func isOriginTarget(target string) bool {
+	method, url, ok := strings.Cut(target, " ")
+	if !ok || method == "" || strings.Trim(method, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
+		return false
+	}
+	host, ok := strings.CutPrefix(url, "https://")
+	if !ok {
+		return false
+	}
+	host, ok = strings.CutSuffix(host, "/")
+	return ok && host != "" && !strings.ContainsAny(host, "/?#@ ")
 }
 
 // HarnessCommand recognises, among a capture's normalized events, the execs

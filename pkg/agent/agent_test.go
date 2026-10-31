@@ -620,3 +620,70 @@ func TestPrepareRunsTheStreamNormalizer(t *testing.T) {
 		t.Errorf("Ground = %v, want the stream normalizer applied", in.Ground)
 	}
 }
+
+// housekeeper is an adapter with a fixed housekeeping declaration.
+type housekeeper struct {
+	Generic
+	decl []Housekeeping
+}
+
+func (h housekeeper) HarnessHousekeeping(string) []Housekeeping { return h.decl }
+
+// V-57: an origin declaration covers every body-less request of its method
+// whose target starts with "<METHOD> https://<host>/", except its excepted
+// paths; one with a body, of a connection, or of another form declares
+// nothing, and an exact declaration keeps its reading beside it.
+func TestHarnessHousekeepingOrigin(t *testing.T) {
+	hash := "sha256:00"
+	req := func(target string, body bool) models.GroundTruthEvent {
+		e := models.GroundTruthEvent{ActionType: models.NetRequest, Target: target}
+		if body {
+			e.RequestHash = &hash
+		}
+		return e
+	}
+	origin := Housekeeping{ActionType: models.NetRequest, Target: "GET https://api.example/", Origin: true, Except: []string{"/check"}}
+	hk := HarnessHousekeeping(housekeeper{decl: []Housekeeping{origin, {ActionType: models.NetRequest, Target: "POST https://api.example/token", Body: true}}}, "1")
+	truncated := req("GET https://api.example/a", false)
+	truncated.TargetTruncated = true
+	for _, c := range []struct {
+		e    models.GroundTruthEvent
+		want bool
+	}{
+		{req("GET https://api.example/", false), true},
+		{req("GET https://api.example/a/b?c=d", false), true},
+		{req("GET https://api.example/check/x", false), true},
+		{req("GET https://api.example/checks?x", false), true},
+		{req("GET https://api.example/check", false), false},
+		{req("GET https://api.example/check?x=y", false), false},
+		{req("GET https://api.example/a", true), false},
+		{req("POST https://api.example/a", false), false},
+		{req("POST https://api.example/token", true), true},
+		{req("POST https://api.example/token", false), false},
+		{req("GET https://api.example.evil/a", false), false},
+		{req("GET https://api.example:8443/a", false), false},
+		{req("GET https://api.example", false), false},
+		{truncated, false},
+		{models.GroundTruthEvent{ActionType: models.NetConnect, Target: "api.example"}, false},
+		{models.GroundTruthEvent{ActionType: models.NetResponse, Target: "GET https://api.example/a"}, false},
+	} {
+		if got := hk(c.e); got != c.want {
+			t.Errorf("%s %q body %v truncated %v: %v, want %v", c.e.ActionType, c.e.Target, c.e.RequestHash != nil, c.e.TargetTruncated, got, c.want)
+		}
+	}
+	for _, bad := range []Housekeeping{
+		{ActionType: models.NetRequest, Target: "GET https://api.example/", Origin: true, Body: true},
+		{ActionType: models.NetConnect, Target: "api.example", Origin: true},
+		{ActionType: models.NetRequest, Target: "GET https://api.example/a/", Origin: true},
+		{ActionType: models.NetRequest, Target: "GET https://api.example", Origin: true},
+		{ActionType: models.NetRequest, Target: "GET http://api.example/", Origin: true},
+		{ActionType: models.NetRequest, Target: "get https://api.example/", Origin: true},
+		{ActionType: models.NetRequest, Target: "https://api.example/", Origin: true},
+		{ActionType: models.NetRequest, Target: "GET https://u@api.example/", Origin: true},
+		{ActionType: models.NetRequest, Target: "GET https:///", Origin: true},
+	} {
+		if HarnessHousekeeping(housekeeper{decl: []Housekeeping{bad}}, "1") != nil {
+			t.Errorf("%+v: a declaration, want none", bad)
+		}
+	}
+}
