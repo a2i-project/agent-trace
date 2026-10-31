@@ -92,6 +92,7 @@ func Report(res *Results) string {
 	m.blank()
 	m.line("- campaign `%s`, manifest sha256 `%s`, recorded at commit `%s`", res.Inputs.Campaign, res.Inputs.ManifestSHA256, res.Inputs.ManifestCommit)
 	m.line("- agent version config `%s`, sha256 `%s`", res.Inputs.AgentConfig, res.Inputs.AgentConfigSHA256)
+	m.line("- protocol file `%s`, sha256 `%s`", res.Inputs.ProtocolFile, res.Inputs.ProtocolSHA256)
 	m.line("- bootstrap: %d resamples, seed %d; Wilson 95%%; exact one-sided 95%% Clopper-Pearson at 0 or n", res.Constants.BootstrapResamples, res.Constants.BootstrapSeed)
 	m.line("- primary baseline agreement %.2f of the controls; interval slack %d ms", res.Constants.PrimaryAgreement, res.Constants.IntervalSlackMS)
 	m.line("- every rate carries three counts: considered (in scope), evaluated (the denominator), succeeded (the numerator, the runs or mutations with the property the rate names)")
@@ -179,7 +180,7 @@ func Report(res *Results) string {
 func reportH3(m *md, res *Results) {
 	m.line("## H3: false positives and INCONCLUSIVE on honest runs")
 	m.blank()
-	m.line("Task groups follow decision D8 (held-out: Claude Code `long`, agy `long` and `subagent`); `tool_heavy` is the named tool-heavy subgroup of decision D5. H3 is never pooled over versions.")
+	m.line("Task groups follow decision D8 (held-out: %s); `tool_heavy` is the named tool-heavy subgroup of decision D5. H3 is never pooled over versions.", res.protocol.heldOutLine())
 	m.blank()
 	var rows [][]string
 	for _, c := range res.H3.Cells {

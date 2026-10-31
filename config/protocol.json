@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "protocol": "docs/eval/experiment_protocol_v2.md (Claude Code registration, draft 2026-10-27)",
+  "agents": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "faithful_bar": {
+        "min_rate": 0.50,
+        "basis": "D2"
+      },
+      "inconclusive_pilot_range": {
+        "low": 0.30,
+        "high": 0.70
+      },
+      "tool_heavy_tasks": ["tools", "long", "long-cc"],
+      "d8_held_out_tasks": ["long"]
+    },
+    {
+      "agent": "gemini",
+      "label": "agy",
+      "faithful_bar": {
+        "none": "declared in advance as expected near 0% (V-34 token refresh, D2)"
+      },
+      "inconclusive_pilot_range": {
+        "none": "the protocol sets no pilot-informed range for this agent"
+      },
+      "tool_heavy_tasks": ["long", "long-agy"],
+      "d8_held_out_tasks": ["long", "subagent"]
+    }
+  ]
+}

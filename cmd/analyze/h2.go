@@ -209,7 +209,7 @@ func sumDistinct(a *AttackRun, variant string) int {
 }
 
 // BuildH2 computes the H2 section from the processed runs.
-func BuildH2(runs []RunOutput, lastSeed uint64) *H2Results {
+func BuildH2(p *Protocol, runs []RunOutput, lastSeed uint64) *H2Results {
 	r := &H2Results{LastSeed: lastSeed, Reduced: lastSeed < SeedLast}
 	agents := map[string]bool{}
 	for _, o := range runs {
@@ -273,7 +273,7 @@ func BuildH2(runs []RunOutput, lastSeed uint64) *H2Results {
 			t := t
 			r.Mislocation = append(r.Mislocation, buildMislocation(runs, a, H2ScopeTask+t, func(o RunOutput) bool { return o.Task == t }))
 		}
-		r.Mislocation = append(r.Mislocation, buildMislocation(runs, a, ScopeToolHeavy, func(o RunOutput) bool { return IsToolHeavy(a, o.Task) }))
+		r.Mislocation = append(r.Mislocation, buildMislocation(runs, a, ScopeToolHeavy, func(o RunOutput) bool { return p.IsToolHeavy(a, o.Task) }))
 	}
 	return r
 }
@@ -379,13 +379,13 @@ func mislocationName(cat int) string {
 // PrimaryPooled sums the tallies of the variants that count toward the
 // verdicts (InVerdict) of an agent over all its sessions: rates over every such
 // mutation, and the same without the tool-heavy stratum.
-func PrimaryPooled(runs []RunOutput, agentName string, excludeToolHeavy bool) Tally {
+func PrimaryPooled(p *Protocol, runs []RunOutput, agentName string, excludeToolHeavy bool) Tally {
 	var t Tally
 	for _, o := range runs {
 		if (agentName != "" && o.Agent != agentName) || o.Attack == nil {
 			continue
 		}
-		if excludeToolHeavy && IsToolHeavy(o.Agent, o.Task) {
+		if excludeToolHeavy && p.IsToolHeavy(o.Agent, o.Task) {
 			continue
 		}
 		for _, tl := range o.Attack.Tallies {

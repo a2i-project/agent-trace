@@ -18,6 +18,9 @@ type Options struct {
 	Campaign string
 	Out      string
 	Config   string
+	// Protocol is the protocol file of per-agent targets; "" reads
+	// protocol.json beside the agent config.
+	Protocol string
 	// Comparison is the output directory of scripts/compare/sweep.py (H1).
 	Comparison string
 	// Overhead and OverheadAfter are labelled benchmark results.json files
@@ -44,17 +47,33 @@ type Inputs struct {
 	ManifestStamp  string `json:"manifest_generated"`
 	Annotations    bool   `json:"annotations_file"`
 	// Paths are recorded by their last element only, and the agent config
-	// by its content hash beside its name, so results.json carries no path
-	// of the analysing machine.
+	// and the protocol file by their content hash beside their name, so
+	// results.json carries no path of the analysing machine.
 	AgentConfig       string   `json:"agent_config,omitempty"`
 	AgentConfigSHA256 string   `json:"agent_config_sha256,omitempty"`
+	ProtocolFile      string   `json:"protocol_file"`
+	ProtocolSHA256    string   `json:"protocol_sha256"`
 	Comparison        string   `json:"comparison_directory,omitempty"`
 	Overhead          []string `json:"overhead_runs,omitempty"`
 }
 
 // Constants snapshots the registered values the run used, so the results
-// carry the registration they were computed under.
+// carry the registration they were computed under. FaithfulBars are written
+// between NearZeroFP and MaxWallRatio, one h3d_<agent>_bar key per agent of
+// the protocol file with a bar, in file order (MarshalJSON).
 type Constants struct {
+	constantsHead
+	FaithfulBars []AgentBar
+	constantsTail
+}
+
+// AgentBar is one agent's H3d bar.
+type AgentBar struct {
+	Agent string
+	Bar   float64
+}
+
+type constantsHead struct {
 	Protocol           string      `json:"protocol"`
 	BootstrapResamples int         `json:"bootstrap_resamples"`
 	BootstrapSeed      uint64      `json:"bootstrap_seed"`
@@ -65,22 +84,59 @@ type Constants struct {
 	SeedLast           uint64      `json:"seed_last_registered"`
 	SeedLastRun        uint64      `json:"seed_last_run"`
 	NearZeroFP         float64     `json:"h3a_near_zero"`
-	ClaudeFaithfulBar  float64     `json:"h3d_claude_code_bar"`
-	MaxWallRatio       float64     `json:"h4a_max_wall_ratio"`
-	MaxFixedCostS      float64     `json:"h4a_max_fixed_cost_s"`
-	MaxWatchRSSMiB     float64     `json:"h4a_max_watch_rss_mib"`
-	MaxLossRuns        int         `json:"h4a_max_loss_runs"`
-	IntervalSlackMS    int64       `json:"interval_slack_ms"`
-	CauseOrder         []string    `json:"inconclusive_cause_precedence"`
 }
 
-func constants(lastSeed uint64) Constants {
-	return Constants{
-		Protocol: Protocol, BootstrapResamples: BootstrapResamples, BootstrapSeed: BootstrapSeed,
-		PrimaryAgreement: PrimaryAgreement, LOOAgreement: LOOAgreementLabel, AgreementGrid: AgreementGrid, SeedFirst: SeedFirst, SeedLast: SeedLast, SeedLastRun: lastSeed,
-		NearZeroFP: NearZeroFP, ClaudeFaithfulBar: ClaudeFaithfulBar, MaxWallRatio: MaxWallRatio, MaxFixedCostS: MaxFixedCostSeconds,
-		MaxWatchRSSMiB: MaxWatchRSSMiB, MaxLossRuns: MaxLossRuns, IntervalSlackMS: IntervalSlack.Milliseconds(), CauseOrder: CauseOrder,
+type constantsTail struct {
+	MaxWallRatio    float64  `json:"h4a_max_wall_ratio"`
+	MaxFixedCostS   float64  `json:"h4a_max_fixed_cost_s"`
+	MaxWatchRSSMiB  float64  `json:"h4a_max_watch_rss_mib"`
+	MaxLossRuns     int      `json:"h4a_max_loss_runs"`
+	IntervalSlackMS int64    `json:"interval_slack_ms"`
+	CauseOrder      []string `json:"inconclusive_cause_precedence"`
+}
+
+func constants(p *Protocol, lastSeed uint64) Constants {
+	c := Constants{
+		constantsHead: constantsHead{
+			Protocol: p.Registration, BootstrapResamples: BootstrapResamples, BootstrapSeed: BootstrapSeed,
+			PrimaryAgreement: PrimaryAgreement, LOOAgreement: LOOAgreementLabel, AgreementGrid: AgreementGrid, SeedFirst: SeedFirst, SeedLast: SeedLast, SeedLastRun: lastSeed,
+			NearZeroFP: NearZeroFP,
+		},
+		constantsTail: constantsTail{
+			MaxWallRatio: MaxWallRatio, MaxFixedCostS: MaxFixedCostSeconds,
+			MaxWatchRSSMiB: MaxWatchRSSMiB, MaxLossRuns: MaxLossRuns, IntervalSlackMS: IntervalSlack.Milliseconds(), CauseOrder: CauseOrder,
+		},
 	}
+	for _, a := range p.Agents {
+		if b := a.FaithfulBar.MinRate; b != nil {
+			c.FaithfulBars = append(c.FaithfulBars, AgentBar{a.Agent, *b})
+		}
+	}
+	return c
+}
+
+// MarshalJSON writes the head's keys, one key per FAITHFUL bar, then the
+// tail's keys, so the bars keep the place the registration's fixed key had.
+func (c Constants) MarshalJSON() ([]byte, error) {
+	head, err := json.Marshal(c.constantsHead)
+	if err != nil {
+		return nil, err
+	}
+	tail, err := json.Marshal(c.constantsTail)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]byte{}, head[:len(head)-1]...)
+	for _, b := range c.FaithfulBars {
+		k, _ := json.Marshal(barKey(b.Agent))
+		v, err := json.Marshal(b.Bar)
+		if err != nil {
+			return nil, err
+		}
+		out = append(append(append(append(out, ','), k...), ':'), v...)
+	}
+	out = append(out, ',')
+	return append(out, tail[1:]...), nil
 }
 
 // RunLine is one row of the exclusion list.
@@ -134,6 +190,9 @@ type Results struct {
 	Halts       []string   `json:"halt_conditions"`
 	Warnings    []string   `json:"warnings"`
 	NotComputed []string   `json:"not_computed"`
+
+	// protocol holds the per-agent targets the verdicts and the report read.
+	protocol *Protocol
 }
 
 const resultsSchema = 1
@@ -149,14 +208,26 @@ func Analyze(o Options) (*Results, error) {
 		return nil, fmt.Errorf("the agent version config is needed for the strict version check (I-57): %w", err)
 	}
 	c.Config = cfg
+	proto, err := LoadProtocol(ProtocolPath(o.Protocol, cfg.Path))
+	if err != nil {
+		return nil, err
+	}
+	var agents []string
+	for _, r := range c.Manifest.Runs {
+		agents = append(agents, r.Agent)
+	}
+	if err := proto.Require(agents); err != nil {
+		return nil, err
+	}
 	last := o.LastSeed
 	if last == 0 {
 		last = SeedLast
 	}
-	res := &Results{Schema: resultsSchema, Constants: constants(last)}
+	res := &Results{Schema: resultsSchema, Constants: constants(proto, last), protocol: proto}
 	res.Inputs = Inputs{
 		Campaign: filepath.Base(filepath.Clean(o.Campaign)), ManifestSHA256: c.ManifestSHA256, ManifestCommit: c.Manifest.Commit, ManifestStamp: c.Manifest.Generated,
 		Annotations: len(c.Annotations.Runs) > 0, AgentConfig: filepath.Base(cfg.Path), AgentConfigSHA256: fileSHA256(cfg.Path),
+		ProtocolFile: filepath.Base(proto.path), ProtocolSHA256: proto.sha256,
 	}
 	if o.Comparison != "" {
 		res.Inputs.Comparison = filepath.Base(filepath.Clean(o.Comparison))
@@ -182,9 +253,9 @@ func Analyze(o Options) (*Results, error) {
 
 	res.Slots = Slots(c)
 	res.Counts, res.Excluded = countRuns(runs)
-	res.H3 = BuildH3(runs, !o.NoSensitivity)
+	res.H3 = BuildH3(proto, runs, !o.NoSensitivity)
 	if !o.NoSweep {
-		res.H2 = BuildH2(runs, last)
+		res.H2 = BuildH2(proto, runs, last)
 	} else {
 		res.NotComputed = append(res.NotComputed, "H2: the attack sweep was skipped (--no-sweep)")
 	}

@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 3b16da1 on 2026-10-31.
+Checked against commit a65f356 on 2026-10-31.
 
 ## Objective
 
@@ -323,7 +323,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 
 ## Known limits
 
-- The analysis still names agents (I-77): `cmd/analyze`'s H3 thresholds (D2's FAITHFUL bar and H3c's pilot range, Claude Code only) and the tool-heavy task lists (`ToolHeavy`) are keyed by the adapter's name in `protocol.go`, since where pre-registered per-agent parameters live is undecided. The fixture version test (`TestEveryListedFixtureHasItsVersion`) checks each adapter's fixtures in its own way, and `scripts/make-capture-fixture.py`, `scripts/bench-overhead.sh` and `scripts/compare/` know each format by name.
+- Some code still names agents (I-77): the fixture version test (`TestEveryListedFixtureHasItsVersion`) checks each adapter's fixtures in its own way, and `scripts/make-capture-fixture.py`, `scripts/bench-overhead.sh` and `scripts/compare/` know each format by name.
 - The `sqlite-conversation` method's model check takes the tokens of the conversation's executor metadata shaped as a model id of the families `gemini-`, `claude-` and `gpt-`; a model of another family reads as none, so the run fails as a `MODEL MISMATCH`, not silently.
 - Only `jsonl-session` has the state check a declared trace needs; a profile that declares a `sqlite-conversation` trace is refused until that check exists.
 

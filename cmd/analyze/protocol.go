@@ -8,8 +8,11 @@ import (
 )
 
 // Every threshold, seed, selection and stratum of the registered experiment
-// lives in this file, and nowhere else in the command, so the freeze pins the
-// registration by pinning one file. Each constant names the section of
+// that applies to all agents lives in this file, and nowhere else in the
+// command; the per-agent targets (H3d's FAITHFUL bar, H3c's pilot range, the
+// tool-heavy tasks) and the registration's name live in the protocol file
+// (targets.go, E-8). The freeze pins the registration by pinning the two.
+// Each constant names the section of
 // docs/eval/experiment_protocol_v2.md (the protocol) or of
 // docs/eval/decisions-2026-10-26.md (the decisions, which override it) it
 // mirrors. A bar that moves after the first campaign run is a deviation
@@ -28,24 +31,10 @@ const (
 	OneSidedAlpha   = 0.05
 )
 
-// H3, protocol section 4 and decisions D2, D5, D8.
+// H3, protocol section 4 and decision D5.
 const (
 	// NearZeroFP is H3a's near-zero bar: a point estimate above it refutes.
 	NearZeroFP = 0.05
-	// ClaudeFaithfulBar is D2's practicality bar for Claude Code; agy has no
-	// bar and is declared in advance as expected near 0%.
-	ClaudeFaithfulBar = 0.50
-	// H3c's pilot-informed range of the Claude Code INCONCLUSIVE rate. It is
-	// reported against, never a refutation criterion: the only H3c refutation
-	// is an unattributed INCONCLUSIVE.
-	ClaudeInconclusiveLo = 0.30
-	ClaudeInconclusiveHi = 0.70
-)
-
-// Agent adapter names as they appear in the campaign manifest.
-const (
-	AgentClaudeCode = "claude-code"
-	AgentGemini     = "gemini"
 )
 
 // PrimaryAgreement is the baseline agreement of every primary number: a rule
@@ -88,23 +77,6 @@ const HeldOutPrefix = "heldout:"
 
 // IsHeldOut says whether a task is held out (D8).
 func IsHeldOut(task string) bool { return strings.HasPrefix(task, HeldOutPrefix) }
-
-// ToolHeavy lists, per agent, the tasks whose claims include harness-shared
-// reads (background-command output Reads, V-36), the named subgroup of
-// decision D5 and the mislocation stratum (decision D5). Protocol 6.3's coverage table names
-// `tools` and `long` for background Bash and the read of its output.
-var ToolHeavy = map[string]map[string]bool{
-	AgentClaudeCode: {"tools": true, "long": true, "long-cc": true},
-	AgentGemini:     {"long": true, "long-agy": true},
-}
-
-// IsToolHeavy says whether a task is in the tool-heavy subgroup. A held-out
-// task counts by its name after the prefix, so the user's heldout:long-cc and
-// heldout:long-agy, which meet the `long` requirements of protocol 6.3, are
-// tool-heavy.
-func IsToolHeavy(agentName, task string) bool {
-	return ToolHeavy[agentName][strings.TrimPrefix(task, HeldOutPrefix)]
-}
 
 // Exclusion rule names, protocol 10.1.
 const (
@@ -218,6 +190,3 @@ const (
 	ToolSignet = "signet"
 	ToolRT     = "reproducible-trajectories"
 )
-
-// Protocol identifies the registration the numbers belong to.
-const Protocol = "docs/eval/experiment_protocol_v2.md (Claude Code registration, draft 2026-10-27)"

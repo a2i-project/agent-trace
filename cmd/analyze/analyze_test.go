@@ -170,7 +170,7 @@ func TestEndToEndOnPairedFixtures(t *testing.T) {
 		}
 	}
 	// The gated gemini captures: every detectable mutation detected, classified, located.
-	t3 := PrimaryPooled(res.Runs, AgentGemini, false)
+	t3 := PrimaryPooled(repoProtocol(), res.Runs, AgentGemini, false)
 	if t3.Detectable == 0 || t3.Detected != t3.Detectable || t3.Classified != t3.Detectable || t3.Located != t3.Detectable {
 		t.Errorf("gemini primary tally: %+v", t3)
 	}
@@ -509,7 +509,7 @@ func TestComposedA4CoversEveryInnerPosition(t *testing.T) {
 	}
 
 	// Found but neither classified nor located: H2d holds, H2b and H2c judge it.
-	res := &Results{H2: &H2Results{Sessions: 1, A4: []A4Summary{{Agent: AgentClaudeCode, Sessions: 1, Positions: 3, ComposedPositions: 2, ComposedMisses: []string{"x: detected=true classified=false located=false"}}}}, H3: &H3Results{}, H4: &H4Results{}}
+	res := &Results{H2: &H2Results{Sessions: 1, A4: []A4Summary{{Agent: AgentClaudeCode, Sessions: 1, Positions: 3, ComposedPositions: 2, ComposedMisses: []string{"x: detected=true classified=false located=false"}}}}, H3: &H3Results{}, H4: &H4Results{}, protocol: repoProtocol()}
 	res.Verdicts, res.Halts = BuildVerdicts(res)
 	if v := verdictOf(res, "H2d", "every capture"); v.Result != Holds || !strings.Contains(v.Detail, "not classified or not located") {
 		t.Errorf("H2d: %+v", v)
@@ -557,7 +557,7 @@ func h2Run(id, variant string, detectable, detected, classified, located int) Ru
 
 func h2Verdict(t *testing.T, runs []RunOutput, misses []Miss, id string) Verdict {
 	t.Helper()
-	res := &Results{Runs: runs, H2: BuildH2(runs, SeedLast), H3: &H3Results{}, H4: &H4Results{}}
+	res := &Results{Runs: runs, H2: BuildH2(repoProtocol(), runs, SeedLast), H3: &H3Results{}, H4: &H4Results{}, protocol: repoProtocol()}
 	res.H2.Misses = misses
 	res.Verdicts, res.Halts = BuildVerdicts(res)
 	return verdictOf(res, id, "every capture")

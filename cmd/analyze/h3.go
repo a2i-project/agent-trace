@@ -18,7 +18,7 @@ const (
 )
 
 // InScope says whether a run belongs to a scope.
-func InScope(o RunOutput, scope string) bool {
+func InScope(p *Protocol, o RunOutput, scope string) bool {
 	switch {
 	case scope == ScopeAll:
 		return true
@@ -27,7 +27,7 @@ func InScope(o RunOutput, scope string) bool {
 	case scope == ScopeHeldOut:
 		return IsHeldOut(o.Task)
 	case scope == ScopeToolHeavy:
-		return IsToolHeavy(o.Agent, o.Task)
+		return p.IsToolHeavy(o.Agent, o.Task)
 	case strings.HasPrefix(scope, ScopeTaskPrefix):
 		return o.Task == strings.TrimPrefix(scope, ScopeTaskPrefix)
 	}
@@ -61,7 +61,7 @@ func agentVersions(runs []RunOutput) []AgentVersion {
 
 // scopesOf lists the non-empty scopes of an agent version's runs: all, the
 // task groups, each task and the tool-heavy subgroup.
-func scopesOf(runs []RunOutput, av AgentVersion, taskScopes bool) []string {
+func scopesOf(p *Protocol, runs []RunOutput, av AgentVersion, taskScopes bool) []string {
 	tasks := map[string]bool{}
 	var any, dev, held, heavy bool
 	for _, o := range runs {
@@ -75,7 +75,7 @@ func scopesOf(runs []RunOutput, av AgentVersion, taskScopes bool) []string {
 		} else {
 			dev = true
 		}
-		if IsToolHeavy(o.Agent, o.Task) {
+		if p.IsToolHeavy(o.Agent, o.Task) {
 			heavy = true
 		}
 	}
@@ -135,8 +135,8 @@ type Inconclusive struct {
 	// condition. UnmatchedReasons lists those reasons once each.
 	Unattributed     []string `json:"unattributed_runs,omitempty"`
 	UnmatchedReasons []string `json:"unmatched_reasons,omitempty"`
-	// InRange says whether the Claude Code pilot-informed range holds
-	// (reported, never a refutation).
+	// InRange says whether the agent's pilot-informed range holds
+	// (reported, never a refutation); nil when the agent has none.
 	InRange *bool `json:"in_pilot_range,omitempty"`
 }
 
@@ -180,7 +180,7 @@ func settingRun(o RunOutput, setting string) *H3Run {
 }
 
 // BuildH3Cell computes the H3 numbers of one cell from the runs in scope.
-func BuildH3Cell(runs []RunOutput, av AgentVersion, scope, setting string) H3Cell {
+func BuildH3Cell(p *Protocol, runs []RunOutput, av AgentVersion, scope, setting string) H3Cell {
 	cell := H3Cell{AgentVersion: av, Scope: scope, Setting: setting}
 	considered := 0
 	keptEval, keptSucc := 0, 0
@@ -192,7 +192,7 @@ func BuildH3Cell(runs []RunOutput, av AgentVersion, scope, setting string) H3Cel
 	unmatched := map[string]bool{}
 	var inc Inconclusive
 	for _, o := range runs {
-		if o.Agent != av.Agent || o.Version != av.Version || !InScope(o, scope) {
+		if o.Agent != av.Agent || o.Version != av.Version || !InScope(p, o, scope) {
 			continue
 		}
 		considered++
@@ -282,9 +282,8 @@ func BuildH3Cell(runs []RunOutput, av AgentVersion, scope, setting string) H3Cel
 	inc.Rate = NewRate(considered, doneEval, inconclusive, notDone)
 	inc.Multi, inc.Details, inc.Primary = multi, details, primary
 	inc.UnmatchedReasons = sortedKeys(unmatched)
-	if av.Agent == AgentClaudeCode && inc.Rate.Rate != nil {
-		in := *inc.Rate.Rate >= ClaudeInconclusiveLo && *inc.Rate.Rate <= ClaudeInconclusiveHi
-		inc.InRange = &in
+	if t, ok := p.Targets(av.Agent); ok && inc.Rate.Rate != nil {
+		inc.InRange = t.InRange(*inc.Rate.Rate)
 	}
 	cell.Inconclusive = inc
 	cell.Faithful = NewRate(considered, doneEval, faithful, notDone)
@@ -343,11 +342,11 @@ type H3Results struct {
 }
 
 // BuildH3 computes the H3 section from the processed runs.
-func BuildH3(runs []RunOutput, withSensitivity bool) *H3Results {
+func BuildH3(p *Protocol, runs []RunOutput, withSensitivity bool) *H3Results {
 	r := &H3Results{}
 	for _, av := range agentVersions(runs) {
-		for _, scope := range scopesOf(runs, av, true) {
-			r.Cells = append(r.Cells, BuildH3Cell(runs, av, scope, SettingPrimary))
+		for _, scope := range scopesOf(p, runs, av, true) {
+			r.Cells = append(r.Cells, BuildH3Cell(p, runs, av, scope, SettingPrimary))
 		}
 		if !withSensitivity {
 			continue
@@ -367,8 +366,8 @@ func BuildH3(runs []RunOutput, withSensitivity bool) *H3Results {
 			if !have {
 				continue
 			}
-			for _, scope := range scopesOf(runs, av, false) {
-				r.Sensitivity = append(r.Sensitivity, BuildH3Cell(runs, av, scope, setting))
+			for _, scope := range scopesOf(p, runs, av, false) {
+				r.Sensitivity = append(r.Sensitivity, BuildH3Cell(p, runs, av, scope, setting))
 			}
 			r.TradeOffs = append(r.TradeOffs, buildTradeOff(runs, av, setting))
 		}

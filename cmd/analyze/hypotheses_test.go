@@ -49,7 +49,7 @@ func TestH3CellAppliesTheExclusionRulesAndKeepsTheThreeCounts(t *testing.T) {
 	// A held-out task (D8): the runner names it heldout:NAME.
 	runs = append(runs, synthRun(11, av.Agent, av.Version, "heldout:long", inconclusiveRun(harnessFileReason)))
 
-	all := BuildH3Cell(runs, av, ScopeAll, SettingPrimary)
+	all := BuildH3Cell(repoProtocol(), runs, av, ScopeAll, SettingPrimary)
 	// Considered: all 12. Kept: 6 faithful + 1 finding + 1 long = 8.
 	if all.RunFP.Considered != 12 || all.RunFP.Evaluated != 8 || all.RunFP.Succeeded != 1 {
 		t.Errorf("H3a counts: %+v", all.RunFP)
@@ -82,16 +82,16 @@ func TestH3CellAppliesTheExclusionRulesAndKeepsTheThreeCounts(t *testing.T) {
 	}
 
 	// Scopes: held out is its own stratum (D8).
-	held := BuildH3Cell(runs, av, ScopeHeldOut, SettingPrimary)
-	dev := BuildH3Cell(runs, av, ScopeDevelopment, SettingPrimary)
+	held := BuildH3Cell(repoProtocol(), runs, av, ScopeHeldOut, SettingPrimary)
+	dev := BuildH3Cell(repoProtocol(), runs, av, ScopeDevelopment, SettingPrimary)
 	if held.RunFP.Considered != 1 || dev.RunFP.Considered != 11 {
 		t.Errorf("held-out %d, development %d", held.RunFP.Considered, dev.RunFP.Considered)
 	}
-	heavy := BuildH3Cell(runs, av, ScopeToolHeavy, SettingPrimary)
+	heavy := BuildH3Cell(repoProtocol(), runs, av, ScopeToolHeavy, SettingPrimary)
 	if heavy.RunFP.Considered != 1 {
 		t.Errorf("the tool-heavy subgroup holds heldout:long: %+v", heavy.RunFP)
 	}
-	task := BuildH3Cell(runs, av, ScopeTaskPrefix+"edits", SettingPrimary)
+	task := BuildH3Cell(repoProtocol(), runs, av, ScopeTaskPrefix+"edits", SettingPrimary)
 	if task.RunFP.Considered != 11 {
 		t.Errorf("task cell: %+v", task.RunFP)
 	}
@@ -101,7 +101,7 @@ func TestH3VersionsAreNeverPooled(t *testing.T) {
 	var runs []RunOutput
 	runs = append(runs, synthRun(1, AgentClaudeCode, "2.1.296", "edits", faithfulRun()))
 	runs = append(runs, synthRun(1, AgentClaudeCode, "2.1.306", "edits", findingRun(1)))
-	res := BuildH3(runs, false)
+	res := BuildH3(repoProtocol(), runs, false)
 	a := res.Cell(AgentVersion{AgentClaudeCode, "2.1.296"}, ScopeAll)
 	b := res.Cell(AgentVersion{AgentClaudeCode, "2.1.306"}, ScopeAll)
 	if a.RunFP.Considered != 1 || a.RunFP.Succeeded != 0 || b.RunFP.Considered != 1 || b.RunFP.Succeeded != 1 {
@@ -110,7 +110,7 @@ func TestH3VersionsAreNeverPooled(t *testing.T) {
 }
 
 func resultsWith(runs []RunOutput) *Results {
-	return &Results{H3: BuildH3(runs, false), H4: &H4Results{}, Runs: runs}
+	return &Results{H3: BuildH3(repoProtocol(), runs, false), H4: &H4Results{}, Runs: runs, protocol: repoProtocol()}
 }
 
 func verdictOf(res *Results, id, scopeContains string) Verdict {
@@ -215,7 +215,7 @@ func TestAnUnknownReasonBesideAKnownOneHalts(t *testing.T) {
 
 // res2 fills the parts of a minimal Results the report reads.
 func res2(res *Results) *Results {
-	res.Constants = constants(SeedLast)
+	res.Constants, res.protocol = constants(repoProtocol(), SeedLast), repoProtocol()
 	return res
 }
 
@@ -224,7 +224,7 @@ func TestSensitivityCellsReadTheirOwnSetting(t *testing.T) {
 	r := synthRun(1, av.Agent, av.Version, "edits", faithfulRun())
 	r.Sensitivity = map[string]*H3Run{"5/5": inconclusiveRun(harnessFileReason)}
 	r.Surfaces = map[string]Surface{"5/5": {Claims: 10, Undetectable: 1, RestingReads: 4, RestingWrites: 2}}
-	res := BuildH3([]RunOutput{r}, true)
+	res := BuildH3(repoProtocol(), []RunOutput{r}, true)
 	if len(res.Sensitivity) == 0 {
 		t.Fatal("no sensitivity cell")
 	}
@@ -334,7 +334,7 @@ func TestHeldOutIsTheRunnersHeldOutPrefix(t *testing.T) {
 	if IsHeldOut("long") || IsHeldOut("subagent") || IsHeldOut("edits") {
 		t.Error("a task the lanes wrote is development (D8)")
 	}
-	if !IsToolHeavy(AgentClaudeCode, "heldout:long") || !IsToolHeavy(AgentClaudeCode, "tools") || IsToolHeavy(AgentClaudeCode, "edits") {
+	if !repoProtocol().IsToolHeavy(AgentClaudeCode, "heldout:long") || !repoProtocol().IsToolHeavy(AgentClaudeCode, "tools") || repoProtocol().IsToolHeavy(AgentClaudeCode, "edits") {
 		t.Error("tool-heavy: tools, long and heldout:long")
 	}
 }

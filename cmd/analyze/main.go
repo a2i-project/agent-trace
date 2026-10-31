@@ -7,11 +7,13 @@
 // which holds the tables and one verdict line per registered hypothesis against
 // the registered thresholds.
 //
-//	analyze --campaign OUTPUT_DIR [--out DIR] [--comparison SWEEP_DIR]
-//	        [--overhead LABEL=results.json]... [--seeds N] [--jobs N]
+//	analyze --campaign OUTPUT_DIR [--out DIR] [--protocol FILE]
+//	        [--comparison SWEEP_DIR] [--overhead LABEL=results.json]...
+//	        [--seeds N] [--jobs N]
 //
-// The thresholds, seeds and strata are constants in protocol.go. The same
-// inputs give byte-identical outputs.
+// The thresholds, seeds and strata common to all agents are constants in
+// protocol.go; the per-agent targets are read from the protocol file
+// (targets.go). The same inputs give byte-identical outputs.
 //
 // Exit codes: 0 done, 1 done and a halt condition of protocol 10.2 occurred,
 // 3 usage or I/O error.
@@ -50,6 +52,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.StringVar(&o.Campaign, "campaign", "", "Campaign directory: the manifest layout of scripts/capture-campaign.sh (required)")
 	fs.StringVar(&o.Out, "out", "", "Where to write results.json and report.md (default: the campaign directory)")
 	fs.StringVar(&o.Config, "config", "", "Agent version config (default as verify: $"+"AGENT_TRACE_CONFIG, else config/agents.json)")
+	fs.StringVar(&o.Protocol, "protocol", "", "Protocol file of the per-agent targets (default: "+ProtocolFileName+" beside the agent version config)")
 	fs.StringVar(&o.Comparison, "comparison", "", "Output directory of scripts/compare/sweep.py, for H1")
 	fs.Var(&overhead, "overhead", "Overhead benchmark results.json as LABEL=PATH, for H4a. Repeatable (for example tmpfs and disk)")
 	fs.Var(&overheadAfter, "overhead-after", "The same benchmark repeated after the campaign, LABEL=PATH with the label of an --overhead run: the difference is reported as machine drift")
