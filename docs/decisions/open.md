@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 0dc0cf7 on 2026-10-31.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29), O-20 (N-31), O-21 (P-39) and O-23 (P-36) are closed; the others are undecided.
 
@@ -108,14 +108,6 @@ Question: Can a `git_commit` claim be checked against the file events of the com
 Options: (a) keep V-47; (b) pair a `git_commit` claim with the close of the ref file whose content hash equals the hash of the claimed id's ref line, in the fs lane, and require the commit's object write; (c) as (b) without the object check.
 Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, never aligned and never a finding, and the run is at best INCONCLUSIVE. The fs probe already records the ref and object writes inside the workspace with their closed-file hashes, so no new kernel probe is needed. A packed ref (`.git/packed-refs`), a commit made by a `git` outside the tracked tree, or a repository outside the fs scope would need their own rules.
 Blocked by: An agent that emits `git_commit` claims. No current adapter does.
-
-### O-36: Should the harness's own file writes during a login-token renewal be declared as harness bookkeeping?
-Status: Open.
-Date: 2026-10-31.
-Question: When Claude Code 2.1.306 renews its login token (V-54), its own process also writes `~/.claude/.credentials.json`, writes, opens and deletes `~/.claude/.oauth_refresh.lock.owner`, and writes a backup of `~/.claude.json` and deletes an older one. Should these be declared harness bookkeeping (V-50), given that the harness later sends the credential file's content to the token endpoint?
-Options: (a) keep them undeclared (current): an honest run that renews is INCONCLUSIVE on them; (b) declare the lock file and the backup of `~/.claude.json` only, leaving the credential file's write unexplained; (c) declare all of them, accepting that a write of the stored credentials by the agent's own process is explained.
-Current behaviour: (a). V-54 declares the renewal's network actions and none of its file events: on the third `websearch` capture the task run is INCONCLUSIVE instead of NOT FAITHFUL, on 9 level-0 file events under the harness's own directories that its baseline does not explain, which are these writes, opens and deletes by name and timing (V-54, Consequences; local only). V-54 left them out because the stored credentials are content the harness reads back and sends, which a declaration that explains a write would hide.
-Blocked by: A user ruling on whether a write the harness later sends may be explained, and more captures of a renewal (V-54 found two runs that renew, both in private captures).
 
 ## Proposals (not decided)
 
