@@ -542,10 +542,13 @@ func contentRead(c *models.Coverage) bool {
 // Prepare turns a capture and an adapter into verification input: observed
 // events are normalized, the adapter's noise filter and the measured baseline
 // are combined into one baseline, and the adapter's field declarations and
-// exit handling become options. measured may be nil. The measured baseline
+// exit handling become options. measured may be nil. The capture is rooted
+// at the harness process when the adapter declares a launcher (Rooted,
+// I-81). The measured baseline
 // was built from other runs, so it sees each event in its canonical form; the
 // events the verifier pairs keep their exact targets (I-41).
 func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, measured verification.Baseline, opts verification.Options) verification.Input {
+	g = Rooted(a, g)
 	if cc, ok := a.(ContentClaimer); ok && !contentRead(g.Coverage) {
 		kept := make(models.Trajectory, 0, len(claims))
 		for _, c := range claims {

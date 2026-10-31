@@ -155,7 +155,9 @@ type CaptureOptions struct {
 // activity a trajectory would otherwise have to claim. Descendants of a command
 // are not rules; what they did is recorded per command rule in Subtrees, so a
 // baselined command explains only what its controls did beneath it (V-38). A
-// run with no root pid cannot be attributed and is an error.
+// run with no root pid cannot be attributed and is an error. Each run is
+// rooted at the harness process when the adapter declares a launcher, as
+// Prepare roots the run it verifies (Rooted, I-81).
 //
 // A harness does some things only some of the time (probing for a package
 // manager, say), so the agreement threshold decides how often an action must
@@ -192,6 +194,7 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 		if r.RootPID == 0 {
 			return Baseline{}, fmt.Errorf("control run %d has no root pid, so its events cannot be attributed", i+1)
 		}
+		r = Rooted(a, r)
 		g := NormalizeGround(a, r.Events)
 		part := verification.BuildForest(g, r.RootPID).Partition(g)
 		seen := map[Rule]bool{}
