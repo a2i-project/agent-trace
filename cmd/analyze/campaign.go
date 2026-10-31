@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/agent-trace/agent-trace/pkg/config"
 )
 
 // The campaign directory is the layout scripts/capture-campaign.sh writes:
@@ -135,6 +137,9 @@ type Campaign struct {
 	// FailedAttempts maps a run's relative directory to the number of earlier
 	// attempts the runner moved aside (run-NN.failed-<time>).
 	FailedAttempts map[string]int
+	// Config holds the agent profiles, for a run whose trajectory the
+	// manifest does not name; nil means the default config.
+	Config *config.Config
 }
 
 // LoadCampaign reads manifest.json and, when present, annotations.json.

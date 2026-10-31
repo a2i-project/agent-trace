@@ -1,8 +1,21 @@
 {
-  "schema": 1,
+  "schema": 2,
+  "default_agent": "claude-code",
+  "unrecorded": {
+    "note": "What --baseline-from assumes of control runs recorded before the capture script wrote control-agent.txt, control-tools.txt and control-prompt.txt.",
+    "agent": "claude-code",
+    "control_tools": "Read Write Edit Bash",
+    "control_prompt": "Use the Bash tool to run exactly this no-op command: {command} . Then reply with the single word ok. Do not use any other tool."
+  },
   "adapters": {
     "claude-code": {
       "binary": "claude",
+      "version_command": {
+        "args": [
+          "--version"
+        ],
+        "field": "first"
+      },
       "versions": [
         {
           "version": "2.1.286",
@@ -32,10 +45,121 @@
             "pkg/agent/claudecode/testdata/paired-2.1.306-tools"
           ]
         }
-      ]
+      ],
+      "version_lock": {
+        "note": "A Claude Code that updates itself during a campaign mixes versions (D6). The runs ignore the user's settings (isolation), so the lock is required in the settings file and passed to every run.",
+        "env": {
+          "DISABLE_UPDATES": "1"
+        },
+        "require_setting": {
+          "dir_env": "CLAUDE_CONFIG_DIR",
+          "dir": "~/.claude",
+          "file": "settings.json",
+          "key": "env.DISABLE_UPDATES",
+          "value": "1",
+          "why": "Claude Code must not update itself during a campaign (D6)"
+        }
+      },
+      "model": {
+        "default": "claude-sonnet-5-5",
+        "note": "Passed as --model; Claude Code has no effort setting the runs pin."
+      },
+      "isolation": {
+        "note": "Hooks and plugins add processes and connections that are not part of the agent's own behaviour; restricting settings to the project keeps the capture about the harness itself. The override variable replaces the flags when an install needs user settings to authenticate.",
+        "flags": [
+          "--setting-sources",
+          "project",
+          "--disable-slash-commands"
+        ],
+        "override_env": "CLAUDE_FLAGS"
+      },
+      "tool_set": {
+        "method": "list"
+      },
+      "session": {
+        "method": "assigned"
+      },
+      "invocation": [
+        "-p",
+        "{isolation}",
+        "--model",
+        "{model}",
+        "--allowedTools",
+        "{tool_set}",
+        "--session-id",
+        "{session}",
+        "{prompt}"
+      ],
+      "trace": {
+        "method": "jsonl-session",
+        "dir": "~/.claude/projects",
+        "file": "{label}.session.jsonl",
+        "subagents": "{label}.session/subagents",
+        "declared": true,
+        "states_version": true
+      },
+      "content": [
+        {
+          "method": "tls-symbols",
+          "library": "{binary}",
+          "parser": "http1"
+        }
+      ],
+      "controls": {
+        "command_tool": "Bash",
+        "subagent_tool": "Agent",
+        "prompt": "Use the Bash tool to run exactly this no-op command: {command} . Then reply with the single word ok. Do not use any other tool.",
+        "prompt_subagent": "Do exactly these two things in order, and nothing else. 1) Use the Bash tool to run exactly this no-op command: {command} . 2) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then reply with the single word ok. Do not use any other tool."
+      },
+      "tasks": {
+        "basic": {
+          "prompt": "Do exactly these five things in order, using the named tool for each, and nothing else. 1) Use the Read tool on b.txt. 2) Use the Write tool to create a.txt containing the single word hello. 3) Use the Edit tool to replace hello with world in a.txt. 4) Use the Write tool to overwrite b.txt with the single word again. 5) Use the Bash tool to run exactly: echo hi. Then reply with the single word done.",
+          "tools": "Read Write Edit Bash"
+        },
+        "websearch": {
+          "note": "One server-side WebSearch and the fetch of a page it names, so a capture with --content shows the WebSearch call's requestId beside the model API's responses (V-45). Not a campaign task.",
+          "prompt": "Do exactly these three things in order, and nothing else. 1) Use the WebSearch tool once to search for: fanotify man page. 2) Use the WebFetch tool on https://man7.org/linux/man-pages/man7/fanotify.7.html with the prompt: what does fanotify do, in one sentence. 3) Use the Write tool to create notes.txt containing that one sentence. Then reply with the single word done.",
+          "tools": "WebSearch WebFetch Write Bash",
+          "campaign": false
+        },
+        "parallel": {
+          "prompt": "Do exactly these six things in order, and nothing else. 1) In a single message, make three Read tool calls at the same time, for b.txt, c.txt and d.txt. 2) Use the Agent tool to start one subagent with exactly this instruction: Use the Bash tool to run exactly: echo from-subagent . Then reply with the single word done. 3) Use the Grep tool to search the current directory for the word seed. 4) Use the Glob tool to list the files matching *.txt. 5) Use the WebFetch tool on https://example.com with the prompt: what is the title. 6) Use the Bash tool to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.",
+          "tools": "Read Write Edit Bash Agent Grep Glob WebFetch"
+        },
+        "edits": {
+          "prompt": "Do exactly these seven things in order, using the named tool for each, and nothing else. 1) Use the Write tool to create notes.txt with exactly this content (four lines): alpha beta alpha / gamma delta / say \"hi\" to C:\\\\temp / end. Write each item separated by slash as its own line, without the slashes. 2) Use the Edit tool to replace the first occurrence of alpha with ALPHA. 3) Use the Edit tool with replace_all set to true to replace every a with 4. 4) Use the Edit tool to replace the two lines g4mm4 delt4 and s4y \"hi\" to C:\\\\temp together with the single line merged. 5) Use the Edit tool to replace the line end with the two lines end and really the end. 6) Use the Edit tool to replace ALPHA with alpha. 7) Use the Bash tool to run exactly: cat notes.txt. Then reply with the single word done.",
+          "tools": "Read Write Edit Bash"
+        },
+        "project": {
+          "prompt": "You are working in a small Python package, wordstats, in the current directory. Do these steps in order and nothing else, and do not use the network. 1) Run the unit tests with: python3 -m unittest discover . Some of them fail. 2) Read the code, find the cause of the failures and fix it. 3) Add a function top_n(text, n) to wordstats/core.py that returns the n most frequent (word, count) pairs, most frequent first and ties in alphabetical order, export it from the package, and add unit tests for it in tests/test_core.py. 4) Add a --top N option to the command line tool in wordstats/cli.py that prints only the top N words, with a test in tests/test_cli.py. 5) Update README.md to describe top_n and the --top option. 6) Run the unit tests again and make sure they all pass. Then reply with the single word done.",
+          "tools": "Read Write Edit Bash Grep Glob"
+        },
+        "tools": {
+          "note": "MultiEdit is in the list so that the step that names it is permitted if this version offers the tool. Version 2.1.296 seems not to (its name appears only among the permission-rule names, beside the retired LS and NotebookRead), and the prompt falls back to Edit in that case. Its controls also run the no-op command in the background and start one subagent that only replies, since the task makes the harness work around a background command (its output file under the harness's temporary directory).",
+          "prompt": "Do exactly these nine things in order, using the named tool for each, and nothing else. 1) Use the Bash tool with run_in_background set to true to run exactly: sleep 3; echo background-done | tee bg.txt . Do not wait for it and do not check on it until step 8. 2) In a single message, make three Read tool calls at the same time, for notes.txt, numbers.txt and analysis.ipynb. 3) In notes.txt, replace colour: red with colour: blue and replace size: small with size: large. If a tool named MultiEdit is available to you, make both changes with one MultiEdit call; if it is not, use the Edit tool once for each change. 4) Use the NotebookEdit tool on analysis.ipynb, with edit_mode replace, on the cell whose id is total, to set its source to exactly: print(sum([3, 5, 7])) . 5) Use the Write tool to create report.txt containing the single word draft. 6) Use the Write tool to overwrite report.txt with the single word final. 7) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Use the Write tool to create subagent.txt containing the single word from-subagent. Then reply with the single word done. 8) Use the Read tool on the output file whose path the Bash result of step 1 reported. 9) Use the Bash tool to run exactly: cat bg.txt notes.txt report.txt subagent.txt . Then reply with the single word done.",
+          "tools": "Read Write Edit MultiEdit NotebookEdit Bash Agent",
+          "control_prompt": "Do exactly these three things in order, and nothing else. 1) Use the Bash tool to run exactly this no-op command: {command} . 2) Use the Bash tool with run_in_background set to true to run exactly the same command again: {command} . Do not wait for it, check on it or read its output. 3) Use the Agent tool to start one subagent, with run_in_background set to false if the tool offers that parameter, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then reply with the single word ok. Do not use any other tool."
+        },
+        "shapes": {
+          "note": "What the 2.1.296 binary says (read from its strings, not measured): the tool executor starts a call while an earlier one still runs only when every running call and the new one are concurrency-safe. Read, Grep, Glob, WebFetch and Agent always are; Write, Edit and NotebookEdit never are; Bash is when its command passes the read-only check (every simple command on an allowlist that includes sleep and cat, no output redirection). So the first block runs concurrently and its first member finishes last, and the second block, whose commands write, runs in claim order. The file tools write through one routine: a sibling temporary file renamed over the target, and, when the temporary cannot be created with EACCES while the target exists (or the rename fails with EXDEV, EPERM, EEXIST or EBUSY), an in-place rewrite of the target (open, truncate, write, fsync, close). A symlinked target is refused, not written in place. The capture script makes locked/ unwritable for every run.",
+          "prompt": "Do exactly these six things in order, and nothing else. If a step fails, do not retry it or work around it; go on to the next step. 1) In a single message, make these three tool calls at the same time, in this order: the Bash tool to run exactly: sleep 2; cat slow.txt , then the Bash tool to run exactly: cat fast.txt , then the Read tool on read.txt. 2) In a single message, make these two Bash tool calls at the same time, in this order: one to run exactly: sleep 2; echo one > one.txt , then one to run exactly: echo two > two.txt . 3) Use the Read tool on locked/data.txt. 4) Use the Write tool to overwrite locked/data.txt with the single word direct-one. 5) Use the Edit tool to replace direct-one with direct-two in locked/data.txt. 6) Use the Bash tool to run exactly: cat one.txt two.txt locked/data.txt . Then reply with the single word done.",
+          "tools": "Read Write Edit Bash"
+        },
+        "long": {
+          "note": "Twenty functions times five steps, plus the module checks, the subagent and the build: about 120 calls before any fix, so the model cannot finish early without skipping numbered work it is told is required.",
+          "prompt": "You are working in a small Python package, textkit, in the current directory. Do not use the network. PLAN.md lists 20 functions, numbered 1 to 20, each with a specification file under docs/spec/. The work is finished only when all 20 functions are implemented and tested, CHANGELOG.md has one line per function and make check passes: do not stop before that, and do not skip, merge or reorder steps. Make one tool call per message. Do these steps in order. 1) Use the Glob tool to list docs/spec/*.md, and the Grep tool to search textkit for NotImplementedError. 2) Use the Bash tool to run: make check . It fails, since nothing is implemented yet. 3) For each function in PLAN.md, in order from 1 to 20, one function at a time, do these five steps: a) use the Read tool on its specification file; b) use the Edit tool to replace the raise NotImplementedError line of that function in its module with an implementation that meets the specification; c) use the Edit tool to add at least two unit test methods for it to the test class in the module test file under tests/; d) use the Bash tool to run only that module tests, for example: python3 -m unittest tests.test_strings , and if they fail, fix the code and run them again; e) use the Edit tool to add one line naming the function at the end of CHANGELOG.md. 4) After functions 5, 10, 15 and 20, that is at the end of each module, use the Bash tool to run make check-MODULE for that module (make check-strings, make check-numbers, make check-lists, make check-codec), and use the Grep tool to search that module file for NotImplementedError. 5) Use the Agent tool to start one subagent with exactly this instruction: Use the Glob tool to list tests/test_*.py, use the Bash tool to run: python3 -m unittest discover -s tests -t . , then use the Write tool to create REPORT.md stating how many tests ran. Then reply with the single word done. 6) Use the Bash tool to run: make dist , then python3 dist/textkit.pyz slugify \"Hello, World\" , then python3 dist/textkit.pyz roman 1987 . 7) Use the Read tool on REPORT.md, then use the Edit tool to add a section named Status at the end of README.md saying how many tests pass. 8) Use the Bash tool to run make check a last time. Then reply with the single word done.",
+          "tools": "Read Write Edit Bash Grep Glob Agent"
+        }
+      }
     },
     "gemini": {
       "binary": "agy",
+      "version_command": {
+        "args": [
+          "--version"
+        ],
+        "field": "last"
+      },
       "versions": [
         {
           "version": "1.3.4",
@@ -46,7 +170,89 @@
             "pkg/agent/gemini/testdata/paired-agy-1.3.4-search"
           ]
         }
-      ]
+      ],
+      "version_lock": {
+        "note": "AGY_CLI_DISABLE_AUTO_UPDATE=true keeps agy's auto-updater from starting a process of its own during a run (the value 1 does not, measured on 1.3.4).",
+        "env": {
+          "AGY_CLI_DISABLE_AUTO_UPDATE": "true"
+        }
+      },
+      "pass_env": {
+        "names": [
+          "DBUS_SESSION_BUS_ADDRESS",
+          "XDG_RUNTIME_DIR"
+        ],
+        "why": "agy logs in through the session bus"
+      },
+      "model": {
+        "default": "gemini-3.8-flash-high",
+        "note": "Passed as --model; the effort is part of the id (-high, -medium, -low, as agy models lists them). The default is the id the existing captures recorded (the user's decision of 2026-10-26)."
+      },
+      "tool_set": {
+        "method": "agent-md",
+        "name": "agent-trace",
+        "dir": ".agents/agents",
+        "note": "A custom agent in the run's workspace lists the task's tools and inherits neither the user's MCP servers nor their customizations (I-24); it is also the settings isolation."
+      },
+      "session": {
+        "method": "stdout-json",
+        "key": "conversation_id"
+      },
+      "invocation": [
+        "--agent",
+        "{tool_set}",
+        "--model",
+        "{model}",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "json",
+        "--print-timeout",
+        "{print_timeout}",
+        "-p",
+        "{prompt}"
+      ],
+      "params": {
+        "print_timeout": {
+          "note": "agy -p gives up after its print timeout; the long task needs far more than the short ones.",
+          "*": "600s",
+          "long": "5400s",
+          "heldout:*": "5400s"
+        }
+      },
+      "trace": {
+        "method": "sqlite-conversation",
+        "dir": "~/.gemini/antigravity-cli/conversations",
+        "file": "{label}.conversation.db",
+        "subagents": "{label}.conversation/subagents",
+        "declared": false,
+        "states_version": false
+      },
+      "content": [
+        {
+          "method": "none",
+          "reason": "agy has none (Go's own TLS), so its connections stay identity-only"
+        }
+      ],
+      "controls": {
+        "command_tool": "run_command",
+        "subagent_tool": "invoke_subagent",
+        "prompt": "Use run_command to run exactly this no-op command: {command} . Then reply with the single word ok. Do not use any other tool.",
+        "prompt_subagent": "Do exactly these two things in order, and nothing else. 1) Use run_command to run exactly this no-op command: {command} . 2) Use invoke_subagent to start one subagent with exactly this instruction: Reply with the single word ok. Do not run any command and do not read or write any file. Then reply with the single word ok. Do not use any other tool."
+      },
+      "tasks": {
+        "basic": {
+          "prompt": "Do exactly these five things in order, one tool call at a time, using the named tool for each, and nothing else. 1) Use view_file on b.txt. 2) Use write_to_file to create a.txt containing the single word hello. 3) Use replace_file_content to replace hello with world in a.txt. 4) Use write_to_file to overwrite b.txt with the single word again. 5) Use run_command to run exactly: echo hi . Then reply with the single word done.",
+          "tools": "run_command view_file write_to_file replace_file_content"
+        },
+        "search": {
+          "prompt": "Do exactly these six things in order, one tool call at a time, using the named tool for each, and nothing else. 1) Use list_dir on the current directory. 2) Use grep_search to search the current directory for the word seed. 3) Use find_by_name to find the files matching *.txt in the current directory. 4) Use write_to_file to create m.txt containing exactly two lines, alpha and beta. 5) Use multi_replace_file_content on m.txt, in one call with two replacement chunks, to replace alpha with one and beta with two. 6) Use run_command to run exactly: cat m.txt . Then reply with the single word done.",
+          "tools": "run_command list_dir grep_search find_by_name write_to_file multi_replace_file_content"
+        },
+        "long": {
+          "prompt": "You are working in a small Python package, textkit, in the current directory. Do not use the network. PLAN.md lists 20 functions, numbered 1 to 20, each with a specification file under docs/spec/. The work is finished only when all 20 functions are implemented and tested, CHANGELOG.md has one line per function and make check passes: do not stop before that, and do not skip, merge or reorder steps. Do these steps in order. 1) Use find_by_name to find the files matching *.md under docs/spec, and use grep_search to search textkit for NotImplementedError. 2) Use run_command to run: make check . It fails, since nothing is implemented yet. 3) For each function in PLAN.md, in order from 1 to 20, one function at a time, do these five steps: a) use view_file on its specification file; b) use replace_file_content to replace the raise NotImplementedError line of that function in its module with an implementation that meets the specification; c) use replace_file_content to add at least two unit test methods for it to the test class in the module test file under tests/; d) use run_command to run only that module tests, for example: python3 -m unittest tests.test_strings , and if they fail, fix the code and run them again; e) use replace_file_content to add one line naming the function at the end of CHANGELOG.md. 4) After functions 5, 10, 15 and 20, that is at the end of each module, use run_command to run make check-MODULE for that module (make check-strings, make check-numbers, make check-lists, make check-codec), and use grep_search to search that module file for NotImplementedError. 5) Use invoke_subagent to start one subagent with exactly this instruction: Use find_by_name to find the files matching test_*.py under tests, use run_command to run: python3 -m unittest discover -s tests -t . , then use write_to_file to create REPORT.md stating how many tests ran. Then reply with the single word done. 6) Use run_command to run: make dist , then python3 dist/textkit.pyz slugify \"Hello, World\" , then python3 dist/textkit.pyz roman 1987 . 7) Use view_file on REPORT.md, then use replace_file_content to add a section named Status at the end of README.md saying how many tests pass. 8) Use run_command to run make check a last time. Then reply with the single word done.",
+          "tools": "run_command view_file write_to_file replace_file_content grep_search find_by_name invoke_subagent"
+        }
+      }
     }
   }
 }

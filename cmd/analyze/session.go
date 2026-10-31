@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
-	"github.com/agent-trace/agent-trace/pkg/agent/claudecode"
 	"github.com/agent-trace/agent-trace/pkg/attack"
 	"github.com/agent-trace/agent-trace/pkg/config"
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -108,15 +107,25 @@ func readGroundTruth(path string) (models.GroundTruthFile, error) {
 	return f, nil
 }
 
-// trajectoryName is the session file's name in a run directory.
-func trajectoryName(r RunRecord) string {
+// trajectoryName is the session file's name in a run directory: the one the
+// manifest names, else the one the agent's profile gives (trace.file), from
+// the campaign's config or, when it has none, the default one.
+func trajectoryName(c *Campaign, r RunRecord) (string, error) {
 	if p := r.Paths["trajectory"]; p != nil && *p != "" {
-		return filepath.Base(*p)
+		return filepath.Base(*p), nil
 	}
-	if r.Agent == AgentGemini {
-		return r.Task + ".conversation.db"
+	cfg := c.Config
+	if cfg == nil {
+		var err error
+		if cfg, err = config.LoadDefault(""); err != nil {
+			return "", fmt.Errorf("the manifest names no trajectory of the run, and no agent profile can: %w", err)
+		}
 	}
-	return r.Task + ".session.jsonl"
+	name, ok := cfg.TraceFile(r.Agent, r.Task)
+	if !ok {
+		return "", fmt.Errorf("the manifest names no trajectory of the run, and %s gives the %s profile no trace.file", cfg.Path, r.Agent)
+	}
+	return name, nil
 }
 
 func groundTruthName(r RunRecord) string {
@@ -139,7 +148,11 @@ func LoadSession(c *Campaign, r RunRecord) (*Session, error) {
 		return s, fmt.Errorf("no adapter %q is registered", r.Agent)
 	}
 	s.Adapter = a
-	claims, rep, trace, err := agent.ReadTrace(a, filepath.Join(s.Dir, trajectoryName(r)), false)
+	name, err := trajectoryName(c, r)
+	if err != nil {
+		return s, err
+	}
+	claims, rep, trace, err := agent.ReadTrace(a, filepath.Join(s.Dir, name), false)
 	if err != nil {
 		return s, fmt.Errorf("read the session: %w", err)
 	}
@@ -233,7 +246,7 @@ func applyStrict(v verification.Verdict, reason string) verification.Verdict {
 // excluded (I-28). The capture time is fixed so the baseline is a function of
 // its inputs.
 func BuildBaseline(a agent.Adapter, version string, controls []models.GroundTruthFile, agreement float64) (*agent.Baseline, error) {
-	b, err := agent.Capture(a, version, controls, time.Unix(0, 0).UTC(), agent.CaptureOptions{MinAgreement: agreement, Exclude: []string{claudecode.ControlCommand}})
+	b, err := agent.Capture(a, version, controls, time.Unix(0, 0).UTC(), agent.CaptureOptions{MinAgreement: agreement, Exclude: []string{agent.ControlCommand}})
 	if err != nil {
 		return nil, err
 	}

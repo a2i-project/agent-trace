@@ -155,7 +155,7 @@ def parent_state(subject):
                 p = os.path.join(root, f)
                 state[os.path.relpath(p, seed)] = open(p).read()
     else:
-        # scripts/capture-claude-code.sh seeds every task without a seed
+        # scripts/capture-agent.sh seeds every task without a seed
         # directory with these three files.
         for f in ("b.txt", "c.txt", "d.txt"):
             state[f] = "seed\n"

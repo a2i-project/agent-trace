@@ -2,7 +2,8 @@
 // adapters were verified against (I-57): per adapter in config/agents.json,
 // the configured versions, the version of the agent installed on PATH and
 // whether it is one of them; and the kernel version against the probes'
-// stated minimums. It runs each agent's --version and nothing else.
+// stated minimums. It runs each agent's version command (the profile's
+// version_command, by default --version) and nothing else.
 //
 // Exit codes: 0 every installed agent is at a configured version; 1 an
 // installed agent's version is not configured or could not be read; 2 with
@@ -53,7 +54,7 @@ var kernelNeeds = []kernelNeed{
 // env is what status reads from the machine, replaced in tests.
 type env struct {
 	lookPath func(string) (string, error)
-	version  func(path string) (string, error)
+	version  func(path string, args []string) (string, error)
 	kernel   func() (string, error)
 }
 
@@ -67,21 +68,22 @@ func machine() env {
 
 var versionRE = regexp.MustCompile(`[0-9]+(\.[0-9]+)+`)
 
-// agentVersion runs `<path> --version` and takes the first version-shaped
-// word of its output: `2.1.296 (Claude Code)` and `1.3.4` both give the
-// version.
-func agentVersion(path string) (string, error) {
+// agentVersion runs `<path> <args>` (the profile's version command) and
+// takes the first version-shaped word of its output: `2.1.296 (Claude Code)`
+// and `agy 1.3.4` both give the version.
+func agentVersion(path string, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	shown := path + " " + strings.Join(args, " ")
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("%s --version: %v %s", path, err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("%s: %v %s", shown, err, strings.TrimSpace(stderr.String()))
 	}
 	v := versionRE.FindString(stdout.String())
 	if v == "" {
-		return "", fmt.Errorf("%s --version printed no version: %q", path, strings.TrimSpace(stdout.String()))
+		return "", fmt.Errorf("%s printed no version: %q", shown, strings.TrimSpace(stdout.String()))
 	}
 	return v, nil
 }
@@ -147,7 +149,7 @@ func run(args []string, out, errOut io.Writer, e env) int {
 			}
 			continue
 		}
-		v, err := e.version(path)
+		v, err := e.version(path, a.VersionArgs())
 		switch {
 		case err != nil:
 			p("  installed: %s, version unknown: %v\n", path, err)

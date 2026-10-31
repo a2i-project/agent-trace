@@ -1,9 +1,15 @@
 // Package config reads config/agents.json, the record of the agent versions
-// each adapter has been verified against (I-57). An adapter's wrapper shapes,
-// id families, harness hosts and version gates were measured on particular
-// versions of the agent; a session of any other version may not fit them,
-// silently. The file names, per adapter, the versions whose checked-in
-// fixtures verify, so a tool can say when an agent is outside that set.
+// each adapter has been verified against (I-57) and, from schema 2, each
+// agent's profile (I-77). An adapter's wrapper shapes, id families, harness
+// hosts and version gates were measured on particular versions of the agent;
+// a session of any other version may not fit them, silently. The file names,
+// per adapter, the versions whose checked-in fixtures verify, so a tool can
+// say when an agent is outside that set.
+//
+// The profile says how the agent is found, version-checked, locked, pinned,
+// isolated, invoked and recorded. The capture scripts read all of it
+// (scripts/agent-profile.py); this package reads the parts the Go tools use
+// (the version command, the trace and the content methods) and checks those.
 package config
 
 import (
@@ -14,11 +20,17 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 )
 
-// Schema is the version of the file format this build reads.
-const Schema = 1
+// Schema is the newest version of the file format this build reads, and
+// MinSchema the oldest: a schema 1 file lists versions and binaries only,
+// which is all cmd/verify needs.
+const (
+	Schema    = 2
+	MinSchema = 1
+)
 
 // EnvVar names the environment variable that overrides where the file is.
 const EnvVar = "AGENT_TRACE_CONFIG"
@@ -43,12 +55,60 @@ type Version struct {
 	Fixtures []string `json:"fixtures"`
 }
 
-// Adapter is one adapter's entry.
+// Adapter is one adapter's entry: its versions and the parts of its profile
+// the Go tools read.
 type Adapter struct {
 	// Binary is the agent's command, looked up on PATH by cmd/status.
-	Binary   string    `json:"binary"`
-	Versions []Version `json:"versions"`
+	Binary string `json:"binary"`
+	// VersionCommand is how the agent states its version; nil means
+	// `<binary> --version`.
+	VersionCommand *VersionCommand `json:"version_command,omitempty"`
+	Versions       []Version       `json:"versions"`
+	// Trace is where the capture scripts copy the agent's transcript.
+	Trace *Trace `json:"trace,omitempty"`
+	// Content lists the content-capture methods of the agent, by name.
+	Content []ContentMethod `json:"content,omitempty"`
 }
+
+// VersionCommand is the arguments that make the agent print its version,
+// and which word of the output is the version ("first" or "last") for the
+// capture scripts; cmd/status takes the first version-shaped word instead.
+type VersionCommand struct {
+	Args  []string `json:"args"`
+	Field string   `json:"field"`
+}
+
+// Trace is the profile's trace record. File and Subagents name the copies a
+// capture makes, with {label} for the run's label.
+type Trace struct {
+	Method    string `json:"method"`
+	Dir       string `json:"dir"`
+	File      string `json:"file"`
+	Subagents string `json:"subagents"`
+	// Declared says the adapter declares its trace (I-74): the capture keeps
+	// a run whose trace is gone as a result and verify compares the trace's
+	// hash. It must agree with the adapter (agent.TraceDeclarer).
+	Declared bool `json:"declared"`
+	// StatesVersion says the format states the agent's version; otherwise
+	// the capture passes it to verify.
+	StatesVersion bool `json:"states_version"`
+}
+
+// ContentMethod is one content-capture method: a name the capture scripts
+// map to code, and its parameters. "none" stands alone and carries the
+// reason --content is refused.
+type ContentMethod struct {
+	Method  string `json:"method"`
+	Library string `json:"library,omitempty"`
+	Parser  string `json:"parser,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// ContentNone is the content method of an agent without content capture.
+const ContentNone = "none"
+
+// TraceLabel is the placeholder of the run's label in Trace.File.
+const TraceLabel = "{label}"
 
 // Config is the whole file.
 type Config struct {
@@ -70,8 +130,8 @@ func Load(path string) (*Config, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("parse agent config %s: %w", path, err)
 	}
-	if c.Schema != Schema {
-		return nil, fmt.Errorf("agent config %s: schema %d, this build reads %d", path, c.Schema, Schema)
+	if c.Schema < MinSchema || c.Schema > Schema {
+		return nil, fmt.Errorf("agent config %s: schema %d, this build reads %d to %d", path, c.Schema, MinSchema, Schema)
 	}
 	if len(c.Adapters) == 0 {
 		return nil, fmt.Errorf("agent config %s: no adapters", path)
@@ -79,6 +139,9 @@ func Load(path string) (*Config, error) {
 	for name, a := range c.Adapters {
 		if a.Binary == "" {
 			return nil, fmt.Errorf("agent config %s: adapter %q has no binary", path, name)
+		}
+		if err := a.checkProfile(); err != nil {
+			return nil, fmt.Errorf("agent config %s: adapter %q: %w", path, name, err)
 		}
 		seen := map[string]bool{}
 		for _, v := range a.Versions {
@@ -103,6 +166,49 @@ func Load(path string) (*Config, error) {
 	}
 	c.Path = abs
 	return &c, nil
+}
+
+// checkProfile checks the parts of the profile this package reads, where
+// they are given.
+func (a Adapter) checkProfile() error {
+	if vc := a.VersionCommand; vc != nil && vc.Field != "" && vc.Field != "first" && vc.Field != "last" {
+		return fmt.Errorf("version_command.field %q is neither first nor last", vc.Field)
+	}
+	if t := a.Trace; t != nil {
+		if t.Method == "" {
+			return errors.New("trace names no method")
+		}
+		if !strings.Contains(t.File, TraceLabel) {
+			return fmt.Errorf("trace.file %q does not hold %s", t.File, TraceLabel)
+		}
+	}
+	for _, m := range a.Content {
+		switch {
+		case m.Method == "":
+			return errors.New("a content method has no name")
+		case m.Method == ContentNone && len(a.Content) > 1:
+			return errors.New("content method none is combined with another")
+		}
+	}
+	return nil
+}
+
+// VersionArgs are the arguments that make the agent print its version.
+func (a Adapter) VersionArgs() []string {
+	if a.VersionCommand == nil || len(a.VersionCommand.Args) == 0 {
+		return []string{"--version"}
+	}
+	return a.VersionCommand.Args
+}
+
+// TraceFile is the name a capture gives the transcript of the run with this
+// label, by the adapter's profile; ok is false when the profile names none.
+func (c *Config) TraceFile(adapter, label string) (string, bool) {
+	a, ok := c.Adapters[adapter]
+	if !ok || a.Trace == nil {
+		return "", false
+	}
+	return strings.ReplaceAll(a.Trace.File, TraceLabel, label), true
 }
 
 // Locate finds the file. An explicit path wins, then $AGENT_TRACE_CONFIG;

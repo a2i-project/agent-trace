@@ -148,6 +148,7 @@ func Analyze(o Options) (*Results, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the agent version config is needed for the strict version check (I-57): %w", err)
 	}
+	c.Config = cfg
 	last := o.LastSeed
 	if last == 0 {
 		last = SeedLast

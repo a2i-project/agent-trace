@@ -466,7 +466,7 @@ func declaredSensitive(name string) ([]string, error) {
 // resolveAgentHome is the home a declared "~/" resolves against and the uid
 // that owns it, which every snapshotted file must belong to. watch runs as
 // root under sudo, so without a flag the home is that of the user sudo was
-// run by: the agent is run as that user (scripts/capture-claude-code.sh
+// run by: the agent is run as that user (scripts/capture-agent.sh
 // does so with setpriv), not as root.
 func resolveAgentHome(flagHome string) (string, int, error) {
 	home := flagHome

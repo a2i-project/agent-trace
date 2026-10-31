@@ -118,11 +118,9 @@ func (Adapter) Canonical(e models.GroundTruthEvent) models.GroundTruthEvent {
 	return e
 }
 
-// ControlCommand is the no-op command the control runs of
-// scripts/capture-claude-code.sh are told to run, so that the harness performs
-// its first-Bash-call setup. It is excluded from the baseline (I-28); the
-// fixture tests exclude it the same way the script does.
-const ControlCommand = ": agent-trace-control-marker"
+// ControlCommand is agent.ControlCommand, the no-op command of the capture
+// script's control runs, under the name the fixture tests use.
+const ControlCommand = agent.ControlCommand
 
 // harnessOwned matches the directories Claude Code keeps its own files in,
 // the directories themselves included (a rename inside one is reported on
@@ -327,7 +325,7 @@ func (Adapter) SensitiveKeys(file string) []string {
 }
 
 // capturedVersion is the Claude Code version whose kernel-level behaviour the
-// claim shapes were checked against (scripts/capture-claude-code.sh).
+// claim shapes were checked against (scripts/capture-agent.sh).
 const capturedVersion = "2.1.286"
 
 // Tool names.

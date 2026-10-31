@@ -131,6 +131,13 @@ type Subtree struct {
 // commands (V-38). A baseline written before V-38 does not.
 func (b Baseline) RecordsSubtrees() bool { return b.Subtrees != nil }
 
+// ControlCommand is the no-op command the control runs of
+// scripts/capture-agent.sh are told to run, whatever the agent, so that the
+// harness performs its first-command setup. It is excluded from the baseline
+// (I-28); the fixture tests and cmd/analyze exclude it the same way the
+// script does.
+const ControlCommand = ": agent-trace-control-marker"
+
 // CaptureOptions tunes Capture.
 type CaptureOptions struct {
 	// MinAgreement is the fraction of runs that must perform an action for it

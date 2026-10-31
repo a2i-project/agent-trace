@@ -98,10 +98,10 @@ func copyFile(t *testing.T, from, to string, mode os.FileMode) {
 	write(t, to, string(b), mode)
 }
 
-// runCapture lays out a repository root with the capture script, its
-// helpers, the agent config, the built verify and baseline and the fake
-// watch, and runs one capture of the basic task with one control.
-func runCapture(t *testing.T, mode string) (out, log string, code int) {
+// layout lays out a repository root with the capture script, its wrapper,
+// its helpers, the agent config, the built verify and baseline and the fake
+// watch, and the shims; it returns the root and the environment of a run.
+func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	t.Helper()
 	for _, tool := range []string{"bash", "python3", "realpath", "sha256sum"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -110,10 +110,11 @@ func runCapture(t *testing.T, mode string) (out, log string, code int) {
 	}
 	_, here, _, _ := runtime.Caller(0)
 	repo := filepath.Join(filepath.Dir(here), "..", "..")
-	tmp := t.TempDir()
-	root := filepath.Join(tmp, "root")
-	copyFile(t, filepath.Join(repo, "scripts", "capture-claude-code.sh"), filepath.Join(root, "scripts", "capture-claude-code.sh"), 0o755)
-	copyFile(t, filepath.Join(repo, "scripts", "measure-watch.py"), filepath.Join(root, "scripts", "measure-watch.py"), 0o755)
+	tmp = t.TempDir()
+	root = filepath.Join(tmp, "root")
+	for _, f := range []string{"capture-agent.sh", "capture-claude-code.sh", "agent-profile.py", "measure-watch.py"} {
+		copyFile(t, filepath.Join(repo, "scripts", f), filepath.Join(root, "scripts", f), 0o755)
+	}
 	copyFile(t, filepath.Join(repo, "config", "agents.json"), filepath.Join(root, "config", "agents.json"), 0o644)
 	write(t, filepath.Join(root, "watch"), fakeWatch, 0o755)
 	build := exec.Command("go", "build", "-o", root+string(os.PathSeparator), "./cmd/verify", "./cmd/baseline")
@@ -131,10 +132,18 @@ func runCapture(t *testing.T, mode string) (out, log string, code int) {
 	if err := os.MkdirAll(fake, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	out = filepath.Join(tmp, "out")
-	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-claude-code.sh"), "--no-build", "--task", "basic", out)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+home, "CONTROLS=1",
+	env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+home, "CONTROLS=1",
 		"FAKE_DIR="+fake, "FAKE_TASK="+mode, "AGENT_TRACE_CONFIG="+filepath.Join(root, "config", "agents.json"))
+	return root, tmp, env
+}
+
+// runCapture runs one capture of the basic task with one control.
+func runCapture(t *testing.T, mode string) (out, log string, code int) {
+	t.Helper()
+	root, tmp, env := layout(t, mode)
+	out = filepath.Join(tmp, "out")
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--task", "basic", out)
+	cmd.Env = env
 	b, err := cmd.CombinedOutput()
 	code = 0
 	if err != nil {
@@ -233,5 +242,58 @@ func TestCaptureOfAnIntactTranscriptIsUnchanged(t *testing.T) {
 	}
 	if v := readVerify(t, filepath.Join(out, "verify-baseline.json")); v.TraceTampering != nil || (v.Trace != nil && v.Trace.State != "") {
 		t.Errorf("verify-baseline.json: %+v", v)
+	}
+}
+
+// The old name runs the agent-neutral script: --check through either prints
+// the same controls, of the profile's default agent.
+func TestCaptureClaudeCodeIsAWrapper(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	var outs []string
+	for _, script := range []string{"capture-agent.sh", "capture-claude-code.sh"} {
+		cmd := exec.Command("bash", filepath.Join(root, "scripts", script), "--check", "--task", "parallel", filepath.Join(tmp, "out"))
+		cmd.Env = env
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s --check: %v\n%s", script, err, b)
+		}
+		outs = append(outs, string(b))
+	}
+	if outs[0] != outs[1] || !strings.Contains(outs[0], "agent=claude-code\n") {
+		t.Errorf("capture-agent.sh:\n%s\ncapture-claude-code.sh:\n%s", outs[0], outs[1])
+	}
+}
+
+// --content is refused by the profile, never by the agent's name: a content
+// method none refuses with the profile's reason, and a method this build
+// does not implement (proxy, say) refuses as such.
+func TestContentRefusalComesFromTheProfile(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	path := filepath.Join(root, "config", "agents.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ content, want string }{
+		{`[{"method": "none", "reason": "a reason from the profile"}]`, "a reason from the profile"},
+		{`[{"method": "proxy", "listen": "127.0.0.1:0"}]`, "the content method proxy (parser '') of claude-code's profile is not implemented in this build"},
+	} {
+		var c map[string]any
+		if err := json.Unmarshal(b, &c); err != nil {
+			t.Fatal(err)
+		}
+		var content any
+		if err := json.Unmarshal([]byte(tc.content), &content); err != nil {
+			t.Fatal(err)
+		}
+		c["adapters"].(map[string]any)["claude-code"].(map[string]any)["content"] = content
+		nb, _ := json.Marshal(c)
+		write(t, path, string(nb), 0o644)
+		cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--check", "--content", "--task", "basic", filepath.Join(tmp, "out"))
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), tc.want) {
+			t.Errorf("content %s: err %v, output:\n%s", tc.content, err, out)
+		}
 	}
 }

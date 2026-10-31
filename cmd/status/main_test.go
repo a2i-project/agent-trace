@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-const testConfig = `{"schema":1,"adapters":{
+const testConfig = `{"schema":2,"adapters":{
  "claude-code":{"binary":"claude","versions":[{"version":"2.1.286","verified":"2026-10-12","fixtures":["a"]},{"version":"2.1.296","verified":"2026-10-13","fixtures":["b","c"]}]},
- "gemini":{"binary":"agy","versions":[{"version":"1.3.4","verified":"2026-10-13","fixtures":["d"]}]}}}`
+ "gemini":{"binary":"agy","version_command":{"args":["version","--short"],"field":"last"},"versions":[{"version":"1.3.4","verified":"2026-10-13","fixtures":["d"]}]}}}`
 
 func fakeEnv(installed map[string]string, kernel string) env {
 	return env{
@@ -21,7 +21,12 @@ func fakeEnv(installed map[string]string, kernel string) env {
 			}
 			return "/bin/" + bin, nil
 		},
-		version: func(path string) (string, error) {
+		version: func(path string, args []string) (string, error) {
+			// The profile's version command, --version by default.
+			want := map[string]string{"claude": "--version", "agy": "version --short"}[filepath.Base(path)]
+			if got := strings.Join(args, " "); got != want {
+				return "", errors.New("version command " + got + ", want " + want)
+			}
 			v := installed[filepath.Base(path)]
 			if v == "" {
 				return "", errors.New("--version failed")

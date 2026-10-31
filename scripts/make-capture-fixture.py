@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reduce a capture made by capture-claude-code.sh to a checked-in fixture.
+"""Reduce a capture made by capture-agent.sh to a checked-in fixture.
 
 A capture of Gemini (--agent gemini) is recognised by its
 <TASK_LABEL>.conversation.db and reduced as described at the end.

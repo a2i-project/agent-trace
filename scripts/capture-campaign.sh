@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Capture campaign: many paired captures (scripts/capture-claude-code.sh) in
+# Capture campaign: many paired captures (scripts/capture-agent.sh) in
 # one sitting, under one sudo, each task run with its own fresh control runs, in
 # a recorded random order, with a manifest of every run and resumption after an
 # interruption.
@@ -11,7 +11,7 @@
 #
 #   scripts/capture-campaign.sh [--dry-run] [--controls N] [--seed N]
 #                               [--validate] [--validate-e2e]
-#                               [--heldout-dir DIR] [--agy-model ID]
+#                               [--heldout-dir DIR] [--BINARY-model ID]
 #                               [--allow-unconfigured-version] [--new-version-stratum]
 #                               [--stop-after-failures N] PLAN OUTPUT_DIR
 #   scripts/capture-campaign.sh --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR
@@ -25,16 +25,21 @@
 #   gemini long 2
 #   gemini heldout:subagent 15 split model=gemini-3.8-flash-medium
 #
-# AGENT is claude-code or gemini, TASK one of the capture script's tasks for
-# that agent or heldout:NAME, REPETITIONS how many task runs to record, and
+# AGENT is an agent config/agents.json profiles (claude-code or gemini), TASK
+# one of its profile's tasks that is not marked "campaign": false (Claude
+# Code's websearch is) or heldout:NAME, REPETITIONS how many task runs to
+# record, and
 #   content   turns on the net probe's content capture for that entry's runs and
-#             controls (capture-claude-code.sh --content; Claude Code only);
+#             controls (capture-agent.sh --content; refused for an agent whose
+#             profile's content method is none, agy);
 #   split     takes the controls 2 before and 3 after the task run instead of
 #             after it (D11), as the task `long` always does;
-#   model=ID  the model of the entry's runs (D7). Claude Code defaults to
-#             claude-sonnet-5-5 and agy to gemini-3.8-flash-high (the id the
-#             existing captures recorded); --agy-model ID changes agy's default
-#             for the plan, and model=ID one entry's. After every run the
+#   model=ID  the model of the entry's runs (D7). An agent defaults to its
+#             profile's model.default (Claude Code claude-sonnet-5-5, agy
+#             gemini-3.8-flash-high, the id the existing captures recorded);
+#             --BINARY-model ID changes the default of the agent whose
+#             profile's binary is BINARY for the plan (--agy-model ID, as
+#             before), and model=ID one entry's. After every run the
 #             model the transcript or conversation records must equal the
 #             pinned one, so an id the agent does not run under stops the
 #             campaign at the first run (MODEL MISMATCH).
@@ -43,7 +48,7 @@
 # which the script refuses inside it and never copies; the manifest holds only
 # the SHA-256 of the prompt and the seed.
 #
-# Every task run is one call of capture-claude-code.sh into its own directory,
+# Every task run is one call of capture-agent.sh into its own directory,
 #   OUTPUT_DIR/<agent>-<version>/<task>[-content]/run-NN
 # and records CONTROLS control runs (--controls, default 5) of its own, fresh
 # for every task run (D10): none is reused. A short task is recorded first and
@@ -51,10 +56,11 @@
 # 2 control runs before the task and the other 3 after (D11; for another
 # --controls N, N*2/5 before). The order is in the manifest.
 #
-# Before anything else, the script runs capture-claude-code.sh --check for
+# Before anything else, the script runs capture-agent.sh --check for
 # every entry (the agent is installed, its version is listed in
-# config/agents.json unless --allow-unconfigured-version, Claude Code's
-# ~/.claude/settings.json sets env.DISABLE_UPDATES to "1" (D6), the model is
+# config/agents.json unless --allow-unconfigured-version, the setting its
+# profile's version lock requires holds (Claude Code's ~/.claude/settings.json
+# sets env.DISABLE_UPDATES to "1", D6), the model is
 # named, the task and its seed exist, the locked-directory test of shapes
 # passes), and refuses a malformed plan, an OUTPUT_DIR or --heldout-dir inside
 # the repository, an OUTPUT_DIR that already holds runs of another version of an
@@ -91,9 +97,10 @@
 # directory's last invocation is reused, and a new directory gets a random one;
 # it is printed and recorded in the manifest and in each run.json.
 #
-# Version lock (D6, protocol 6.1). Every Claude Code run gets DISABLE_UPDATES=1
-# in its environment, and agy runs get AGY_CLI_DISABLE_AUTO_UPDATE=true. The
-# agent's version is read before and after every run; a change, or a check that
+# Version lock (D6, protocol 6.1). Every run gets its profile's
+# version_lock.env in its environment (Claude Code DISABLE_UPDATES=1, agy
+# AGY_CLI_DISABLE_AUTO_UPDATE=true). The agent's version is read, by its
+# profile's version command, before and after every run; a change, or a check that
 # now refuses, stops that agent's campaign (the other agent's slots go on), and
 # a run whose version changed is excluded as X3.
 #
@@ -180,7 +187,7 @@ validate=
 validate_e2e=
 validate_only=
 heldout_dir=
-agy_model=
+model_overrides=()
 new_stratum=
 while [ $# -gt 0 ]; do
   case $1 in
@@ -191,7 +198,7 @@ while [ $# -gt 0 ]; do
     --validate-e2e) validate=1; validate_e2e=1; shift ;;
     --validate-only) validate=1; validate_only=1; shift ;;
     --heldout-dir) heldout_dir=${2:?--heldout-dir needs a directory}; shift 2 ;;
-    --agy-model) agy_model=${2:?--agy-model needs a model id}; shift 2 ;;
+    --*-model) model_overrides+=("${1:2:${#1}-8}=${2:?$1 needs a model id}"); shift 2 ;;
     --allow-unconfigured-version) allow_unconfigured=1; shift ;;
     --new-version-stratum) new_stratum=1; shift ;;
     --stop-after-failures) stop_after=${2:?--stop-after-failures needs a number}; shift 2 ;;
@@ -201,7 +208,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 usage() {
-  echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--agy-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] PLAN OUTPUT_DIR" >&2
+  echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--BINARY-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] PLAN OUTPUT_DIR" >&2
   echo "       $0 --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR" >&2
   exit 2
 }
@@ -220,8 +227,21 @@ case $seed in *[!0-9]*) die "--seed must be a number" ;; esac
 [ -n "$validate_only" ] || [ -f "$plan" ] || die "no plan file $plan"
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-capture=$root/scripts/capture-claude-code.sh
+capture=$root/scripts/capture-agent.sh
 [ -x "$capture" ] || die "missing $capture"
+# The agents' profiles, which the helper below and the capture script read.
+export CAMPAIGN_AGENT_CONFIG=${AGENT_TRACE_CONFIG:-$root/config/agents.json}
+[ -f "$CAMPAIGN_AGENT_CONFIG" ] || die "no agent version config at $CAMPAIGN_AGENT_CONFIG"
+profile() { python3 "$root/scripts/agent-profile.py" get "$CAMPAIGN_AGENT_CONFIG" "$@"; }
+# --BINARY-model ID names an agent by its profile's binary.
+declare -A model_default_of=()
+for o in "${model_overrides[@]}"; do
+  b=${o%%=*} found=
+  for a in $(python3 "$root/scripts/agent-profile.py" agents "$CAMPAIGN_AGENT_CONFIG"); do
+    [ "$(profile "$a" binary)" != "$b" ] || { model_default_of[$a]=${o#*=}; found=1; }
+  done
+  [ -n "$found" ] || die "--$b-model: no agent's profile has the binary $b"
+done
 for tool in python3 setpriv sudo make sha256sum realpath; do
   command -v "$tool" >/dev/null || die "$tool is not on PATH"
 done
@@ -245,10 +265,10 @@ trap cleanup EXIT
 cat >"$helper" <<'PY'
 import collections, datetime, glob, hashlib, json, os, re, sys
 
-TASKS = {
-    "claude-code": {"basic", "parallel", "project", "edits", "tools", "shapes", "long"},
-    "gemini": {"basic", "search", "long"},
-}
+# The agents' profiles (config/agents.json): their campaign tasks, content
+# methods and trace files.
+PROFILES = json.load(open(os.environ["CAMPAIGN_AGENT_CONFIG"], encoding="utf-8"))["adapters"]
+TASKS = {a: {t for t, d in (p.get("tasks") or {}).items() if d.get("campaign", True)} for a, p in PROFILES.items()}
 HELDOUT = re.compile(r"heldout:[A-Za-z0-9][A-Za-z0-9._-]*")
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
 # Model turns a session costs, roughly its tool calls plus the final reply:
@@ -310,7 +330,8 @@ def plan(path):
             bad.append(f"{path}:{n}: {err}")
             continue
         if agent not in TASKS:
-            bad.append(f"{path}:{n}: unknown agent {agent!r} (claude-code or gemini)")
+            names = sorted(TASKS)
+            bad.append(f"{path}:{n}: unknown agent {agent!r} ({names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' or ' + names[-1]})")
             continue
         if task not in TASKS[agent] and not HELDOUT.fullmatch(task):
             bad.append(f"{path}:{n}: unknown task {task!r} for {agent} ({', '.join(sorted(TASKS[agent]))} or heldout:NAME)")
@@ -318,8 +339,9 @@ def plan(path):
         if not reps.isdigit() or int(reps) < 1:
             bad.append(f"{path}:{n}: repetitions must be a positive number, got {reps!r}")
             continue
-        if mode == "content" and agent == "gemini":
-            bad.append(f"{path}:{n}: content capture is for claude-code only (agy has no TLS library to hook)")
+        none = [m for m in PROFILES[agent].get("content") or [{"method": "none"}] if m.get("method") == "none"]
+        if mode == "content" and none:
+            bad.append(f"{path}:{n}: content capture is not available for {agent} (its profile's content method is none: {none[0].get('reason', 'no reason given')})")
             continue
         if (agent, task, mode) in seen:
             bad.append(f"{path}:{n}: {agent} {task} {mode} appears twice; give it one line")
@@ -685,7 +707,7 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
     def f(name):
         p = os.path.join(run_dir, name)
         return p if os.path.exists(p) else None
-    traj = f(f"{lab}.session.jsonl") or f(f"{lab}.conversation.db")
+    traj = f(((PROFILES.get(agent) or {}).get("trace") or {}).get("file", "").replace("{label}", lab) or "-")
     control_scale = []
     for gt in sorted(glob.glob(os.path.join(run_dir, "control-*.ground_truth.json")),
                      key=lambda p: int(re.search(r"control-(\d+)", p).group(1))):
@@ -1144,7 +1166,7 @@ if grep -q $'\theldout:' <<<"$entries" && [ -z "$heldout_dir" ]; then
   die "the plan has held-out tasks: give --heldout-dir DIR, which holds NAME/prompt.txt and NAME/tools.txt for each"
 fi
 
-# check AGENT TASK MODE MODEL BEFORE: capture-claude-code.sh --check, which
+# check AGENT TASK MODE MODEL BEFORE: capture-agent.sh --check, which
 # prints key=value lines; the caller reads them with field.
 check() {
   local args=(--agent "$1" --task "$2" --check --model "$4" --controls-before "$5")
@@ -1155,10 +1177,13 @@ check() {
 }
 field() { sed -n "s/^$1=//p" <<<"$2"; }
 # agent_version AGENT: the version the installed agent states now, read the way
-# the capture script reads it.
+# the capture script reads it (the profile's version command and field).
 agent_version() {
-  if [ "$1" = gemini ]; then agy --version 2>/dev/null | awk '{print $NF}'
-  else claude --version 2>/dev/null | awk '{print $1}'; fi
+  local args field
+  read -r -a args <<<"$(profile "$1" version_command args)"
+  [ "${#args[@]}" -gt 0 ] || args=(--version)
+  field=$(profile "$1" version_command field)
+  "$(profile "$1" binary)" "${args[@]}" 2>/dev/null | awk -v last="$([ "$field" = last ] && echo 1)" '{print (last ? $NF : $1)}'
 }
 run_dir() { # agent version task mode index
   local d="$out/$1-$2/${3//:/-}"
@@ -1176,11 +1201,11 @@ echo "output: $out"
 while IFS=$'\t' read -r agent task reps mode split model; do
   [ "$model" != - ] || model=
   if [ -z "$model" ]; then
-    if [ "$agent" = gemini ]; then model=${agy_model:-gemini-3.8-flash-high}; else model=claude-sonnet-5-5; fi
+    model=${model_default_of[$agent]:-$(profile "$agent" model default)}
   fi
   before=$(before_of "$split")
   if ! info=$(check "$agent" "$task" "$mode" "$model" "$before"); then
-    die "$agent $task ($mode): capture-claude-code.sh --check refused, see above"
+    die "$agent $task ($mode): capture-agent.sh --check refused, see above"
   fi
   version=$(field version "$info")
   if [ -n "${agent_version_of[$agent]:-}" ] && [ "${agent_version_of[$agent]}" != "$version" ]; then

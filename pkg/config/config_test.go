@@ -25,13 +25,19 @@ func TestLoadChecksTheFile(t *testing.T) {
 	}{
 		{"valid", valid, ""},
 		{"bad json", `{`, "parse agent config"},
-		{"other schema", `{"schema":2,"adapters":{}}`, "schema 2"},
+		{"other schema", `{"schema":3,"adapters":{}}`, "schema 3"},
 		{"no adapters", `{"schema":1,"adapters":{}}`, "no adapters"},
 		{"no binary", `{"schema":1,"adapters":{"a":{"versions":[]}}}`, "no binary"},
 		{"not a version", `{"schema":1,"adapters":{"a":{"binary":"a","versions":[{"version":"latest","verified":"2026-10-15","fixtures":["x"]}]}}}`, "not a version"},
 		{"duplicate", `{"schema":1,"adapters":{"a":{"binary":"a","versions":[{"version":"1.0","verified":"2026-10-15","fixtures":["x"]},{"version":"1.0","verified":"2026-10-15","fixtures":["x"]}]}}}`, "twice"},
 		{"bad date", `{"schema":1,"adapters":{"a":{"binary":"a","versions":[{"version":"1.0","verified":"15.10.2026","fixtures":["x"]}]}}}`, "not a date"},
 		{"no fixture", `{"schema":1,"adapters":{"a":{"binary":"a","versions":[{"version":"1.0","verified":"2026-10-15"}]}}}`, "names no fixture"},
+		{"profile", `{"schema":2,"adapters":{"a":{"binary":"a","version_command":{"args":["version"],"field":"last"},"trace":{"method":"m","file":"{label}.log"},"content":[{"method":"m1"},{"method":"m2"}],"versions":[{"version":"1.2.3","verified":"2026-10-15","fixtures":["x"]}]}}}`, ""},
+		{"bad version field", `{"schema":2,"adapters":{"a":{"binary":"a","version_command":{"field":"second"},"versions":[]}}}`, "neither first nor last"},
+		{"trace without method", `{"schema":2,"adapters":{"a":{"binary":"a","trace":{"file":"{label}.log"},"versions":[]}}}`, "no method"},
+		{"trace file without label", `{"schema":2,"adapters":{"a":{"binary":"a","trace":{"method":"m","file":"session.log"},"versions":[]}}}`, "does not hold {label}"},
+		{"content without name", `{"schema":2,"adapters":{"a":{"binary":"a","content":[{"library":"x"}],"versions":[]}}}`, "no name"},
+		{"none combined", `{"schema":2,"adapters":{"a":{"binary":"a","content":[{"method":"none"},{"method":"m"}],"versions":[]}}}`, "combined"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -107,5 +113,30 @@ func TestLocateSearchesUpToACheckout(t *testing.T) {
 	}
 	if want, _ := filepath.EvalSymlinks(root); c.Root() != root && c.Root() != want {
 		t.Errorf("Root() = %q, want %q", c.Root(), root)
+	}
+}
+
+// TestProfileLookups: the version command defaults to --version, and the
+// trace file of a run is the profile's with the run's label.
+func TestProfileLookups(t *testing.T) {
+	body := `{"schema":2,"adapters":{"a":{"binary":"a","trace":{"method":"m","file":"{label}.session.log"},"versions":[]},` +
+		`"b":{"binary":"b","version_command":{"args":["version","--short"]},"versions":[]}}}`
+	c, err := Load(write(t, t.TempDir(), body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Adapters["a"].VersionArgs(); strings.Join(got, " ") != "--version" {
+		t.Errorf("a: VersionArgs() = %q", got)
+	}
+	if got := c.Adapters["b"].VersionArgs(); strings.Join(got, " ") != "version --short" {
+		t.Errorf("b: VersionArgs() = %q", got)
+	}
+	if f, ok := c.TraceFile("a", "long"); !ok || f != "long.session.log" {
+		t.Errorf("TraceFile(a) = %q, %v", f, ok)
+	}
+	for _, name := range []string{"b", "missing"} {
+		if f, ok := c.TraceFile(name, "long"); ok {
+			t.Errorf("TraceFile(%s) = %q, want none", name, f)
+		}
 	}
 }

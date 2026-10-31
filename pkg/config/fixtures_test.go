@@ -40,6 +40,36 @@ func TestEveryAdapterInTheConfigIsRegistered(t *testing.T) {
 	}
 }
 
+// TestEveryProfileAgreesWithItsAdapter: the repository's config is schema 2,
+// every adapter has a profile with a trace file and a content method, and a
+// profile declares its trace exactly when the adapter does (I-74): the
+// capture script keeps a run whose declared trace is gone and asks verify to
+// compare the trace's hash on the profile's word alone.
+func TestEveryProfileAgreesWithItsAdapter(t *testing.T) {
+	c := repoConfig(t)
+	if c.Schema != config.Schema {
+		t.Fatalf("%s is schema %d, want %d", config.RelPath, c.Schema, config.Schema)
+	}
+	for _, name := range c.Names() {
+		a, ok := agent.Lookup(name)
+		if !ok {
+			continue
+		}
+		p := c.Adapters[name]
+		if p.Trace == nil || p.Trace.File == "" {
+			t.Errorf("%s: the profile names no trace file", name)
+			continue
+		}
+		if len(p.Content) == 0 {
+			t.Errorf("%s: the profile names no content method (none, if it has none)", name)
+		}
+		_, declares := a.(agent.TraceDeclarer)
+		if p.Trace.Declared != declares {
+			t.Errorf("%s: the profile's trace.declared is %v, the adapter declares its trace: %v", name, p.Trace.Declared, declares)
+		}
+	}
+}
+
 // TestEveryListedFixtureHasItsVersion: each fixture a version names exists
 // and was recorded by that version. A Claude Code session states its version
 // on every record, and the adapter reports it; every transcript in the
