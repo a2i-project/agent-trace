@@ -44,6 +44,18 @@ def ev(ms, typ, target, pid=root, **kw):
     e.update(kw)
     return e
 events = [ev(1, "file_open", obs), ev(2, "file_write", obs), ev(3, "file_close", obs)]
+with open(os.path.join(os.environ["FAKE_DIR"], "claude-md.seen"), "a") as f:
+    f.write("present\n" if os.path.lexists(os.path.join(os.environ["HOME"], ".claude", "CLAUDE.md")) else "absent\n")
+if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") == "term":
+    # Stop the capture script as a user's kill would, while this run lasts:
+    # the outermost ancestor running it, not the subshell around the run.
+    pid, script = os.getppid(), 0
+    while pid > 1:
+        argv = open("/proc/%d/cmdline" % pid, "rb").read().split(b"\0")
+        if len(argv) > 1 and argv[1].endswith(b"/capture-agent.sh"):
+            script = pid
+        pid = int(open("/proc/%d/stat" % pid).read().rsplit(")", 1)[1].split()[1])
+    os.kill(script, 15)
 if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") == "delete":
     os.remove(path)
     cmd = "/bin/bash -c rm " + obs
@@ -51,6 +63,49 @@ if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") ==
                ev(12, "file_delete", obs, 2001), ev(13, "process_exit", cmd, 2001, ppid=root, exit_code=0)]
 with open(os.path.join(os.environ["FAKE_DIR"], "events.json"), "w") as f:
     json.dump(events, f)
+`
+
+// fakeCodex stands in for an agent with a profile and no adapter (I-79): it
+// prints its thread id as codex exec --json does, writes a rollout under
+// ~/.codex/sessions whose turn context names the model and effort it was
+// given and, when the prompt names spawn_agent, a subagent rollout that
+// starts with its parent's history (a turn context of another model and a
+// call, before the ordinal its metadata names), and two databases. It
+// records its arguments and whether its stdin is /dev/null.
+const fakeCodex = `#!/usr/bin/env python3
+import json, os, sqlite3, stat, sys, uuid
+args = sys.argv[1:]
+if args[:1] == ["--version"]:
+    print("codex-cli 0.166.0"); sys.exit()
+fake = os.environ["FAKE_DIR"]
+st = os.fstat(0)
+null = stat.S_ISCHR(st.st_mode) and os.path.samestat(st, os.stat("/dev/null"))
+with open(os.path.join(fake, "codex.calls"), "a") as f:
+    f.write(json.dumps({"args": args, "stdin_null": null}) + "\n")
+model = args[args.index("-m") + 1]
+effort = [a.split("=", 1)[1] for a in args if a.startswith("model_reasoning_effort=")][0]
+prompt = args[-1]
+home = os.path.join(os.environ["HOME"], ".codex")
+d = os.path.join(home, "sessions", "2026", "10", "31")
+os.makedirs(d, exist_ok=True)
+tid = str(uuid.uuid4())
+def rec(o, typ, payload):
+    return json.dumps({"timestamp": "2026-10-31T10:00:00.000Z", "ordinal": o, "type": typ, "payload": payload}) + "\n"
+with open(os.path.join(d, "rollout-2026-10-31T10-00-00-%s.jsonl" % tid), "w") as f:
+    f.write(rec(0, "session_meta", {"id": tid, "session_id": tid, "cli_version": "0.166.0"}))
+    f.write(rec(1, "turn_context", {"model": model, "effort": effort}))
+if "spawn_agent" in prompt:
+    sid = str(uuid.uuid4())
+    with open(os.path.join(d, "rollout-2026-10-31T10-00-01-%s.jsonl" % sid), "w") as f:
+        f.write(rec(0, "session_meta", {"id": sid, "session_id": tid, "subagent_history_start_ordinal": 3}))
+        f.write(rec(1, "turn_context", {"model": "parent-history", "effort": effort}))
+        f.write(rec(2, "response_item", {"type": "function_call", "name": "spawn_agent"}))
+        f.write(rec(3, "turn_context", {"model": model, "effort": effort}))
+for db in ("thread_history_1.sqlite", "state_5.sqlite"):
+    c = sqlite3.connect(os.path.join(home, db))
+    c.execute("create table if not exists t(x)"); c.execute("insert into t values (?)", (tid,)); c.commit(); c.close()
+print(json.dumps({"type": "thread.started", "thread_id": tid}, separators=(",", ":")))
+json.dump([], open(os.path.join(fake, "events.json"), "w"))
 `
 
 const fakeWatch = `#!/usr/bin/env bash
@@ -112,7 +167,7 @@ func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	repo := filepath.Join(filepath.Dir(here), "..", "..")
 	tmp = t.TempDir()
 	root = filepath.Join(tmp, "root")
-	for _, f := range []string{"capture-agent.sh", "capture-claude-code.sh", "agent-profile.py", "measure-watch.py"} {
+	for _, f := range []string{"capture-agent.sh", "capture-claude-code.sh", "agent-profile.py", "measure-watch.py", "extract-model-catalog.py"} {
 		copyFile(t, filepath.Join(repo, "scripts", f), filepath.Join(root, "scripts", f), 0o755)
 	}
 	copyFile(t, filepath.Join(repo, "config", "agents.json"), filepath.Join(root, "config", "agents.json"), 0o644)
@@ -124,6 +179,7 @@ func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	}
 	bin := filepath.Join(tmp, "bin")
 	write(t, filepath.Join(bin, "claude"), fakeClaude, 0o755)
+	write(t, filepath.Join(bin, "codex"), fakeCodex, 0o755)
 	write(t, filepath.Join(bin, "sudo"), fakeSudo, 0o755)
 	write(t, filepath.Join(bin, "setpriv"), fakeSetpriv, 0o755)
 	home := filepath.Join(tmp, "home")
@@ -295,5 +351,193 @@ func TestContentRefusalComesFromTheProfile(t *testing.T) {
 		if err == nil || !strings.Contains(string(out), tc.want) {
 			t.Errorf("content %s: err %v, output:\n%s", tc.content, err, out)
 		}
+	}
+}
+
+// An agent with a profile and no adapter in the build (Codex, I-79) is
+// captured with the profile's methods and no baseline or verdict: the
+// session id from the agent's output, the rollout and the subagent rollout
+// the run created (without its parent's history), the databases'
+// snapshots, the model and effort checked from the rollout, the model
+// catalog's absolute path and the effort inside the invocation's words, and
+// stdin from /dev/null.
+func TestCaptureOfAnAgentWithoutAnAdapter(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	out := filepath.Join(tmp, "out")
+	catalog := privateCatalog(t, root, tmp)
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "codex",
+		"--task", "parallel", "--allow-unconfigured-version", out)
+	cmd.Env = env
+	b, err := cmd.CombinedOutput()
+	log := string(b)
+	if err != nil {
+		t.Fatalf("capture: %v\n%s", err, log)
+	}
+	for _, want := range []string{"NOTE: this build has no codex adapter", "1 subagent rollout(s) copied", "2 database snapshot(s) taken", "done (no adapter, no verdict)"} {
+		if !strings.Contains(log, want) {
+			t.Errorf("log lacks %q:\n%s", want, log)
+		}
+	}
+	for _, f := range []string{"parallel.rollout.jsonl", "parallel.trace.txt", "parallel.ground_truth.json", "control-1.rollout.jsonl",
+		"parallel.rollout/databases/state_5.sqlite", "parallel.rollout/databases/thread_history_1.sqlite", "report.txt"} {
+		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+	for _, f := range []string{"baseline.json", "verify.json"} {
+		if _, err := os.Stat(filepath.Join(out, f)); err == nil {
+			t.Errorf("%s exists without an adapter", f)
+		}
+	}
+	if subs, _ := filepath.Glob(filepath.Join(out, "parallel.rollout", "subagents", "rollout-*.jsonl")); len(subs) != 1 {
+		t.Errorf("subagent rollouts copied: %v", subs)
+	}
+	order, _ := os.ReadFile(filepath.Join(out, "order.tsv"))
+	for _, want := range []string{"\tparallel\ttask\t", "model_check=0;observed=gpt-6.1-terra;effort=medium;subagents=gpt-6.1-terra\t", "subagents=1;subagent_tool_calls=0"} {
+		if !strings.Contains(string(order), want) {
+			t.Errorf("order.tsv lacks %q:\n%s", want, order)
+		}
+	}
+	meta, _ := os.ReadFile(filepath.Join(out, "task-meta.txt"))
+	for _, want := range []string{"effort=medium\n", "model_catalog=~/.config/agent-trace/codex-catalog-0.166.0.json sha256=", "instruction_file=~/.codex/AGENTS.md absent\n"} {
+		if !strings.Contains(string(meta), want) {
+			t.Errorf("task-meta.txt lacks %q:\n%s", want, meta)
+		}
+	}
+	calls, err := os.ReadFile(filepath.Join(tmp, "fake", "codex.calls"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
+	if len(lines) != 2 { // the task and CONTROLS=1
+		t.Fatalf("codex ran %d times:\n%s", len(lines), calls)
+	}
+	for _, l := range lines {
+		var c struct {
+			Args      []string `json:"args"`
+			StdinNull bool     `json:"stdin_null"`
+		}
+		if err := json.Unmarshal([]byte(l), &c); err != nil {
+			t.Fatal(err)
+		}
+		joined := strings.Join(c.Args, " ")
+		if !c.StdinNull || !strings.Contains(joined, "model_catalog_json="+catalog+" ") ||
+			!strings.Contains(joined, " -c model_reasoning_effort=medium --json ") || !strings.HasPrefix(joined, "exec --skip-git-repo-check -s danger-full-access --ignore-user-config ") {
+			t.Errorf("codex call: %s", l)
+		}
+	}
+}
+
+// privateCatalog writes a model cache with one fake gpt-6.1-terra entry into
+// the shim home, extracts the profile's catalog from it with the
+// repository's script, and pins the extracted file's hash in the test's
+// profile, as the real profile pins the private catalog's (I-80). It
+// returns the catalog's path.
+func privateCatalog(t *testing.T, root, tmp string) string {
+	t.Helper()
+	home := filepath.Join(tmp, "home")
+	write(t, filepath.Join(home, ".codex", "models_cache.json"),
+		`{"client_version": "0.166.0", "models": [{"slug": "other"}, {"slug": "gpt-6.1-terra", "shell_type": "unified_exec"}]}`, 0o644)
+	catalog := filepath.Join(home, ".config", "agent-trace", "codex-catalog-0.166.0.json")
+	b, err := exec.Command("python3", filepath.Join(root, "scripts", "extract-model-catalog.py"),
+		filepath.Join(home, ".codex", "models_cache.json"), "gpt-6.1-terra", catalog).CombinedOutput()
+	if err != nil {
+		t.Fatalf("extract: %v\n%s", err, b)
+	}
+	sum := strings.Fields(string(b))[0]
+	setCatalogHash(t, root, sum)
+	return catalog
+}
+
+func setCatalogHash(t *testing.T, root, sum string) {
+	t.Helper()
+	path := filepath.Join(root, "config", "agents.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c map[string]any
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	c["adapters"].(map[string]any)["codex"].(map[string]any)["model"].(map[string]any)["catalog"].(map[string]any)["sha256"] = sum
+	nb, _ := json.Marshal(c)
+	write(t, path, string(nb), 0o644)
+}
+
+// The private catalog is refused when it is missing or its hash is not the
+// profile's, and the refusal gives the extraction command.
+func TestCaptureRefusesAMissingOrChangedCatalog(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	check := func() string {
+		cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--check", "--agent", "codex",
+			"--task", "basic", "--allow-unconfigured-version", filepath.Join(tmp, "out"))
+		cmd.Env = env
+		b, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Errorf("--check passed:\n%s", b)
+		}
+		return string(b)
+	}
+	if out := check(); !strings.Contains(out, "is missing; write it from the agent's cache with:") || !strings.Contains(out, "extract-model-catalog.py") {
+		t.Errorf("missing catalog:\n%s", out)
+	}
+	privateCatalog(t, root, tmp)
+	setCatalogHash(t, root, strings.Repeat("0", 64))
+	if out := check(); !strings.Contains(out, "profile pins "+strings.Repeat("0", 64)) || !strings.Contains(out, "extract-model-catalog.py") {
+		t.Errorf("changed catalog:\n%s", out)
+	}
+}
+
+// The profile's instruction files are absent while each run lasts and back,
+// unchanged, after it (I-79): after a whole capture, and after a capture
+// stopped by SIGTERM during its task run.
+func TestInstructionFilesAreAsideOnlyDuringRuns(t *testing.T) {
+	for _, mode := range []string{"", "term"} {
+		root, tmp, env := layout(t, mode)
+		md := filepath.Join(tmp, "home", ".claude", "CLAUDE.md")
+		write(t, md, "my instructions\n", 0o600)
+		cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--task", "basic", filepath.Join(tmp, "out"))
+		cmd.Env = env
+		b, err := cmd.CombinedOutput()
+		if (err != nil) != (mode == "term") {
+			t.Errorf("mode %q: %v\n%s", mode, err, b)
+		}
+		if got, err := os.ReadFile(md); err != nil || string(got) != "my instructions\n" {
+			t.Errorf("mode %q: CLAUDE.md after the capture: %q, %v", mode, got, err)
+		}
+		if st, err := os.Stat(md); err == nil && st.Mode().Perm() != 0o600 {
+			t.Errorf("mode %q: CLAUDE.md mode %v", mode, st.Mode())
+		}
+		if _, err := os.Lstat(md + ".agent-trace-aside"); err == nil {
+			t.Errorf("mode %q: the aside file is left", mode)
+		}
+		seen, _ := os.ReadFile(filepath.Join(tmp, "fake", "claude-md.seen"))
+		if strings.Contains(string(seen), "present") || !strings.Contains(string(seen), "absent") {
+			t.Errorf("mode %q: the runs saw CLAUDE.md: %q", mode, seen)
+		}
+		if mode == "" {
+			meta, _ := os.ReadFile(filepath.Join(tmp, "out", "task-meta.txt"))
+			if !strings.Contains(string(meta), "instruction_file=~/.claude/CLAUDE.md sha256=") {
+				t.Errorf("task-meta.txt:\n%s", meta)
+			}
+		}
+	}
+}
+
+// A file an interrupted capture left aside is never overwritten: the next
+// capture refuses before anything else and says how to put it back.
+func TestAnAsideFileFromAnInterruptedCaptureIsRefused(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	aside := filepath.Join(tmp, "home", ".claude", "CLAUDE.md.agent-trace-aside")
+	write(t, aside, "kept\n", 0o644)
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--check", "--task", "basic", filepath.Join(tmp, "out"))
+	cmd.Env = env
+	b, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(b), "mv -n '"+aside+"'") {
+		t.Errorf("err %v:\n%s", err, b)
+	}
+	if got, _ := os.ReadFile(aside); string(got) != "kept\n" {
+		t.Errorf("the aside file changed: %q", got)
 	}
 }

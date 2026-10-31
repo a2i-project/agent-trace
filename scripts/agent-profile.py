@@ -21,19 +21,24 @@ scripts cannot use.
 """
 import fnmatch
 import json
+import re
 import shlex
 import sys
 
 SCHEMA = 2
 # The methods the capture scripts implement.
-TOOL_SETS = {"list", "agent-md"}
+TOOL_SETS = {"list", "agent-md", "none"}
 SESSIONS = {"assigned", "stdout-json"}
-TRACES = {"jsonl-session", "sqlite-conversation"}
+TRACES = {"jsonl-session", "sqlite-conversation", "jsonl-rollout"}
 # A declared trace is checked after the run (missing, empty, damaged or
 # read); only these trace methods have that check.
-STATE_CHECKED = {"jsonl-session"}
-# Placeholders of an invocation besides the profile's params.
+STATE_CHECKED = {"jsonl-session", "jsonl-rollout"}
+# Placeholders of an invocation besides the profile's params: each stands for
+# a whole word.
 PLACEHOLDERS = {"{isolation}", "{model}", "{tool_set}", "{session}", "{prompt}"}
+# Placeholders filled inside a word, from the profile's model record.
+INLINE = {"{effort}": "effort", "{catalog}": "catalog"}
+STDIN = {"inherit", "null"}
 
 
 def fail(msg, code=1):
@@ -117,10 +122,18 @@ def shell(path, agent, task):
     put("p_pass_env", pe.get("names") or [])
     put("p_pass_env_why", pe.get("why", ""))
 
-    put("p_model_default", (p.get("model") or {}).get("default") or fail(f"{where}: no model.default"))
+    model = p.get("model") or {}
+    put("p_model_default", model.get("default") or fail(f"{where}: no model.default"))
+    put("p_model_effort", model.get("effort", ""))
+    cat = model.get("catalog") or {}
+    if cat and not (isinstance(cat, dict) and cat.get("path") and cat.get("sha256")):
+        fail(f"{where}: model.catalog needs a path and a sha256")
+    for k in ("path", "sha256", "override_env", "cache"):
+        put("p_model_catalog_" + k, cat.get(k, ""))
     iso = p.get("isolation") or {}
     put("p_isolation", iso.get("flags") or [])
     put("p_isolation_env", iso.get("override_env", ""))
+    put("p_instruction_files", (p.get("instruction_files") or {}).get("paths") or [])
 
     ts = p.get("tool_set") or {}
     if ts.get("method") not in TOOL_SETS:
@@ -128,6 +141,8 @@ def shell(path, agent, task):
     put("p_tool_set_method", ts["method"])
     put("p_tool_set_name", ts.get("name", ""))
     put("p_tool_set_dir", ts.get("dir", ""))
+    if ts["method"] == "none" and "{tool_set}" in (p.get("invocation") or []):
+        fail(f"{where}: tool_set method none passes no tool set, so the invocation cannot name {{tool_set}}")
     ses = p.get("session") or {}
     if ses.get("method") not in SESSIONS:
         fail(f"{where}: session method {ses.get('method')!r} is not implemented ({either(sorted(SESSIONS))})")
@@ -142,6 +157,18 @@ def shell(path, agent, task):
             if w[1:-1] not in params:
                 fail(f"{where}: invocation placeholder {w} is neither one of {', '.join(sorted(PLACEHOLDERS))} nor a param")
             names.append(w[1:-1])
+    for w in inv:
+        for ph in re.findall(r"\{[A-Za-z0-9_-]+\}", w):
+            if w == ph:
+                continue
+            if ph not in INLINE:
+                fail(f"{where}: invocation word {w!r} holds {ph}; inside a word only {', '.join(sorted(INLINE))} are filled")
+            if not model.get(INLINE[ph]):
+                fail(f"{where}: invocation word {w!r} holds {ph}, and the profile has no model.{INLINE[ph]}")
+    stdin = p.get("stdin", "inherit")
+    if stdin not in STDIN:
+        fail(f"{where}: stdin {stdin!r} ({either(sorted(STDIN))})")
+    put("p_stdin", stdin)
     put("p_invocation", inv)
     put("p_params", names)
     for n in names:
@@ -152,8 +179,11 @@ def shell(path, agent, task):
         fail(f"{where}: trace method {tr.get('method')!r} is not implemented ({either(sorted(TRACES))})")
     if tr.get("declared") and tr["method"] not in STATE_CHECKED:
         fail(f"{where}: a declared trace needs a trace method with a state check ({either(sorted(STATE_CHECKED))})")
-    for k in ("method", "dir", "file", "subagents"):
+    for k in ("method", "dir", "file", "subagents", "snapshots"):
         put("p_trace_" + k, tr.get(k, ""))
+    if tr.get("databases") and "{label}" not in tr.get("snapshots", ""):
+        fail(f"{where}: trace.databases needs trace.snapshots, the directory of their copies with {{label}}")
+    put("p_trace_databases", tr.get("databases") or [])
     put("p_trace_declared", bool(tr.get("declared")))
     put("p_trace_states_version", bool(tr.get("states_version")))
 

@@ -4,7 +4,8 @@
 # control runs a baseline is built from, and the verdict with and without it.
 # The agent is any adapter config/agents.json profiles (schema 2), the
 # profile's default_agent unless --agent names another; today claude-code
-# (Claude Code) and gemini (Gemini through Antigravity's CLI, agy). The
+# (Claude Code), gemini (Gemini through Antigravity's CLI, agy) and codex
+# (OpenAI's Codex CLI, profiled before its adapter exists, I-79). The
 # profile says how the agent is found, version-checked, locked, pinned,
 # isolated, invoked and recorded, and which tasks it has; this script never
 # names an agent. scripts/capture-claude-code.sh is kept as a wrapper that
@@ -19,9 +20,9 @@
 #                            [--no-build] [OUTPUT_DIR]
 #
 # The tasks are the profile's: Claude Code has basic, parallel, project,
-# edits, tools, shapes, long and websearch; Gemini has basic, search and long.
-# Either agent also runs a held-out task, --task heldout:NAME with
-# --heldout-dir DIR (below).
+# edits, tools, shapes, long and websearch; Gemini has basic, search and long;
+# Codex has Claude Code's eight with its own tools. Every agent also runs a
+# held-out task, --task heldout:NAME with --heldout-dir DIR (below).
 #
 # --model ID pins the model of every run, controls included (D7), passed where
 # the profile's invocation says ({model}); without it the profile's
@@ -136,8 +137,10 @@
 #
 # Everything lands in OUTPUT_DIR (default /tmp/agent-trace-capture-<time>):
 #   <task>.session.jsonl      the transcript of the task run (T), named by the profile's
-#                             trace.file (agy: <task>.conversation.db), and
+#                             trace.file (agy: <task>.conversation.db; Codex:
+#                             <task>.rollout.jsonl), and
 #   <task>.session/subagents  its subagent transcripts, when there are any (trace.subagents)
+#   <task>.rollout/databases  for a trace with databases (Codex), their snapshots (trace.snapshots)
 #   <task>.ground_truth.json  what the probes saw during it (G)
 #   <task>.trace.txt          for a declared trace (trace.declared, I-74; Claude Code):
 #                             what the copied transcript holds, read, empty
@@ -202,7 +205,43 @@
 #     unless the run names them);
 #   * params: per-task values an invocation names ({print_timeout}: agy -p
 #     gives up after it, 600s, and 5400s for long and held-out tasks).
+# Codex (I-79, I-80) adds methods and fields no other profile uses:
+#   * tool_set none: the agent takes no tool set, the prompt names the tools;
+#     the task's tools are still recorded and decide the controls;
+#   * trace jsonl-rollout: rollout-<time>-<session>.jsonl under the
+#     profile's dir (~/.codex/sessions, dated subdirectories), the session id
+#     being what the agent prints as thread_id (stdout-json); the subagents'
+#     rollouts are those the run created whose session metadata names the
+#     session; the model and effort are read from each turn's context, a
+#     subagent's after the parent history its rollout starts with;
+#   * trace.databases: databases snapshotted with SQLite's online backup into
+#     trace.snapshots after every run (~/.codex/thread_history_1.sqlite and
+#     state_5.sqlite); they hold every thread of the account, not only the run's;
+#   * stdin null: the run's stdin is /dev/null (codex exec appends a piped
+#     stdin to its prompt);
+#   * model.effort and model.catalog: {effort} and {catalog} inside an
+#     invocation word; the catalog is a private file outside the repository
+#     (catalog.path, or $catalog.override_env), written by
+#     scripts/extract-model-catalog.py from the agent's cache (catalog.cache)
+#     and refused unless its SHA-256 is catalog.sha256; its absolute path is
+#     passed (-c model_catalog_json=), and both join the model pin
+#     control-model.txt holds and --baseline-from compares;
+# Every agent (I-79): the profile's instruction_files, the user's personal
+# instructions (Claude Code ~/.claude/CLAUDE.md, agy ~/.gemini/AGENTS.md,
+# Codex ~/.codex/AGENTS.md), are moved aside to FILE.agent-trace-aside just
+# before each run, controls included, and put back right after the agent
+# exits, and on any exit of the script; task-meta.txt records each with its
+# hash, or absent. The user's other sessions that start during a run miss
+# them. A file left aside by an interrupted capture makes the next capture
+# refuse, before anything else, with the command that puts it back.
+# A build without the agent's adapter records the runs and skips the
+# baseline and the verdicts; report.txt says how to build them later.
 #
+# Codex tasks: Claude Code's, where a prompt names a tool, with Codex's:
+# exec_command for Read, Bash, Grep and Glob (cat, the command, grep, ls),
+# apply_patch for Write, Edit, MultiEdit and NotebookEdit, spawn_agent and
+# wait_agent for Agent, web_search for WebSearch and WebFetch, and
+# write_stdin to poll the background command (config/agents.json notes each).
 # Gemini tasks:
 #   basic     view_file, write_to_file (create), replace_file_content,
 #             write_to_file (overwrite), run_command. Five calls, the same
@@ -214,7 +253,7 @@
 #             view_file, replace_file_content, write_to_file, run_command,
 #             grep_search, find_by_name and invoke_subagent. No network.
 # The controls run the no-op command with the profile's controls.command_tool
-# (Bash, run_command) and the profile's control prompt; for a task whose tools
+# (Bash, run_command, exec_command) and the profile's control prompt; for a task whose tools
 # include the subagent tool, the prompt_subagent one, and a task's own
 # control_prompt (Claude Code tools) wins over both.
 #
@@ -230,6 +269,44 @@ set -euo pipefail
 # Ctrl+C reaches watch, which stops the agent and writes what it recorded; the
 # script then stops too, before it would start the next run.
 trap 'echo "interrupted" >&2; exit 130' INT TERM
+
+# The instruction files a run has moved aside (I-79), put back on every exit
+# of the script, an interruption or an error included. A file the run
+# created at the original path is never overwritten: the user's stays aside
+# and the script says so.
+moved_instruction_files=()
+move_instruction_files() {
+  local f a
+  for f in "${instruction_files[@]}"; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    a=$f.agent-trace-aside
+    if [ -e "$a" ] || [ -L "$a" ]; then
+      echo "   $a exists; not moving $f" >&2
+      return 1
+    fi
+    mv -n -- "$f" "$a" || return 1
+    if [ -e "$f" ] || [ -L "$f" ] || { [ ! -e "$a" ] && [ ! -L "$a" ]; }; then
+      echo "   could not move $f aside" >&2
+      return 1
+    fi
+    moved_instruction_files+=("$f")
+  done
+}
+restore_instruction_files() {
+  local f a
+  for f in "${moved_instruction_files[@]}"; do
+    a=$f.agent-trace-aside
+    if [ -e "$f" ] || [ -L "$f" ]; then
+      echo "WARNING: the run created $f; your own file stays at $a: compare the two and put yours back by hand" >&2
+    elif mv -n -- "$a" "$f" && { [ -e "$f" ] || [ -L "$f" ]; }; then
+      :
+    else
+      echo "WARNING: could not put $f back; it is at $a: mv -n '$a' '$f'" >&2
+    fi
+  done
+  moved_instruction_files=()
+}
+trap restore_instruction_files EXIT
 
 agent=
 task=basic
@@ -293,6 +370,58 @@ agent_bin=$(command -v "$p_binary") || { echo "$p_binary is not on PATH" >&2; ex
 # The check after each run reads the transcript, so an id the agent does not
 # run under fails the run as MODEL MISMATCH.
 model=${model:-$p_model_default}
+# A profile may pin more of the model than its id (I-79, I-80): an effort
+# ({effort} inside an invocation word) and a model catalog ({catalog}, its
+# absolute path), the server's per-model settings the agent reads in place of
+# the server's. The catalog holds the server's instructions, so it is a
+# private file outside the repository, written from the agent's own cache by
+# scripts/extract-model-catalog.py; the profile pins its SHA-256, and the
+# capture refuses a missing file or another hash. Both are part of what a
+# control measures, so the model pin a baseline is compared on names them.
+model_pin=$model
+[ -z "$p_model_effort" ] || model_pin="$model_pin effort=$p_model_effort"
+catalog_path=
+if [ -n "$p_model_catalog_path" ]; then
+  catalog_path=$p_model_catalog_path
+  [ -z "$p_model_catalog_override_env" ] || [ -z "${!p_model_catalog_override_env:-}" ] || catalog_path=${!p_model_catalog_override_env}
+  catalog_path=${catalog_path/#\~/$HOME}
+  case $catalog_path in /*) ;; *) catalog_path=$root/$catalog_path ;; esac
+  extract="python3 $root/scripts/extract-model-catalog.py ${p_model_catalog_cache/#\~/$HOME} $p_model_default $catalog_path"
+  if [ ! -s "$catalog_path" ]; then
+    echo "the model catalog of $agent's profile, $catalog_path, is missing; write it from the agent's cache with:" >&2
+    echo "  $extract" >&2
+    exit 1
+  fi
+  have=$(sha256sum "$catalog_path" | cut -d' ' -f1)
+  if [ "$have" != "$p_model_catalog_sha256" ]; then
+    echo "the model catalog $catalog_path has SHA-256 $have; $agent's profile pins $p_model_catalog_sha256" >&2
+    echo "write it again from the agent's cache with:" >&2
+    echo "  $extract" >&2
+    echo "and if the hash still differs, the server's settings for the model changed since the pin (I-80): the pin is a decision, not something to update silently" >&2
+    exit 1
+  fi
+  model_pin="$model_pin catalog_sha256=$have"
+fi
+# The user's personal instruction files (the profile's instruction_files,
+# I-79) are moved aside for each run, just before the agent starts, and put
+# back right after it exits, so the run reads none of them and the user's
+# other sessions miss them only while a run lasts. A file left aside by an
+# interrupted capture is never overwritten: the capture refuses and says how
+# to put it back.
+instruction_files=()
+for f in "${p_instruction_files[@]}"; do instruction_files+=("${f/#\~/$HOME}"); done
+for f in "${instruction_files[@]}"; do
+  a=$f.agent-trace-aside
+  if [ -e "$a" ] || [ -L "$a" ]; then
+    echo "$a holds a file an interrupted capture moved aside; put it back first:" >&2
+    if [ -e "$f" ] || [ -L "$f" ]; then
+      echo "  $f exists too: compare the two, keep the one you want at $f, then remove $a" >&2
+    else
+      echo "  mv -n '$a' '$f'" >&2
+    fi
+    exit 1
+  fi
+done
 # Version lock (D6, protocol 6.1): an agent that updates itself during a
 # campaign mixes versions. A setting the lock needs that the runs' isolation
 # ignores is checked in the settings file; version_lock.env is passed to
@@ -518,8 +647,8 @@ if [ -n "$baseline_from" ]; then
   # recorded ran the default model of its day, which the file cannot name.
   if [ -f "$baseline_from/control-model.txt" ]; then
     earlier=$(cat "$baseline_from/control-model.txt")
-    if [ "$earlier" != "$model" ]; then
-      echo "the control runs in $baseline_from ran model $earlier, this capture pins $model" >&2
+    if [ "$earlier" != "$model_pin" ]; then
+      echo "the control runs in $baseline_from ran model $earlier, this capture pins $model_pin" >&2
       echo "a baseline holds for one model; run without --baseline-from to measure new controls" >&2
       exit 1
     fi
@@ -569,7 +698,7 @@ if [ -n "$check_only" ]; then
   echo "control_tools=$control_tools"
   echo "control_prompt_sha256=$(printf '%s' "$control_prompt" | sha256sum | cut -d' ' -f1)"
   echo "watch_mode=$watch_mode"
-  echo "model=$model"
+  echo "model=$model_pin"
   echo "task_prompt_sha256=$task_prompt_sha256"
   echo "seed_sha256=$seed_sha256"
   exit 0
@@ -577,6 +706,17 @@ fi
 echo "output: $out"
 echo "$p_binary: $agent_bin ($version), task: $task"
 [ -z "$build" ] || (cd "$root" && make build >/dev/null)
+# An agent with a profile and no adapter in this build (Codex until its
+# adapter exists, I-79) is captured all the same: ground truth, trace,
+# controls and the manifest. Its baseline and verdicts need the adapter, so
+# they are skipped and report.txt says why. baseline names an agent it does
+# not know before it reads any file.
+no_adapter=
+probe=$("$root/baseline" --agent "$agent" --agent-version probe /nonexistent 2>&1 || true)
+if [ "${probe#baseline: unknown agent}" != "$probe" ]; then
+  no_adapter=1
+  echo "NOTE: this build has no $agent adapter: the capture records the ground truth, the trace, the controls and the manifest, and no baseline or verdict"
+fi
 sudo -v
 
 # measured LABEL COMMAND...: run the sudo'd watch command under
@@ -616,6 +756,8 @@ invocation() { # prompt tool_set
       '{session}') argv+=("$session") ;;
       '{prompt}') argv+=("$1") ;;
       '{'*'}') p=p_param_${w:1:${#w}-2}; p=${p//-/_}; argv+=("${!p}") ;;
+      # Inside a word: the model record's effort and catalog (I-79, I-80).
+      *'{'*) w=${w//\{effort\}/"$p_model_effort"}; argv+=("${w//\{catalog\}/"$catalog_path"}") ;;
       *) argv+=("$w") ;;
     esac
   done
@@ -644,6 +786,8 @@ capture_one() { # label prompt tools role
       agent_md "$tools" >"$ws/$p_tool_set_dir/$p_tool_set_name/agent.md" || return 1
       tool_set=$p_tool_set_name
       ;;
+    # none: the agent takes no tool set; the prompt names the tools (I-79).
+    none) tool_set= ;;
   esac
   case $p_session_method in
     assigned) session=$(cat /proc/sys/kernel/random/uuid); echo "== $label: session $session" ;;
@@ -654,14 +798,21 @@ capture_one() { # label prompt tools role
   [ "$p_trace_method" != sqlite-conversation ] || before=$(ls "$trace_dir" 2>/dev/null | grep '\.db$' || true)
   invocation "$prompt" "$tool_set"
   local wrc=0
+  # jsonl-rollout: a subagent's rollout is a file the run created.
+  run_started=$(date +%s)
+  move_instruction_files || return 1
   (
     cd "$ws"
+    # stdin null: an agent that reads a piped stdin into its prompt gets
+    # none (I-79); sudo asks for a password on the terminal, not on stdin.
+    [ "$p_stdin" != null ] || exec </dev/null
     measured "$label" sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
       env "${run_env[@]}" \
       "$agent_bin" "${argv[@]}" >"$out/$label.watch.log" 2>&1
   ) || wrc=$?
+  restore_instruction_files
   printf '%s\n' "$wrc" >"$out/$label.watch.exit"
   [ "$wrc" -eq 0 ] || echo "   watch exited non-zero, see $out/$label.watch.log (exit $wrc)"
   # Recording has ended: give the permission back so the output can be removed.
@@ -672,7 +823,11 @@ capture_one() { # label prompt tools role
   case $p_trace_method in
     jsonl-session) collect_jsonl_session "$label" || rc=$? ;;
     sqlite-conversation) collect_sqlite_conversation "$label" || rc=$? ;;
+    jsonl-rollout) collect_jsonl_rollout "$label" || rc=$? ;;
   esac
+  # The databases a trace keeps beside its transcript, as consistent
+  # snapshots, even when the transcript is gone (I-79).
+  [ "${#p_trace_databases[@]}" -eq 0 ] || snapshot_databases "$label" || return 1
   [ "$rc" -eq 3 ] || return "$rc"
   if [ -n "$p_trace_declared" ] && [ "$role" = task ]; then
     # The task's declared trace is gone after the run: a result, not a
@@ -741,15 +896,79 @@ collect_sqlite_conversation() { # label
   [ "$n" -eq 0 ] || echo "   $n subagent conversation database(s) copied"
 }
 
+# jsonl-rollout: rollout-<time>-<session>.jsonl under the profile's dir (in
+# dated subdirectories), and, as the subagents', every rollout the run
+# created whose first record, the session's metadata, names the session as
+# its session_id under another id (I-79).
+collect_jsonl_rollout() { # label
+  local label=$1 found n
+  sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
+  found=$(find "$trace_dir" -name "rollout-*-$session.jsonl" -print -quit 2>/dev/null || true)
+  if [ -z "$session" ] || [ -z "$found" ]; then
+    trace_gone="no rollout for session '$session' after the run"
+    trace_missing="no rollout found for $label (session '$session'), see $out/$label.watch.log"
+    return 3
+  fi
+  cp "$found" "$(trace_path "$label")" || return 1
+  n=$(python3 - "$trace_dir" "$((run_started - 1))" "$session" "$(subagents_path "$label")" <<'PY'
+import glob, json, os, shutil, sys
+top, since, session, dest = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+n = 0
+for p in sorted(glob.glob(os.path.join(top, "**", "rollout-*.jsonl"), recursive=True)):
+    try:
+        if os.path.getmtime(p) < since:
+            continue
+        with open(p, encoding="utf-8") as f:
+            meta = json.loads(f.readline())
+    except (OSError, ValueError):
+        continue
+    m = meta.get("payload") if isinstance(meta, dict) and meta.get("type") == "session_meta" else None
+    if isinstance(m, dict) and m.get("session_id") == session and m.get("id") != session:
+        os.makedirs(dest, exist_ok=True)
+        shutil.copy(p, os.path.join(dest, os.path.basename(p)))
+        n += 1
+print(n)
+PY
+  ) || return 1
+  [ "$n" -eq 0 ] || echo "   $n subagent rollout(s) copied"
+}
+
+# The trace's databases (trace.databases), each copied with SQLite's online
+# backup into trace.snapshots, so a copy is consistent although the agent
+# may still hold the database open. A database that does not exist is noted
+# and skipped.
+snapshot_databases() { # label
+  local dest
+  dest=$out/${p_trace_snapshots//\{label\}/"$1"}
+  python3 - "$dest" "${p_trace_databases[@]/#\~/$HOME}" <<'PY'
+import os, sqlite3, sys
+dest, dbs = sys.argv[1], sys.argv[2:]
+os.makedirs(dest, exist_ok=True)
+for db in dbs:
+    if not os.path.isfile(db):
+        print("   no database %s to snapshot" % os.path.basename(db))
+        continue
+    src = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+    dst = sqlite3.connect(os.path.join(dest, os.path.basename(db)))
+    with dst:
+        src.backup(dst)
+    dst.close()
+    src.close()
+print("   %d database snapshot(s) taken" % len([d for d in dbs if os.path.isfile(d)]))
+PY
+}
+
 # The models a run's transcript records (D7), read by the profile's trace
 # method. Prints observed=<models of the main transcript>;subagents=<models of
 # its subagents' transcripts, not checked>; exits 0 when the main transcript
 # records the pinned model and no other, 1 when it records another, 2 when it
-# records none.
+# records none. A profile that pins an effort (jsonl-rollout records it) adds
+# ;effort=<efforts of the main transcript>, and another effort is exit 1.
 model_seen() { # label
-  python3 - "$p_trace_method" "$(trace_path "$1")" "$(subagents_path "$1")" "$model" <<'PY'
+  python3 - "$p_trace_method" "$(trace_path "$1")" "$(subagents_path "$1")" "$model" "$p_model_effort" <<'PY'
 import json, os, re, shutil, sqlite3, sys, tempfile
-method, path, subdir, want = sys.argv[1:]
+method, path, subdir, want, want_effort = sys.argv[1:]
+efforts = set()
 
 def jsonl(p):
     seen = set()
@@ -790,14 +1009,50 @@ def sqlite(p):
             pass
     return seen
 
+def rollout(p, efforts=None):
+    # Each turn's context names the model and effort it ran with. A
+    # subagent's rollout starts with its parent's history, up to the ordinal
+    # its session metadata names, which is not the subagent's.
+    seen = set()
+    start = None
+    try:
+        for i, line in enumerate(open(p, encoding="utf-8", errors="replace")):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(r, dict):
+                continue
+            if start is None:
+                start = (r.get("payload") or {}).get("subagent_history_start_ordinal") or 0 if r.get("type") == "session_meta" else 0
+            if r.get("ordinal", i) < start or r.get("type") != "turn_context":
+                continue
+            c = r.get("payload") or {}
+            if isinstance(c.get("model"), str):
+                seen.add(c["model"])
+            if efforts is not None and isinstance(c.get("effort"), str):
+                efforts.add(c["effort"])
+    except OSError:
+        pass
+    return seen
+
 if method == "sqlite-conversation":
     main, subs = sqlite(path), set()
+elif method == "jsonl-rollout":
+    main, subs = rollout(path, efforts), set()
+    if os.path.isdir(subdir):
+        for f in sorted(os.listdir(subdir)):
+            if f.endswith(".jsonl"):
+                subs |= rollout(os.path.join(subdir, f))
 else:
     main, subs = jsonl(path), set()
     if os.path.isdir(subdir):
         for f in sorted(os.listdir(subdir)):
             if f.endswith(".jsonl"):
                 subs |= jsonl(os.path.join(subdir, f))
+if want_effort:
+    print("observed=%s;effort=%s;subagents=%s" % (",".join(sorted(main)), ",".join(sorted(efforts)), ",".join(sorted(subs))))
+    sys.exit(2 if not main else (0 if main == {want} and efforts == {want_effort} else 1))
 print("observed=%s;subagents=%s" % (",".join(sorted(main)), ",".join(sorted(subs))))
 sys.exit(2 if not main else (0 if main == {want} else 1))
 PY
@@ -806,7 +1061,9 @@ PY
 # The subagents a recorded run started (I-71), by the profile's trace method:
 # for jsonl-session the subagent transcripts copied beside the run's and the
 # tool calls their assistant records make; for sqlite-conversation the
-# subagent databases copied, whose calls are not counted (-). Prints
+# subagent databases copied, whose calls are not counted (-); for
+# jsonl-rollout the subagent rollouts copied and the tool calls their
+# response items make (function and custom tool calls). Prints
 # subagents=N;subagent_tool_calls=M.
 subagents_seen() { # label
   python3 - "$p_trace_method" "$(subagents_path "$1")" <<'PY'
@@ -817,6 +1074,28 @@ if method == "sqlite-conversation":
     sys.exit(0)
 files = sorted(glob.glob(subdir + "/*.jsonl"))
 calls = 0
+if method == "jsonl-rollout":
+    for f in files:
+        try:
+            lines = open(f, encoding="utf-8", errors="replace").readlines()
+        except OSError:
+            continue
+        # The parent's history the rollout starts with is not the subagent's.
+        start = None
+        for i, line in enumerate(lines):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(r, dict):
+                continue
+            if start is None:
+                start = (r.get("payload") or {}).get("subagent_history_start_ordinal") or 0 if r.get("type") == "session_meta" else 0
+            if r.get("ordinal", i) >= start and r.get("type") == "response_item" and \
+                    (r.get("payload") or {}).get("type") in ("function_call", "custom_tool_call", "local_shell_call"):
+                calls += 1
+    print("subagents=%d;subagent_tool_calls=%d" % (len(files), calls))
+    sys.exit(0)
 for f in files:
     try:
         lines = open(f, encoding="utf-8", errors="replace").readlines()
@@ -897,7 +1176,7 @@ capture() {
   case $mrc in
     0) ;;
     trace-*) echo "   TRACE DELETED OR DAMAGED: the transcript of $label is ${mrc#trace-}, so its model is not checked; verify reports the trace (V-59)" >&2 ;;
-    1) echo "   MODEL MISMATCH: $label recorded $seen, the pinned model is $model" >&2; return 1 ;;
+    1) echo "   MODEL MISMATCH: $label recorded $seen, the pinned model is $model${p_model_effort:+ (effort $p_model_effort)}" >&2; return 1 ;;
     *) echo "   MODEL MISMATCH: the transcript of $label records no model (pinned: $model)" >&2; return 1 ;;
   esac
 }
@@ -910,6 +1189,19 @@ capture() {
   echo "model=$model"
   echo "agent=$agent"
   echo "version=$version"
+  [ -z "$p_model_effort" ] || echo "effort=$p_model_effort"
+  [ -z "$catalog_path" ] || echo "model_catalog=${catalog_path/#"$HOME"/\~} sha256=$(sha256sum "$catalog_path" | cut -d' ' -f1)"
+  # The instruction files every run has moved aside (I-79), named with the
+  # home directory as ~, with their hash, or absent.
+  for f in "${instruction_files[@]}"; do
+    if [ -f "$f" ]; then
+      echo "instruction_file=${f/#"$HOME"/\~} sha256=$(sha256sum "$f" | cut -d' ' -f1) moved aside for every run"
+    elif [ -e "$f" ] || [ -L "$f" ]; then
+      echo "instruction_file=${f/#"$HOME"/\~} not a regular file, moved aside for every run"
+    else
+      echo "instruction_file=${f/#"$HOME"/\~} absent"
+    fi
+  done
 } >"$out/task-meta.txt"
 : >"$out/order.tsv"
 
@@ -927,13 +1219,25 @@ if [ -n "$baseline_from" ]; then
 else
   for n in $(seq $((controls_before + 1)) "$controls_total"); do capture "control-$n" control "$control_prompt" "$control_tools"; done
   printf 'before=%s after=%s' "$controls_before" "$((controls_total - controls_before))" >"$out/control-order.txt"
-  printf '%s' "$model" >"$out/control-model.txt"
+  printf '%s' "$model_pin" >"$out/control-model.txt"
   printf '%s' "$control_tools" >"$out/control-tools.txt"
   printf '%s' "$control_prompt" >"$out/control-prompt.txt"
   printf '%s' "$agent" >"$out/control-agent.txt"
   printf '%s' "$version" >"$out/control-version.txt"
   printf '%s' "$watch_mode" >"$out/control-watch.txt"
   controls=("$out"/control-*.ground_truth.json)
+fi
+if [ -n "$no_adapter" ]; then
+  {
+    echo "no $agent adapter in this build: no baseline and no verdict (I-79)."
+    echo "Build them from this capture once the adapter exists:"
+    echo "  baseline --agent $agent --agent-version $version --exclude '$control_command' --out baseline.json control-*.ground_truth.json"
+    [ -z "$baseline_from" ] || echo "  (the control runs are those in $baseline_from)"
+    echo "  verify --agent $agent --trajectory $(basename "$(trace_path "$task_label")") --ground-truth $task_label.ground_truth.json --baseline baseline.json"
+  } >"$out/report.txt"
+  echo
+  echo "done (no adapter, no verdict). Read $out/report.txt"
+  exit 0
 fi
 min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4f", 1 / n }')}
 "$root/baseline" --agent "$agent" --agent-version "$version" --min-agreement "$min_agreement" \

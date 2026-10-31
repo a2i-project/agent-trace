@@ -73,6 +73,12 @@
         ],
         "override_env": "CLAUDE_FLAGS"
       },
+      "instruction_files": {
+        "note": "The user's personal instructions, which Claude Code 2.1.306 opens although --setting-sources project (the pilot captures): moved aside for each run and restored after it (I-79).",
+        "paths": [
+          "~/.claude/CLAUDE.md"
+        ]
+      },
       "tool_set": {
         "method": "list"
       },
@@ -184,6 +190,12 @@
         ],
         "why": "agy logs in through the session bus"
       },
+      "instruction_files": {
+        "note": "agy 1.4.7 opens ~/.gemini/AGENTS.md (the pilot captures): moved aside for each run and restored after it (I-79).",
+        "paths": [
+          "~/.gemini/AGENTS.md"
+        ]
+      },
       "model": {
         "default": "gemini-3.8-flash-high",
         "note": "Passed as --model; the effort is part of the id (-high, -medium, -low, as agy models lists them). The default is the id the existing captures recorded (the user's decision of 2026-10-26)."
@@ -251,6 +263,140 @@
         "long": {
           "prompt": "You are working in a small Python package, textkit, in the current directory. Do not use the network. PLAN.md lists 20 functions, numbered 1 to 20, each with a specification file under docs/spec/. The work is finished only when all 20 functions are implemented and tested, CHANGELOG.md has one line per function and make check passes: do not stop before that, and do not skip, merge or reorder steps. Do these steps in order. 1) Use find_by_name to find the files matching *.md under docs/spec, and use grep_search to search textkit for NotImplementedError. 2) Use run_command to run: make check . It fails, since nothing is implemented yet. 3) For each function in PLAN.md, in order from 1 to 20, one function at a time, do these five steps: a) use view_file on its specification file; b) use replace_file_content to replace the raise NotImplementedError line of that function in its module with an implementation that meets the specification; c) use replace_file_content to add at least two unit test methods for it to the test class in the module test file under tests/; d) use run_command to run only that module tests, for example: python3 -m unittest tests.test_strings , and if they fail, fix the code and run them again; e) use replace_file_content to add one line naming the function at the end of CHANGELOG.md. 4) After functions 5, 10, 15 and 20, that is at the end of each module, use run_command to run make check-MODULE for that module (make check-strings, make check-numbers, make check-lists, make check-codec), and use grep_search to search that module file for NotImplementedError. 5) Use invoke_subagent to start one subagent with exactly this instruction: Use find_by_name to find the files matching test_*.py under tests, use run_command to run: python3 -m unittest discover -s tests -t . , then use write_to_file to create REPORT.md stating how many tests ran. Then reply with the single word done. 6) Use run_command to run: make dist , then python3 dist/textkit.pyz slugify \"Hello, World\" , then python3 dist/textkit.pyz roman 1987 . 7) Use view_file on REPORT.md, then use replace_file_content to add a section named Status at the end of README.md saying how many tests pass. 8) Use run_command to run make check a last time. Then reply with the single word done.",
           "tools": "run_command view_file write_to_file replace_file_content grep_search find_by_name invoke_subagent"
+        }
+      }
+    },
+    "codex": {
+      "binary": "codex",
+      "version_command": {
+        "args": [
+          "--version"
+        ],
+        "field": "last"
+      },
+      "versions": [],
+      "version_lock": {
+        "note": "codex exec makes no update check, and the invocation passes -c check_for_update_on_startup=false for uniformity; the version is frozen at 0.166.0 for the project (the user's decision of 2026-10-31). No environment variable is needed."
+      },
+      "model": {
+        "default": "gpt-6.1-terra",
+        "effort": "medium",
+        "catalog": {
+          "path": "~/.config/agent-trace/codex-catalog-0.166.0.json",
+          "sha256": "d1a0ac453cf7c4fac6b715373cd6dcf5f0824e6e47e54cb5b10dcdd6e9d2231f",
+          "override_env": "AGENT_TRACE_CODEX_CATALOG",
+          "cache": "~/.codex/models_cache.json",
+          "note": "Private, outside the repository: it holds the server's instructions for the model. scripts/extract-model-catalog.py writes it from the cache; the hash is that of the entry Codex 0.166.0 cached on 2026-10-31 (fetched 20:41 UTC), and a capture refuses another (I-80)."
+        },
+        "note": "Passed as -m; the effort as -c model_reasoning_effort={effort}. The catalog is the server's entry for gpt-6.1-terra (tool_mode code_mode_only, shell_type unified_exec, apply_patch_tool_type freeform, multi_agent_version v2, and the instructions); -c model_catalog_json={catalog} makes Codex read it instead of the server's (I-80)."
+      },
+      "isolation": {
+        "note": "--ignore-user-config skips ~/.codex/config.toml (auth still uses ~/.codex), --ignore-rules the execpolicy rules, skills.include_instructions=false the skill list in the prompt, and --disable plugins the plugins. None of them keeps ~/.codex/AGENTS.md out of the prompt (measured on 0.166.0, I-79), so it is an instruction file. The override variable replaces the flags.",
+        "flags": [
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-c",
+          "skills.include_instructions=false",
+          "--disable",
+          "plugins"
+        ],
+        "override_env": "CODEX_FLAGS"
+      },
+      "instruction_files": {
+        "note": "Codex 0.166.0 puts it into every prompt whatever the flags: moved aside for each run and restored after it (I-79).",
+        "paths": [
+          "~/.codex/AGENTS.md"
+        ]
+      },
+      "tool_set": {
+        "method": "none",
+        "note": "Codex has no per-run tool allowlist: the prompt names the tools, and the task's tools are recorded and decide the controls. Feature flags can remove whole tools (--disable multi_agent, shell_tool, unified_exec, view_image, image_generation, sleep_tool; -c web_search=disabled), not choose a set."
+      },
+      "session": {
+        "method": "stdout-json",
+        "key": "thread_id"
+      },
+      "stdin": "null",
+      "invocation": [
+        "exec",
+        "--skip-git-repo-check",
+        "-s",
+        "danger-full-access",
+        "{isolation}",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "model_catalog_json={catalog}",
+        "-m",
+        "{model}",
+        "-c",
+        "model_reasoning_effort={effort}",
+        "--json",
+        "{prompt}"
+      ],
+      "trace": {
+        "method": "jsonl-rollout",
+        "dir": "~/.codex/sessions",
+        "file": "{label}.rollout.jsonl",
+        "subagents": "{label}.rollout/subagents",
+        "databases": [
+          "~/.codex/thread_history_1.sqlite",
+          "~/.codex/state_5.sqlite"
+        ],
+        "snapshots": "{label}.rollout/databases",
+        "declared": true,
+        "states_version": true
+      },
+      "content": [
+        {
+          "method": "none",
+          "reason": "hooks pending: tls-openssl-ex + tls-rustls-aead with a WebSocket parser"
+        }
+      ],
+      "controls": {
+        "command_tool": "exec_command",
+        "subagent_tool": "spawn_agent",
+        "prompt": "Use exec_command to run exactly this no-op command: {command} . Then reply with the single word ok. Do not use any other tool.",
+        "prompt_subagent": "Do exactly these two things in order, and nothing else. 1) Use exec_command to run exactly this no-op command: {command} . 2) Use spawn_agent to start one subagent, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then use wait_agent to wait for it. Then reply with the single word ok. Do not use any other tool."
+      },
+      "tasks": {
+        "basic": {
+          "prompt": "Do exactly these five things in order, using the named tool for each, and nothing else. 1) Use exec_command to run exactly: cat b.txt . 2) Use apply_patch to add the file a.txt containing the single word hello. 3) Use apply_patch to update a.txt, replacing hello with world. 4) Use apply_patch to update b.txt, replacing its only line with the single word again. 5) Use exec_command to run exactly: echo hi . Then reply with the single word done.",
+          "tools": "exec_command apply_patch"
+        },
+        "websearch": {
+          "note": "Codex has no fetch tool: its web_search opens a page as well as searching (the open action is read from the tool, not yet measured). Not a campaign task.",
+          "prompt": "Do exactly these three things in order, and nothing else. 1) Use web_search once to search for: fanotify man page. 2) Use web_search to open https://man7.org/linux/man-pages/man7/fanotify.7.html and find what fanotify does, in one sentence. 3) Use apply_patch to add the file notes.txt containing that one sentence. Then reply with the single word done.",
+          "tools": "web_search apply_patch exec_command",
+          "campaign": false
+        },
+        "parallel": {
+          "prompt": "Do exactly these six things in order, and nothing else. 1) In a single exec call, make three exec_command calls at the same time, running exactly: cat b.txt , cat c.txt and cat d.txt . 2) Use spawn_agent to start one subagent with exactly this instruction: Use exec_command to run exactly: echo from-subagent . Then reply with the single word done. Then use wait_agent to wait for it. 3) Use exec_command to run exactly: grep -rn seed . 4) Use exec_command to run exactly: ls *.txt 5) Use web_search to open https://example.com and find its title. 6) Use exec_command to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.",
+          "tools": "exec_command apply_patch spawn_agent wait_agent web_search"
+        },
+        "edits": {
+          "prompt": "Do exactly these seven things in order, using the named tool for each, and nothing else. 1) Use apply_patch to add the file notes.txt with exactly this content (four lines): alpha beta alpha / gamma delta / say \"hi\" to C:\\\\temp / end. Write each item separated by slash as its own line, without the slashes. 2) Use apply_patch to replace the first occurrence of alpha with ALPHA. 3) Use apply_patch, in one patch, to replace every a with 4. 4) Use apply_patch to replace the two lines g4mm4 delt4 and s4y \"hi\" to C:\\\\temp together with the single line merged. 5) Use apply_patch to replace the line end with the two lines end and really the end. 6) Use apply_patch to replace ALPHA with alpha. 7) Use exec_command to run exactly: cat notes.txt . Then reply with the single word done.",
+          "tools": "exec_command apply_patch"
+        },
+        "project": {
+          "prompt": "You are working in a small Python package, wordstats, in the current directory. Do these steps in order and nothing else, and do not use the network. 1) Run the unit tests with: python3 -m unittest discover . Some of them fail. 2) Read the code, find the cause of the failures and fix it. 3) Add a function top_n(text, n) to wordstats/core.py that returns the n most frequent (word, count) pairs, most frequent first and ties in alphabetical order, export it from the package, and add unit tests for it in tests/test_core.py. 4) Add a --top N option to the command line tool in wordstats/cli.py that prints only the top N words, with a test in tests/test_cli.py. 5) Update README.md to describe top_n and the --top option. 6) Run the unit tests again and make sure they all pass. Then reply with the single word done.",
+          "tools": "exec_command apply_patch"
+        },
+        "tools": {
+          "note": "Claude Code's tools task with Codex's tools: the background command is an exec_command session that outlives its yield and is polled with write_stdin (Codex writes no output file for it), the two line changes are one apply_patch with two hunks, and the notebook cell is changed with apply_patch, since Codex has no notebook tool. Its controls run the no-op command a second time with a short yield and start one subagent that only replies.",
+          "prompt": "Do exactly these nine things in order, using the named tool for each, and nothing else. 1) Use exec_command with yield_time_ms set to 500 to start exactly: sleep 3; echo background-done | tee bg.txt . Do not wait for it and do not check on it until step 8. 2) In a single exec call, make three exec_command calls at the same time, running exactly: cat notes.txt , cat numbers.txt and cat analysis.ipynb . 3) Use apply_patch once, with one patch that changes notes.txt in two hunks, to replace colour: red with colour: blue and size: small with size: large. 4) Use apply_patch to change analysis.ipynb so that the source of the cell whose id is total is exactly: print(sum([3, 5, 7])) . 5) Use apply_patch to add the file report.txt containing the single word draft. 6) Use apply_patch to update report.txt, replacing draft with final. 7) Use spawn_agent to start one subagent, giving it exactly this instruction: Use apply_patch to add the file subagent.txt containing the single word from-subagent. Then reply with the single word done. Then use wait_agent to wait for it. 8) Use write_stdin with empty input on the session step 1 started, until it reports that the command finished. 9) Use exec_command to run exactly: cat bg.txt notes.txt report.txt subagent.txt . Then reply with the single word done.",
+          "tools": "exec_command write_stdin apply_patch spawn_agent wait_agent",
+          "control_prompt": "Do exactly these three things in order, and nothing else. 1) Use exec_command to run exactly this no-op command: {command} . 2) Use exec_command with yield_time_ms set to 500 to run exactly the same command again: {command} . Do not poll it or read its output. 3) Use spawn_agent to start one subagent, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then use wait_agent to wait for it. Then reply with the single word ok. Do not use any other tool."
+        },
+        "shapes": {
+          "note": "Claude Code's shapes task with Codex's tools: the parallel blocks are concurrent exec_command calls in one exec script, and the writes in locked/ go through apply_patch, whose write path in a directory without write permission is not yet measured.",
+          "prompt": "Do exactly these six things in order, and nothing else. If a step fails, do not retry it or work around it; go on to the next step. 1) In a single exec call, make these three exec_command calls at the same time, in this order: one to run exactly: sleep 2; cat slow.txt , then one to run exactly: cat fast.txt , then one to run exactly: cat read.txt . 2) In a single exec call, make these two exec_command calls at the same time, in this order: one to run exactly: sleep 2; echo one > one.txt , then one to run exactly: echo two > two.txt . 3) Use exec_command to run exactly: cat locked/data.txt . 4) Use apply_patch to update locked/data.txt, replacing its only line with the single word direct-one. 5) Use apply_patch to update locked/data.txt, replacing direct-one with direct-two. 6) Use exec_command to run exactly: cat one.txt two.txt locked/data.txt . Then reply with the single word done.",
+          "tools": "exec_command apply_patch"
+        },
+        "long": {
+          "note": "Claude Code's long task with Codex's tools: Glob, Grep and Read become exec_command (ls, grep, cat), Edit and Write apply_patch, Agent spawn_agent with wait_agent.",
+          "prompt": "You are working in a small Python package, textkit, in the current directory. Do not use the network. PLAN.md lists 20 functions, numbered 1 to 20, each with a specification file under docs/spec/. The work is finished only when all 20 functions are implemented and tested, CHANGELOG.md has one line per function and make check passes: do not stop before that, and do not skip, merge or reorder steps. Make one tool call per message. Do these steps in order. 1) Use exec_command to run: ls docs/spec/*.md , and exec_command to run: grep -rn NotImplementedError textkit . 2) Use exec_command to run: make check . It fails, since nothing is implemented yet. 3) For each function in PLAN.md, in order from 1 to 20, one function at a time, do these five steps: a) use exec_command to cat its specification file; b) use apply_patch to replace the raise NotImplementedError line of that function in its module with an implementation that meets the specification; c) use apply_patch to add at least two unit test methods for it to the test class in the module test file under tests/; d) use exec_command to run only that module tests, for example: python3 -m unittest tests.test_strings , and if they fail, fix the code and run them again; e) use apply_patch to add one line naming the function at the end of CHANGELOG.md. 4) After functions 5, 10, 15 and 20, that is at the end of each module, use exec_command to run make check-MODULE for that module (make check-strings, make check-numbers, make check-lists, make check-codec), and exec_command to grep that module file for NotImplementedError. 5) Use spawn_agent to start one subagent with exactly this instruction: Use exec_command to run: ls tests/test_*.py , use exec_command to run: python3 -m unittest discover -s tests -t . , then use apply_patch to add the file REPORT.md stating how many tests ran. Then reply with the single word done. Then use wait_agent to wait for it. 6) Use exec_command to run: make dist , then python3 dist/textkit.pyz slugify \"Hello, World\" , then python3 dist/textkit.pyz roman 1987 . 7) Use exec_command to cat REPORT.md, then use apply_patch to add a section named Status at the end of README.md saying how many tests pass. 8) Use exec_command to run make check a last time. Then reply with the single word done.",
+          "tools": "exec_command apply_patch spawn_agent wait_agent"
         }
       }
     }

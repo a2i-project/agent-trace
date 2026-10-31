@@ -25,12 +25,14 @@ func repoConfig(t *testing.T) *config.Config {
 }
 
 // TestEveryAdapterInTheConfigIsRegistered: an entry for an adapter that does
-// not exist would configure nothing.
+// not exist would configure nothing, unless it lists no version: the profile
+// of an agent captured before its adapter is built (Codex, I-79), which only
+// the capture scripts read.
 func TestEveryAdapterInTheConfigIsRegistered(t *testing.T) {
 	c := repoConfig(t)
 	for _, name := range c.Names() {
-		if _, ok := agent.Lookup(name); !ok {
-			t.Errorf("config names adapter %q, which is not registered (%v)", name, agent.Names())
+		if _, ok := agent.Lookup(name); !ok && len(c.Adapters[name].Versions) > 0 {
+			t.Errorf("config lists versions of adapter %q, which is not registered (%v)", name, agent.Names())
 		}
 	}
 	for _, name := range agent.Names() {
@@ -41,8 +43,8 @@ func TestEveryAdapterInTheConfigIsRegistered(t *testing.T) {
 }
 
 // TestEveryProfileAgreesWithItsAdapter: the repository's config is schema 2,
-// every adapter has a profile with a trace file and a content method, and a
-// profile declares its trace exactly when the adapter does (I-74): the
+// every profile has a trace file and a content method, and a profile
+// declares its trace exactly when its adapter, if built, does (I-74): the
 // capture script keeps a run whose declared trace is gone and asks verify to
 // compare the trace's hash on the profile's word alone.
 func TestEveryProfileAgreesWithItsAdapter(t *testing.T) {
@@ -51,10 +53,6 @@ func TestEveryProfileAgreesWithItsAdapter(t *testing.T) {
 		t.Fatalf("%s is schema %d, want %d", config.RelPath, c.Schema, config.Schema)
 	}
 	for _, name := range c.Names() {
-		a, ok := agent.Lookup(name)
-		if !ok {
-			continue
-		}
 		p := c.Adapters[name]
 		if p.Trace == nil || p.Trace.File == "" {
 			t.Errorf("%s: the profile names no trace file", name)
@@ -62,6 +60,10 @@ func TestEveryProfileAgreesWithItsAdapter(t *testing.T) {
 		}
 		if len(p.Content) == 0 {
 			t.Errorf("%s: the profile names no content method (none, if it has none)", name)
+		}
+		a, ok := agent.Lookup(name)
+		if !ok {
+			continue // a profile without an adapter (I-79); its adapter must agree once built
 		}
 		_, declares := a.(agent.TraceDeclarer)
 		if p.Trace.Declared != declares {
