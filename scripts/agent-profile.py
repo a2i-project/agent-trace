@@ -32,7 +32,7 @@ SESSIONS = {"assigned", "stdout-json"}
 TRACES = {"jsonl-session", "sqlite-conversation", "jsonl-rollout"}
 # A declared trace is checked after the run (missing, empty, damaged or
 # read); only these trace methods have that check.
-STATE_CHECKED = {"jsonl-session", "jsonl-rollout"}
+STATE_CHECKED = {"jsonl-session", "jsonl-rollout", "sqlite-conversation"}
 # Placeholders of an invocation besides the profile's params: each stands for
 # a whole word.
 PLACEHOLDERS = {"{isolation}", "{model}", "{tool_set}", "{session}", "{prompt}"}

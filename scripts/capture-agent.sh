@@ -146,7 +146,7 @@
 #   <task>.session/subagents  its subagent transcripts, when there are any (trace.subagents)
 #   <task>.rollout/databases  for a trace with databases (Codex), their snapshots (trace.snapshots)
 #   <task>.ground_truth.json  what the probes saw during it (G)
-#   <task>.trace.txt          for a declared trace (trace.declared, I-74; Claude Code):
+#   <task>.trace.txt          for a declared trace (trace.declared, I-74, I-84, I-102):
 #                             what the copied transcript holds, read, empty
 #                             or damaged, or missing when the run left none; a task run whose
 #                             transcript is gone is kept, and verify reports the trace as
@@ -916,8 +916,8 @@ collect_sqlite_conversation() { # label
   local label=$1 f sid n=0 file subs
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
   if [ -z "$session" ] || [ ! -f "$trace_dir/$session.db" ]; then
+    trace_gone="no conversation database for '${session}' after the run"
     trace_missing="no conversation database found for $label (id '${session}'), see $out/$label.watch.log"
-    trace_gone=$trace_missing
     return 3
   fi
   echo "   conversation $session"
@@ -1157,18 +1157,37 @@ print("subagents=%d;subagent_tool_calls=%d" % (len(files), calls))
 PY
 }
 
-# trace_state FILE: what a declared jsonl-session transcript holds as the
-# capture left it (V-59): missing, empty, damaged (no line is a JSON object, or a line is
-# not JSON) or read. verify decides the verdict; this only keeps a run whose
-# trace is gone or garbled from reading as a model mismatch.
+# trace_state FILE: what a declared trace holds as the capture left it
+# (V-59), read by the profile's trace method: missing, empty, damaged or
+# read. A JSON-lines transcript (jsonl-session, jsonl-rollout) is damaged
+# when no line is a JSON object or a line is not JSON; a conversation
+# database (sqlite-conversation) when a copy of it with its write-ahead log
+# does not open, fails SQLite's quick check or has no step. verify decides
+# the verdict; this only keeps a run whose trace is gone or garbled from
+# reading as a model mismatch.
 trace_state() { # file
-  python3 - "$1" <<'PY'
-import json, os, sys
-p = sys.argv[1]
+  python3 - "$p_trace_method" "$1" <<'PY'
+import json, os, shutil, sqlite3, sys, tempfile
+method, p = sys.argv[1:]
 if not os.path.exists(p):
     print("missing"); sys.exit()
 if os.path.getsize(p) == 0:
     print("empty"); sys.exit()
+if method == "sqlite-conversation":
+    # A copy, so the capture's file and directory are not written (I-51).
+    ok = False
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            shutil.copy(p, d + "/c.db")
+            if os.path.exists(p + "-wal"):
+                shutil.copy(p + "-wal", d + "/c.db-wal")
+            c = sqlite3.connect(d + "/c.db")
+            ok = c.execute("pragma quick_check").fetchone()[0] == "ok" and \
+                c.execute("select count(*) from steps").fetchone()[0] > 0
+            c.close()
+        except (OSError, sqlite3.Error):
+            pass
+    print("read" if ok else "damaged"); sys.exit()
 ok = bad = 0
 for line in open(p, encoding="utf-8", errors="replace"):
     if not line.strip():

@@ -385,7 +385,7 @@ func printTrace(w io.Writer, v verification.Verdict) {
 			p("  %s\n", t.Detail)
 		}
 		if !t.Declared {
-			p("  the adapter declares no trace files, so the capture is not searched for what happened to them\n")
+			p("  the adapter declares no trace path whose change is tampering, so the capture is not searched for tampering\n")
 		}
 		for _, f := range t.Files {
 			last := "no write observed"

@@ -236,7 +236,7 @@
         "dir": "~/.gemini/antigravity-cli/conversations",
         "file": "{label}.conversation.db",
         "subagents": "{label}.conversation/subagents",
-        "declared": false,
+        "declared": true,
         "states_version": false
       },
       "content": [

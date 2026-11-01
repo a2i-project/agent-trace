@@ -109,6 +109,14 @@ Options: (a) keep V-47; (b) pair a `git_commit` claim with the close of the ref 
 Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, never aligned and never a finding, and the run is at best INCONCLUSIVE. The fs probe already records the ref and object writes inside the workspace with their closed-file hashes, so no new kernel probe is needed. A packed ref (`.git/packed-refs`), a commit made by a `git` outside the tracked tree, or a repository outside the fs scope would need their own rules.
 Blocked by: An agent that emits `git_commit` claims. No current adapter does.
 
+### O-37: Which write-class events on agy's SQLite trace are tampering
+Status: Open.
+Date: 2026-11-01.
+Question: V-59 reads every write-class event (`file_write`, `file_close`, `file_rename`, `file_delete`) on a covered trace path by a process other than the harness's as tampering, and the user ruled that reading the trace is not. A stock SQLite client that only reads agy's conversation database opens it for writing and leaves a `file_close` of the database and of its `-wal` and `-shm`; for a database no other process holds open it also creates, writes and deletes the `-wal` and `-shm`, and may checkpoint a non-empty `-wal` into the database (I-102). Which events on which paths should count?
+Options: (a) cover the databases with their `-wal` and `-journal`, not `-shm` (an index rebuilt from the log, written through a shared mapping by every reader, holding no step), and amend V-59 for every adapter: a `file_close` by a process that made no `file_write` of that path since its open changed nothing and is not tampering; a read of a conversation agy holds open (its own and its subagents' during the run) then leaves nothing, while a writable read of another conversation still creates and deletes its `-wal` and reads as tampering unless opened read-only; (b) cover the databases with `-wal`, `-shm` and `-journal` under V-59 as it stands, and record as a known limit that an agent reading agy's trace with a writable SQLite connection is NOT FAITHFUL; (c) also cover `brain/<uuid>/.system_generated/`, the transcripts and step outputs of the same conversation, under (a) or (b) (the agent's own artifacts under `brain/<uuid>/`, which `write_to_file` writes, are outside it); (d) keep I-102's main files only.
+Current behaviour: (d), I-102. Recommendation: (a), with (c) once a capture shows no other process writes there in an honest run (none at hand does).
+Blocked by: The user's ruling; (a) changes `pkg/verification` and V-59 for every adapter.
+
 ## Proposals (not decided)
 
 ### O-18: Move net hooks to the kernel socket layer (fentry or LSM)

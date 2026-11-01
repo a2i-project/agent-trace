@@ -111,6 +111,50 @@ print(json.dumps({"type": "thread.started", "thread_id": tid}, separators=(",", 
 json.dump([], open(os.path.join(fake, "events.json"), "w"))
 `
 
+// fakeAgy stands in for agy: it prints its version, writes a conversation
+// database under ~/.gemini/antigravity-cli/conversations with one step and
+// the model in its executor metadata, and prints the conversation id as agy
+// -p --output-format json does. For the task run with FAKE_TASK=delete it
+// deletes the database again as an agent's command would, with the events a
+// capture would hold under /home/shim; with FAKE_TASK=garble it overwrites
+// the database with bytes that are not one.
+const fakeAgy = `#!/usr/bin/env python3
+import json, os, sqlite3, sys, uuid
+args = sys.argv[1:]
+if args[:1] == ["--version"]:
+    print("1.3.4"); sys.exit()
+model = args[args.index("--model") + 1]
+prompt = args[-1]
+cid = str(uuid.uuid4())
+d = os.path.join(os.environ["HOME"], ".gemini", "antigravity-cli", "conversations")
+os.makedirs(d, exist_ok=True)
+path = os.path.join(d, cid + ".db")
+c = sqlite3.connect(path)
+c.execute("create table steps (idx integer, step_type integer, status integer, has_subtrajectory boolean, step_payload blob)")
+c.execute("insert into steps values (0, 1, 3, 0, x'')")
+c.execute("create table executor_metadata (data blob)")
+c.execute("insert into executor_metadata values (?)", (b"\x0a" + model.encode(),))
+c.commit(); c.close()
+obs = "/home/shim/.gemini/antigravity-cli/conversations/%s.db" % cid
+root = 1000
+def ev(ms, typ, target, pid=root, **kw):
+    e = {"timestamp": "2026-10-31T10:00:00.%03dZ" % ms, "action_type": typ, "target": target, "pid": pid}
+    e.update(kw)
+    return e
+events = [ev(1, "file_open", obs), ev(2, "file_write", obs), ev(3, "file_close", obs)]
+task = "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK")
+if task == "delete":
+    os.remove(path)
+    cmd = "/bin/bash -c rm " + obs
+    events += [ev(10, "process_fork", "x", 2001, ppid=root), ev(11, "process_exec", cmd, 2001, ppid=root),
+               ev(12, "file_delete", obs, 2001), ev(13, "process_exit", cmd, 2001, ppid=root, exit_code=0)]
+if task == "garble":
+    open(path, "wb").write(b"not a database\n" * 64)
+with open(os.path.join(os.environ["FAKE_DIR"], "events.json"), "w") as f:
+    json.dump(events, f)
+print(json.dumps({"conversation_id": cid, "response": "ok"}, separators=(",", ":")))
+`
+
 const fakeWatch = `#!/usr/bin/env bash
 set -e
 out= ws=
@@ -183,6 +227,7 @@ func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	bin := filepath.Join(tmp, "bin")
 	write(t, filepath.Join(bin, "claude"), fakeClaude, 0o755)
 	write(t, filepath.Join(bin, "codex"), fakeCodex, 0o755)
+	write(t, filepath.Join(bin, "agy"), fakeAgy, 0o755)
 	write(t, filepath.Join(bin, "sudo"), fakeSudo, 0o755)
 	write(t, filepath.Join(bin, "setpriv"), fakeSetpriv, 0o755)
 	home := filepath.Join(tmp, "home")
@@ -639,5 +684,56 @@ func TestAnAsideFileFromAnInterruptedCaptureIsRefused(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(aside); string(got) != "kept\n" {
 		t.Errorf("the aside file changed: %q", got)
+	}
+}
+
+// agy's conversation database is a declared trace (I-102): a task run whose
+// database is gone or is not a database is kept as a result, its model is
+// not checked, and verify reports a trace it cannot verify; an intact one
+// reads, passes the model check and is compared with nothing the shim's
+// capture hashed.
+func TestCaptureOfAgyKeepsARunWhoseDatabaseIsGoneOrDamaged(t *testing.T) {
+	for mode, want := range map[string]struct{ state, outcome, log string }{
+		"delete": {"missing", "INCONCLUSIVE", "TRACE DELETED OR DAMAGED: missing, 0 piece(s) of tampering evidence; the run is INCONCLUSIVE"},
+		"garble": {"damaged", "INCONCLUSIVE", "TRACE DELETED OR DAMAGED: the transcript of basic is damaged"},
+		"":       {"read", "", ""},
+	} {
+		root, tmp, env := layout(t, mode)
+		out := filepath.Join(tmp, "out")
+		cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "gemini", "--task", "basic", out)
+		cmd.Env = env
+		b, err := cmd.CombinedOutput()
+		log := string(b)
+		if err != nil {
+			t.Errorf("%q: capture: %v\n%s", mode, err, log)
+			continue
+		}
+		if strings.Contains(log, "MODEL MISMATCH") || strings.Contains(log, "no conversation database found") {
+			t.Errorf("%q: the log reads like a harness error:\n%s", mode, log)
+		}
+		if want.log != "" && !strings.Contains(log, want.log) {
+			t.Errorf("%q: log lacks %q:\n%s", mode, want.log, log)
+		}
+		if want.log == "" && strings.Contains(log, "TRACE") {
+			t.Errorf("an intact database was reported:\n%s", log)
+		}
+		if b, _ := os.ReadFile(filepath.Join(out, "basic.trace.txt")); strings.TrimSpace(string(b)) != want.state {
+			t.Errorf("%q: basic.trace.txt = %q, want %s", mode, b, want.state)
+		}
+		order, _ := os.ReadFile(filepath.Join(out, "order.tsv"))
+		check := "model_check=trace-" + want.state + ";"
+		if want.state == "read" {
+			check = "model_check=0;observed=gemini-3.8-flash-high;"
+		}
+		if !strings.Contains(string(order), check) {
+			t.Errorf("%q: order.tsv lacks %q:\n%s", mode, check, order)
+		}
+		v := readVerify(t, filepath.Join(out, "verify-baseline.json"))
+		if want.outcome != "" && (v.Outcome != want.outcome || v.Trace == nil || v.TraceTampering != nil) {
+			t.Errorf("%q: verify-baseline.json: %+v", mode, v)
+		}
+		if want.outcome == "" && (v.TraceTampering != nil || (v.Trace != nil && v.Trace.State != "")) {
+			t.Errorf("intact: verify-baseline.json: %+v", v)
+		}
 	}
 }
