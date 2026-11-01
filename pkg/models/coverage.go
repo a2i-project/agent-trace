@@ -123,9 +123,9 @@ type ProbeCoverage struct {
 // note or verdict depends on it (P-34, N-33).
 type ProbeDiagnostics struct {
 	// Rings is keyed by the kernel ring buffer's map name: "events" (proc),
-	// "net_events", "ssl_events" and "aead_events" (net; ssl_events only
-	// when content capture was configured, aead_events only with the
-	// tls-rustls-aead method).
+	// "net_events", "ssl_events", "aead_events" and "go_events" (net;
+	// ssl_events only when content capture was configured, aead_events only
+	// with the tls-rustls-aead method, go_events only with tls-go-crypto).
 	Rings map[string]RingStats `json:"rings,omitempty"`
 	// TrackedSets is keyed by the eBPF object whose tracked_pids map it
 	// describes: "proc", "net" and "tls" (tls only when content capture was
@@ -144,6 +144,20 @@ type ProbeDiagnostics struct {
 	// Nil without content capture.
 	// Net probe only.
 	ContentMethods map[string]ContentMethodState `json:"content_methods,omitempty"`
+	// GoTLS holds the Go probes' call counts (tls-go-crypto, N-47). Nil
+	// without the method. Net probe only.
+	GoTLS *GoTLSCounts `json:"go_tls,omitempty"`
+}
+
+// GoTLSCounts are the calls of crypto/tls.(*Conn).Write and Read whose
+// entry the Go probes saw, and those whose return they saw (N-47). Calls in
+// flight at the stop have no return; a larger gap is a return the probes
+// missed, whose bytes are not captured.
+type GoTLSCounts struct {
+	WriteCalls   uint64 `json:"write_calls"`
+	WriteReturns uint64 `json:"write_returns"`
+	ReadCalls    uint64 `json:"read_calls"`
+	ReadReturns  uint64 `json:"read_returns"`
 }
 
 // MethodContent is the request and response content state of one content
@@ -306,6 +320,12 @@ type NetContentCounts struct {
 	AEADUnbound     int `json:"aead_unbound,omitempty"`
 	AEADRebound     int `json:"aead_rebound,omitempty"`
 	AEADUnpaired    int `json:"aead_unpaired,omitempty"`
+	// Go counts (tls-go-crypto, N-48): frames discarded before their
+	// direction validated, frames whose *Conn led to no socket, and *Conn
+	// addresses reused for a new connection.
+	GoUnvalidated int `json:"go_unvalidated,omitempty"`
+	GoUnbound     int `json:"go_unbound,omitempty"`
+	GoConnReused  int `json:"go_conn_reused,omitempty"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.

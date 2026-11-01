@@ -27,7 +27,10 @@
 // argument; tls-rustls-aead hooks rustls's AEAD record methods, plaintext at
 // encrypt's entry and decrypt's result at its return, on a ring of its own
 // (aead_events), and follows the tracked threads' socket syscalls to tell
-// userspace which socket each record went to or came from (N-40).
+// userspace which socket each record went to or came from (N-40);
+// tls-go-crypto hooks Go's crypto/tls.(*Conn).Write and Read at their entry
+// and at each of their RET instructions, on a ring of its own (go_events),
+// with the socket each *Conn holds (N-47, N-48).
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
@@ -45,15 +48,17 @@ char LICENSE[] SEC("license") = "GPL";
 
 // method: who made the frame. SSL_METHOD_SSL is SSL_write and SSL_read or
 // their _ex forms, ssl being the SSL*; SSL_METHOD_AEAD is a rustls record,
-// ssl being the encrypter or decrypter object.
+// ssl being the encrypter or decrypter object; SSL_METHOD_GO is Go's
+// crypto/tls.(*Conn).Write or Read, ssl being the *Conn (N-48).
 #define SSL_METHOD_SSL 0
 #define SSL_METHOD_AEAD 1
+#define SSL_METHOD_GO 2
 
 // len is the number of bytes copied into the payload, total the number the
 // call wrote or read; total > len means the frame is truncated (the call
 // moved more than SSL_CAP_LEN bytes). sock is the inode number of the
-// socket a rustls record was read from (the thread's last receive), 0 when
-// unknown and on every other frame.
+// socket a rustls record was read from (the thread's last receive), or of a
+// Go *Conn's socket (N-48), 0 when unknown and on every other frame.
 struct ssl_frame_hdr {
 	__u64 ts_ns;
 	__u64 ssl;
@@ -962,6 +967,220 @@ int aead_sys_enter(struct bpf_raw_tracepoint_args *ctx)
 	aead_fill(e, id, k.self, ino, 0, 0, SSL_DIR_BIND);
 	aead_output(e, 0);
 	return 0;
+}
+
+// --- tls-go-crypto (N-47, N-48) --------------------------------------------
+//
+// Go's crypto/tls.(*Conn).Write(b []byte) (int, error) and Read(b []byte)
+// (int, error), in Go's register ABI on amd64: the *Conn in RAX, the slice's
+// pointer in RBX and length in RCX at the entry, the int result in RAX at a
+// return, and the running goroutine (g) in R14 throughout. Go moves stacks,
+// so a uretprobe is unsafe: an entry probe stashes the arguments by tgid and
+// goroutine, and a probe at each RET instruction pkg/tlsoffset found takes
+// them back. The goroutine, not the thread, keys the stash, since a
+// goroutine that blocks in the call can resume on another thread.
+
+#define GO_CHUNKS_MAX 32 // 512 KiB of one call, in 16 KiB frames
+
+// The *Conn's socket, read through Go's layouts (N-48): tls.Conn begins
+// with its net.Conn interface (type word, data word), whose data for a TCP
+// connection is a *net.TCPConn, whose first word is its *netFD, whose
+// poll.FD begins with a 16-byte fdMutex and then Sysfd. A Conn over another
+// net.Conn leads to a descriptor that is no socket (0 here, counted by
+// userspace) or, rarely, to another socket.
+#define GO_CONN_IFACE_DATA 8
+#define GO_NETFD_SYSFD 16
+
+struct go_key {
+	__u64 g;
+	__u32 tgid;
+	__u32 dir;
+};
+
+struct go_arg {
+	__u64 conn;
+	__u64 buf;
+	__u64 len;
+	__u64 sock;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 8192);
+	__type(key, struct go_key);
+	__type(value, struct go_arg);
+} go_args SEC(".maps");
+
+// go_events carries the Go frames, apart from the other rings so its reader
+// never waits for another method's validation. 4 MiB; one page when the
+// method is not configured.
+struct {
+	__uint(type, BPF_MAP_TYPE_RINGBUF);
+	__uint(max_entries, 1 << 22);
+} go_events SEC(".maps");
+
+// go_drop_count counts write frames go_events discarded; read frames count
+// in read_drop_count, a response gap as on the SSL side.
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} go_drop_count SEC(".maps");
+
+// go_stat counts, per direction, the calls whose entry the probes saw and
+// those whose return they saw with a stash: a gap beyond the calls in
+// flight at the stop is a return the RET probes missed (N-47).
+struct go_counts {
+	__u64 write_calls;
+	__u64 write_returns;
+	__u64 read_calls;
+	__u64 read_returns;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, struct go_counts);
+} go_stat SEC(".maps");
+
+// go_conn_sock reads the socket inode number behind a *Conn, 0 when the
+// layout does not lead to a socket.
+static __always_inline __u64 go_conn_sock(__u64 conn)
+{
+	__u64 data = 0, fd_ptr = 0;
+	__s64 fd = -1;
+	if (bpf_probe_read_user(&data, sizeof(data), (void *)(conn + GO_CONN_IFACE_DATA)) || !data)
+		return 0;
+	if (bpf_probe_read_user(&fd_ptr, sizeof(fd_ptr), (void *)data) || !fd_ptr)
+		return 0;
+	if (bpf_probe_read_user(&fd, sizeof(fd), (void *)(fd_ptr + GO_NETFD_SYSFD)))
+		return 0;
+	if (fd < 0 || fd > 0x7fffffff)
+		return 0;
+	return fd_sock_ino((__u32)fd);
+}
+
+static __always_inline void go_count(__u32 dir, int ret)
+{
+	__u32 zero = 0;
+	struct go_counts *c = bpf_map_lookup_elem(&go_stat, &zero);
+	if (!c)
+		return;
+	if (dir == SSL_DIR_WRITE) {
+		if (ret)
+			__sync_fetch_and_add(&c->write_returns, 1);
+		else
+			__sync_fetch_and_add(&c->write_calls, 1);
+	} else {
+		if (ret)
+			__sync_fetch_and_add(&c->read_returns, 1);
+		else
+			__sync_fetch_and_add(&c->read_calls, 1);
+	}
+}
+
+static __always_inline int go_entry(struct pt_regs *ctx, __u32 dir)
+{
+	__u64 id = bpf_get_current_pid_tgid();
+	if (!is_tracked(id >> 32))
+		return 0;
+	struct go_key k = {.g = ctx->r14, .tgid = id >> 32, .dir = dir};
+	struct go_arg a = {.conn = ctx->ax, .buf = ctx->bx, .len = ctx->cx};
+	a.sock = go_conn_sock(a.conn);
+	bpf_map_update_elem(&go_args, &k, &a, BPF_ANY);
+	go_count(dir, 0);
+	return 0;
+}
+
+static __always_inline void go_fill(struct ssl_frame *e, __u64 id, struct go_arg *a, __u32 len, __u32 total, __u32 dir)
+{
+	e->hdr.tgid = id >> 32;
+	e->hdr.tid = (__u32)id;
+	e->hdr.ts_ns = bpf_ktime_get_ns();
+	e->hdr.ssl = a->conn;
+	e->hdr.sock = a->sock;
+	e->hdr.len = len;
+	e->hdr.total = total;
+	e->hdr.dir = dir;
+	e->hdr.method = SSL_METHOD_GO;
+}
+
+// go_return takes the goroutine's stash back at a RET and, for a result
+// above zero, copies that many bytes (never more than the slice's length)
+// in frames of at most SSL_CAP_LEN, at most GO_CHUNKS_MAX of them; bytes
+// past those are announced by an empty frame whose total counts them, so
+// the stream sees them as missing (N-44).
+static __always_inline int go_return(struct pt_regs *ctx, __u32 dir)
+{
+	__u64 id = bpf_get_current_pid_tgid();
+	if (!is_tracked(id >> 32))
+		return 0;
+	struct go_key k = {.g = ctx->r14, .tgid = id >> 32, .dir = dir};
+	struct go_arg *ap = bpf_map_lookup_elem(&go_args, &k);
+	if (!ap)
+		return 0;
+	struct go_arg a = *ap;
+	bpf_map_delete_elem(&go_args, &k);
+	go_count(dir, 1);
+	__s64 ret = (__s64)ctx->ax;
+	if (ret <= 0)
+		return 0;
+	__u64 n = (__u64)ret;
+	if (n > a.len)
+		n = a.len;
+
+	__u32 zero = 0;
+	struct ssl_frame *e = bpf_map_lookup_elem(&ssl_heap, &zero);
+	if (!e)
+		return 0;
+	__u64 off = 0;
+	for (int i = 0; i < GO_CHUNKS_MAX; i++) {
+		if (off >= n)
+			break;
+		__u64 left = n - off;
+		__u32 len = left > SSL_CAP_LEN ? SSL_CAP_LEN : (__u32)left;
+		if (bpf_probe_read_user(e->payload, len, (void *)(a.buf + off))) {
+			count_percpu(dir == SSL_DIR_WRITE ? (void *)&faulted_reads : (void *)&read_fault_count);
+			return 0;
+		}
+		go_fill(e, id, &a, len, len, dir);
+		if (bpf_ringbuf_output(&go_events, e, sizeof(e->hdr) + len, 0))
+			count_percpu(dir == SSL_DIR_WRITE ? (void *)&go_drop_count : (void *)&read_drop_count);
+		off += len;
+	}
+	if (off < n) {
+		__u64 left = n - off;
+		go_fill(e, id, &a, 0, left > 0xffffffffULL ? 0xffffffff : (__u32)left, dir);
+		if (bpf_ringbuf_output(&go_events, e, sizeof(e->hdr), 0))
+			count_percpu(dir == SSL_DIR_WRITE ? (void *)&go_drop_count : (void *)&read_drop_count);
+	}
+	return 0;
+}
+
+SEC("uprobe/go_tls_write")
+int probe_go_write(struct pt_regs *ctx)
+{
+	return go_entry(ctx, SSL_DIR_WRITE);
+}
+
+SEC("uprobe/go_tls_write_ret")
+int probe_go_write_ret(struct pt_regs *ctx)
+{
+	return go_return(ctx, SSL_DIR_WRITE);
+}
+
+SEC("uprobe/go_tls_read")
+int probe_go_read(struct pt_regs *ctx)
+{
+	return go_entry(ctx, SSL_DIR_READ);
+}
+
+SEC("uprobe/go_tls_read_ret")
+int probe_go_read_ret(struct pt_regs *ctx)
+{
+	return go_return(ctx, SSL_DIR_READ);
 }
 
 #define CLONE_THREAD 0x10000

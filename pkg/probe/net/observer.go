@@ -126,8 +126,8 @@ type Config struct {
 	// Content lists content methods by name with the executable or library
 	// each hooks, as the agent's profile chooses them (N-39): at most one
 	// of MethodTLSSymbols and MethodOpenSSLEx (the SSL side, which ExePath
-	// also sets as MethodTLSSymbols), and MethodRustlsAEAD. Empty with no
-	// ExePath: identity-only.
+	// also sets as MethodTLSSymbols), MethodRustlsAEAD, and MethodGoCrypto
+	// (N-48). Empty with no ExePath: identity-only.
 	Content []ContentMethod
 }
 
@@ -136,6 +136,7 @@ const (
 	MethodTLSSymbols = "tls-symbols"    // SSL_write and SSL_read
 	MethodOpenSSLEx  = "tls-openssl-ex" // SSL_write_ex and SSL_read_ex
 	MethodRustlsAEAD = "tls-rustls-aead"
+	MethodGoCrypto   = "tls-go-crypto" // Go's crypto/tls.(*Conn).Write and Read (N-48)
 )
 
 // ContentMethod is one content method and the file it hooks.
@@ -145,10 +146,11 @@ type ContentMethod struct {
 }
 
 // contentPlan is Config's content methods resolved: the SSL side's method
-// and file, and the rustls file; "" for a side not configured.
+// and file, the rustls file and the Go file; "" for a side not configured.
 type contentPlan struct {
 	sslMethod, sslPath string
 	aeadPath           string
+	goPath             string
 }
 
 // planContent resolves cfg's content methods, refusing an unknown method,
@@ -174,8 +176,13 @@ func planContent(cfg Config) (contentPlan, error) {
 				return p, fmt.Errorf("content method %s given twice", m.Method)
 			}
 			p.aeadPath = m.Path
+		case MethodGoCrypto:
+			if p.goPath != "" {
+				return p, fmt.Errorf("content method %s given twice", m.Method)
+			}
+			p.goPath = m.Path
 		default:
-			return p, fmt.Errorf("unknown content method %q (%s, %s or %s)", m.Method, MethodTLSSymbols, MethodOpenSSLEx, MethodRustlsAEAD)
+			return p, fmt.Errorf("unknown content method %q (%s, %s, %s or %s)", m.Method, MethodTLSSymbols, MethodOpenSSLEx, MethodRustlsAEAD, MethodGoCrypto)
 		}
 	}
 	return p, nil
@@ -360,6 +367,21 @@ type Observer struct {
 	aeadWriteValid, aeadReadValid bool
 	aeadBound                     map[sslKey]uint64
 	finalAEADDrops                atomic.Uint64
+
+	// The Go side (N-47, N-48), set up by prepareGo; goReader is nil
+	// without it. goLinks are its entry and return probes.
+	goLinks    []link.Link
+	goReader   *ringbuf.Reader
+	goRing     ringMeter
+	goRingSize uint64
+	goDraining atomic.Bool
+	goScan     tlsoffset.GoTLSResult
+	goCounts   *goCountsMeter
+	// Owned by correlate: whether a Go write frame began with a request
+	// line or the HTTP/2 preface and a read frame with a status line or a
+	// server SETTINGS frame.
+	goWriteValid, goReadValid bool
+	finalGoDrops              atomic.Uint64
 }
 
 // rawTracepoint is one program and the raw tracepoint it attaches to.
@@ -537,7 +559,7 @@ func New(cfg Config) (*Observer, error) {
 	}
 	o.plan = plan
 	o.aeadBound = map[sslKey]uint64{}
-	if plan.sslPath != "" || plan.aeadPath != "" {
+	if plan.sslPath != "" || plan.aeadPath != "" || plan.goPath != "" {
 		if err := o.prepareTLS(cfg); err != nil {
 			_ = reader.Close()
 			closeAll()
@@ -573,11 +595,22 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 		// The rustls ring is not read: one page instead of 4 MiB.
 		tlsSpec.Maps["aead_events"].MaxEntries = uint32(os.Getpagesize())
 	}
+	if o.plan.goPath == "" {
+		// Nor the Go ring.
+		tlsSpec.Maps["go_events"].MaxEntries = uint32(os.Getpagesize())
+	}
 	if err := tlsSpec.LoadAndAssign(&o.tlsObjs, nil); err != nil {
 		return fmt.Errorf("load tls eBPF objects: %w", err)
 	}
 	defer func() {
 		if err != nil {
+			closeLinks(o.goLinks)
+			o.goLinks = nil
+			if o.goReader != nil {
+				_ = o.goReader.Close()
+				o.goReader = nil
+			}
+			o.goCounts = nil
 			closeLinks(o.aeadLinks)
 			o.aeadLinks = nil
 			if o.aeadReader != nil {
@@ -632,6 +665,11 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	if o.plan.aeadPath != "" {
 		if err := o.prepareAEAD(); err != nil {
 			return fmt.Errorf("prepare %s content capture: %w", MethodRustlsAEAD, err)
+		}
+	}
+	if o.plan.goPath != "" {
+		if err := o.prepareGo(); err != nil {
+			return fmt.Errorf("prepare %s content capture: %w", MethodGoCrypto, err)
 		}
 	}
 	return nil
@@ -927,6 +965,7 @@ func (o *Observer) Coverage() Coverage {
 			readFault:  o.finalReadFaults.Load(),
 			readDrop:   o.finalReadDrops.Load(),
 			aeadDrop:   o.finalAEADDrops.Load(),
+			goDrop:     o.finalGoDrops.Load(),
 		}
 	}
 	var k kernelCounts
@@ -940,8 +979,9 @@ func (o *Observer) Coverage() Coverage {
 		}
 	}
 	cov.FaultedReads += k.faulted
-	cov.RingbufDrops += k.netDrop + k.tlsDrop + k.aeadDrop
+	cov.RingbufDrops += k.netDrop + k.tlsDrop + k.aeadDrop + k.goDrop
 	cov.AEADRingDrops += k.aeadDrop
+	cov.GoRingDrops += k.goDrop
 	cov.NetRingDrops += k.netDrop
 	cov.TLSRingDrops += k.tlsDrop
 	cov.UntrackedChildren += k.untracked
@@ -973,6 +1013,7 @@ type kernelCounts struct {
 	readFault  uint64 // SSL_read buffers that faulted
 	readDrop   uint64 // SSL_read frames the TLS ring buffer discarded
 	aeadDrop   uint64 // rustls frames and bind records the aead_events ring discarded
+	goDrop     uint64 // Go write frames the go_events ring discarded
 }
 
 // kernelCounters sums the counters above. An error means a map could not be
@@ -1001,6 +1042,7 @@ func (o *Observer) kernelCounters() (k kernelCounts, err error) {
 	add(&k.readFault, o.tlsObjs.ReadFaultCount)
 	add(&k.readDrop, o.tlsObjs.ReadDropCount)
 	add(&k.aeadDrop, o.tlsObjs.AeadDropCount)
+	add(&k.goDrop, o.tlsObjs.GoDropCount)
 	return k, err
 }
 
@@ -1086,6 +1128,9 @@ func (o *Observer) contentMethods() map[string]models.ContentMethodState {
 	if o.plan.aeadPath != "" {
 		m[MethodRustlsAEAD] = models.ContentMethodState{Requests: state(o.aeadWriteValid), Responses: state(o.aeadReadValid)}
 	}
+	if o.plan.goPath != "" {
+		m[MethodGoCrypto] = models.ContentMethodState{Requests: state(o.goWriteValid), Responses: state(o.goReadValid)}
+	}
 	return m
 }
 
@@ -1117,6 +1162,14 @@ func (o *Observer) diagnostics(cov Coverage, methods map[string]models.ContentMe
 			SizeBytes: o.aeadRingSize, PeakBytes: o.aeadRing.peak.Load(), Records: o.aeadRing.records.Load(), Drops: cov.AEADRingDrops,
 		}
 	}
+	if o.goReader != nil {
+		d.Rings["go_events"] = models.RingStats{
+			SizeBytes: o.goRingSize, PeakBytes: o.goRing.peak.Load(), Records: o.goRing.records.Load(), Drops: cov.GoRingDrops,
+		}
+	}
+	if o.goCounts != nil {
+		d.GoTLS = o.goCounts.counts()
+	}
 	if len(methods) > 0 {
 		d.ContentMethods = methods
 	}
@@ -1139,6 +1192,7 @@ func netContentCounts(c Coverage) *models.NetContentCounts {
 		WebSockets: c.WebSockets, WSAccepted: c.WSAccepted, WSRequests: c.WSRequests, WSServerMessages: c.WSServerMessages, WSModelRequests: c.WSModelRequests,
 		WSRefused: c.WSRefused, WSRefusedReasons: c.WSRefusedReasons, WSDeflate: c.WSDeflate, WSUnparsed: c.WSUnparsed,
 		AEADUnvalidated: c.AEADUnvalidated, AEADUnbound: c.AEADUnbound, AEADRebound: c.AEADRebound, AEADUnpaired: c.AEADUnpaired,
+		GoUnvalidated: c.GoUnvalidated, GoUnbound: c.GoUnbound, GoConnReused: c.GoConnReused,
 	}
 }
 
@@ -1225,6 +1279,13 @@ func (o *Observer) Stop() error {
 		if o.aeadReader != nil {
 			_ = o.aeadReader.Flush()
 		}
+		// The Go side, the same way.
+		closeLinksReverse(o.goLinks)
+		o.goLinks = nil
+		o.goDraining.Store(true)
+		if o.goReader != nil {
+			_ = o.goReader.Flush()
+		}
 		<-o.stopped
 		// correlate has returned, so Start has decided whether
 		// validateRead runs; stop it and wait for it to release its links.
@@ -1246,6 +1307,7 @@ func (o *Observer) Stop() error {
 		o.finalReadFaults.Store(k.readFault)
 		o.finalReadDrops.Store(k.readDrop)
 		o.finalAEADDrops.Store(k.aeadDrop)
+		o.finalGoDrops.Store(k.goDrop)
 		o.kernelCountersFinal.Store(true)
 		if o.netTracked != nil {
 			o.netTracked.snapshot()
@@ -1256,6 +1318,9 @@ func (o *Observer) Stop() error {
 		if o.sslWrites != nil {
 			o.sslWrites.snapshot()
 		}
+		if o.goCounts != nil {
+			o.goCounts.snapshot()
+		}
 		closeLinks(o.readLinks)
 		_ = o.reader.Close()
 		if o.sslReader != nil {
@@ -1263,6 +1328,9 @@ func (o *Observer) Stop() error {
 		}
 		if o.aeadReader != nil {
 			_ = o.aeadReader.Close()
+		}
+		if o.goReader != nil {
+			_ = o.goReader.Close()
 		}
 		_ = o.tlsObjs.Close()
 		_ = o.objs.Close()
@@ -1324,6 +1392,11 @@ func (o *Observer) correlate() {
 		aeadCh = make(chan sslRecord, 64)
 		go o.aeadFeed(aeadCh)
 	}
+	var goCh chan sslRecord
+	if o.goReader != nil {
+		goCh = make(chan sslRecord, 64)
+		go o.goFeed(goCh)
+	}
 
 	// Each feeder's channel is set to nil once it closes: a closed channel is
 	// always ready, so leaving it in the select would spin this goroutine at
@@ -1331,8 +1404,15 @@ func (o *Observer) correlate() {
 	// and drops out of the select instead.
 	defer o.flushOpenConnections()
 	defer o.flushResponses()
-	for netCh != nil || sslCh != nil || aeadCh != nil {
+	for netCh != nil || sslCh != nil || aeadCh != nil || goCh != nil {
 		select {
+		case rec, ok := <-goCh:
+			if !ok {
+				goCh = nil
+				continue
+			}
+			o.handleGoRecord(rec, time.Unix(0, int64(rec.hdr.TsNs)+o.bootOffsetNs))
+
 		case rec, ok := <-aeadCh:
 			if !ok {
 				aeadCh = nil

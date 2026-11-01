@@ -34,6 +34,29 @@ type tlsbpfEncKey struct {
 	Pad  uint32
 }
 
+type tlsbpfGoArg struct {
+	_    structs.HostLayout
+	Conn uint64
+	Buf  uint64
+	Len  uint64
+	Sock uint64
+}
+
+type tlsbpfGoCounts struct {
+	_            structs.HostLayout
+	WriteCalls   uint64
+	WriteReturns uint64
+	ReadCalls    uint64
+	ReadReturns  uint64
+}
+
+type tlsbpfGoKey struct {
+	_    structs.HostLayout
+	G    uint64
+	Tgid uint32
+	Dir  uint32
+}
+
 type tlsbpfSslFrame struct {
 	_       structs.HostLayout
 	Hdr     tlsbpfSslFrameHdr
@@ -94,6 +117,10 @@ const (
 	tlsbpfMapAeadEvents              = "aead_events"
 	tlsbpfMapDropCount               = "drop_count"
 	tlsbpfMapFaultedReads            = "faulted_reads"
+	tlsbpfMapGoArgs                  = "go_args"
+	tlsbpfMapGoDropCount             = "go_drop_count"
+	tlsbpfMapGoEvents                = "go_events"
+	tlsbpfMapGoStat                  = "go_stat"
 	tlsbpfMapLastRecv                = "last_recv"
 	tlsbpfMapPendingEnc              = "pending_enc"
 	tlsbpfMapReadDropCount           = "read_drop_count"
@@ -115,6 +142,10 @@ const (
 	tlsbpfProgProbeAeadDecryptEntry  = "probe_aead_decrypt_entry"
 	tlsbpfProgProbeAeadDecryptReturn = "probe_aead_decrypt_return"
 	tlsbpfProgProbeAeadEncrypt       = "probe_aead_encrypt"
+	tlsbpfProgProbeGoRead            = "probe_go_read"
+	tlsbpfProgProbeGoReadRet         = "probe_go_read_ret"
+	tlsbpfProgProbeGoWrite           = "probe_go_write"
+	tlsbpfProgProbeGoWriteRet        = "probe_go_write_ret"
 	tlsbpfProgProbeSslReadEntry      = "probe_ssl_read_entry"
 	tlsbpfProgProbeSslReadExEntry    = "probe_ssl_read_ex_entry"
 	tlsbpfProgProbeSslReadExReturn   = "probe_ssl_read_ex_return"
@@ -173,6 +204,10 @@ type tlsbpfProgramSpecs struct {
 	ProbeAeadDecryptEntry  *ebpf.ProgramSpec `ebpf:"probe_aead_decrypt_entry"`
 	ProbeAeadDecryptReturn *ebpf.ProgramSpec `ebpf:"probe_aead_decrypt_return"`
 	ProbeAeadEncrypt       *ebpf.ProgramSpec `ebpf:"probe_aead_encrypt"`
+	ProbeGoRead            *ebpf.ProgramSpec `ebpf:"probe_go_read"`
+	ProbeGoReadRet         *ebpf.ProgramSpec `ebpf:"probe_go_read_ret"`
+	ProbeGoWrite           *ebpf.ProgramSpec `ebpf:"probe_go_write"`
+	ProbeGoWriteRet        *ebpf.ProgramSpec `ebpf:"probe_go_write_ret"`
 	ProbeSslReadEntry      *ebpf.ProgramSpec `ebpf:"probe_ssl_read_entry"`
 	ProbeSslReadExEntry    *ebpf.ProgramSpec `ebpf:"probe_ssl_read_ex_entry"`
 	ProbeSslReadExReturn   *ebpf.ProgramSpec `ebpf:"probe_ssl_read_ex_return"`
@@ -194,6 +229,10 @@ type tlsbpfMapSpecs struct {
 	AeadEvents       *ebpf.MapSpec `ebpf:"aead_events"`
 	DropCount        *ebpf.MapSpec `ebpf:"drop_count"`
 	FaultedReads     *ebpf.MapSpec `ebpf:"faulted_reads"`
+	GoArgs           *ebpf.MapSpec `ebpf:"go_args"`
+	GoDropCount      *ebpf.MapSpec `ebpf:"go_drop_count"`
+	GoEvents         *ebpf.MapSpec `ebpf:"go_events"`
+	GoStat           *ebpf.MapSpec `ebpf:"go_stat"`
 	LastRecv         *ebpf.MapSpec `ebpf:"last_recv"`
 	PendingEnc       *ebpf.MapSpec `ebpf:"pending_enc"`
 	ReadDropCount    *ebpf.MapSpec `ebpf:"read_drop_count"`
@@ -244,6 +283,10 @@ type tlsbpfMaps struct {
 	AeadEvents       *ebpf.Map `ebpf:"aead_events"`
 	DropCount        *ebpf.Map `ebpf:"drop_count"`
 	FaultedReads     *ebpf.Map `ebpf:"faulted_reads"`
+	GoArgs           *ebpf.Map `ebpf:"go_args"`
+	GoDropCount      *ebpf.Map `ebpf:"go_drop_count"`
+	GoEvents         *ebpf.Map `ebpf:"go_events"`
+	GoStat           *ebpf.Map `ebpf:"go_stat"`
 	LastRecv         *ebpf.Map `ebpf:"last_recv"`
 	PendingEnc       *ebpf.Map `ebpf:"pending_enc"`
 	ReadDropCount    *ebpf.Map `ebpf:"read_drop_count"`
@@ -270,6 +313,10 @@ func (m *tlsbpfMaps) Close() error {
 		m.AeadEvents,
 		m.DropCount,
 		m.FaultedReads,
+		m.GoArgs,
+		m.GoDropCount,
+		m.GoEvents,
+		m.GoStat,
 		m.LastRecv,
 		m.PendingEnc,
 		m.ReadDropCount,
@@ -304,6 +351,10 @@ type tlsbpfPrograms struct {
 	ProbeAeadDecryptEntry  *ebpf.Program `ebpf:"probe_aead_decrypt_entry"`
 	ProbeAeadDecryptReturn *ebpf.Program `ebpf:"probe_aead_decrypt_return"`
 	ProbeAeadEncrypt       *ebpf.Program `ebpf:"probe_aead_encrypt"`
+	ProbeGoRead            *ebpf.Program `ebpf:"probe_go_read"`
+	ProbeGoReadRet         *ebpf.Program `ebpf:"probe_go_read_ret"`
+	ProbeGoWrite           *ebpf.Program `ebpf:"probe_go_write"`
+	ProbeGoWriteRet        *ebpf.Program `ebpf:"probe_go_write_ret"`
 	ProbeSslReadEntry      *ebpf.Program `ebpf:"probe_ssl_read_entry"`
 	ProbeSslReadExEntry    *ebpf.Program `ebpf:"probe_ssl_read_ex_entry"`
 	ProbeSslReadExReturn   *ebpf.Program `ebpf:"probe_ssl_read_ex_return"`
@@ -322,6 +373,10 @@ func (p *tlsbpfPrograms) Close() error {
 		p.ProbeAeadDecryptEntry,
 		p.ProbeAeadDecryptReturn,
 		p.ProbeAeadEncrypt,
+		p.ProbeGoRead,
+		p.ProbeGoReadRet,
+		p.ProbeGoWrite,
+		p.ProbeGoWriteRet,
 		p.ProbeSslReadEntry,
 		p.ProbeSslReadExEntry,
 		p.ProbeSslReadExReturn,

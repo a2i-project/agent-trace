@@ -33,7 +33,7 @@ type Coverage struct {
 	FramesUnattributed int    // ssl_frame whose request could not be joined to a connection or parsed
 	ContentUnsupported int    // no longer counted (N-46): before it, connections whose ClientHello offered h2 in ALPN
 	FaultedReads       uint64 // SSL_write calls whose plaintext read faulted in-kernel (see D5)
-	RingbufDrops       uint64 // records the net, TLS and rustls ring buffers discarded because they were full: NetRingDrops plus TLSRingDrops plus AEADRingDrops
+	RingbufDrops       uint64 // records the net, TLS, rustls and Go ring buffers discarded because they were full: NetRingDrops plus TLSRingDrops plus AEADRingDrops plus GoRingDrops
 	NetRingDrops       uint64 // records the net ring buffer discarded (N-33)
 	TLSRingDrops       uint64 // write frames the TLS ring buffer discarded (N-33)
 	UntrackedChildren  uint64 // descendants left untracked because a tracked_pids map was full (lower bound)
@@ -88,6 +88,12 @@ type Coverage struct {
 	AEADRebound     int    // binds of an encrypter to a socket other than its first, ignored
 	AEADUnpaired    int    // encrypters bound to a socket whose reads had begun a state of their own
 	AEADRingDrops   uint64 // rustls frames and bind records the aead_events ring discarded because it was full
+
+	// Go crypto/tls (tls-go-crypto, N-47, N-48).
+	GoUnvalidated int    // Go frames discarded before a frame of their direction began with a request line or the HTTP/2 preface, or a status line or a server SETTINGS frame
+	GoUnbound     int    // Go frames whose *Conn led to no socket, kept to their *Conn alone
+	GoConnReused  int    // *Conn addresses seen with a new socket: the old connection's state closed
+	GoRingDrops   uint64 // Go write frames the go_events ring discarded because it was full
 }
 
 // sslKey identifies the connection a run of ssl_frames belongs to: the
@@ -99,7 +105,8 @@ type Coverage struct {
 //
 // kind keeps apart the identities of the rustls side (N-40): keyAEADEnc and
 // keyAEADDec are its encrypter and decrypter objects, keySock a socket inode
-// number its records were bound to; keySSL, the zero value, is an SSL*.
+// number its records were bound to; keyGoConn is a Go *Conn (N-48); keySSL,
+// the zero value, is an SSL*.
 type sslKey struct {
 	tgid uint32
 	kind uint8
@@ -122,6 +129,9 @@ type tlsConn struct {
 	// readStarted is set once a read was fed to the HTTP/1.x response
 	// parser, after which a SETTINGS frame no longer starts the h2 side.
 	readStarted bool
+	// sock is the socket inode number a Go *Conn's frames named, 0 when
+	// unknown (N-48).
+	sock uint64
 	// keys are the keys o.tlsConns holds this state under: its own, and the
 	// socket a rustls encrypter was bound to (N-40).
 	keys []sslKey

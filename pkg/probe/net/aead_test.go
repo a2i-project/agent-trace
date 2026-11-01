@@ -323,6 +323,8 @@ func TestPlanContent(t *testing.T) {
 		{"none", Config{}, contentPlan{}, ""},
 		{"ExePath is tls-symbols", Config{ExePath: "/c"}, contentPlan{sslMethod: MethodTLSSymbols, sslPath: "/c"}, ""},
 		{"openssl-ex and rustls", Config{Content: []ContentMethod{{MethodOpenSSLEx, "/x"}, {MethodRustlsAEAD, "/x"}}}, contentPlan{sslMethod: MethodOpenSSLEx, sslPath: "/x", aeadPath: "/x"}, ""},
+		{"go and openssl-ex", Config{Content: []ContentMethod{{MethodGoCrypto, "/g"}, {MethodOpenSSLEx, "/x"}}}, contentPlan{sslMethod: MethodOpenSSLEx, sslPath: "/x", goPath: "/g"}, ""},
+		{"go twice", Config{Content: []ContentMethod{{MethodGoCrypto, "/g"}, {MethodGoCrypto, "/g"}}}, contentPlan{}, "given twice"},
 		{"two SSL-side methods", Config{ExePath: "/c", Content: []ContentMethod{{MethodOpenSSLEx, "/x"}}}, contentPlan{}, "both hook SSL calls"},
 		{"unknown", Config{Content: []ContentMethod{{"tls-go", "/x"}}}, contentPlan{}, "unknown content method"},
 		{"no path", Config{Content: []ContentMethod{{MethodRustlsAEAD, ""}}}, contentPlan{}, "names no file"},
