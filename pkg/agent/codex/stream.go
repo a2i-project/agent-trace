@@ -14,8 +14,10 @@ import (
 //
 //   - apply_patch runs in the harness's own process and writes in place,
 //     with no temporary and no rename. Adding a file is a file_write naming
-//     it (the create), in the same batch its open with the input hash of
-//     empty content, a write and the close with the content's hash.
+//     it (the create), its open with the input hash of empty content, a
+//     write and the close with the content's hash. The create and the open
+//     were in one fanotify batch in the first capture and in two
+//     consecutive batches, 11 microseconds apart, in a later one (I-99).
 //     Updating a file is three opens of it, a write and the close; the
 //     harness's other threads make network events between the opens.
 //   - The harness starts its helper commands (lsb_release, getconf, git)
@@ -32,9 +34,6 @@ import (
 // emptyHash is the input hash the probe gives the open that created a file
 // (P-22).
 var emptyHash = content.SHA256Bytes(nil)
-
-// batchSpan bounds two records of one fanotify batch (P-18).
-const batchSpan = time.Microsecond
 
 // attemptSpan bounds the gap between two exec attempts of one PATH search:
 // they were at most 15 microseconds apart in the capture.
@@ -131,8 +130,11 @@ func sameSearch(a, b string) bool {
 }
 
 // foldCreates drops the create of a file by the agent's process when that
-// process's next file event is the open that created it, in the same batch,
-// with the input hash of empty content (P-22, as I-56 reads agy's creates).
+// process's next file event is the open that created it, with the input
+// hash of empty content (P-22, as I-56 reads agy's creates). No time bound
+// applies (I-99): the probe gives the empty hash only to the first open of a
+// file born during the capture, so that open created the file wherever the
+// reads split the batches, and the create states nothing it does not.
 func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTruth {
 	drop := map[int]bool{}
 	for i, e := range g {
@@ -145,7 +147,7 @@ func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTru
 				continue
 			}
 			if n.ActionType == models.FileOpen && n.Target == e.Target && !n.PathIsAmbiguous &&
-				n.InputHash != nil && *n.InputHash == emptyHash && n.Timestamp.Sub(e.Timestamp) < batchSpan {
+				n.InputHash != nil && *n.InputHash == emptyHash {
 				drop[i] = true
 			}
 			break

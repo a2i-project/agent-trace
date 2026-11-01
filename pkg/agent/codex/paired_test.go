@@ -360,3 +360,52 @@ func TestToolsMaintenanceLockIsDeclaredBookkeeping(t *testing.T) {
 		t.Errorf("a write of the lock: %s, unexplained harness %d", v.Outcome, len(v.UnexplainedHarness))
 	}
 }
+
+// The same tools task in the campaign codex-parity-2 (2026-11-01), with five
+// controls. Reduced by scripts/make-capture-fixture.py.
+const tools2Dir = "testdata/paired-codex-0.166.0-tools-2"
+
+// The subagent's add of subagent.txt: the probe read its create and its
+// creating open in two consecutive batches, 11 microseconds apart, where
+// codex-parity-1 read them in one. The create is folded all the same
+// (I-99), and the run is FAITHFUL with every claim corroborated at one and
+// at five controls in five; before, the create was an Unrecorded file_write
+// and the run NOT FAITHFUL.
+func TestTools2SubagentAddSplitAcrossBatchesIsFolded(t *testing.T) {
+	tr, rep, err := Adapter{}.Parse(filepath.Join(tools2Dir, "tools.rollout.jsonl"))
+	if err != nil || len(rep.ParseErrors) != 0 || len(rep.UnknownTools) != 0 {
+		t.Fatalf("parse: %v %+v", err, rep)
+	}
+	g := runAt(t, tools2Dir, "tools")
+	const target = "/ws/tools/subagent.txt"
+	var create, open *models.GroundTruthEvent
+	for i := range g.Events {
+		e := &g.Events[i]
+		if e.Target != target || e.PID == 0 {
+			continue
+		}
+		if create == nil && e.ActionType == models.FileWrite {
+			create = e
+		} else if create != nil && open == nil && e.ActionType == models.FileOpen {
+			open = e
+		}
+	}
+	if create == nil || open == nil || create.OutputHash != nil || open.Timestamp.Sub(create.Timestamp) < time.Microsecond {
+		t.Fatalf("the fixture's create and open of %s are %+v and %+v; want them more than a microsecond apart", target, create, open)
+	}
+	claimed := 0
+	for _, c := range tr {
+		if c.Target == target && c.ThreadID != "" {
+			claimed++
+		}
+	}
+	if claimed != 2 {
+		t.Fatalf("%d claims of the subagent on %s, want its open and write", claimed, target)
+	}
+	for _, ag := range []float64{0.2, 1} {
+		v := verifyAt(t, tools2Dir, Adapter{}, tr, runAt(t, tools2Dir, "tools"), ag)
+		if v.Outcome != verification.OutcomeFaithful || v.Findings() != 0 || len(v.Corroborated) != len(tr) || len(v.Unrecorded) != 0 {
+			t.Errorf("agreement %v: %s, %d findings, %d of %d corroborated, %d unrecorded; reasons %v", ag, v.Outcome, v.Findings(), len(v.Corroborated), len(tr), len(v.Unrecorded), v.Reasons)
+		}
+	}
+}

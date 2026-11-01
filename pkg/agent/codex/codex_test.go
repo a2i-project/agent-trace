@@ -357,6 +357,11 @@ func ev(ms int, pid uint32, t models.ActionType, target string) models.GroundTru
 	return models.GroundTruthEvent{Timestamp: time.Unix(1000, 0).Add(time.Duration(ms) * time.Microsecond), PID: pid, ActionType: t, Target: target}
 }
 
+func withInput(e models.GroundTruthEvent, h string) models.GroundTruthEvent {
+	e.InputHash = &h
+	return e
+}
+
 func TestNormalizeStreamFoldsTheMeasuredShapes(t *testing.T) {
 	h := content.SHA256Bytes([]byte("hello\n"))
 	empty := emptyHash
@@ -364,6 +369,10 @@ func TestNormalizeStreamFoldsTheMeasuredShapes(t *testing.T) {
 	open0.InputHash = &empty
 	closeA := ev(2, 1, models.FileClose, "/ws/a.txt")
 	closeA.OutputHash = &h
+	openC := ev(31, 1, models.FileOpen, "/ws/c.txt")
+	openC.InputHash = &empty
+	closeC := ev(40, 1, models.FileClose, "/ws/c.txt")
+	closeC.OutputHash = &h
 	g := models.GroundTruth{
 		// A PATH search of a helper by a command process.
 		ev(0, 5, models.ProcessFork, "5"),
@@ -382,6 +391,14 @@ func TestNormalizeStreamFoldsTheMeasuredShapes(t *testing.T) {
 		ev(13, 1, models.FileOpen, "/ws/b.txt"),
 		ev(14, 1, models.FileWrite, "/ws/b.txt"),
 		ev(15, 1, models.FileClose, "/ws/b.txt"),
+		// An add whose create and open the probe read in two consecutive
+		// batches, 11 microseconds apart, another process's event between
+		// (codex-parity-2, I-99).
+		ev(20, 1, models.FileWrite, "/ws/c.txt"),
+		ev(25, 6, models.FileOpen, "/ws/other"),
+		openC,
+		ev(40, 1, models.FileWrite, "/ws/c.txt"),
+		closeC,
 	}
 	got := Adapter{}.NormalizeStream(g)
 	var lines []string
@@ -396,6 +413,7 @@ func TestNormalizeStreamFoldsTheMeasuredShapes(t *testing.T) {
 		"process_fork 5", "process_exec /usr/bin/git remote -v",
 		"file_open /ws/a.txt", "file_write /ws/a.txt #",
 		"file_open /ws/b.txt", "net_bind 0.0.0.0:0", "file_write /ws/b.txt",
+		"file_open /ws/other", "file_open /ws/c.txt", "file_write /ws/c.txt #",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
@@ -403,8 +421,10 @@ func TestNormalizeStreamFoldsTheMeasuredShapes(t *testing.T) {
 }
 
 // What the folds leave alone: a command's own file events, the harness's
-// files, a write with another file's event between, and two execs of one
-// program from the same directory or with other arguments.
+// files, a write with another file's event between, a create whose
+// process's next file event is not the open of that file with the hash of
+// empty content, and two execs of one program from the same directory or
+// with other arguments.
 func TestNormalizeStreamIsNarrow(t *testing.T) {
 	g := models.GroundTruth{
 		ev(0, 7, models.ProcessExec, "/usr/bin/tee x"),
@@ -418,6 +438,11 @@ func TestNormalizeStreamIsNarrow(t *testing.T) {
 		ev(8, 1, models.FileOpen, "/ws/z"),
 		ev(9, 1, models.FileWrite, "/ws/y"),
 		ev(10, 1, models.FileClose, "/ws/y"),
+		ev(11, 1, models.FileWrite, "/ws/w"),
+		ev(11, 1, models.FileOpen, "/ws/w"),
+		ev(11, 1, models.FileWrite, "/ws/v"),
+		withInput(ev(11, 1, models.FileOpen, "/ws/u"), emptyHash),
+		withInput(ev(11, 1, models.FileOpen, "/ws/v"), emptyHash),
 		ev(11, 8, models.ProcessExec, "/a/ls -l"),
 		ev(12, 8, models.ProcessExec, "/b/ls -a"),
 		ev(13, 9, models.ProcessExec, "/a/ls -l"),

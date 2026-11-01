@@ -280,7 +280,8 @@
           "verified": "2026-11-01",
           "fixtures": [
             "pkg/agent/codex/testdata/paired-codex-0.166.0-basic",
-            "pkg/agent/codex/testdata/paired-codex-0.166.0-tools"
+            "pkg/agent/codex/testdata/paired-codex-0.166.0-tools",
+            "pkg/agent/codex/testdata/paired-codex-0.166.0-tools-2"
           ]
         }
       ],
