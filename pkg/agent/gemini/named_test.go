@@ -62,7 +62,6 @@ func TestNamedCreateFoldIsNarrow(t *testing.T) {
 		{"a create of another file", models.GroundTruth{ev(0, agentPID, models.FileWrite, b), withIn(ev(1, agentPID, models.FileOpen, a), emptyHash)}},
 		{"a create before an open with content", models.GroundTruth{ev(0, agentPID, models.FileWrite, a), withIn(ev(1, agentPID, models.FileOpen, a), "sha256:a1")}},
 		{"a create before an open with no hash", models.GroundTruth{ev(0, agentPID, models.FileWrite, a), ev(1, agentPID, models.FileOpen, a)}},
-		{"a create in a later batch", models.GroundTruth{ev(0, agentPID, models.FileWrite, a), withIn(ev(time.Microsecond, agentPID, models.FileOpen, a), emptyHash)}},
 		{"a create with another event of the process between", models.GroundTruth{ev(0, agentPID, models.FileWrite, a), ev(1, agentPID, models.FileClose, b), withIn(ev(2, agentPID, models.FileOpen, a), emptyHash)}},
 		{"a create by a command", models.GroundTruth{fork, ev(1, cmdPID, models.FileWrite, a), withIn(ev(2, cmdPID, models.FileOpen, a), emptyHash)}},
 		{"a create of the harness's file", models.GroundTruth{ev(0, agentPID, models.FileWrite, brain+"/steps/4/output.txt"), withIn(ev(1, agentPID, models.FileOpen, brain+"/steps/4/output.txt"), emptyHash)}},

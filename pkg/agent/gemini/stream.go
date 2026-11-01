@@ -2,7 +2,6 @@ package gemini
 
 import (
 	"path/filepath"
-	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -30,12 +29,6 @@ import (
 
 // emptyHash is the input hash the probe gives the open that created a file.
 var emptyHash = content.SHA256Bytes(nil)
-
-// batchSpan bounds the distance between two records of one fanotify batch:
-// the probe stamps a batch with one clock reading plus one nanosecond per
-// record (P-18). The create and the creating open were one nanosecond apart
-// in every case of the capture, the agent's and the harness's.
-const batchSpan = time.Microsecond
 
 // NormalizeStream rewrites the processes of a grep_search call to the
 // claim's target, folding a failed ripgrep and its fallback grep into one
@@ -72,17 +65,18 @@ func agentFile(e models.GroundTruthEvent, started map[uint32]bool) bool {
 }
 
 // foldCreates drops the create of a file by the agent's process when that
-// process's next event is the open that created the file, in the same batch:
-// the open is not ambiguous and carries the hash of empty content, which the
-// probe stamps only on the first open of a file born during the capture
-// (P-22). The create says nothing the open, write and close of the file do
-// not, and no claim states it. A capture made before the probe named
-// directory entries (P-25) reports the create as an ambiguous file_write of
-// the directory, and the open then names a file directly in it; a capture
-// made since reports it as a file_write naming the file, with no hash, and
-// the open must name that same file (I-56). A create followed by anything
-// else (another file's open, an open with content, a later batch, another
-// event of the process) is kept and shows as it is.
+// process's next file event is the open that created the file: the open is
+// not ambiguous and carries the hash of empty content, which the probe
+// stamps only on the first open of a file born during the capture (P-22).
+// The create says nothing the open, write and close of the file do not, and
+// no claim states it. No time bound applies (I-99, as for Codex): that open
+// created the file wherever the probe's reads split the batches. A capture
+// made before the probe named directory entries (P-25) reports the create as
+// an ambiguous file_write of the directory, and the open then names a file
+// directly in it; a capture made since reports it as a file_write naming the
+// file, with no hash, and the open must name that same file (I-56). A create
+// whose process's next file event is anything else (another file's open, an
+// open with content, a write) is kept and shows as it is.
 func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTruth {
 	var drop []int
 	for i, e := range g {
@@ -91,7 +85,7 @@ func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTru
 		}
 		for j := i + 1; j < len(g); j++ {
 			n := g[j]
-			if n.PID != e.PID {
+			if n.PID != e.PID || !isFile(n.ActionType) {
 				continue
 			}
 			created := filepath.Dir(n.Target) == e.Target // before P-25: the create names the directory
@@ -99,8 +93,7 @@ func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTru
 				created = n.Target == e.Target // since P-25: the create names the file
 			}
 			if n.ActionType == models.FileOpen && !n.PathIsAmbiguous && created &&
-				n.InputHash != nil && *n.InputHash == emptyHash && n.Timestamp.Sub(e.Timestamp) < batchSpan &&
-				!harnessOwned.MatchString(n.Target) {
+				n.InputHash != nil && *n.InputHash == emptyHash && !harnessOwned.MatchString(n.Target) {
 				drop = append(drop, i)
 			}
 			break

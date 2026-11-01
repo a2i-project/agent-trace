@@ -131,7 +131,6 @@ func TestNormalizeStreamIsNarrow(t *testing.T) {
 		{"opens of the harness's file", models.GroundTruth{ev(0, agentPID, models.FileOpen, brain+"/logs/transcript.jsonl"), ev(1, agentPID, models.FileOpen, brain+"/logs/transcript.jsonl")}},
 		{"a create before an open with content", models.GroundTruth{amb(ev(0, agentPID, models.FileWrite, ws)), withIn(ev(1, agentPID, models.FileOpen, a), "sha256:a1")}},
 		{"a create before an open with no hash", models.GroundTruth{amb(ev(0, agentPID, models.FileWrite, ws)), ev(1, agentPID, models.FileOpen, a)}},
-		{"a create in a later batch", models.GroundTruth{amb(ev(0, agentPID, models.FileWrite, ws)), withIn(ev(time.Microsecond, agentPID, models.FileOpen, a), emptyHash)}},
 		{"a create of a file in another directory", models.GroundTruth{amb(ev(0, agentPID, models.FileWrite, ws)), withIn(ev(1, agentPID, models.FileOpen, ws+"/sub/a.txt"), emptyHash)}},
 		{"a create with another event of the process between", models.GroundTruth{amb(ev(0, agentPID, models.FileWrite, ws)), ev(1, agentPID, models.FileClose, b), withIn(ev(2, agentPID, models.FileOpen, a), emptyHash)}},
 		{"a create by a command", models.GroundTruth{fork, amb(ev(1, cmdPID, models.FileWrite, ws)), withIn(ev(2, cmdPID, models.FileOpen, a), emptyHash)}},
@@ -198,4 +197,31 @@ func (r rawAdapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEven
 }
 func (r rawAdapter) Expresses(e models.TrajectoryEntry, f string) bool {
 	return r.inner.Expresses(e, f)
+}
+
+// The create fold takes the creating open at any distance in time (I-99):
+// where the probe's reads split a burst of records into batches depends on
+// load (P-18). Only the process's file events count: a connection of
+// another of its threads between the two does not keep the create.
+func TestCreateFoldTakesTheCreatingOpenInALaterBatch(t *testing.T) {
+	a := ws + "/a.txt"
+	net := ev(5*time.Microsecond, agentPID, models.NetConnect, "example.com")
+	for _, c := range []struct {
+		name   string
+		create models.GroundTruthEvent
+	}{
+		{"before P-25", amb(ev(0, agentPID, models.FileWrite, ws))},
+		{"since P-25", ev(0, agentPID, models.FileWrite, a)},
+	} {
+		for _, g := range []models.GroundTruth{
+			{c.create, withIn(ev(11*time.Microsecond, agentPID, models.FileOpen, a), emptyHash)},
+			{c.create, net, withIn(ev(11*time.Microsecond, agentPID, models.FileOpen, a), emptyHash)},
+			{c.create, withIn(ev(2*time.Second, agentPID, models.FileOpen, a), emptyHash)},
+		} {
+			want := render(g[1:])
+			if got := render((Adapter{}).NormalizeStream(g)); got != want {
+				t.Errorf("%s: NormalizeStream =\n%s\nwant the create dropped:\n%s", c.name, got, want)
+			}
+		}
+	}
 }
