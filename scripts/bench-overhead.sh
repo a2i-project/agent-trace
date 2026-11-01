@@ -7,7 +7,7 @@
 #   scripts/bench-overhead.sh [--reps N] [--sizes LIST] [--workloads LIST]
 #                             [--conditions LIST] [--net-exe-path LIB]
 #                             [--unprivileged-only] [--no-fixtures]
-#                             [--keep-captures] [OUTPUT_DIR]
+#                             [--keep-captures] [--dry-run] [OUTPUT_DIR]
 #
 # Workloads (each run in a fresh workspace):
 #   shell     a scripted bash loop of SIZE iterations; each writes a file with
@@ -40,16 +40,22 @@
 # in verify's JSON report) with their size.
 #
 # The fixture part (unprivileged; skipped with --no-fixtures) times baseline
-# on each checked-in paired fixture's controls and verify on its session, with
-# and without that baseline, and records the same storage figures. Fixtures
-# are reduced by scripts/make-capture-fixture.py, so their sizes are not those
-# of a raw capture.
+# on each paired fixture the agent profiles list (config/agents.json, each
+# version's fixtures) and verify on its session, with and without that
+# baseline, and records the same storage figures. The profile names the
+# session file (its trace) and whether verify needs --agent-version (a trace
+# that does not state the version); the script names no agent. Fixtures are
+# reduced by scripts/make-capture-fixture.py, so their sizes are not those of
+# a raw capture.
 #
 # --unprivileged-only runs the fixture part and the alone condition only, with
 # no sudo. --keep-captures keeps every run's directory (capture, log,
 # workspace); by default each is removed once measured. --net-exe-path is passed
 # to watch for the net probe's TLS uprobe; without it the net probe records
-# identity only.
+# identity only. --dry-run validates the arguments and prints the fixtures
+# with their commands, the fixtures left out and why, and the workloads and
+# conditions; it builds nothing, writes nothing to OUTPUT_DIR, asks for no
+# sudo and may run as root.
 #
 # Output, in OUTPUT_DIR (default /tmp/agent-trace-overhead-<time>), which must
 # be outside the repository and empty or absent:
@@ -69,6 +75,7 @@ net_exe=
 unpriv=
 fixtures=1
 keep=
+dry=
 while [ $# -gt 0 ]; do
   case $1 in
     --reps) reps=${2:?--reps needs a number}; shift 2 ;;
@@ -79,6 +86,7 @@ while [ $# -gt 0 ]; do
     --unprivileged-only) unpriv=1; shift ;;
     --no-fixtures) fixtures=; shift ;;
     --keep-captures) keep=1; shift ;;
+    --dry-run) dry=1; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
@@ -116,7 +124,7 @@ if [ -n "$net_exe" ]; then
   [ -f "$net_exe" ] || die "--net-exe-path $net_exe is not a file"
   net_exe=$(realpath "$net_exe")
 fi
-[ "$(id -u)" -ne 0 ] || die "run as an ordinary user: the workloads run as you, and the script asks for sudo itself"
+[ -n "$dry" ] || [ "$(id -u)" -ne 0 ] || die "run as an ordinary user: the workloads run as you, and the script asks for sudo itself"
 ((BASH_VERSINFO[0] >= 5)) || die "bash 5 or later is needed (EPOCHREALTIME)"
 needed=(go python3 git realpath)
 [ ${#watch_conds[@]} -eq 0 ] || needed+=(sudo setpriv)
@@ -131,21 +139,27 @@ out=${1:-/tmp/agent-trace-overhead-$(date +%Y%m%d-%H%M%S)}
 out=$(realpath -m "$out")
 case $out/ in "$root"/*) die "OUTPUT_DIR $out is inside the repository; results are never written there" ;; esac
 [ ! -e "$out" ] || [ -z "$(ls -A "$out")" ] || die "OUTPUT_DIR $out is not empty"
-mkdir -p "$out"
 seed=$root/scripts/seed/project
 bash_bin=$(command -v bash)
 uid=$(id -u)
 gid=$(id -g)
 
 echo "output: $out"
-mkdir -p "$out/bin" "$out/tools" "$out/runs"
-for c in watch verify baseline simagent; do
-  (cd "$root" && go build -o "$out/bin/$c" "./cmd/$c")
-done
+if [ -n "$dry" ]; then
+  # The helpers go to a scratch directory; OUTPUT_DIR stays untouched.
+  tools=$(mktemp -d)
+  trap 'rm -rf "$tools"' EXIT
+else
+  tools=$out/tools
+  mkdir -p "$out/bin" "$tools" "$out/runs"
+  for c in watch verify baseline simagent; do
+    (cd "$root" && go build -o "$out/bin/$c" "./cmd/$c")
+  done
+fi
 
 # The workload, run as bash wl.sh MARK KIND SIZE WS PORT SIMAGENT TRAJ. It
 # writes its start and end times, exit status and CPU (times) to MARK.
-cat >"$out/tools/wl.sh" <<'WL'
+cat >"$tools/wl.sh" <<'WL'
 mark=$1 kind=$2 size=$3 ws=$4 port=$5 simagent=$6 traj=$7
 start=$EPOCHREALTIME
 rc=0
@@ -183,10 +197,10 @@ times >>"$mark"
 exit "$rc"
 WL
 
-cat >"$out/tools/bench.py" <<'PY'
+cat >"$tools/bench.py" <<'PY'
 """Helpers of scripts/bench-overhead.sh: measure, collect, fixtures, listen,
 machine, report. Not meant to be run by hand."""
-import glob, json, os, platform, re, socket, statistics, subprocess, sys, time
+import glob, json, os, platform, re, shlex, socket, statistics, subprocess, sys, time
 
 
 def measure(cmd, log):
@@ -297,21 +311,78 @@ def cmd_collect(args):
           "ok" if ok else "FAILED (see %s)" % d))
 
 
-def fixtures_of(root):
+def fixtures_of(root, skipped=None):
+    """The paired fixtures the profiles list (config/agents.json, each
+    version's fixtures), per agent in file order and by directory name within
+    it: control captures, exactly one other ground truth, and the transcript
+    the profile's trace names for its label. A listed fixture of another shape
+    is left out, with the reason appended to skipped."""
+    path = os.path.join(root, "config", "agents.json")
+    with open(path) as f:
+        cfg = json.load(f)
+    if cfg.get("schema") != 2:
+        sys.exit("%s: schema %s, the benchmark reads 2" % (path, cfg.get("schema")))
     found = []
-    for adir, agent in (("claudecode", "claude-code"), ("gemini", "gemini")):
-        for d in sorted(glob.glob(os.path.join(root, "pkg/agent", adir, "testdata", "paired-*"))):
-            ver = re.search(r"paired-(?:agy-)?(\d+\.\d+\.\d+)", os.path.basename(d))
+    for agent, prof in (cfg.get("adapters") or {}).items():
+        trace = prof.get("trace") or {}
+        listed = [(v["version"], d) for v in prof.get("versions") or [] for d in v.get("fixtures") or []]
+        for version, rel in sorted(listed, key=lambda x: os.path.basename(x[1])):
+            d = os.path.join(root, rel)
             controls = sorted(glob.glob(os.path.join(d, "control-*.ground_truth.json")))
             gts = [g for g in glob.glob(os.path.join(d, "*.ground_truth.json")) if g not in controls]
-            if not ver or not controls or len(gts) != 1:
+            why = None
+            if not trace.get("file"):
+                why = "the profile names no trace file"
+            elif not controls or len(gts) != 1:
+                why = "not paired (%d control capture(s), %d other ground truth(s))" % (len(controls), len(gts))
+            else:
+                label = os.path.basename(gts[0])[: -len(".ground_truth.json")]
+                session = os.path.join(d, trace["file"].replace("{label}", label))
+                if not os.path.exists(session):
+                    why = "no %s" % os.path.basename(session)
+            if why:
+                if skipped is not None:
+                    skipped.append((os.path.basename(d), agent, why))
                 continue
-            label = os.path.basename(gts[0])[: -len(".ground_truth.json")]
-            session = os.path.join(d, label + (".session.jsonl" if agent == "claude-code" else ".conversation.db"))
-            if os.path.exists(session):
-                found.append({"name": os.path.basename(d), "agent": agent, "version": ver.group(1),
-                              "controls": controls, "gt": gts[0], "session": session})
+            # A transcript that states its version needs no --agent-version.
+            found.append({"name": os.path.basename(d), "agent": agent, "version": version,
+                          "controls": controls, "gt": gts[0], "session": session,
+                          "pass_version": not trace.get("states_version")})
     return found
+
+
+def fixture_runs(f, bindir, work):
+    """The baseline and verify commands of one fixture, by step."""
+    base = os.path.join(work, f["name"] + ".baseline.json")
+    agree = "%.6f" % (1 / len(f["controls"]))
+    runs = {
+        "baseline": [os.path.join(bindir, "baseline"), "--agent", f["agent"], "--agent-version",
+                     f["version"], "--exclude", ": agent-trace-control-marker", "--min-agreement",
+                     agree, "--out", base] + f["controls"],
+    }
+    vcmd = [os.path.join(bindir, "verify"), "--agent", f["agent"], "--trajectory", f["session"],
+            "--ground-truth", f["gt"]]
+    if f["pass_version"]:
+        vcmd += ["--agent-version", f["version"]]
+    runs["verify"] = vcmd + ["--json", os.path.join(work, f["name"] + ".verify.json")]
+    runs["verify+baseline"] = vcmd + ["--baseline", base, "--json",
+                                      os.path.join(work, f["name"] + ".verify-baseline.json")]
+    return runs
+
+
+def cmd_plan(args):
+    """The fixture part of a dry run: every fixture's commands, run by none."""
+    root, bindir, work, reps = args[0], args[1], args[2], int(args[3])
+    skipped = []
+    fx = fixtures_of(root, skipped)
+    print("fixtures: %d paired fixture(s), %d repetition(s) plus a warm-up" % (len(fx), reps))
+    for f in fx:
+        print("  %s (%s %s, %d control(s))" % (f["name"], f["agent"], f["version"], len(f["controls"])))
+        for step, cmd in fixture_runs(f, bindir, work).items():
+            print("    %-16s %s" % (step, " ".join(shlex.quote(os.path.relpath(c, root) if c.startswith(root + os.sep) else c)
+                                               for c in cmd)))
+    for name, agent, why in skipped:
+        print("  left out: %s (%s): %s" % (name, agent, why))
 
 
 def cmd_fixtures(args):
@@ -322,20 +393,7 @@ def cmd_fixtures(args):
     stored = {}
     for rep in range(reps + 1):
         for f in fx:
-            base = os.path.join(work, f["name"] + ".baseline.json")
-            agree = "%.6f" % (1 / len(f["controls"]))
-            runs = {
-                "baseline": [os.path.join(bindir, "baseline"), "--agent", f["agent"], "--agent-version",
-                             f["version"], "--exclude", ": agent-trace-control-marker", "--min-agreement",
-                             agree, "--out", base] + f["controls"],
-            }
-            vcmd = [os.path.join(bindir, "verify"), "--agent", f["agent"], "--trajectory", f["session"],
-                    "--ground-truth", f["gt"]]
-            if f["agent"] == "gemini":
-                vcmd += ["--agent-version", f["version"]]
-            runs["verify"] = vcmd + ["--json", os.path.join(work, f["name"] + ".verify.json")]
-            runs["verify+baseline"] = vcmd + ["--baseline", base, "--json",
-                                              os.path.join(work, f["name"] + ".verify-baseline.json")]
+            runs = fixture_runs(f, bindir, work)
             for step in ("baseline", "verify", "verify+baseline"):
                 m = measure(runs[step], os.path.join(work, f["name"] + ".log"))
                 ok = m["exit"] == 0 if step == "baseline" else m["exit"] in (0, 1, 2)
@@ -534,10 +592,31 @@ def cmd_report(args):
 
 
 if __name__ == "__main__":
-    {"measure": cmd_measure, "collect": cmd_collect, "fixtures": cmd_fixtures, "listen": cmd_listen,
-     "machine": cmd_machine, "report": cmd_report}[sys.argv[1]](sys.argv[2:])
+    {"measure": cmd_measure, "collect": cmd_collect, "fixtures": cmd_fixtures, "plan": cmd_plan,
+     "listen": cmd_listen, "machine": cmd_machine, "report": cmd_report}[sys.argv[1]](sys.argv[2:])
 PY
-bench=(python3 "$out/tools/bench.py")
+bench=(python3 "$tools/bench.py")
+
+jobs=()
+for w in "${wl_list[@]}"; do
+  if [ "$w" = shell ]; then
+    for s in "${size_list[@]}"; do jobs+=("shell $s"); done
+  else
+    jobs+=("$w 0")
+  fi
+done
+
+if [ -n "$dry" ]; then
+  [ -z "$fixtures" ] || "${bench[@]}" plan "$root" "$out/bin" "$out/fixtures" "$reps"
+  echo "workloads: ${#jobs[@]}, conditions: ${run_conds[*]}, repetitions: $reps plus a warm-up"
+  for job in "${jobs[@]}"; do
+    read -r w s <<<"$job"
+    if [ "$s" = 0 ]; then echo "  $w"; else echo "  $w-$s"; fi
+  done
+  [ ${#watch_conds[@]} -eq 0 ] || echo "sudo: asked once, for watch (${watch_conds[*]})"
+  echo "dry run: nothing built, measured or written"
+  exit 0
+fi
 
 "${bench[@]}" machine "$out/machine.json" "$root" "$out"
 
@@ -548,10 +627,10 @@ fi
 listener=
 cleanup() { [ -z "$listener" ] || kill "$listener" 2>/dev/null || true; }
 trap cleanup EXIT
-"${bench[@]}" listen "$out/tools/port" &
+"${bench[@]}" listen "$tools/port" &
 listener=$!
-for _ in $(seq 50); do [ -s "$out/tools/port" ] && break; sleep 0.1; done
-port=$(cat "$out/tools/port")
+for _ in $(seq 50); do [ -s "$tools/port" ] && break; sleep 0.1; done
+port=$(cat "$tools/port")
 
 # One run of a workload under a condition. The workload runs with the
 # environment setpriv --reset-env gives it under watch, alone too.
@@ -560,7 +639,7 @@ run_one() { # rep workload size condition
   local d=$out/runs/$w-$size-$cond-r$rep
   mkdir -p "$d/ws"
   [ "$w" != project ] || cp -r "$seed/." "$d/ws/"
-  local wl=("$bash_bin" "$out/tools/wl.sh" "$d/mark" "$w" "$size" "$d/ws" "$port" "$out/bin/simagent" "$d/traj.json")
+  local wl=("$bash_bin" "$tools/wl.sh" "$d/mark" "$w" "$size" "$d/ws" "$port" "$out/bin/simagent" "$d/traj.json")
   if [ "$cond" = alone ]; then
     "${bench[@]}" measure "$d/measure.json" "$d/log" -- \
       env -i PATH=/usr/local/bin:/bin:/usr/bin HOME="$HOME" SHELL="$bash_bin" USER="$(id -un)" LOGNAME="$(id -un)" "${wl[@]}"
@@ -569,7 +648,7 @@ run_one() { # rep workload size condition
     [ "$cond" != all ] || probes=fs,proc,net
     local watch=("$out/bin/watch" --probes "$probes" --workspace "$d/ws" --out "$d/gt.json")
     [ -z "$net_exe" ] || watch+=(--net-exe-path "$net_exe")
-    sudo python3 "$out/tools/bench.py" measure "$d/measure.json" "$d/log" -- \
+    sudo python3 "$tools/bench.py" measure "$d/measure.json" "$d/log" -- \
       "${watch[@]}" -- setpriv --reuid "$uid" --regid "$gid" --init-groups --reset-env "${wl[@]}"
     sudo chown -R "$uid:$gid" "$d"
   fi
@@ -577,14 +656,6 @@ run_one() { # rep workload size condition
   [ -n "$keep" ] || rm -rf "$d"
 }
 
-jobs=()
-for w in "${wl_list[@]}"; do
-  if [ "$w" = shell ]; then
-    for s in "${size_list[@]}"; do jobs+=("shell $s"); done
-  else
-    jobs+=("$w 0")
-  fi
-done
 echo "workloads: ${#jobs[@]}, conditions: ${run_conds[*]}, repetitions: $reps plus a warm-up"
 [ ${#watch_conds[@]} -eq 0 ] || sudo -v
 for ((rep = 0; rep <= reps; rep++)); do

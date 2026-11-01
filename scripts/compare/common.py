@@ -9,10 +9,11 @@ import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-TESTDATA = os.path.join(REPO, "pkg", "agent", "claudecode", "testdata")
+CONFIG = os.path.join(REPO, "config", "agents.json")
 
 # The gated captures of the attack evaluation (pkg/attack/eval_test.go, E-5):
-# name -> (fixture directory, run label).
+# name -> (fixture directory, run label). The profile that lists the directory
+# among its versions' fixtures gives its path, its agent and its session file.
 FIXTURES = {
     "basic": ("paired-2.1.286", "task"),
     "parallel": ("paired-2.1.286-parallel", "parallel"),
@@ -33,12 +34,33 @@ def load_pins():
     return pins
 
 
+def profiles():
+    """The agent profiles of config/agents.json (I-77), by agent."""
+    with open(CONFIG) as f:
+        c = json.load(f)
+    if c.get("schema") != 2:
+        raise SystemExit("%s: schema %s, the comparison reads 2" % (CONFIG, c.get("schema")))
+    return c.get("adapters") or {}
+
+
+def trace_method(agent):
+    """The method of the agent's trace in its profile, or None."""
+    return ((profiles().get(agent) or {}).get("trace") or {}).get("method")
+
+
 def fixture_paths(name):
     d, label = FIXTURES[name]
-    base = os.path.join(TESTDATA, d)
-    return {"dir": base, "label": label,
-            "session": os.path.join(base, label + ".session.jsonl"),
-            "ground_truth": os.path.join(base, label + ".ground_truth.json")}
+    for agent, prof in profiles().items():
+        for v in prof.get("versions") or []:
+            for rel in v.get("fixtures") or []:
+                if os.path.basename(rel) != d:
+                    continue
+                base = os.path.join(REPO, rel)
+                session = (prof.get("trace") or {}).get("file", "").replace("{label}", label)
+                return {"dir": base, "label": label, "agent": agent,
+                        "session": os.path.join(base, session),
+                        "ground_truth": os.path.join(base, label + ".ground_truth.json")}
+    raise SystemExit("fixture %s is listed by no profile in %s" % (d, CONFIG))
 
 
 class Subject:
@@ -47,7 +69,7 @@ class Subject:
     name          the identifier written to the rows' `fixture` field: the
                   fixture's name, or a campaign run's directory relative to
                   the campaign (the identifier cmd/analyze gives the run)
-    agent         the adapter that reads the session (claude-code or gemini)
+    agent         the adapter that reads the session (a profile's name)
     session       the transcript or conversation database
     ground_truth  the capture's ground truth
     label         the run's label (the task's), used in scratch paths
@@ -63,7 +85,7 @@ class Subject:
 
 def fixture_subject(name):
     fx = fixture_paths(name)
-    return Subject(name, "claude-code", fx["session"], fx["ground_truth"], fx["label"], name,
+    return Subject(name, fx["agent"], fx["session"], fx["ground_truth"], fx["label"], name,
                    "/ws/" + fx["label"])
 
 

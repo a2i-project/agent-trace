@@ -15,7 +15,7 @@ attacked trajectories of the H2 sweep (protocol 5.3 and 8.2, decision D13).
 
     scripts/compare/sweep.py --tools TOOLS_DIR --out OUT_DIR --campaign DIR
         [--kept-from results.json] [--heldout-dir DIR] [--seeds 1-100]
-        [--rt-seeds 1-10] [--variants primary|all] [--agents claude-code,gemini]
+        [--rt-seeds 1-10] [--variants primary|all] [--agents LIST]
         [--only ...] [--jobs N] [--honest-repeats 3] [--resume] [--plan-only]
 
   Subjects are the runs cmd/analyze keeps for H2: --kept-from takes the
@@ -31,9 +31,10 @@ attacked trajectories of the H2 sweep (protocol 5.3 and 8.2, decision D13).
   at every position). Seeds are --seeds (default 1-100) through cmd/attack
   with the same flags as the H2 generators. --variants all adds the secondary
   rows (omission and substitution selecting sensitive claims, retimed
-  omission). halo-record and Signet run on every attacked trajectory of both
-  agents. reproducible-trajectories runs on Claude Code runs with Write or
-  Edit claims only, on --rt-seeds of each variant (and not on the exhaustive
+  omission). halo-record and Signet run on every attacked trajectory of every
+  agent in --agents (default every agent with a profile). reproducible-
+  trajectories reads Claude Code transcripts, so it runs on the runs whose
+  profile's trace method is jsonl-session, with Write or Edit claims only, on --rt-seeds of each variant (and not on the exhaustive
   omissions); a held-out task needs --heldout-dir for its seed. The rows name
   a run by its directory under the campaign, which is how cmd/analyze names
   it, so the bootstrap clusters by session.
@@ -132,6 +133,8 @@ def variant_table(which, ns):
 
 
 EDIT_TOOLS = ("Write", "Edit")
+# The trace method of the transcripts reproducible-trajectories reads.
+RT_TRACE = "jsonl-session"
 
 
 def safe(name):
@@ -235,7 +238,7 @@ class Sweep:
         repeats emitted; None when the tool does not apply to it (campaign
         mode: Claude Code runs with Write or Edit claims only, D13)."""
         if campaign:
-            if subject.agent != "claude-code":
+            if common.trace_method(subject.agent) != RT_TRACE:
                 self.note(subject, "rt", "not run: the tool reads Claude Code transcripts only")
                 return None
             if not any(c.get("tool") in EDIT_TOOLS for c in honest):
@@ -491,7 +494,7 @@ def plan(subjects, a):
         if len(honest) < 2:
             rows.append((sub.name, "skipped: %d claim(s), the generators need 2" % len(honest)))
             continue
-        rt_ok = sub.agent == "claude-code" and any(c.get("tool") in EDIT_TOOLS for c in honest) \
+        rt_ok = common.trace_method(sub.agent) == RT_TRACE and any(c.get("tool") in EDIT_TOOLS for c in honest) \
             and "reproducible-trajectories" in a.only
         halo = 0
         rtn = 0
@@ -533,7 +536,8 @@ def main(argv):
     ap.add_argument("--heldout-dir", help="the held-out tasks' directory (NAME/seed), for reproducible-trajectories")
     ap.add_argument("--rt-seeds", default="1-10", type=seeds, help="seeds reproducible-trajectories runs (D13)")
     ap.add_argument("--variants", choices=("primary", "all"), default="primary")
-    ap.add_argument("--agents", default="claude-code,gemini")
+    ap.add_argument("--agents", default=",".join(common.profiles()),
+                    help="default every agent with a profile in config/agents.json")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--plan-only", action="store_true")
     a = ap.parse_args(argv)

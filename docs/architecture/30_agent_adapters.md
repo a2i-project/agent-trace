@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 5a28b8a on 2026-11-01.
+Checked against commit 5adaf10 on 2026-11-01.
 
 ## Objective
 
@@ -380,7 +380,7 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 
 ## Known limits
 
-- Some code still names agents (I-77): the fixture version test (`TestEveryListedFixtureHasItsVersion`) checks each adapter's fixtures in its own way, and `scripts/make-capture-fixture.py`, `scripts/bench-overhead.sh` and `scripts/compare/` know each format by name.
+- Some code still names agents (I-77): the fixture version test (`TestEveryListedFixtureHasItsVersion`) checks each adapter's fixtures in its own way, and `scripts/make-capture-fixture.py` knows each format by name. `scripts/bench-overhead.sh` and `scripts/compare/` read the profiles (I-98).
 - The `sqlite-conversation` method's model check takes the tokens of the conversation's executor metadata shaped as a model id of the families `gemini-`, `claude-` and `gpt-`; a model of another family reads as none, so the run fails as a `MODEL MISMATCH`, not silently.
 - Only `jsonl-session` and `jsonl-rollout` have the state check a declared trace needs; a profile that declares a `sqlite-conversation` trace is refused until that check exists.
 - The `jsonl-rollout` method's subagent rule (a rollout the run created whose metadata names the session) and its reading of the parent history a subagent's rollout starts with, which the Codex adapter shares, rest on one survey of 0.166.0. Its database snapshots hold every thread of the account; the fixture script leaves them out (I-86).
