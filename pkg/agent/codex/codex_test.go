@@ -216,9 +216,11 @@ func TestDeclarations(t *testing.T) {
 	}
 	add := models.TrajectoryEntry{Tool: toolAdd}
 	upd := models.TrajectoryEntry{Tool: toolUpdate}
-	if !a.Expresses(add, verification.DiffOutputHash) || a.Expresses(upd, verification.DiffOutputHash) ||
+	h := "sha256:x"
+	updWithContent := models.TrajectoryEntry{Tool: toolUpdate, OutputHash: &h}
+	if !a.Expresses(add, verification.DiffOutputHash) || a.Expresses(upd, verification.DiffOutputHash) || !a.Expresses(updWithContent, verification.DiffOutputHash) ||
 		a.Expresses(add, verification.DiffExitCode) || a.Expresses(add, verification.DiffRequestHash) {
-		t.Error("Expresses: an add states its content, an update none, nothing states an exit code or a body")
+		t.Error("Expresses: an add states its content, an update only when its content was known (I-87), nothing states an exit code or a body")
 	}
 	for p, want := range map[string]bool{
 		"/home/u/.codex/sessions/x.jsonl": true, "/root/.codex": true, "/home/u/.codexx/a": false, "/ws/.codex/config.toml": false,
@@ -384,5 +386,47 @@ func TestHarnessProcessIsTheNativeBinaryTheLauncherStarted(t *testing.T) {
 		if pid := (Adapter{}).HarnessProcess(c); pid != 0 {
 			t.Errorf("%s: harness %d", name, pid)
 		}
+	}
+}
+
+// The model traffic of 0.166.0 is declared housekeeping (I-89): the
+// upgrade GET of the model endpoint without a body and each client message
+// on the WebSocket with one, at the exact host and path; nothing else, and
+// nothing for another version.
+func TestHousekeepingIsTheModelTrafficOnly(t *testing.T) {
+	h := "sha256:00"
+	req := func(target string, body bool) models.GroundTruthEvent {
+		e := models.GroundTruthEvent{ActionType: models.NetRequest, Target: target}
+		if body {
+			e.RequestHash = &h
+		}
+		return e
+	}
+	p := agent.HarnessHousekeeping(Adapter{}, "0.166.0")
+	if p == nil {
+		t.Fatal("no declaration for 0.166.0")
+	}
+	for _, c := range []struct {
+		e    models.GroundTruthEvent
+		want bool
+	}{
+		{req("GET https://chatgpt.com/backend-api/codex/responses", false), true},
+		{req("WS https://chatgpt.com/backend-api/codex/responses", true), true},
+		{req("GET https://chatgpt.com/backend-api/codex/responses", true), false},
+		{req("WS https://chatgpt.com/backend-api/codex/responses", false), false},
+		{req("POST https://chatgpt.com/backend-api/codex/responses", true), false},
+		{req("WS https://chatgpt.com/backend-api/codex/other", true), false},
+		{req("WS https://chatgpt.com/backend-api/codex/responses?x=1", true), false},
+		{req("WS https://evil.example/backend-api/codex/responses", true), false},
+		{req("GET https://chatgpt.com/", false), false},
+		{models.GroundTruthEvent{ActionType: models.NetConnect, Target: "chatgpt.com"}, false},
+		{models.GroundTruthEvent{ActionType: models.NetRequest, Target: "WS https://chatgpt.com/backend-api/codex/responses", RequestHash: &h, TargetTruncated: true}, false},
+	} {
+		if got := p(c.e); got != c.want {
+			t.Errorf("%s %s (body %v): %v, want %v", c.e.ActionType, c.e.Target, c.e.RequestHash != nil, got, c.want)
+		}
+	}
+	if agent.HarnessHousekeeping(Adapter{}, "0.167.0") != nil {
+		t.Error("another version declares housekeeping")
 	}
 }

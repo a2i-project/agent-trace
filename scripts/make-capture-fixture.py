@@ -105,9 +105,13 @@ version, working directory and subagent history start; the model's calls
 and their outputs (type, name, call id, status, turn); and the completed
 items (thread, turn, completion times; a command's argv, status and exit
 code; a file change's paths, kinds, an add's content and a move's target;
-an extension's kind; a subagent's thread). Records before a subagent's
-history start are left out. An add's content the rewriting would change is
-refused, since the adapter claims its hash. In the ground truths, three
+an extension's kind; a subagent's thread). A command that reads one file
+of the task run's workspace whole (`cat <word>`, as the adapter reads one,
+I-87) keeps its working directory, its parsed form and its output, and an
+update of a file there keeps its diff: the adapter claims the update's
+content from them. Records before a subagent's history start are left out.
+An add's content, a kept output or a kept diff the rewriting would change
+is refused, since the adapter claims a hash from it. In the ground truths, three
 more things are rewritten: the rollout files of threads that are not the
 capture's own runs, which the harness reads at start-up, become
 sessions/2000/01/01/rollout-2000-01-01T00-00-00-<placeholder>.jsonl; the
@@ -634,20 +638,60 @@ CODEX_META = ("id", "session_id", "cli_version", "cwd", "parent_thread_id", "sub
 CODEX_CALLS = ("custom_tool_call", "function_call", "custom_tool_call_output", "function_call_output")
 
 
+CAT_WORD = re.compile(r"[A-Za-z0-9_./+][A-Za-z0-9_./+-]*")
+
+
+def cat_path(it):
+    """The file a command item reads whole, as the adapter reads one (I-87):
+    exactly `cat <word>`, exit code 0, parsed by Codex as one read of that
+    word, with a recorded output; else None."""
+    cmd = it.get("command")
+    if not (isinstance(cmd, list) and len(cmd) == 3 and cmd[:2] == ["/bin/bash", "-lc"] and cmd[2].startswith("cat ")):
+        return None
+    word = cmd[2][4:]
+    pc = it.get("parsed_cmd")
+    if not CAT_WORD.fullmatch(word) or ".." in word.split("/") or it.get("exit_code") != 0 or it.get("status") != "completed":
+        return None
+    if not (isinstance(pc, list) and len(pc) == 1 and pc[0].get("type") == "read" and pc[0].get("cmd") == cmd[2] and pc[0].get("path") == word):
+        return None
+    if not isinstance(it.get("aggregated_output"), str):
+        return None
+    if word.startswith("/"):
+        return os.path.normpath(word)
+    cwd = it.get("cwd", "")
+    cwd = cwd[len("file://"):] if cwd.startswith("file://") else cwd
+    if not cwd.startswith("/") or "%" in cwd:
+        return None
+    return os.path.normpath(os.path.join(cwd, word))
+
+
+def kept_text(text, what):
+    if rewrite(text, task) != text:
+        sys.exit(what + " holds a private path; refusing to alter the content its hash is claimed from")
+    return text
+
+
 def reduce_item(it):
     keep = {k: it[k] for k in ("type", "id") if k in it}
     t = it.get("type")
     if t == "CommandExecution":
         keep.update({k: it[k] for k in ("command", "status", "exit_code") if k in it})
+        # A whole-file read of a file in the workspace keeps what the
+        # adapter reads it by, and its output, from which an update's
+        # content is claimed (I-87).
+        if readable(cat_path(it)):
+            keep["cwd"] = it["cwd"]
+            keep["parsed_cmd"] = [{k: c[k] for k in ("type", "cmd", "path") if k in c} for c in it["parsed_cmd"]]
+            keep["aggregated_output"] = kept_text(it["aggregated_output"], "a whole-file read's output")
     elif t == "FileChange":
         keep["status"] = it.get("status")
         changes = {}
         for path, c in it.get("changes", {}).items():
             slim = {"type": c.get("type")}
             if c.get("type") == "add":
-                if rewrite(c.get("content", ""), task) != c.get("content", ""):
-                    sys.exit("an added file's content holds a private path; refusing to alter the content its hash is claimed from")
-                slim["content"] = c.get("content")
+                slim["content"] = kept_text(c.get("content", ""), "an added file's content")
+            if c.get("type") == "update" and isinstance(c.get("unified_diff"), str) and readable(path):
+                slim["unified_diff"] = kept_text(c["unified_diff"], "an update's diff")
             if "move_path" in c:
                 slim["move_path"] = c["move_path"]
             changes[path] = slim

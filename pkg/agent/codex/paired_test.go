@@ -18,7 +18,8 @@ import (
 // adds a.txt, one that updates it, one that updates b.txt, and an
 // exec_command of echo hi. Reduced by scripts/make-capture-fixture.py,
 // which keeps the rollout's calls and items and leaves out the database
-// snapshots.
+// snapshots; since I-87 it keeps the whole-file read's output and the
+// updates' diffs, from which both updates claim their content.
 const pairedDir = "testdata/paired-codex-0.166.0-basic"
 
 func pairedRun(t *testing.T, label string) models.GroundTruthFile {
@@ -63,8 +64,35 @@ func verifyPaired(t *testing.T, a agent.Adapter, claims models.Trajectory, g mod
 	}
 	in := agent.PrepareWithBaseline(a, claims, g, &b, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(a, "0.166.0", g)
+	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(a, "0.166.0")
 	in.Trace.Decl = agent.Trace(a, g)
 	return verification.Verify(in)
+}
+
+// The harness's model traffic, as the net probe writes it with content
+// capture, added to the capture by the harness process: it is
+// declared housekeeping (I-89), no finding; a request of another path by
+// the same process stays a finding.
+func TestPairedModelTrafficIsHousekeeping(t *testing.T) {
+	tr, _ := pairedClaims(t)
+	g := pairedRun(t, "basic")
+	harness := agent.Rooted(Adapter{}, g).RootPID
+	at := g.Events[len(g.Events)-1].Timestamp
+	h1, h2 := "sha256:01", "sha256:02"
+	base := verifyPaired(t, Adapter{}, tr, g, 0.2)
+	g.Events = append(g.Events,
+		models.GroundTruthEvent{Timestamp: at, PID: harness, ActionType: models.NetRequest, Target: "GET " + modelAPI},
+		models.GroundTruthEvent{Timestamp: at, PID: harness, ActionType: models.NetRequest, Target: "WS " + modelAPI, RequestHash: &h1},
+		models.GroundTruthEvent{Timestamp: at, PID: harness, ActionType: models.NetRequest, Target: "WS " + modelAPI, RequestHash: &h2},
+	)
+	v := verifyPaired(t, Adapter{}, tr, g, 0.2)
+	if v.Outcome != base.Outcome || v.Findings() != base.Findings() || len(v.HarnessHousekeeping) != 3 {
+		t.Errorf("%s, %d findings, housekeeping %d; want %s, %d findings and the three requests declared", v.Outcome, v.Findings(), len(v.HarnessHousekeeping), base.Outcome, base.Findings())
+	}
+	g.Events = append(g.Events, models.GroundTruthEvent{Timestamp: at, PID: harness, ActionType: models.NetRequest, Target: "WS https://chatgpt.com/backend-api/other", RequestHash: &h1})
+	if v := verifyPaired(t, Adapter{}, tr, g, 0.2); v.Outcome != verification.OutcomeNotFaithful || len(v.HarnessHousekeeping) != 3 {
+		t.Errorf("another path: %s, housekeeping %d", v.Outcome, len(v.HarnessHousekeeping))
+	}
 }
 
 // Five loss-free controls; the task run lost six file events of the
@@ -94,7 +122,7 @@ func TestPairedTaskClaimsEveryEffectOnce(t *testing.T) {
 	if rep.AgentVersion != "0.166.0" || rep.ToolCalls != 5 || len(tr) != 8 {
 		t.Fatalf("version %s, %d calls, %d claims", rep.AgentVersion, rep.ToolCalls, len(tr))
 	}
-	var cmds []string
+	var cmds, updates []string
 	adds := 0
 	for _, c := range tr {
 		if c.ActionType == models.ProcessExec {
@@ -103,13 +131,23 @@ func TestPairedTaskClaimsEveryEffectOnce(t *testing.T) {
 		if c.Tool == toolAdd && c.ActionType == models.FileWrite && *c.OutputHash == content.SHA256Bytes([]byte("hello\n")) {
 			adds++
 		}
+		// a.txt from its add, b.txt from the cat of it (I-87).
+		if c.Tool == toolUpdate && c.ActionType == models.FileWrite && c.OutputHash != nil {
+			switch {
+			case strings.HasSuffix(c.Target, "/a.txt") && *c.OutputHash == content.SHA256Bytes([]byte("world\n")):
+				updates = append(updates, "a.txt")
+			case strings.HasSuffix(c.Target, "/b.txt") && *c.OutputHash == content.SHA256Bytes([]byte("again\n")):
+				updates = append(updates, "b.txt")
+			}
+		}
 	}
-	if strings.Join(cmds, ";") != "cat b.txt;echo hi" || adds != 1 {
-		t.Errorf("commands %v, hashed adds %d", cmds, adds)
+	if strings.Join(cmds, ";") != "cat b.txt;echo hi" || adds != 1 || strings.Join(updates, ";") != "a.txt;b.txt" {
+		t.Errorf("commands %v, hashed adds %d, updates with their content %v", cmds, adds, updates)
 	}
 }
 
-// Every claim is corroborated at every agreement, the add on its content,
+// Every claim is corroborated at every agreement, the add and both updates
+// on their content,
 // with no finding and no unexplained harness file event; the run is
 // INCONCLUSIVE on the capture's loss, and on git remote -v, the harness's
 // command after a turn that applied a patch, which no control ran (I-83).
@@ -147,7 +185,8 @@ func TestPairedWithoutTheLossOnlyTheHarnessCommandRemains(t *testing.T) {
 }
 
 // What an altered trajectory is caught as: an omitted update, a substituted
-// add, a fabricated command and an omitted command.
+// add, a substituted update (I-87), a fabricated command and an omitted
+// command.
 func TestPairedCatchesAlteredTrajectories(t *testing.T) {
 	tr, _ := pairedClaims(t)
 	g := pairedRun(t, "basic")
@@ -167,6 +206,12 @@ func TestPairedCatchesAlteredTrajectories(t *testing.T) {
 			substituted[i].OutputHash = &other
 		}
 	}
+	substitutedUpdate := append(models.Trajectory{}, tr...)
+	for i := range substitutedUpdate {
+		if substitutedUpdate[i].Tool == toolUpdate && substitutedUpdate[i].ActionType == models.FileWrite && strings.HasSuffix(substitutedUpdate[i].Target, "/b.txt") {
+			substitutedUpdate[i].OutputHash = &other
+		}
+	}
 	fabricated := append(append(models.Trajectory{}, tr...), models.TrajectoryEntry{Timestamp: tr[len(tr)-1].Timestamp.Add(time.Second), ActionType: models.ProcessExec, Target: "rm -rf /ws", Tool: toolCommand})
 	cases := map[string]struct {
 		claims models.Trajectory
@@ -177,6 +222,7 @@ func TestPairedCatchesAlteredTrajectories(t *testing.T) {
 		}),
 			func(v verification.Verdict) bool { return len(v.Unrecorded) >= 2 }},
 		"substituted add":    {substituted, func(v verification.Verdict) bool { return len(v.Mismatched) == 1 }},
+		"substituted update": {substitutedUpdate, func(v verification.Verdict) bool { return len(v.Mismatched) == 1 }},
 		"fabricated command": {fabricated, func(v verification.Verdict) bool { return len(v.Unwitnessed) == 1 }},
 		"omitted echo hi": {drop(func(c models.TrajectoryEntry) bool { return c.Target == "echo hi" }),
 			func(v verification.Verdict) bool { return len(v.Unrecorded) == 1 }},

@@ -78,6 +78,32 @@ func (Adapter) HarnessCommands() []string { return []string{gitRemote} }
 // other host (V-34).
 func (Adapter) HarnessHosts() []string { return nil }
 
+// housekeepingVersions are the versions whose model traffic is declared.
+var housekeepingVersions = map[string]bool{"0.166.0": true}
+
+// modelAPI is the endpoint Codex 0.166.0 talks to its model through: a
+// WebSocket opened by a GET upgrade, over which each request is one client
+// message. With content capture the net probe writes the upgrade as a
+// net_request of GET and each client message as a net_request of method WS
+// with the hash of the message.
+const modelAPI = "https://chatgpt.com/backend-api/codex/responses"
+
+// HarnessHousekeeping declares the harness's model traffic, of the
+// declared version (V-54, I-89): the upgrade GET of the model endpoint
+// without a body, and every client message on that WebSocket, with a body.
+// The exact host and path only; another path or host, a GET with a body
+// and a message without one stay checked, and the verifier applies the
+// declaration to level-0 events, the harness process's own.
+func (Adapter) HarnessHousekeeping(version string) []agent.Housekeeping {
+	if !housekeepingVersions[version] {
+		return nil
+	}
+	return []agent.Housekeeping{
+		{ActionType: models.NetRequest, Target: "GET " + modelAPI},
+		{ActionType: models.NetRequest, Target: "WS " + modelAPI, Body: true},
+	}
+}
+
 // bookkeepingVersions are the versions whose databases were measured.
 var bookkeepingVersions = map[string]bool{"0.166.0": true}
 

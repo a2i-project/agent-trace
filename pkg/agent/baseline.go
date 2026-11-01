@@ -138,6 +138,17 @@ func (b Baseline) RecordsSubtrees() bool { return b.Subtrees != nil }
 // script does.
 const ControlCommand = ": agent-trace-control-marker"
 
+// ControlFile is the file the control runs of an agent whose profile names
+// an edit tool (controls.edit_tool) are told to create in their workspace
+// with that tool, so that the baseline measures what the harness does after
+// an edit (I-88). The edit is the control agent's own action, so its
+// target, ControlFileTarget, is excluded from the baseline as the control
+// command is (I-28); only the harness's reaction to it is learned.
+const (
+	ControlFile       = "agent-trace-control.txt"
+	ControlFileTarget = WorkspacePlaceholder + "/" + ControlFile
+)
+
 // CaptureOptions tunes Capture.
 type CaptureOptions struct {
 	// MinAgreement is the fraction of runs that must perform an action for it
@@ -145,7 +156,9 @@ type CaptureOptions struct {
 	MinAgreement float64
 	// Exclude lists targets that never become a rule or an unstable entry,
 	// whatever their action type: the command the control task itself was
-	// told to run. Matched exactly against the normalized target.
+	// told to run, and the file it was told to edit. Matched exactly against
+	// the normalized target, and against the target with the run's
+	// workspace replaced by WorkspacePlaceholder (I-88).
 	Exclude []string
 }
 
@@ -202,10 +215,11 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 			// A rule is compared with other runs, so it names the event in
 			// its canonical form (I-41).
 			e = canonical(a, e)
-			if excluded[e.Target] {
+			target := templateWorkspace(e.Target, r.Workspace)
+			if excluded[e.Target] || excluded[target] {
 				continue
 			}
-			seen[Rule{ActionType: e.ActionType, Target: templateWorkspace(e.Target, r.Workspace)}] = true
+			seen[Rule{ActionType: e.ActionType, Target: target}] = true
 		}
 		for rule := range seen {
 			counts[rule]++
@@ -219,10 +233,10 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 				continue
 			}
 			ce := canonical(a, *c.Exec)
-			if excluded[ce.Target] {
+			cmd := templateWorkspace(ce.Target, r.Workspace)
+			if excluded[ce.Target] || excluded[cmd] {
 				continue
 			}
-			cmd := templateWorkspace(ce.Target, r.Workspace)
 			if declared != nil && declared(*c.Exec) {
 				seenDeclared[cmd] = true
 			}

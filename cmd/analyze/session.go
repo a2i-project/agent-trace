@@ -243,10 +243,11 @@ func applyStrict(v verification.Verdict, reason string) verification.Verdict {
 
 // BuildBaseline builds a baseline from control runs the way the capture
 // script does: at the given agreement, with the control task's own command
-// excluded (I-28). The capture time is fixed so the baseline is a function of
-// its inputs.
+// (I-28) and its edited file (I-88) excluded; the file is excluded for
+// every agent, since controls that edit nothing never name it. The capture
+// time is fixed so the baseline is a function of its inputs.
 func BuildBaseline(a agent.Adapter, version string, controls []models.GroundTruthFile, agreement float64) (*agent.Baseline, error) {
-	b, err := agent.Capture(a, version, controls, time.Unix(0, 0).UTC(), agent.CaptureOptions{MinAgreement: agreement, Exclude: []string{agent.ControlCommand}})
+	b, err := agent.Capture(a, version, controls, time.Unix(0, 0).UTC(), agent.CaptureOptions{MinAgreement: agreement, Exclude: []string{agent.ControlCommand, agent.ControlFileTarget}})
 	if err != nil {
 		return nil, err
 	}

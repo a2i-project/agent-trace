@@ -203,6 +203,21 @@ def shell(path, agent, task):
     put("p_subagent_tool", ctl["subagent_tool"])
     put("p_control_prompt", ctl["prompt"])
     put("p_control_prompt_subagent", ctl.get("prompt_subagent") or ctl["prompt"])
+    # The control edit (I-88): a profile whose harness reacts to an edit
+    # names the edit tool, and every control prompt of the profile names
+    # the file, {file}, the controls create with it; no other profile's
+    # prompt may name it.
+    edit_tool = ctl.get("edit_tool", "")
+    put("p_edit_tool", edit_tool)
+    prompts = [("controls.prompt", ctl["prompt"]), ("controls.prompt_subagent", ctl.get("prompt_subagent"))]
+    prompts += [(f"tasks.{n}.control_prompt", d.get("control_prompt")) for n, d in sorted(tasks.items())]
+    for name, text in prompts:
+        if not text:
+            continue
+        if edit_tool and "{file}" not in text:
+            fail(f"{where}: controls.edit_tool is {edit_tool}, and {name} does not name the file the controls edit ({{file}})")
+        if not edit_tool and "{file}" in text:
+            fail(f"{where}: {name} names {{file}}, and the profile has no controls.edit_tool")
 
     t = tasks.get(task) or {}
     put("p_task_builtin", builtin)

@@ -567,10 +567,21 @@ fi
 # the harness's own activity, and as a rule it would explain any later command
 # with that target, and its whole subtree, without a claim.
 control_command=': agent-trace-control-marker'
-# The profile's control prompts name the command as {command}. agy's
-# harness writes its agentapi shim and opens a pseudo-terminal before every
-# command (I-48), so its controls run one too.
-fill() { printf '%s' "${1//\{command\}/"$control_command"}"; }
+# A harness that reacts to an edit (Codex runs git remote -v after every
+# turn that applied a patch) does so in no control that edits nothing, so a
+# profile may name controls.edit_tool, and its control prompts then also
+# tell the agent to create this file in the workspace with that tool
+# (I-88). The edit is the control agent's own action, so the file is
+# excluded from the baseline as the command is, and only the harness's
+# reaction to it is learned.
+control_file=agent-trace-control.txt
+# The profile's control prompts name the command as {command} and the
+# file as {file}. agy's harness writes its agentapi shim and opens a
+# pseudo-terminal before every command (I-48), so its controls run one too.
+fill() {
+  local s=${1//\{command\}/"$control_command"}
+  printf '%s' "${s//\{file\}/"$control_file"}"
+}
 control_prompt=$(fill "$p_control_prompt")
 # The control runs must enable the same tools as the task. The shell snapshot
 # command the harness runs at the first Bash call differs with the tool set (it
@@ -602,6 +613,13 @@ fi
 # A control makes one command call, so its tool set must offer one.
 need_tool=$p_command_tool
 case " $control_tools " in *" $need_tool "*) ;; *) echo "the tool set of this task ($control_tools) lacks $need_tool, which the controls need" >&2; exit 1 ;; esac
+# The targets the baseline leaves out: the command, and the edited file in
+# each control's own workspace.
+control_excludes=(--exclude "$control_command")
+if [ -n "$p_edit_tool" ]; then
+  case " $control_tools " in *" $p_edit_tool "*) ;; *) echo "the tool set of this task ($control_tools) lacks $p_edit_tool, which the controls' edit needs" >&2; exit 1 ;; esac
+  control_excludes+=(--exclude "{workspace}/$control_file")
+fi
 
 # Refuse an unusable --baseline-from before anything that needs root or quota.
 if [ -n "$baseline_from" ]; then
@@ -1231,7 +1249,7 @@ if [ -n "$no_adapter" ]; then
   {
     echo "no $agent adapter in this build: no baseline and no verdict (I-79)."
     echo "Build them from this capture once the adapter exists:"
-    echo "  baseline --agent $agent --agent-version $version --exclude '$control_command' --out baseline.json control-*.ground_truth.json"
+    echo "  baseline --agent $agent --agent-version $version$(printf " %s '%s'" "${control_excludes[@]}") --out baseline.json control-*.ground_truth.json"
     [ -z "$baseline_from" ] || echo "  (the control runs are those in $baseline_from)"
     echo "  verify --agent $agent --trajectory $(basename "$(trace_path "$task_label")") --ground-truth $task_label.ground_truth.json --baseline baseline.json"
   } >"$out/report.txt"
@@ -1241,7 +1259,7 @@ if [ -n "$no_adapter" ]; then
 fi
 min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4f", 1 / n }')}
 "$root/baseline" --agent "$agent" --agent-version "$version" --min-agreement "$min_agreement" \
-  --exclude "$control_command" --out "$out/baseline.json" "${controls[@]}"
+  "${control_excludes[@]}" --out "$out/baseline.json" "${controls[@]}"
 
 trajectory=$(trace_path "$task_label")
 # A version the config does not list makes the verdict INCONCLUSIVE (I-57).

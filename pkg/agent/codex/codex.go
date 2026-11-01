@@ -45,13 +45,14 @@ func (Adapter) Process() agent.ProcessModel {
 
 // Expresses declares what the format can state. An added file's record
 // holds its whole content, so its write states an output hash; an update's
-// record holds only a unified diff, so its write states none and its nil is
-// the format's (I-82). No exit code (not claimed), no request body, no
-// input hash.
+// record holds only a unified diff, so its write states one only when the
+// session recorded the file's whole content before it (I-87), and its nil
+// is otherwise the format's (I-82). No exit code (not claimed), no request
+// body, no input hash.
 func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 	switch field {
 	case verification.DiffOutputHash:
-		return e.Tool == toolAdd
+		return e.Tool == toolAdd || (e.Tool == toolUpdate && e.OutputHash != nil)
 	case verification.DiffExitCode, verification.DiffRequestHash, verification.DiffInputHash:
 		return false
 	}

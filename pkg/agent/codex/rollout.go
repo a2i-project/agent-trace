@@ -61,20 +61,24 @@ type eventMsg struct {
 }
 
 type item struct {
-	Type          string          `json:"type"`
-	ID            string          `json:"id"`
-	Kind          string          `json:"kind"`
-	Command       []string        `json:"command"`
-	Status        string          `json:"status"`
-	ExitCode      *int32          `json:"exit_code"`
-	Changes       json.RawMessage `json:"changes"`
-	AgentThreadID string          `json:"agent_thread_id"`
+	Type             string          `json:"type"`
+	ID               string          `json:"id"`
+	Kind             string          `json:"kind"`
+	Command          []string        `json:"command"`
+	Cwd              string          `json:"cwd"`
+	ParsedCmd        []parsedCmd     `json:"parsed_cmd"`
+	AggregatedOutput *string         `json:"aggregated_output"`
+	Status           string          `json:"status"`
+	ExitCode         *int32          `json:"exit_code"`
+	Changes          json.RawMessage `json:"changes"`
+	AgentThreadID    string          `json:"agent_thread_id"`
 }
 
 type change struct {
-	Type     string  `json:"type"`
-	Content  *string `json:"content"`
-	MovePath *string `json:"move_path"`
+	Type        string  `json:"type"`
+	Content     *string `json:"content"`
+	UnifiedDiff *string `json:"unified_diff"`
+	MovePath    *string `json:"move_path"`
 }
 
 // cell is one model call: a code-mode cell or a direct tool call.
@@ -142,7 +146,11 @@ func readMeta(line []byte) (sessionMeta, bool) {
 // cells that made them.
 func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	rep := agent.Report{}
-	main, err := readRollout(path, &rep)
+	subs, _ := filepath.Glob(filepath.Join(strings.TrimSuffix(path, ".jsonl"), "subagents", "*.jsonl"))
+	sort.Strings(subs)
+	// An update's content is claimed only in a session of one thread
+	// (I-87): another thread's command may change the file between.
+	main, err := readRollout(path, &rep, len(subs) == 0)
 	if err != nil {
 		return nil, rep, err
 	}
@@ -152,11 +160,10 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	}
 	claims := main.claims
 	started := main.subagents
-	subs, _ := filepath.Glob(filepath.Join(strings.TrimSuffix(path, ".jsonl"), "subagents", "*.jsonl"))
-	sort.Strings(subs)
+	claimed, unclaimed := main.updatesClaimed, main.updatesUnclaimed
 	found := map[string]bool{}
 	for _, s := range subs {
-		sub, err := readRollout(s, &rep)
+		sub, err := readRollout(s, &rep, false)
 		if err != nil {
 			rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("subagent rollout %s: %v", filepath.Base(s), err))
 			continue
@@ -178,6 +185,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		}
 		claims = append(claims, sub.claims...)
 		started = append(started, sub.subagents...)
+		unclaimed += sub.updatesUnclaimed
 	}
 	missing := 0
 	for _, id := range started {
@@ -195,8 +203,13 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	rep.Entries = len(claims)
 	rep.Degradations = append(rep.Degradations,
 		"a claim starts when the cell that made it was recorded, before it ran (D13), and its effects are joined to the cell by turn and time window",
-		"exit codes are recorded but not claimed, so exits are not aligned",
-		"an update by apply_patch is recorded as a diff, so its write states no content hash")
+		"exit codes are recorded but not claimed, so exits are not aligned")
+	if claimed > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d update(s) by apply_patch claim the content their diff gives applied to the file's whole content the session recorded before them (an add, an earlier update or a whole-file cat, I-87)", claimed))
+	}
+	if unclaimed > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d update(s) by apply_patch are recorded as a diff without the file's whole content before them, so their writes state no content hash", unclaimed))
+	}
 	return claims, rep, nil
 }
 
@@ -204,11 +217,18 @@ type rollout struct {
 	meta      sessionMeta
 	claims    models.Trajectory
 	subagents []string // the threads its SubAgentActivity items started
+	// updatesClaimed and updatesUnclaimed count its updates that claim a
+	// content hash and those that do not (I-87).
+	updatesClaimed, updatesUnclaimed int
 }
 
 // readRollout reads one rollout's own records: for a subagent, those from
-// its history start ordinal on.
-func readRollout(path string, rep *agent.Report) (rollout, error) {
+// its history start ordinal on. contents allows claiming an update's
+// content from the rollout's own records (I-87); it is withheld anyway in
+// a subagent's rollout, in one that starts a subagent, in one with a wait
+// call (a yielded cell or command may run beside later ones) and in one
+// with an unknown direct tool.
+func readRollout(path string, rep *agent.Report, contents bool) (rollout, error) {
 	var out rollout
 	f, err := os.Open(path)
 	if err != nil {
@@ -221,6 +241,7 @@ func readRollout(path string, rep *agent.Report) (rollout, error) {
 	var cells []*cell
 	byCall := map[string]*cell{}
 	var effects []effect
+	var steps []step
 	unjoined, line := 0, 0
 	haveMeta := false
 	for sc.Scan() {
@@ -303,10 +324,22 @@ func readRollout(path string, rep *agent.Report) (rollout, error) {
 			if ev.CompletedAt != nil {
 				at = time.UnixMilli(*ev.CompletedAt).UTC()
 			}
-			claims, err := itemClaims(it, rep, &out)
+			claims, itemSteps, err := itemClaims(it, rep, &out)
 			if err != nil {
 				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: %v", name, line, err))
 				continue
+			}
+			var started *time.Time
+			if ev.StartedAt != nil {
+				t := time.UnixMilli(*ev.StartedAt).UTC()
+				started = &t
+			}
+			for _, st := range itemSteps {
+				st.turn, st.completed, st.started, st.effect = ev.TurnID, at, started, -1
+				if st.kind == stepUpdate && len(claims) > 0 {
+					st.effect = len(effects)
+				}
+				steps = append(steps, st)
 			}
 			if len(claims) > 0 {
 				effects = append(effects, effect{claims: claims, turn: ev.TurnID, at: at, order: len(effects)})
@@ -321,19 +354,47 @@ func readRollout(path string, rep *agent.Report) (rollout, error) {
 	}
 	// Each effect takes the interval of the one cell of its turn whose
 	// window holds its completion; the effects of one cell form a block.
-	joined := make([]*cell, len(effects))
-	for i, ef := range effects {
+	holding := func(turn string, at time.Time) *cell {
 		var in []*cell
 		for _, c := range cells {
-			if c.ended && (c.turn == "" || ef.turn == "" || c.turn == ef.turn) && !ef.at.Before(c.start) && !ef.at.After(c.end) {
+			if c.ended && (c.turn == "" || turn == "" || c.turn == turn) && !at.Before(c.start) && !at.After(c.end) {
 				in = append(in, c)
 			}
 		}
 		if len(in) == 1 {
-			joined[i] = in[0]
-			in[0].effects++
+			return in[0]
+		}
+		return nil
+	}
+	joined := make([]*cell, len(effects))
+	for i, ef := range effects {
+		if c := holding(ef.turn, ef.at); c != nil {
+			joined[i] = c
+			c.effects++
 		} else {
 			unjoined++
+		}
+	}
+	// The updates whose file's prior content the rollout records (I-87).
+	// A wait resumes a yielded cell, and an unknown direct tool may write
+	// anything: either withholds every update's content.
+	for _, c := range cells {
+		if c.name == "wait" || (c.name != "exec" && !nonEffectfulCalls[c.name]) {
+			contents = false
+		}
+	}
+	if contents && out.meta.SubagentHistoryOrdinal == nil && len(out.subagents) == 0 {
+		out.updatesClaimed, out.updatesUnclaimed = reconstruct(steps, effects, func(s step) (time.Time, bool) {
+			if c := holding(s.turn, s.completed); c != nil {
+				return c.start, true
+			}
+			return time.Time{}, false
+		})
+	} else {
+		for _, s := range steps {
+			if s.kind == stepUpdate {
+				out.updatesUnclaimed++
+			}
 		}
 	}
 	for i, ef := range effects {
@@ -373,22 +434,28 @@ func readRollout(path string, rep *agent.Report) (rollout, error) {
 
 // itemClaims maps one completed item to its claims, in kernel order, or
 // counts it.
-func itemClaims(it item, rep *agent.Report, out *rollout) (models.Trajectory, error) {
+// It also returns what the item says about file content (I-87).
+func itemClaims(it item, rep *agent.Report, out *rollout) (models.Trajectory, []step, error) {
+	disturb := []step{{kind: stepDisturb}}
 	switch it.Type {
 	case "CommandExecution":
 		if it.ExitCode == nil {
 			rep.Count(fmt.Sprintf("%s (status %s)", toolCommand, it.Status))
-			return nil, nil
+			return nil, disturb, nil
 		}
 		target, ok := commandOf(it.Command)
 		if !ok {
-			return nil, fmt.Errorf("command %q is not /bin/bash -lc with one command", it.Command)
+			return nil, nil, fmt.Errorf("command %q is not /bin/bash -lc with one command", it.Command)
 		}
-		return models.Trajectory{{ActionType: models.ProcessExec, Target: target, Tool: toolCommand}}, nil
+		claims := models.Trajectory{{ActionType: models.ProcessExec, Target: target, Tool: toolCommand}}
+		if p, text, ok := wholeFileRead(it); ok {
+			return claims, []step{{kind: stepRead, paths: []string{p}, text: text}}, nil
+		}
+		return claims, disturb, nil
 	case "FileChange":
 		if it.Status != "completed" {
 			rep.Count(fmt.Sprintf("apply_patch (status %s)", it.Status))
-			return nil, nil
+			return nil, disturb, nil
 		}
 		return changeClaims(it.Changes, rep)
 	case "Extension":
@@ -397,8 +464,9 @@ func itemClaims(it item, rep *agent.Report, out *rollout) (models.Trajectory, er
 		rep.Count("extension " + it.Kind)
 		if it.Kind != "web.search" {
 			rep.UnknownTools = append(rep.UnknownTools, "extension "+it.Kind)
+			return nil, disturb, nil
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	if it.Type == "SubAgentActivity" && it.Kind == "started" && it.AgentThreadID != "" {
 		out.subagents = append(out.subagents, it.AgentThreadID)
@@ -406,8 +474,9 @@ func itemClaims(it item, rep *agent.Report, out *rollout) (models.Trajectory, er
 	if !nonEffectfulItems[it.Type] {
 		rep.Count("item " + it.Type)
 		rep.UnknownTools = append(rep.UnknownTools, "item "+it.Type)
+		return nil, disturb, nil
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // commandOf is the command a CommandExecution states: the rollout records
@@ -421,47 +490,58 @@ func commandOf(argv []string) (string, bool) {
 
 // changeClaims maps a FileChange's changes, in the record's order: an add
 // is an open and a write with the content's hash, an update an open and a
-// write, a delete a delete. A move is not claimed.
-func changeClaims(raw json.RawMessage, rep *agent.Report) (models.Trajectory, error) {
+// write (with the hash reconstruct may give it, I-87), a delete a delete.
+// A move is not claimed. The steps say what each change states about the
+// file's content.
+func changeClaims(raw json.RawMessage, rep *agent.Report) (models.Trajectory, []step, error) {
 	paths, changes, err := orderedChanges(raw)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var out models.Trajectory
+	var steps []step
 	for i, p := range paths {
 		if !filepath.IsAbs(p) || filepath.Clean(p) != p {
-			return nil, fmt.Errorf("file change of %q, not an absolute clean path", p)
+			return nil, nil, fmt.Errorf("file change of %q, not an absolute clean path", p)
 		}
 		c := changes[i]
 		switch c.Type {
 		case "add":
 			if c.Content == nil {
-				return nil, fmt.Errorf("add of %s holds no content", p)
+				return nil, nil, fmt.Errorf("add of %s holds no content", p)
 			}
 			h := content.SHA256Bytes([]byte(*c.Content))
 			out = append(out,
 				models.TrajectoryEntry{ActionType: models.FileOpen, Target: p, Tool: toolAdd},
 				models.TrajectoryEntry{ActionType: models.FileWrite, Target: p, OutputHash: &h, Tool: toolAdd})
+			steps = append(steps, step{kind: stepAdd, paths: []string{p}, text: *c.Content})
 		case "update":
 			if c.MovePath != nil {
 				rep.Count("apply_patch:move")
 				rep.Degradations = append(rep.Degradations, fmt.Sprintf("an update that moves %s is not claimed (its shape was not measured)", p))
+				steps = append(steps, step{kind: stepForget, paths: []string{p, *c.MovePath}})
 				continue
 			}
 			out = append(out,
 				models.TrajectoryEntry{ActionType: models.FileOpen, Target: p, Tool: toolUpdate},
 				models.TrajectoryEntry{ActionType: models.FileWrite, Target: p, Tool: toolUpdate})
+			st := step{kind: stepUpdate, paths: []string{p}, claim: len(out) - 1}
+			if c.UnifiedDiff != nil {
+				st.text, st.hasDiff = *c.UnifiedDiff, true
+			}
+			steps = append(steps, st)
 		case "delete":
 			out = append(out, models.TrajectoryEntry{ActionType: models.FileDelete, Target: p, Tool: toolDelete})
 			rep.Degradations = append(rep.Degradations, fmt.Sprintf("the delete of %s is claimed in a shape not measured", p))
+			steps = append(steps, step{kind: stepForget, paths: []string{p}})
 		default:
-			return nil, fmt.Errorf("file change of %s of unknown type %q", p, c.Type)
+			return nil, nil, fmt.Errorf("file change of %s of unknown type %q", p, c.Type)
 		}
 	}
 	if len(out) == 0 && len(paths) == 0 {
-		return nil, fmt.Errorf("a completed file change with no change")
+		return nil, nil, fmt.Errorf("a completed file change with no change")
 	}
-	return out, nil
+	return out, steps, nil
 }
 
 // orderedChanges decodes the changes object keeping its keys' order.

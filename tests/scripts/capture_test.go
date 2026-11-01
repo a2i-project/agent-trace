@@ -300,6 +300,47 @@ func TestCaptureOfAnIntactTranscriptIsUnchanged(t *testing.T) {
 	if v := readVerify(t, filepath.Join(out, "verify-baseline.json")); v.TraceTampering != nil || (v.Trace != nil && v.Trace.State != "") {
 		t.Errorf("verify-baseline.json: %+v", v)
 	}
+	// Claude Code's profile names no edit tool (I-88): its controls edit
+	// nothing and its baseline excludes the command alone.
+	var bl struct {
+		Excluded []string `json:"excluded"`
+	}
+	if b, err := os.ReadFile(filepath.Join(out, "baseline.json")); err != nil || json.Unmarshal(b, &bl) != nil ||
+		strings.Join(bl.Excluded, "|") != ": agent-trace-control-marker" {
+		t.Errorf("baseline.json excluded %v (%v)", bl.Excluded, err)
+	}
+	if p, _ := os.ReadFile(filepath.Join(out, "control-prompt.txt")); strings.Contains(string(p), "agent-trace-control.txt") {
+		t.Errorf("control-prompt.txt names the edit file: %s", p)
+	}
+}
+
+// A profile that names an edit tool must name the edited file in every
+// control prompt, and one that names none may not (I-88).
+func TestTheControlEditIsCheckedInTheProfile(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	path := filepath.Join(root, "config", "agents.json")
+	orig, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct{ agent, key, value, want string }{
+		"edit tool without the file":    {"codex", "prompt", "Use exec_command to run exactly this no-op command: {command} .", "does not name the file the controls edit"},
+		"the file without an edit tool": {"claude-code", "prompt", "Run {command} and create {file}.", "names {file}, and the profile has no controls.edit_tool"},
+	} {
+		var cfg map[string]any
+		if err := json.Unmarshal(orig, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		cfg["adapters"].(map[string]any)[c.agent].(map[string]any)["controls"].(map[string]any)[c.key] = c.value
+		nb, _ := json.Marshal(cfg)
+		write(t, path, string(nb), 0o644)
+		cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--check", "--agent", c.agent, filepath.Join(tmp, "out"))
+		cmd.Env = env
+		b, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(b), c.want) {
+			t.Errorf("%s: %v\n%s", name, err, b)
+		}
+	}
 }
 
 // The old name runs the agent-neutral script: --check through either prints
@@ -392,6 +433,14 @@ func TestCaptureOfAnAgentWithoutAnAdapter(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(out, f)); err == nil {
 			t.Errorf("%s exists without an adapter", f)
 		}
+	}
+	// The profile's edit tool (I-88): the controls add the edit file, and
+	// the baseline to build excludes it beside the command.
+	if p, _ := os.ReadFile(filepath.Join(out, "control-prompt.txt")); !strings.Contains(string(p), "2) Use apply_patch to add the file agent-trace-control.txt containing the single word ok.") || strings.Contains(string(p), "{") {
+		t.Errorf("control-prompt.txt: %s", p)
+	}
+	if r, _ := os.ReadFile(filepath.Join(out, "report.txt")); !strings.Contains(string(r), "--exclude ': agent-trace-control-marker' --exclude '{workspace}/agent-trace-control.txt' --out baseline.json") {
+		t.Errorf("report.txt: %s", r)
 	}
 	if subs, _ := filepath.Glob(filepath.Join(out, "parallel.rollout", "subagents", "rollout-*.jsonl")); len(subs) != 1 {
 		t.Errorf("subagent rollouts copied: %v", subs)

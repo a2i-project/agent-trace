@@ -331,6 +331,49 @@ func TestCaptureExcludesTheControlTasksOwnCommand(t *testing.T) {
 	}
 }
 
+// The control's own edit (I-88): an exclusion naming the workspace
+// placeholder matches the file in each run's own workspace, whatever the
+// run's directory, so the edit is neither a rule nor unstable, while what
+// the harness does after it (here a command) is learned.
+func TestCaptureExcludesTheControlsOwnEditInEachWorkspace(t *testing.T) {
+	a := fake{name: "f"}
+	run := func(ws string) models.GroundTruthFile {
+		r := runFile(100, models.GroundTruth{
+			ev(models.FileOpen, ws+"/"+ControlFile, 100, 0),
+			ev(models.FileWrite, ws+"/"+ControlFile, 100, 0),
+			ev(models.FileWrite, ws+"/other.txt", 100, 0),
+			{Timestamp: t0, ActionType: models.ProcessFork, Target: "y", PID: 300, PPID: 100},
+			ev(models.ProcessExec, "git remote -v", 300, 100),
+		})
+		r.Workspace = ws
+		return r
+	}
+	runs := []models.GroundTruthFile{run("/tmp/cap/ws-control-1"), run("/tmp/cap/ws-control-2")}
+	b, err := Capture(a, "v", runs, t0, CaptureOptions{Exclude: []string{ControlCommand, ControlFileTarget}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := func(rs []Rule, typ models.ActionType, target string) bool {
+		for _, r := range rs {
+			if r.ActionType == typ && r.Target == target {
+				return true
+			}
+		}
+		return false
+	}
+	for _, r := range append(append([]Rule{}, b.Rules...), b.Unstable...) {
+		if strings.Contains(r.Target, ControlFile) {
+			t.Errorf("the control's edit became %+v", r)
+		}
+	}
+	if !has(b.Rules, models.FileWrite, WorkspacePlaceholder+"/other.txt") || !has(b.Rules, models.ProcessExec, "git remote -v") {
+		t.Errorf("rules %+v, want the other file and the command", b.Rules)
+	}
+	if len(b.Excluded) != 2 || b.Excluded[1] != ControlFileTarget {
+		t.Errorf("Excluded = %v", b.Excluded)
+	}
+}
+
 // Claude Code names its per-project directory after the workspace with every
 // slash turned into a dash. A rule for a file under it names the workspace by
 // the mangled placeholder and matches a run in another directory (I-29).
