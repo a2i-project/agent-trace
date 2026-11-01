@@ -55,9 +55,13 @@
 # events change what a baseline must explain. The method tls-symbols hooks the
 # TLS library its library parameter names (watch --net-exe-path; Claude Code:
 # {binary}, the file the claude command resolves to, which carries its own TLS
-# library). The method none refuses --content with the profile's reason (agy
-# links no TLS library the probe can hook), and so does a method this script
-# does not implement.
+# library); tls-openssl-ex and tls-rustls-aead hook the file theirs names
+# (watch --net-content METHOD=PATH; Codex: both in its native executable,
+# found from {binary_dir}, the directory of the file the codex command
+# resolves to). A profile may name several methods (N-39). The method none
+# refuses --content with the profile's reason (agy links no TLS library the
+# probe can hook), and so does a method this script does not implement or a
+# library that is not a file.
 # --check validates everything the run depends on (the agent and its version,
 # the task, the seed, --baseline-from, the locked directory test) and prints
 # what the controls of this capture are, as key=value lines, then exits
@@ -359,11 +363,13 @@ out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
 out=$(realpath -m -- "$out")
 # A content method this script does not implement refuses, as none does.
 if [ -n "$content" ]; then
-  case $p_content_method:$p_content_parser in
-    tls-symbols:http1 | tls-symbols:) ;;
-    none:*) echo "--content needs a TLS library the net probe can hook; $p_content_reason" >&2; exit 1 ;;
-    *) echo "--content: the content method $p_content_method (parser '${p_content_parser}') of $agent's profile is not implemented in this build" >&2; exit 1 ;;
-  esac
+  for i in "${!p_content_methods[@]}"; do
+    case ${p_content_methods[i]}:${p_content_parsers[i]} in
+      tls-symbols:http1 | tls-symbols: | tls-openssl-ex:http1 | tls-openssl-ex: | tls-rustls-aead:http1 | tls-rustls-aead:) ;;
+      none:*) echo "--content needs a TLS library the net probe can hook; $p_content_reason" >&2; exit 1 ;;
+      *) echo "--content: the content method ${p_content_methods[i]} (parser '${p_content_parsers[i]}') of $agent's profile is not implemented in this build" >&2; exit 1 ;;
+    esac
+  done
 fi
 agent_bin=$(command -v "$p_binary") || { echo "$p_binary is not on PATH" >&2; exit 1; }
 # The model is pinned (D7), by default to the profile's; --model overrides it.
@@ -466,14 +472,25 @@ if [ "${#missing_env[@]}" -gt 0 ]; then
 fi
 run_env+=("${p_lock_env[@]}")
 trace_dir=${p_trace_dir/#\~/$HOME}
-# What watch records besides the probes' defaults. Content capture by
-# tls-symbols hooks the TLS library its library parameter names ({binary}
-# is the file the agent's command resolves to).
+# What watch records besides the probes' defaults. Content capture hooks the
+# file each method's library parameter names ({binary} is the file the
+# agent's command resolves to, {binary_dir} that file's directory):
+# tls-symbols through --net-exe-path, the other methods through
+# --net-content METHOD=PATH.
 watch_mode=identity
 watch_flags=()
 if [ -n "$content" ]; then
   watch_mode=content
-  watch_flags=(--net-exe-path "$(readlink -f "${p_content_library//\{binary\}/"$agent_bin"}")")
+  agent_real=$(readlink -f "$agent_bin")
+  for i in "${!p_content_methods[@]}"; do
+    lib=${p_content_libraries[i]//\{binary_dir\}/"$(dirname "$agent_real")"}
+    lib=$(readlink -f "${lib//\{binary\}/"$agent_bin"}") || lib=
+    [ -f "$lib" ] || { echo "--content: the library of ${p_content_methods[i]} (${p_content_libraries[i]}) is not a file" >&2; exit 1; }
+    case ${p_content_methods[i]} in
+      tls-symbols) watch_flags+=(--net-exe-path "$lib") ;;
+      *) watch_flags+=(--net-content "${p_content_methods[i]}=$lib") ;;
+    esac
+  done
 fi
 
 # The adapter's shapes, id families and hosts were measured on the versions

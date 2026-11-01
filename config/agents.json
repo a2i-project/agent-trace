@@ -357,8 +357,16 @@
       },
       "content": [
         {
-          "method": "none",
-          "reason": "hooks pending: tls-openssl-ex + tls-rustls-aead with a WebSocket parser"
+          "method": "tls-openssl-ex",
+          "library": "{binary_dir}/../node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+          "parser": "http1",
+          "note": "The codex command is the npm package's JavaScript launcher; the native executable it runs is under the package's node_modules (npm's layout). Its HTTPS clients use the vendored OpenSSL through SSL_write_ex and SSL_read_ex (N-38, N-39)."
+        },
+        {
+          "method": "tls-rustls-aead",
+          "library": "{binary_dir}/../node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+          "parser": "http1",
+          "note": "The model connection, a WebSocket over rustls, by its AEAD record methods (N-39, N-40); the WebSocket layer runs on every method's streams (N-41)."
         }
       ],
       "controls": {

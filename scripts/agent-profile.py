@@ -194,6 +194,10 @@ def shell(path, agent, task):
     put("p_content_library", first.get("library", ""))
     put("p_content_parser", first.get("parser", ""))
     put("p_content_reason", first.get("reason", ""))
+    # Every method, for a profile that names several (N-39), in order.
+    put("p_content_methods", methods)
+    put("p_content_libraries", [m.get("library", "") for m in content])
+    put("p_content_parsers", [m.get("parser", "") for m in content])
 
     ctl = p.get("controls") or {}
     for k in ("command_tool", "subagent_tool", "prompt"):
