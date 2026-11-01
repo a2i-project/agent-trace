@@ -141,6 +141,20 @@ func (im *image) sectionAt(va uint64) *elf.Section {
 	return nil
 }
 
+// executable reports whether va lies in an executable PT_LOAD segment's
+// file-backed part, so that a uprobe at its file offset (vaToFileOff) is
+// at the same byte the process runs.
+func (im *image) executable(va uint64) bool {
+	for _, p := range im.f.Progs {
+		if p.Type == elf.PT_LOAD && p.Flags&elf.PF_X != 0 && va >= p.Vaddr && va < p.Vaddr+p.Filesz {
+			return true
+		}
+	}
+	// A file without program headers (the tests' synthetic ELF): its
+	// .text section is the code.
+	return len(im.f.Progs) == 0 && im.inText(va)
+}
+
 func (im *image) inText(va uint64) bool {
 	return va >= im.text.Addr && va < im.text.Addr+im.text.Size
 }

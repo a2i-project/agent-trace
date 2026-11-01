@@ -50,7 +50,7 @@ known before it is trusted on a real agent.
 ## CI
 
 Three workflows run on every push to `main`: `test.yml` (all tests under sudo,
-after building the rustls test client in `pkg/probe/net/testdata/rustls-client` with `cargo build --release --locked`, its crates downloaded at the build and pinned by its `Cargo.lock`, and passing it to the tests as `AGENT_TRACE_RUSTLS_CLIENT` (N-39);
+after building the rustls test client in `pkg/probe/net/testdata/rustls-client` with `cargo build --release --locked`, its crates downloaded at the build and pinned by its `Cargo.lock`, and passing it to the tests as `AGENT_TRACE_RUSTLS_CLIENT` and as `AGENT_TRACE_LOCATOR_BIN`, whose unprivileged locator tests check that every attach point on it is a function entry (N-39);
 plus a check that the committed `.go` bindings of the proc and net probes match a fresh `make generate`; the `.o` files are not compared, since their bytes depend on the clang version),
 `lint-and-security.yml`, and `docs.yml` (the documentation checks, see Documentation below). After a push, watch the run
 (`gh run watch <run-id> --exit-status`) and give every failure a verdict before

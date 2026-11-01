@@ -211,9 +211,16 @@ func (im *image) rustlsAEAD(res *AEADResult) error {
 		if seen[m0] {
 			continue
 		}
+		// A probe goes at the method's first byte, which must be a
+		// function entry the unwind table names (an instruction boundary),
+		// inside an executable segment: anything else is not attached.
+		start, end, ok := im.function(m0)
+		if !ok || start != m0 || !im.executable(m0) {
+			continue
+		}
 		// The first 0x50 bytes, never past the method's own end.
 		n := 0x50
-		if start, end, ok := im.function(m0); ok && start == m0 && end-start < uint64(n) {
+		if end-start < uint64(n) {
 			n = int(end - start)
 		}
 		head, err := im.readVA(m0, n)

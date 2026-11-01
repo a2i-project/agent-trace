@@ -95,7 +95,12 @@ int main(int argc, char **argv) {
 	size_t have = 0;
 	char *end = NULL;
 	while (!end) {
-		read_n(ssl, buf, have + 1, &have);
+		// One read asks for all the room left, as an HTTP client does: a
+		// read of one byte at a time never begins with a whole status
+		// line, which the read side's validation needs (N-29).
+		size_t n = 0;
+		if (have + 1 >= sizeof buf || rd(ssl, buf + have, sizeof buf - 1 - have, &n) != 1) { fprintf(stderr, "SSL_read_ex failed\n"); exit(8); }
+		have += n;
 		buf[have] = 0;
 		end = strstr(buf, "\r\n\r\n");
 	}
@@ -220,6 +225,18 @@ func checkWSSession(t *testing.T, evs []models.GroundTruthEvent, hostPort, path,
 	}
 }
 
+// sessionGo is what a session client waits for on its stdin before it
+// connects: one byte and a newline (the C client reads the byte, the shell
+// that starts the rustls client reads the line).
+const sessionGo = "a\n"
+
+// rustlsSessionCmd starts the rustls client through a shell that waits for
+// sessionGo and then becomes the client (same pid), so it can be tracked
+// before it connects.
+func rustlsSessionCmd(client, port, msg string) *exec.Cmd {
+	return exec.Command("sh", "-c", `read x; exec "$0" "$1" "$2"`, client, port, msg)
+}
+
 // runContentSession tracks the client cmd (which waits for a byte on
 // stdin), starts the observer, lets the client run to its end, stops and
 // returns the events.
@@ -246,7 +263,7 @@ func runContentSession(t *testing.T, obs *Observer, cmd *exec.Cmd) []models.Grou
 			evs = append(evs, e)
 		}
 	}()
-	if _, err := stdin.Write([]byte("a")); err != nil {
+	if _, err := stdin.Write([]byte(sessionGo)); err != nil {
 		t.Fatal(err)
 	}
 	started := make(chan struct{})
@@ -308,7 +325,7 @@ func TestWSExClient_CompletesItsSession(t *testing.T) {
 	const host = "agenttrace-ws-ex.internal"
 	port := startWSTLSServer(t, host)
 	cmd := exec.Command(bin, libssl, port, host, "/ws", "hi")
-	cmd.Stdin = strings.NewReader("a")
+	cmd.Stdin = strings.NewReader(sessionGo)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("client: %v\n%s", err, out)
 	}
@@ -346,15 +363,32 @@ func TestObserver_OpenSSLExWebSocket(t *testing.T) {
 
 // TestRustlsClient_CompletesItsSession runs the client
 // AGENT_TRACE_RUSTLS_CLIENT names against the test server without the
-// probe, unprivileged; skipped without it.
+// probe, unprivileged, started exactly as the privileged test starts it
+// (the shell, the stdin signal) and with its time bound, so that a session
+// that cannot finish fails here and not only as root; skipped without it.
 func TestRustlsClient_CompletesItsSession(t *testing.T) {
 	client := os.Getenv("AGENT_TRACE_RUSTLS_CLIENT")
 	if client == "" {
 		t.Skip("AGENT_TRACE_RUSTLS_CLIENT not set")
 	}
 	port := startWSTLSServer(t, "localhost")
-	if out, err := exec.Command(client, port, "hello").CombinedOutput(); err != nil {
-		t.Fatalf("client: %v\n%s", err, out)
+	cmd := rustlsSessionCmd(client, port, "hello")
+	cmd.Stdin = strings.NewReader(sessionGo)
+	done := make(chan error, 1)
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("client: %v\n%s", err, out.String())
+		}
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatalf("client did not finish\n%s", out.String())
 	}
 }
 
@@ -377,9 +411,7 @@ func TestObserver_RustlsAEADWebSocket(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	const msg = "hello"
-	// The shell waits for the byte, then becomes the client (same pid).
-	cmd := exec.Command("sh", "-c", `read x; exec "$0" "$1" "$2"`, client, port, msg)
-	evs := runContentSession(t, obs, cmd)
+	evs := runContentSession(t, obs, rustlsSessionCmd(client, port, msg))
 	checkWSSession(t, evs, "localhost:"+port, "/ws?x=1", msg)
 	cov := obs.CaptureCoverage()
 	if cov.Content != models.ContentActive || cov.Responses != models.ContentActive {

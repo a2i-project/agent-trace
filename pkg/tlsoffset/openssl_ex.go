@@ -171,6 +171,12 @@ func (im *image) openSSLEx() (write, read []Candidate, err error) {
 	rank := func(set map[uint64]bool) []Candidate {
 		var out []Candidate
 		for fn := range set {
+			// Every candidate is a function entry by construction (the
+			// unwind table's); one outside an executable segment is not
+			// attached.
+			if !im.executable(fn) {
+				continue
+			}
 			s := score[fn]
 			if taken[fn] {
 				s += scoreAddressTaken

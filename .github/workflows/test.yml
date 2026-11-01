@@ -30,7 +30,11 @@ jobs:
 
     - name: Run all tests (Unit, Integration, and E2E)
       # We run everything with sudo so the eBPF/fanotify tests execute fully
-      run: sudo env AGENT_TRACE_RUSTLS_CLIENT="$PWD/pkg/probe/net/testdata/rustls-client/target/release/agent-trace-rustls-client" go test -v ./...
+      # The same client is also given to the locator's unprivileged check
+      # that every attach point is a function entry (AGENT_TRACE_LOCATOR_BIN).
+      run: |
+        client="$PWD/pkg/probe/net/testdata/rustls-client/target/release/agent-trace-rustls-client"
+        sudo env AGENT_TRACE_RUSTLS_CLIENT="$client" AGENT_TRACE_LOCATOR_BIN="$client" go test -v ./...
 
   bpf-freshness:
     name: BPF Objects Up To Date
