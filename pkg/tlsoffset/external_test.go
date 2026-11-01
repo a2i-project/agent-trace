@@ -41,6 +41,18 @@ func TestLocators_ExternalBinary(t *testing.T) {
 			t.Logf("%s/%s encrypt=%v method %#x vtable %#x", m.Provider, m.Protocol, m.Encrypt, m.VA, m.Vtable)
 		}
 	}
+	g, err := ScanGoTLS(path)
+	switch {
+	case errors.Is(err, ErrNoAnchor):
+		t.Logf("tls-go-crypto: %v", err)
+	case err != nil:
+		t.Fatalf("ScanGoTLS: %v", err)
+	default:
+		t.Logf("Go %s", g.GoVersion)
+		for _, fn := range []GoFunc{g.Write, g.Read} {
+			t.Logf("%s entry %#x end %#x returns %x", fn.Name, fn.Entry.VA, fn.End, vas(fn.Returns))
+		}
+	}
 }
 
 // TestLocators_AttachPointsAreFunctionEntries checks, on the executable
@@ -80,4 +92,24 @@ func TestLocators_AttachPointsAreFunctionEntries(t *testing.T) {
 			check("rustls method", m.VA, m.FileOff)
 		}
 	}
+}
+
+// TestLocators_GoAttachPointsAreInstructionBoundaries checks, on the Go
+// executable AGENT_TRACE_LOCATOR_GO_BIN names (skipped without it), every
+// attach point of tls-go-crypto as checkGoAttachPoints does: inside its
+// function from the pclntab, at a run start of the function's own tables,
+// a RET byte for each return.
+func TestLocators_GoAttachPointsAreInstructionBoundaries(t *testing.T) {
+	path := os.Getenv("AGENT_TRACE_LOCATOR_GO_BIN")
+	if path == "" {
+		t.Skip("AGENT_TRACE_LOCATOR_GO_BIN not set")
+	}
+	r, err := ScanGoTLS(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range []GoFunc{r.Write, r.Read} {
+		t.Logf("%s entry %#x end %#x returns %x", fn.Name, fn.Entry.VA, fn.End, vas(fn.Returns))
+	}
+	checkGoAttachPoints(t, path, r)
 }
