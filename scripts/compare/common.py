@@ -170,6 +170,20 @@ def unkept_reason(rec, ann):
     return None
 
 
+def cut_claimed(subject, honest):
+    """The targets of the requests the subject's capture recorded cut (N-44)
+    that a claim of its honest trajectory names, sorted. A cut request confirms
+    no claim, so a run with one reads INCONCLUSIVE when honest and is left out
+    (N-45); a cut request no claim names, the harness's own housekeeping, does
+    not leave a run out. A claim is matched by its target, as the verifier
+    keeps a request for a claim of its target (V-54)."""
+    g = json.load(open(as_subject(subject).ground_truth))
+    cut = {e.get("target") for e in g.get("events") or []
+           if e.get("action_type") == "net_request" and e.get("request_cut")}
+    claimed = {c.get("target") for c in honest if c.get("action_type") == "net_request"}
+    return sorted(cut & claimed)
+
+
 class Tools:
     """The layout setup.sh writes into TOOLS_DIR."""
 

@@ -216,6 +216,10 @@ class Sweep:
         if campaign and len(honest) < 2:
             self.note(subject, "skipped", "%d claim(s) of the agent's own: the generators need 2 (X5)" % len(honest))
             return []
+        cut = common.cut_claimed(subject, honest)
+        if cut:
+            self.note(subject, "skipped", "%d claimed request(s) recorded cut, which confirm no claim (N-45)" % len(cut))
+            return []
         state, harness = None, None
         if self.want("halo-record") or self.want("signet"):
             state, rows = chains.prepare_fixture(self.ch, honest, os.path.join(d, "chains"))
@@ -493,6 +497,10 @@ def plan(subjects, a):
             continue
         if len(honest) < 2:
             rows.append((sub.name, "skipped: %d claim(s), the generators need 2" % len(honest)))
+            continue
+        cut = common.cut_claimed(sub, honest)
+        if cut:
+            rows.append((sub.name, "skipped: %d claimed request(s) recorded cut (N-45)" % len(cut)))
             continue
         rt_ok = common.trace_method(sub.agent) == RT_TRACE and any(c.get("tool") in EDIT_TOOLS for c in honest) \
             and "reproducible-trajectories" in a.only
