@@ -157,8 +157,12 @@ func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthE
 // rollouts of their own there, and a rollout's name does not hold the
 // workspace), and the two databases that keep the account's threads,
 // ~/.codex/thread_history_1.sqlite and ~/.codex/state_5.sqlite, with their
-// write-ahead log and shared memory. The home is the capture's, else any
-// home I-30 declares.
+// write-ahead log and rollback journal, which hold rows not yet in the
+// database. Not their -shm, an index every reader rebuilds from the log and
+// writes through a shared mapping, as for agy (V-75, I-106). The -wal and
+// -journal are Transient: a stock SQLite client that reads a database no
+// other process holds open creates its -wal and deletes it at the close
+// (V-76). The home is the capture's, else any home I-30 declares.
 func (Adapter) Trace(_, home string) *verification.TraceDecl {
 	h := homeRE
 	if home != "" {
@@ -168,10 +172,13 @@ func (Adapter) Trace(_, home string) *verification.TraceDecl {
 		h = regexp.QuoteMeta(home)
 	}
 	main := regexp.MustCompile(`^` + h + `/\.codex/sessions/[0-9]{4}/[0-9]{2}/[0-9]{2}/rollout-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-` + uuidRE + `\.jsonl$`)
-	dbs := regexp.MustCompile(`^` + h + `/\.codex/(?:thread_history_1|state_5)\.sqlite(?:-wal|-shm|-journal)?$`)
+	db := `^` + h + `/\.codex/(?:thread_history_1|state_5)\.sqlite`
+	dbs := regexp.MustCompile(db + `(?:-wal|-journal)?$`)
+	transient := regexp.MustCompile(db + `(?:-wal|-journal)$`)
 	return &verification.TraceDecl{
-		Covers: func(p string) bool { return main.MatchString(p) || dbs.MatchString(p) },
-		Main:   main.MatchString,
+		Covers:    func(p string) bool { return main.MatchString(p) || dbs.MatchString(p) },
+		Main:      main.MatchString,
+		Transient: transient.MatchString,
 	}
 }
 

@@ -313,17 +313,24 @@ func TestDeclarations(t *testing.T) {
 	if a.HarnessBookkeeping("0.167.0", "") != nil {
 		t.Error("an unmeasured version declares bookkeeping")
 	}
+	// The databases are covered with their -wal and -journal, both
+	// transient, and not their -shm, as agy's (I-106).
 	tr := a.Trace("/ws/basic", "/home/u")
-	for p, want := range map[string][2]bool{ // covers, main
-		"/home/u/.codex/sessions/2026/11/01/rollout-2026-11-01T00-40-16-" + thread + ".jsonl": {true, true},
-		"/home/u/.codex/state_5.sqlite":              {true, false},
-		"/home/u/.codex/thread_history_1.sqlite-wal": {true, false},
-		"/home/u/.codex/logs_2.sqlite":               {false, false},
-		"/home/v/.codex/state_5.sqlite":              {false, false},
-		"/home/u/.codex/sessions/2026/11/01/x.jsonl": {false, false},
+	for p, want := range map[string][3]bool{ // covers, main, transient
+		"/home/u/.codex/sessions/2026/11/01/rollout-2026-11-01T00-40-16-" + thread + ".jsonl": {true, true, false},
+		"/home/u/.codex/state_5.sqlite":               {true, false, false},
+		"/home/u/.codex/thread_history_1.sqlite-wal":  {true, false, true},
+		"/home/u/.codex/state_5.sqlite-journal":       {true, false, true},
+		"/home/u/.codex/state_5.sqlite-shm":           {false, false, false},
+		"/home/u/.codex/thread_history_1.sqlite-shm":  {false, false, false},
+		"/home/u/.codex/logs_2.sqlite":                {false, false, false},
+		"/home/u/.codex/logs_2.sqlite-wal":            {false, false, false},
+		"/home/v/.codex/state_5.sqlite":               {false, false, false},
+		"/home/u/.codex/sessions/2026/11/01/x.jsonl":  {false, false, false},
+		"/home/u/.codex/state_5.sqlite-wal (deleted)": {false, false, false},
 	} {
-		if tr.Covers(p) != want[0] || tr.Main(p) != want[1] {
-			t.Errorf("trace %s: covers %v main %v, want %v", p, tr.Covers(p), tr.Main(p), want)
+		if got := [3]bool{tr.Covers(p), tr.Main(p), tr.Transient(p)}; got != want {
+			t.Errorf("trace %s: covers, main, transient %v, want %v", p, got, want)
 		}
 	}
 	if a.Trace("", "relative") != nil {
