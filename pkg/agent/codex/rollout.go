@@ -14,6 +14,7 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 // A rollout is one JSON record per line (I-82): the first is the thread's
@@ -43,6 +44,7 @@ type sessionMeta struct {
 
 type responseItem struct {
 	Type     string `json:"type"`
+	Role     string `json:"role"`
 	Name     string `json:"name"`
 	CallID   string `json:"call_id"`
 	Status   string `json:"status"`
@@ -159,6 +161,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		rep.Degradations = append(rep.Degradations, "the rollout given is a subagent's; its parent's actions are not read")
 	}
 	claims := main.claims
+	requests := main.requests
 	started := main.subagents
 	claimed, unclaimed := main.updatesClaimed, main.updatesUnclaimed
 	found := map[string]bool{}
@@ -184,6 +187,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			sub.claims[i].ThreadID = sub.meta.ID
 		}
 		claims = append(claims, sub.claims...)
+		requests = append(requests, sub.requests...)
 		started = append(started, sub.subagents...)
 		unclaimed += sub.updatesUnclaimed
 	}
@@ -201,6 +205,13 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	}
 	sort.SliceStable(claims, func(i, j int) bool { return claims[i].Timestamp.Before(claims[j].Timestamp) })
 	rep.Entries = len(claims)
+	if len(requests) > 0 {
+		// The main thread's requests, then each subagent's, in its order.
+		for i := range requests {
+			requests[i].Index = i
+		}
+		rep.ModelRequests, rep.ModelRequestMethod = requests, modelRequestMethod
+	}
 	rep.Degradations = append(rep.Degradations,
 		"a claim starts when the cell that made it was recorded, before it ran (D13), and its effects are joined to the cell by turn and time window",
 		"exit codes are recorded but not claimed, so exits are not aligned")
@@ -220,6 +231,8 @@ type rollout struct {
 	// updatesClaimed and updatesUnclaimed count its updates that claim a
 	// content hash and those that do not (I-87).
 	updatesClaimed, updatesUnclaimed int
+	// requests are the model requests its records state (I-91).
+	requests []verification.ModelRequest
 }
 
 // readRollout reads one rollout's own records: for a subagent, those from
@@ -242,6 +255,7 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 	byCall := map[string]*cell{}
 	var effects []effect
 	var steps []step
+	var reqs requestReader
 	unjoined, line := 0, 0
 	haveMeta := false
 	for sc.Scan() {
@@ -284,6 +298,7 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: %v", name, line, err))
 				continue
 			}
+			reqs.item(ri.Type, ri.Role, rec.Payload)
 			switch ri.Type {
 			case "custom_tool_call", "function_call":
 				if ri.CallID == "" || ri.Name == "" {
@@ -301,6 +316,19 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 				if c := byCall[ri.CallID]; c != nil && !c.ended && !ts.Before(c.start) {
 					c.end, c.ended = ts, true
 				}
+			}
+		case "token_usage_record":
+			var tu tokenUsage
+			if err := json.Unmarshal(rec.Payload, &tu); err != nil {
+				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: %v", name, line, err))
+				continue
+			}
+			if tu.ThreadID != out.meta.ID || tu.ResponseID == "" {
+				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: a token usage record of thread %q naming response %q in the rollout of %s", name, line, tu.ThreadID, tu.ResponseID, out.meta.ID))
+				continue
+			}
+			if err := reqs.response(tu.ResponseID, ts); err != nil {
+				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: %v", name, line, err))
 			}
 		case "event_msg":
 			var ev eventMsg
@@ -352,6 +380,7 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 	if !haveMeta {
 		return out, fmt.Errorf("%s: no records", name)
 	}
+	out.requests = reqs.requests
 	// Each effect takes the interval of the one cell of its turn whose
 	// window holds its completion; the effects of one cell form a block.
 	holding := func(turn string, at time.Time) *cell {
