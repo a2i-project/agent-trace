@@ -461,7 +461,7 @@ func main() {
 	flag.IntVar(&bufSize, "buf", 4096, "Per-probe event channel buffer size")
 	flag.IntVar(&rootPID, "root-pid", 0, "Attach the proc probe's ancestry root to this already-running PID instead of launching the agent. RACE: anything that PID did before this call is invisible to the proc probe (the fs probe is unaffected). Mutually exclusive with a trailing -- <command>.")
 	flag.StringVar(&netExePath, "net-exe-path", "", "Path to the TLS library (e.g. libssl.so.3) for SSL_write content capture (net probe, Tier 3 S5+). Empty = identity-only (SNI).")
-	flag.Var(&netContent, "net-content", "A content method and the file it hooks, as METHOD=PATH (net probe; repeatable): "+probenet.MethodTLSSymbols+" (as --net-exe-path), "+probenet.MethodOpenSSLEx+", "+probenet.MethodRustlsAEAD+". At most one of the first two.")
+	flag.Var(&netContent, "net-content", "A content method and the file it hooks, as METHOD=PATH (net probe; repeatable): "+probenet.MethodTLSSymbols+" (as --net-exe-path), "+probenet.MethodOpenSSLEx+", "+probenet.MethodRustlsAEAD+", "+probenet.MethodGoCrypto+". At most one of the first two.")
 	flag.StringVar(&netCachePath, "net-cache-path", "", "JSON cache file for pre-computed TLS offsets (net probe). Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json.")
 	flag.StringVar(&agentName, "agent", "", "Adapter whose security-sensitive harness files are snapshotted at start and stop ("+strings.Join(agent.Names(), ", ")+"). Default: the files of every adapter")
 	flag.StringVar(&agentHome, "agent-home", "", "Home directory of the user the agent runs as, which a declared ~/ file resolves against. Default: the home of the user who ran sudo ($SUDO_UID), else root's")

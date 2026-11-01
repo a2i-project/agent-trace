@@ -58,9 +58,11 @@
 # library); tls-openssl-ex and tls-rustls-aead hook the file theirs names
 # (watch --net-content METHOD=PATH; Codex: both in its native executable,
 # found from {binary_dir}, the directory of the file the codex command
-# resolves to). A profile may name several methods (N-39). The method none
-# refuses --content with the profile's reason (agy links no TLS library the
-# probe can hook), and so does a method this script does not implement or a
+# resolves to), and so does tls-go-crypto (agy: {binary}, its one Go
+# executable, N-48). A profile may name several methods (N-39); the parser
+# http1 or h2, or none, names what its streams carry, and every method's
+# streams parse both (N-46). The method none refuses --content with the
+# profile's reason, and so does a method this script does not implement or a
 # library that is not a file.
 # --check validates everything the run depends on (the agent and its version,
 # the task, the seed, --baseline-from, the locked directory test) and prints
@@ -365,7 +367,8 @@ out=$(realpath -m -- "$out")
 if [ -n "$content" ]; then
   for i in "${!p_content_methods[@]}"; do
     case ${p_content_methods[i]}:${p_content_parsers[i]} in
-      tls-symbols:http1 | tls-symbols: | tls-openssl-ex:http1 | tls-openssl-ex: | tls-rustls-aead:http1 | tls-rustls-aead:) ;;
+      tls-symbols:http1 | tls-symbols:h2 | tls-symbols: | tls-openssl-ex:http1 | tls-openssl-ex:h2 | tls-openssl-ex: | \
+      tls-rustls-aead:http1 | tls-rustls-aead:h2 | tls-rustls-aead: | tls-go-crypto:http1 | tls-go-crypto:h2 | tls-go-crypto:) ;;
       none:*) echo "--content needs a TLS library the net probe can hook; $p_content_reason" >&2; exit 1 ;;
       *) echo "--content: the content method ${p_content_methods[i]} (parser '${p_content_parsers[i]}') of $agent's profile is not implemented in this build" >&2; exit 1 ;;
     esac

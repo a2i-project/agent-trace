@@ -241,8 +241,10 @@
       },
       "content": [
         {
-          "method": "none",
-          "reason": "agy has none (Go's own TLS), so its connections stay identity-only"
+          "method": "tls-go-crypto",
+          "library": "{binary}",
+          "parser": "h2",
+          "note": "agy is one Go executable whose TLS is Go's crypto/tls: (*Conn).Write and Read, located from its pclntab, at their entry and each RET (N-47, N-48). Its model API is very likely HTTP/2, which the h2 layer parses on every method's streams (N-46); its in-process language server's localhost gRPC goes through the same functions, on its own connections."
         }
       ],
       "controls": {
