@@ -2,6 +2,7 @@ package verification
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +39,9 @@ type ModelRequestCheck struct {
 	// Event is the captured request the check joined, when exactly one
 	// continues the same response.
 	Event *models.GroundTruthEvent `json:"event,omitempty"`
+	// WarmUp is the warm-up the joined request continues, when it continues
+	// one that itself continued the record's response (V-69).
+	WarmUp *models.GroundTruthEvent `json:"warm_up,omitempty"`
 	// Missing are the record's items the captured request does not carry,
 	// Extra the captured request's items the record does not hold.
 	Missing []models.ModelItemDigest `json:"missing,omitempty"`
@@ -63,6 +67,11 @@ type ModelRequestReport struct {
 	// request joined: a request the harness sent that its record does not
 	// show, or one whose record differs in the response it continues.
 	Unrecorded []models.GroundTruthEvent `json:"unrecorded,omitempty"`
+	// WarmUps are captured requests set aside as warm-ups (V-69): no input
+	// item, a turn with no output item, a response no recorded request
+	// names and a captured request continues. Never joined, never
+	// unrecorded.
+	WarmUps []models.GroundTruthEvent `json:"warm_ups,omitempty"`
 }
 
 // Corroborated counts the corroborated checks.
@@ -87,12 +96,10 @@ func checkModelRequests(reqs []ModelRequest, method string, ground models.Ground
 	if cov != nil {
 		rep.State, _ = cov.Probes["net"].MethodContent(method)
 	}
-	byPrev := map[string][]int{}
 	var captured []models.GroundTruthEvent
 	seen := map[string]bool{}
 	for _, e := range ground {
 		if e.ActionType == models.NetRequest && e.ModelRequest != nil {
-			byPrev[e.ModelRequest.PreviousResponseID] = append(byPrev[e.ModelRequest.PreviousResponseID], len(captured))
 			captured = append(captured, e)
 		}
 		if e.Response != nil && e.Response.WebSocket != nil {
@@ -100,6 +107,27 @@ func checkModelRequests(reqs []ModelRequest, method string, ground models.Ground
 				seen[id] = true
 			}
 		}
+	}
+	warm := warmUps(reqs, ground)
+	// A recorded request continuing X is joined to the captured requests
+	// continuing X and, one hop only, to those continuing the response of a
+	// warm-up that itself continued X (V-69).
+	byPrev := map[string][]int{}
+	via := map[int]int{}
+	warmOf := map[string]int{}
+	for i, id := range warm {
+		warmOf[id] = i
+	}
+	for i, e := range captured {
+		if _, ok := warm[i]; ok {
+			continue
+		}
+		prev := e.ModelRequest.PreviousResponseID
+		if w, ok := warmOf[prev]; ok {
+			via[i] = w
+			prev = captured[w].ModelRequest.PreviousResponseID
+		}
+		byPrev[prev] = append(byPrev[prev], i)
 	}
 	used := make([]bool, len(captured))
 	for _, r := range reqs {
@@ -132,6 +160,10 @@ func checkModelRequests(reqs []ModelRequest, method string, ground models.Ground
 			used[pick] = true
 			e := captured[pick]
 			chk.Event = &e
+			if w, ok := via[pick]; ok {
+				we := captured[w]
+				chk.WarmUp = &we
+			}
 			chk.Missing, chk.Extra = diffItems(r.Items, e.ModelRequest.Items)
 			switch {
 			case e.ModelRequest.Truncated:
@@ -148,12 +180,89 @@ func checkModelRequests(reqs []ModelRequest, method string, ground models.Ground
 	}
 	if rep.State == models.ContentActive {
 		for i, e := range captured {
-			if !used[i] {
+			if _, ok := warm[i]; ok {
+				rep.WarmUps = append(rep.WarmUps, e)
+			} else if !used[i] {
 				rep.Unrecorded = append(rep.Unrecorded, e)
 			}
 		}
 	}
 	return rep
+}
+
+// warmUps finds the captured requests that are warm-ups (V-69), by their
+// index among the captured requests with a digest, each with the response
+// its turn named. A warm-up carries no input item; its turn, the first
+// WebSocket turn after it with its process and target before the next
+// request there, names one response, shows no output item event and keeps
+// every type name; no recorded request names that response, as the one it
+// got or the one it continues; and a captured request continues it.
+func warmUps(reqs []ModelRequest, ground models.GroundTruth) map[int]string {
+	named := map[string]bool{}
+	for _, r := range reqs {
+		named[r.ResponseID], named[r.PreviousResponseID] = true, true
+	}
+	continued := map[string]bool{}
+	type ev struct {
+		e   models.GroundTruthEvent
+		cap int // index among the captured requests, -1 for none
+	}
+	var evs []ev
+	n := 0
+	for _, e := range ground {
+		switch {
+		case e.ActionType == models.NetRequest && e.ModelRequest != nil:
+			continued[e.ModelRequest.PreviousResponseID] = true
+			evs = append(evs, ev{e, n})
+			n++
+		case e.ActionType == models.NetRequest, e.Response != nil && e.Response.WebSocket != nil:
+			evs = append(evs, ev{e, -1})
+		}
+	}
+	sort.SliceStable(evs, func(i, j int) bool { return evs[i].e.Timestamp.Before(evs[j].e.Timestamp) })
+	type stream struct {
+		pid    uint32
+		target string
+	}
+	// open is the captured request of each stream still waiting for its
+	// turn.
+	open := map[stream]int{}
+	out := map[int]string{}
+	for _, x := range evs {
+		k := stream{x.e.PID, x.e.Target}
+		if x.e.ActionType == models.NetRequest {
+			if x.cap >= 0 && len(x.e.ModelRequest.Items) == 0 && !x.e.ModelRequest.Truncated {
+				open[k] = x.cap
+			} else {
+				delete(open, k)
+			}
+			continue
+		}
+		i, ok := open[k]
+		if !ok {
+			continue
+		}
+		delete(open, k)
+		ws := x.e.Response.WebSocket
+		if len(ws.ResponseIDs) != 1 || outputItems(ws.Types) {
+			continue
+		}
+		if id := ws.ResponseIDs[0]; id != "" && !named[id] && continued[id] {
+			out[i] = id
+		}
+	}
+	return out
+}
+
+// outputItems is true when a turn's message types show an output item, or
+// may: the summary counted some types under "(other)".
+func outputItems(types map[string]int) bool {
+	for t := range types {
+		if t == "(other)" || strings.HasPrefix(t, "response.output_item.") {
+			return true
+		}
+	}
+	return false
 }
 
 func itemKey(d models.ModelItemDigest) string {

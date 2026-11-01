@@ -87,3 +87,91 @@ func TestModelRequestsDoNotChangeTheOutcome(t *testing.T) {
 		t.Errorf("outcome %s vs %s, report %+v", v.Outcome, base.Outcome, v.ModelRequests)
 	}
 }
+
+// wsTurn is a WebSocket turn naming one response, with the given message
+// types, at second s.
+func wsTurn(s int64, id string, types ...string) models.GroundTruthEvent {
+	ws := &models.WebSocketSummary{ResponseIDs: []string{id}, Types: map[string]int{}}
+	for _, t := range types {
+		ws.Types[t]++
+	}
+	return models.GroundTruthEvent{Timestamp: time.Unix(s, 0), ActionType: models.NetResponse, PID: 7,
+		Target: "WS https://chatgpt.com/backend-api/codex/responses", Response: &models.ResponseAttestation{Status: 101, WebSocket: ws}}
+}
+
+// sentAt places a captured request at second s, from the turns' process.
+func sentAt(s int64, e models.GroundTruthEvent) models.GroundTruthEvent {
+	e.Timestamp, e.PID = time.Unix(s, 0), 7
+	return e
+}
+
+// A warm-up (V-69) is set aside, and the request continuing it is joined
+// to the recorded request continuing what the warm-up continued, one hop
+// only.
+func TestCheckModelRequestsWarmUps(t *testing.T) {
+	a, b := item("c1", "sha256:a"), item("c2", "sha256:b")
+	empty := []string{"response.created", "response.completed"}
+	output := []string{"response.created", "response.output_item.added", "response.output_item.done", "response.completed"}
+	first := []ModelRequest{{Index: 0, ResponseID: "r1", Items: []models.ModelItemDigest{a, b}}}
+	cov := methodCoverage(models.ContentActive)
+	cases := []struct {
+		name           string
+		reqs           []ModelRequest
+		ground         models.GroundTruth
+		corroborated   bool
+		warm, unrec    int
+		joinedViaWarm  bool
+		reasonContains string
+	}{
+		{"a warm-up is skipped", first, models.GroundTruth{
+			sentAt(1, wsRequest("")), wsTurn(2, "w1", empty...),
+			sentAt(3, wsRequest("w1", a, b)), wsTurn(4, "r1", output...),
+		}, true, 1, 0, true, ""},
+		{"an empty request whose turn shows an output item is no warm-up", first, models.GroundTruth{
+			sentAt(1, wsRequest("")), wsTurn(2, "w1", output...),
+			sentAt(3, wsRequest("w1", a, b)), wsTurn(4, "r1", output...),
+		}, false, 0, 1, false, "lacks 2 of the record's items"},
+		{"a turn whose types overflowed is no warm-up", first, models.GroundTruth{
+			sentAt(1, wsRequest("")), wsTurn(2, "w1", "response.created", "(other)"),
+			sentAt(3, wsRequest("w1", a, b)), wsTurn(4, "r1", output...),
+		}, false, 0, 1, false, "lacks 2"},
+		{"a two-hop chain is refused", first, models.GroundTruth{
+			sentAt(1, wsRequest("")), wsTurn(2, "w1", empty...),
+			sentAt(3, wsRequest("w1")), wsTurn(4, "w2", empty...),
+			sentAt(5, wsRequest("w2", a, b)), wsTurn(6, "r1", output...),
+		}, false, 2, 1, false, "no captured request continues no response"},
+		{"a warm-up whose response the record names is not skipped", []ModelRequest{
+			{Index: 0, ResponseID: "w1", Items: []models.ModelItemDigest{a, b}},
+			{Index: 1, PreviousResponseID: "w1", ResponseID: "r1", Items: []models.ModelItemDigest{a, b}},
+		}, models.GroundTruth{
+			sentAt(1, wsRequest("")), wsTurn(2, "w1", empty...),
+			sentAt(3, wsRequest("w1", a, b)), wsTurn(4, "r1", output...),
+		}, false, 0, 0, false, "lacks 2"},
+		{"an empty request nothing continues is no warm-up", first, models.GroundTruth{
+			sentAt(1, wsRequest("")), wsTurn(2, "w1", empty...),
+			sentAt(3, wsRequest("w9", a, b)), wsTurn(4, "r1", output...),
+		}, false, 0, 1, false, "lacks 2"},
+	}
+	for _, c := range cases {
+		r := checkModelRequests(c.reqs, "tls-rustls-aead", c.ground, cov)
+		got := r.Checks[0]
+		if got.Corroborated != c.corroborated || !strings.Contains(got.Reason, c.reasonContains) {
+			t.Errorf("%s: corroborated %v reason %q", c.name, got.Corroborated, got.Reason)
+		}
+		if len(r.WarmUps) != c.warm || len(r.Unrecorded) != c.unrec {
+			t.Errorf("%s: %d warm-ups, %d unrecorded; want %d, %d", c.name, len(r.WarmUps), len(r.Unrecorded), c.warm, c.unrec)
+		}
+		if (got.WarmUp != nil) != c.joinedViaWarm {
+			t.Errorf("%s: joined via a warm-up %v", c.name, got.WarmUp != nil)
+		}
+		if got.WarmUp != nil && got.Event.ModelRequest.PreviousResponseID != "w1" {
+			t.Errorf("%s: joined %+v", c.name, got.Event.ModelRequest)
+		}
+	}
+	// A warm-up whose response the record names: the second recorded
+	// request is joined directly, and the first is compared with it.
+	r := checkModelRequests(cases[4].reqs, "tls-rustls-aead", cases[4].ground, cov)
+	if !r.Checks[1].Corroborated || r.Checks[1].WarmUp != nil {
+		t.Errorf("the request continuing a named response: %+v", r.Checks[1])
+	}
+}

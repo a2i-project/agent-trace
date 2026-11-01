@@ -513,8 +513,12 @@ func printModelRequests(w io.Writer, r *verification.ModelRequestReport) {
 	if r == nil {
 		return
 	}
-	_, _ = fmt.Fprintf(w, "Model requests: %d recorded, corroborated: %d, captured and unrecorded: %d  (content method %s, %s; each recorded request against the captured request continuing the same response, item for item; reported, not part of the verdict, unmeasured on a live capture, P-43)\n",
-		len(r.Checks), r.Corroborated(), len(r.Unrecorded), r.Method, r.State)
+	warm := ""
+	if len(r.WarmUps) > 0 {
+		warm = fmt.Sprintf(", warm-ups: %d", len(r.WarmUps))
+	}
+	_, _ = fmt.Fprintf(w, "Model requests: %d recorded, corroborated: %d, captured and unrecorded: %d%s  (content method %s, %s; each recorded request against the captured request continuing the same response, item for item; reported, not part of the verdict, unmeasured on a live capture, P-43)\n",
+		len(r.Checks), r.Corroborated(), len(r.Unrecorded), warm, r.Method, r.State)
 	for _, c := range r.Checks {
 		status := "corroborated"
 		if !c.Corroborated {
@@ -528,10 +532,17 @@ func printModelRequests(w io.Writer, r *verification.ModelRequestReport) {
 		if c.Request.ResponseID != "" && !c.ResponseSeen {
 			seen = "; its response " + c.Request.ResponseID + " was not seen"
 		}
-		_, _ = fmt.Fprintf(w, "  #%d continuing %s, %d items: %s%s\n", c.Request.Index, prev, len(c.Request.Items), status, seen)
+		via := ""
+		if c.WarmUp != nil {
+			via = " (sent continuing the warm-up's response " + c.Event.ModelRequest.PreviousResponseID + ", V-69)"
+		}
+		_, _ = fmt.Fprintf(w, "  #%d continuing %s, %d items: %s%s%s\n", c.Request.Index, prev, len(c.Request.Items), status, via, seen)
 	}
 	for _, e := range r.Unrecorded {
 		_, _ = fmt.Fprintf(w, "  unrecorded: %s %s continuing %q, %d items\n", e.Timestamp.Format(time.RFC3339Nano), e.Target, e.ModelRequest.PreviousResponseID, len(e.ModelRequest.Items))
+	}
+	for _, e := range r.WarmUps {
+		_, _ = fmt.Fprintf(w, "  warm-up: %s %s continuing %q, no item, its response unrecorded and continued (V-69)\n", e.Timestamp.Format(time.RFC3339Nano), e.Target, e.ModelRequest.PreviousResponseID)
 	}
 }
 
