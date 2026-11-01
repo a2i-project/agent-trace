@@ -41,7 +41,8 @@ type step struct {
 	hasDiff   bool
 	turn      string
 	completed time.Time  // the item's completion
-	started   *time.Time // an update's start (started_at_ms), when recorded
+	started   *time.Time // the item's start (started_at_ms), when recorded
+	command   bool       // the item is a CommandExecution
 	effect    int        // the update's effect, -1 for none
 	claim     int        // the index of the update's write among its effect's claims
 }
@@ -273,7 +274,8 @@ func splitLines(s string) []string {
 // it completed before the cell of the content's step started, or when the
 // cell it is joined to started after the update started. A step joined to
 // no single cell may have run at any time. cellStart gives the start of
-// the cell a step is joined to. It returns how many updates claim a hash
+// the cell a step is joined to: for a command that outlived its cell, the
+// cell that started it (I-94). It returns how many updates claim a hash
 // and how many do not.
 func reconstruct(steps []step, effects []effect, cellStart func(step) (time.Time, bool)) (claimed, unclaimed int) {
 	type known struct {

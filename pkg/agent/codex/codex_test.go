@@ -150,6 +150,62 @@ func TestParseCountsWhatItDoesNotClaim(t *testing.T) {
 	}
 }
 
+// A command that outlived the cell that started it, an exec_command that
+// yielded a session (I-94), is claimed from that cell's start to its own
+// completion, whether it completed between cells or in a later one; a file
+// change of the same shape and a command whose start no cell holds are
+// joined by their completion as before.
+func TestParseClaimsAnOutlivingCommandFromTheCellThatStartedIt(t *testing.T) {
+	cmd := func(id, line string) string {
+		return `{"type":"CommandExecution","id":"` + id + `","command":["/bin/bash","-lc","` + line + `"],"status":"completed","exit_code":0}`
+	}
+	p := write(t, filepath.Join(t.TempDir(), "r.rollout.jsonl"),
+		meta(thread),
+		call("2026-10-31T23:40:20.000Z", "c1"),
+		output("2026-10-31T23:40:20.600Z", "c1"),
+		call("2026-10-31T23:40:21.000Z", "c2"),
+		itemSE("2026-10-31T23:40:21.100Z", 1793490021100, 1793490021100, cmd("e1", "echo b")),
+		output("2026-10-31T23:40:21.200Z", "c2"),
+		itemSE("2026-10-31T23:40:22.000Z", 1793490020100, 1793490022000, cmd("e2", "sleep 2; echo a")),
+		itemSE("2026-10-31T23:40:22.100Z", 1793490020200, 1793490022100, `{"type":"FileChange","id":"e3","changes":{"/ws/x":{"type":"add","content":""}},"status":"completed"}`),
+		call("2026-10-31T23:40:23.000Z", "c3"),
+		itemSE("2026-10-31T23:40:23.050Z", 1793490021050, 1793490023050, cmd("e4", "sleep 2; echo c")),
+		itemSE("2026-10-31T23:40:23.060Z", 1793490019000, 1793490023060, cmd("e5", "early")),
+		output("2026-10-31T23:40:23.100Z", "c3"),
+	)
+	tr, rep, err := Adapter{}.Parse(p)
+	if err != nil || len(rep.ParseErrors) != 0 {
+		t.Fatalf("parse: %v %+v", err, rep)
+	}
+	at := func(c models.TrajectoryEntry) string {
+		end := "none"
+		if c.End != nil {
+			end = c.End.Format("05.000")
+		}
+		return c.Target + " " + c.Timestamp.Format("05.000") + " " + end + " " + c.BlockID
+	}
+	var got []string
+	for _, c := range tr {
+		got = append(got, at(c))
+	}
+	block := thread + "/c2"
+	want := []string{
+		"sleep 2; echo a 20.000 22.000 ",
+		"echo b 21.000 21.200 " + block,
+		"sleep 2; echo c 21.000 23.050 " + block,
+		"/ws/x 22.100 none ",
+		"/ws/x 22.100 none ",
+		"early 23.000 23.100 ",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("claims:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	deg := strings.Join(rep.Degradations, ";")
+	if !strings.Contains(deg, "2 command(s) outlived the cell that started them") || !strings.Contains(deg, "1 effect(s) joined to no single cell") {
+		t.Errorf("degradations %v", rep.Degradations)
+	}
+}
+
 func TestParseFailsLoudly(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string][]string{

@@ -24,7 +24,12 @@ const pairedDir = "testdata/paired-codex-0.166.0-basic"
 
 func pairedRun(t *testing.T, label string) models.GroundTruthFile {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(pairedDir, label+".ground_truth.json"))
+	return runAt(t, pairedDir, label)
+}
+
+func runAt(t *testing.T, dir, label string) models.GroundTruthFile {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, label+".ground_truth.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,10 +42,15 @@ func pairedRun(t *testing.T, label string) models.GroundTruthFile {
 
 func pairedControls(t *testing.T) []models.GroundTruthFile {
 	t.Helper()
-	paths, _ := filepath.Glob(filepath.Join(pairedDir, "control-*.ground_truth.json"))
+	return controlsAt(t, pairedDir)
+}
+
+func controlsAt(t *testing.T, dir string) []models.GroundTruthFile {
+	t.Helper()
+	paths, _ := filepath.Glob(filepath.Join(dir, "control-*.ground_truth.json"))
 	var runs []models.GroundTruthFile
 	for _, p := range paths {
-		runs = append(runs, pairedRun(t, strings.TrimSuffix(filepath.Base(p), ".ground_truth.json")))
+		runs = append(runs, runAt(t, dir, strings.TrimSuffix(filepath.Base(p), ".ground_truth.json")))
 	}
 	return runs
 }
@@ -58,7 +68,13 @@ func pairedClaims(t *testing.T) (models.Trajectory, agent.Report) {
 // baseline of the five controls at agreement.
 func verifyPaired(t *testing.T, a agent.Adapter, claims models.Trajectory, g models.GroundTruthFile, agreement float64) verification.Verdict {
 	t.Helper()
-	b, err := agent.Capture(a, "0.166.0", pairedControls(t), time.Now(), agent.CaptureOptions{Exclude: []string{agent.ControlCommand}, MinAgreement: agreement})
+	return verifyAt(t, pairedDir, a, claims, g, agreement)
+}
+
+// verifyAt is verifyPaired with the controls of the fixture in dir.
+func verifyAt(t *testing.T, dir string, a agent.Adapter, claims models.Trajectory, g models.GroundTruthFile, agreement float64) verification.Verdict {
+	t.Helper()
+	b, err := agent.Capture(a, "0.166.0", controlsAt(t, dir), time.Now(), agent.CaptureOptions{Exclude: []string{agent.ControlCommand}, MinAgreement: agreement})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,5 +290,43 @@ func TestPairedNeedsTheDeclarations(t *testing.T) {
 	v := verifyPaired(t, bare{Adapter{}}, tr, pairedRun(t, "basic"), 0.2)
 	if v.Outcome != verification.OutcomeNotFaithful || len(v.Corroborated) == 8 {
 		t.Errorf("%s with %d corroborated, want NOT FAITHFUL", v.Outcome, len(v.Corroborated))
+	}
+}
+
+// The tools task on Codex 0.166.0 (codex-parity-1, 2026-11-01), with five
+// controls: a background exec_command (sleep 3; echo background-done | tee
+// bg.txt) that yielded its session and completed between later cells, three
+// parallel cats, four apply_patch calls, a subagent that adds a file, a
+// write_stdin that collects the background output and a final cat. Reduced
+// by scripts/make-capture-fixture.py.
+const toolsDir = "testdata/paired-codex-0.166.0-tools"
+
+// The background command is claimed from the start of the cell that
+// started it to its completion (I-94), and the run is FAITHFUL with every
+// claim corroborated at one and at five controls in five; before, the
+// command was a point at its completion, Unwitnessed beside an Unrecorded
+// exec and an unexplained subtree.
+func TestToolsBackgroundCommandIsClaimedFromItsStart(t *testing.T) {
+	tr, rep, err := Adapter{}.Parse(filepath.Join(toolsDir, "tools.rollout.jsonl"))
+	if err != nil || len(rep.ParseErrors) != 0 || len(rep.UnknownTools) != 0 {
+		t.Fatalf("parse: %v %+v", err, rep)
+	}
+	var bg *models.TrajectoryEntry
+	for i := range tr {
+		if tr[i].Target == "sleep 3; echo background-done | tee bg.txt" {
+			bg = &tr[i]
+		}
+	}
+	if bg == nil || bg.End == nil || bg.Timestamp.Format("15:04:05.000") != "19:14:39.176" || bg.End.Format("15:04:05.000") != "19:14:42.213" {
+		t.Fatalf("the background command is claimed as %+v, want from its cell's start 19:14:39.176 to its completion 19:14:42.213", bg)
+	}
+	if strings.Contains(strings.Join(rep.Degradations, ";"), "joined to no single cell") {
+		t.Errorf("degradations %v", rep.Degradations)
+	}
+	for _, ag := range []float64{0.2, 1} {
+		v := verifyAt(t, toolsDir, Adapter{}, tr, runAt(t, toolsDir, "tools"), ag)
+		if v.Outcome != verification.OutcomeFaithful || v.Findings() != 0 || len(v.Corroborated) != len(tr) || len(v.Coverage.UnexplainedSubtrees) != 0 {
+			t.Errorf("agreement %v: %s, %d findings, %d of %d corroborated; reasons %v", ag, v.Outcome, v.Findings(), len(v.Corroborated), len(tr), v.Reasons)
+		}
 	}
 }

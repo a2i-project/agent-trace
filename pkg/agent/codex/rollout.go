@@ -93,10 +93,12 @@ type cell struct {
 
 // effect is one item that claims something, before its interval is known.
 type effect struct {
-	claims []models.TrajectoryEntry
-	turn   string
-	at     time.Time // the item's completion
-	order  int
+	claims  []models.TrajectoryEntry
+	turn    string
+	at      time.Time  // the item's completion
+	started *time.Time // the item's start (started_at_ms), when recorded
+	command bool       // a CommandExecution
+	order   int
 }
 
 // nonEffectfulCalls are the direct tools that act on nothing the probes
@@ -362,15 +364,16 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 				t := time.UnixMilli(*ev.StartedAt).UTC()
 				started = &t
 			}
+			command := it.Type == "CommandExecution"
 			for _, st := range itemSteps {
-				st.turn, st.completed, st.started, st.effect = ev.TurnID, at, started, -1
+				st.turn, st.completed, st.started, st.command, st.effect = ev.TurnID, at, started, command, -1
 				if st.kind == stepUpdate && len(claims) > 0 {
 					st.effect = len(effects)
 				}
 				steps = append(steps, st)
 			}
 			if len(claims) > 0 {
-				effects = append(effects, effect{claims: claims, turn: ev.TurnID, at: at, order: len(effects)})
+				effects = append(effects, effect{claims: claims, turn: ev.TurnID, at: at, started: started, command: command, order: len(effects)})
 			}
 		}
 	}
@@ -395,9 +398,26 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 		}
 		return nil
 	}
+	// A command that outlived the cell that started it, an exec_command
+	// that yielded a session and finished later (I-94), takes instead the
+	// one cell of its turn whose window holds its start, and is claimed
+	// from that cell's start to its own completion.
+	startedIn := func(turn string, started *time.Time, completed time.Time, command bool) *cell {
+		if !command || started == nil || completed.Before(*started) {
+			return nil
+		}
+		if c := holding(turn, *started); c != nil && completed.After(c.end) {
+			return c
+		}
+		return nil
+	}
 	joined := make([]*cell, len(effects))
+	outlived := make([]bool, len(effects))
 	for i, ef := range effects {
-		if c := holding(ef.turn, ef.at); c != nil {
+		if c := startedIn(ef.turn, ef.started, ef.at, ef.command); c != nil {
+			joined[i], outlived[i] = c, true
+			c.effects++
+		} else if c := holding(ef.turn, ef.at); c != nil {
 			joined[i] = c
 			c.effects++
 		} else {
@@ -414,6 +434,9 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 	}
 	if contents && out.meta.SubagentHistoryOrdinal == nil && len(out.subagents) == 0 {
 		out.updatesClaimed, out.updatesUnclaimed = reconstruct(steps, effects, func(s step) (time.Time, bool) {
+			if c := startedIn(s.turn, s.started, s.completed, s.command); c != nil {
+				return c.start, true
+			}
 			if c := holding(s.turn, s.completed); c != nil {
 				return c.start, true
 			}
@@ -426,11 +449,18 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 			}
 		}
 	}
+	longer := 0
 	for i, ef := range effects {
 		c := joined[i]
+		if outlived[i] {
+			longer++
+		}
 		for _, cl := range ef.claims {
 			if c != nil {
 				end := c.end
+				if outlived[i] {
+					end = ef.at
+				}
 				cl.Timestamp, cl.End = c.start, &end
 				if c.effects > 1 {
 					cl.BlockID = out.meta.ID + "/" + c.callID
@@ -440,6 +470,9 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 			}
 			out.claims = append(out.claims, cl)
 		}
+	}
+	if longer > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%s: %d command(s) outlived the cell that started them; each is claimed from that cell's start to its own completion", name, longer))
 	}
 	if unjoined > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%s: %d effect(s) joined to no single cell, claimed at their completion with no interval", name, unjoined))
