@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -226,7 +227,7 @@ func TestCoverage_UsesStopSnapshot(t *testing.T) {
 	got := o.Coverage()
 	want := Coverage{Connections: 4, WithContent: 2, FaultedReads: 3, RingbufDrops: 7, NetRingDrops: 4, TLSRingDrops: 3, UntrackedChildren: 5, StateMapFull: 6,
 		IOURingNetOps: 8, IOURingOps: 9, IOURingRings: 1, HelloFaults: 2}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Coverage() = %+v, want %+v", got, want)
 	}
 	if got := o.CaptureCoverage().IOURingNetOps; got != 8 {

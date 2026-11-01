@@ -1,6 +1,8 @@
 package net
 
 import (
+	"bytes"
+	"compress/flate"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -168,22 +170,116 @@ func TestAEAD_ValidationAndBinding(t *testing.T) {
 	}
 }
 
-// An accept that negotiates an extension refuses both directions: no
-// WebSocket message is emitted, the refusal is counted once.
+// An accept that negotiates an extension the parser cannot decode refuses
+// both directions: no WebSocket message is emitted, the refusal is counted
+// once with its reason (N-43).
 func TestWebSocket_ExtensionRefused(t *testing.T) {
+	for _, tc := range []struct{ ext, reason string }{
+		{"x-webkit-deflate-frame", `unsupported extension "x-webkit-deflate-frame"`},
+		{"permessage-deflate; client_max_window_bits", `permessage-deflate parameter "client_max_window_bits" without a window size of 8 to 15`},
+	} {
+		o := newTestObserver()
+		o.events = make(chan models.GroundTruthEvent, 64)
+		o.readValid = true
+		ts := time.Unix(1, 0)
+		key := sslKey{tgid: 5, ssl: 9}
+		o.handleSSLFrame(key, []byte(upgradeReq), 0, ts)
+		o.handleSSLRead(key, []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Extensions: "+tc.ext+"\r\n\r\n"), 0, ts)
+		o.handleSSLFrame(key, wsFrameBytes(0x1, true, "compressed?"), 0, ts)
+		o.handleSSLRead(key, wsFrameBytes(0x1, false, "x"), 0, ts)
+		o.flushResponses()
+		evs := drain(o)
+		c := o.coverage
+		if len(evs) != 2 || c.WSRefused != 1 || c.WSRequests != 0 || c.FramesUnattributed != 0 || c.ResponsesUnparsed != 0 || !reflect.DeepEqual(c.WSRefusedReasons, map[string]int{tc.reason: 1}) {
+			t.Errorf("%s: events %d, coverage %+v", tc.ext, len(evs), c)
+		}
+	}
+}
+
+// deflateMessages compresses messages as one permessage-deflate sender
+// with context takeover: each flushed, the trailing 0x00 0x00 0xff 0xff
+// removed.
+func deflateMessages(t *testing.T, msgs ...string) [][]byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w, err := flate.NewWriter(&buf, flate.BestCompression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out [][]byte
+	for _, m := range msgs {
+		start := buf.Len()
+		_, _ = w.Write([]byte(m))
+		_ = w.Flush()
+		z := buf.Bytes()[start:]
+		out = append(out, append([]byte(nil), z[:len(z)-4]...))
+	}
+	return out
+}
+
+// compressed sets RSV1 on a single-frame message.
+func compressed(frame []byte) []byte {
+	frame[0] |= 0x40
+	return frame
+}
+
+// A permessage-deflate session (N-43): the client's first message, written
+// before the 101 was read, is held until the accept says what was agreed;
+// both directions decode with context takeover; requests and turns hash
+// the decompressed payloads, the model request digest included, and a
+// turn starts at its first message's first frame.
+func TestWebSocket_PermessageDeflate(t *testing.T) {
 	o := newTestObserver()
 	o.events = make(chan models.GroundTruthEvent, 64)
 	o.readValid = true
-	ts := time.Unix(1, 0)
+	t0 := time.Unix(1, 0)
+	at := func(s int) time.Time { return t0.Add(time.Duration(s) * time.Second) }
 	key := sslKey{tgid: 5, ssl: 9}
-	o.handleSSLFrame(key, []byte(upgradeReq), 0, ts)
-	o.handleSSLRead(key, []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"), 0, ts)
-	o.handleSSLFrame(key, wsFrameBytes(0x1, true, "compressed?"), 0, ts)
-	o.handleSSLRead(key, wsFrameBytes(0x1, false, "x"), 0, ts)
-	o.flushResponses()
+	item := `{"type":"message","role":"user","content":[{"type":"input_text","text":"hello hello hello"}]}`
+	m1 := `{"type":"response.create","input":[` + item + `]}`
+	m2 := `{"type":"response.create","previous_response_id":"resp_1","input":[` + item + `]}`
+	s1 := `{"type":"response.created","response":{"id":"resp_1"}}`
+	s2 := `{"type":"response.completed","response":{"id":"resp_1","status":"completed"}}`
+	cz := deflateMessages(t, m1, m2)
+	sz := deflateMessages(t, s1, s2)
+	req := strings.Replace(upgradeReq, "\r\n\r\n", "\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n", 1)
+	o.handleSSLFrame(key, []byte(req), 0, at(0))
+	o.handleSSLFrame(key, compressed(wsFrameBytes(0x1, true, string(cz[0]))), 0, at(1))
+	if o.coverage.WSRequests != 0 {
+		t.Fatal("a client frame was parsed before the accept")
+	}
+	o.handleSSLRead(key, []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15\r\n\r\n"), 0, at(2))
+	// The first server message in two frames, the last read later.
+	f := compressed(wsFrameBytes(0x1, false, string(sz[0][:2])))
+	f[0] &^= 0x80
+	o.handleSSLRead(key, f, 0, at(3))
+	o.handleSSLRead(key, append(wsFrameBytes(0x0, false, string(sz[0][2:])), compressed(wsFrameBytes(0x1, false, string(sz[1])))...), 0, at(4))
+	o.handleSSLFrame(key, compressed(wsFrameBytes(0x1, true, string(cz[1]))), 0, at(5))
 	evs := drain(o)
-	if len(evs) != 2 || o.coverage.WSRefused != 1 || o.coverage.WSRequests != 0 || o.coverage.FramesUnattributed != 0 || o.coverage.ResponsesUnparsed != 0 {
-		t.Errorf("events %d, coverage %+v", len(evs), o.coverage)
+	var wsReqs, turns []models.GroundTruthEvent
+	for _, e := range evs {
+		if !strings.HasPrefix(e.Target, "WS ") {
+			continue
+		}
+		if e.ActionType == models.NetRequest {
+			wsReqs = append(wsReqs, e)
+		} else {
+			turns = append(turns, e)
+		}
+	}
+	if len(wsReqs) != 2 || *wsReqs[0].RequestHash != hashOf(m1) || *wsReqs[1].RequestHash != hashOf(m2) || !wsReqs[0].Timestamp.Equal(at(1)) {
+		t.Fatalf("requests %+v, want the hashes of the decompressed messages", wsReqs)
+	}
+	h, _ := tlsparse.ResponsesItemHash([]byte(item))
+	if d := wsReqs[1].ModelRequest; d == nil || d.PreviousResponseID != "resp_1" || len(d.Items) != 1 || d.Items[0].Hash != h {
+		t.Errorf("digest %+v", d)
+	}
+	if len(turns) != 1 || turns[0].Response.BodyHash != hashOf(s1+s2) || turns[0].Response.BodyBytes != int64(len(s1+s2)) || !turns[0].Timestamp.Equal(at(3)) ||
+		!reflect.DeepEqual(turns[0].Response.WebSocket.ResponseIDs, []string{"resp_1"}) {
+		t.Errorf("turns %+v, want one of the decompressed server messages from %v", turns, at(3))
+	}
+	if c := o.coverage; c.WSDeflate != 1 || c.WSRefused != 0 || c.WSUnparsed != 0 || c.WSModelRequests != 2 {
+		t.Errorf("coverage %+v", c)
 	}
 }
 

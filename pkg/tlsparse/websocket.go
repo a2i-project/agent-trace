@@ -15,9 +15,9 @@ import (
 // Errors that end the parsing of one direction of a WebSocket connection
 // (RFC 6455). After one, the stream ignores what follows.
 var (
-	// ErrWSCompressed: a frame sets RSV1, which only an extension such as
-	// permessage-deflate (RFC 7692) allows. Compressed payloads are not
-	// decoded, so the stream is refused rather than hashed compressed.
+	// ErrWSCompressed: a frame sets RSV1 on a stream for which no
+	// permessage-deflate was agreed (Inflate not called), so the stream is
+	// refused rather than hashed compressed.
 	ErrWSCompressed = errors.New("tlsparse: compressed WebSocket frame (an extension is in use)")
 	// ErrWSProtocol: bytes that are not a valid frame sequence for this
 	// direction (reserved bits or opcodes, a client frame not masked or a
@@ -64,6 +64,12 @@ type WSMessage struct {
 	// message, within its first 4 KiB (an OpenAI Responses API event names
 	// its response so), at most 256 printable bytes; "" otherwise.
 	ResponseID string
+	// Compressed is set when the message was sent compressed
+	// (permessage-deflate, N-43); Bytes, Hash, Type, ResponseID and Body
+	// are then those of the decompressed payload, and WireBytes the
+	// compressed length.
+	Compressed bool
+	WireBytes  int64
 	// Body is the whole unmasked payload of a text message no longer than
 	// the stream's KeepText, nil otherwise. It is valid only during the
 	// onMessage call that receives the message, for a digest of it; the
@@ -82,8 +88,11 @@ type WSStream struct {
 	KeepText int
 
 	client bool // frames from the client, which must be masked
-	err    error
-	closed bool // a close frame was read; what follows is ignored
+	// inflate, when set, decodes messages whose first frame sets RSV1.
+	inflate *wsInflater
+	zbuf    []byte // the compressed payload of the message in progress
+	err     error
+	closed  bool // a close frame was read; what follows is ignored
 
 	hdr     []byte // the frame header read so far
 	inFrame bool
@@ -94,18 +103,35 @@ type WSStream struct {
 	left    int64 // payload bytes of the frame still to read
 	pos     int64 // payload bytes of the frame read, for the mask
 
-	msg    *WSMessage // message in progress, nil between messages
-	hash   hash.Hash
-	prefix []byte
-	body   []byte // the whole text message while it fits KeepText
-	over   bool   // the message outgrew KeepText
-	ctl    []byte // control frame payload
+	msg        *WSMessage // message in progress, nil between messages
+	compressed bool       // the message in progress is compressed
+	hash       hash.Hash
+	prefix     []byte
+	body       []byte // the whole text message while it fits KeepText
+	over       bool   // the message outgrew KeepText
+	ctl        []byte // control frame payload
 }
 
 // NewWSStream returns a parser for the client's frames (client true, which
 // must be masked) or the server's (which must not be).
 func NewWSStream(client bool) *WSStream {
 	return &WSStream{client: client}
+}
+
+// Inflate makes the stream decode permessage-deflate messages (RFC 7692,
+// N-43), the direction's compressor resetting its window at each message
+// when noContextTakeover is set. Call it before the first frame.
+func (s *WSStream) Inflate(noContextTakeover bool) {
+	s.inflate = &wsInflater{noTakeover: noContextTakeover}
+}
+
+// MessageStart is the time of the first frame of the data message in
+// progress, zero between messages.
+func (s *WSStream) MessageStart() time.Time {
+	if s.msg == nil {
+		return time.Time{}
+	}
+	return s.msg.Start
 }
 
 // Err is the error that ended the stream, or nil.
@@ -141,7 +167,7 @@ func (s *WSStream) Feed(data []byte, missing int, at time.Time, onMessage func(*
 		s.payload(data[:n], at)
 		data = data[n:]
 		s.left -= n
-		if s.left == 0 {
+		if s.left == 0 && s.err == nil {
 			s.endFrame(at, onMessage, onControl)
 		}
 	}
@@ -166,8 +192,12 @@ func (s *WSStream) header(data []byte) []byte {
 	}
 	b0, b1 := s.hdr[0], s.hdr[1]
 	switch {
-	case b0&0x40 != 0:
+	case b0&0x40 != 0 && s.inflate == nil:
 		s.err = ErrWSCompressed
+		return nil
+	case b0&0x40 != 0 && b0&0x0f != WSText && b0&0x0f != WSBinary:
+		// RSV1 marks the first frame of a compressed message only.
+		s.err = ErrWSProtocol
 		return nil
 	case b0&0x30 != 0:
 		s.err = ErrWSProtocol
@@ -232,6 +262,9 @@ func (s *WSStream) header(data []byte) []byte {
 	if masked {
 		copy(s.key[:], s.hdr[off:off+4])
 	}
+	if op == WSText || op == WSBinary {
+		s.compressed = b0&0x40 != 0
+	}
 	s.hdr = s.hdr[:0]
 	s.inFrame, s.opcode, s.fin, s.masked, s.left, s.pos = true, op, fin, masked, int64(length), 0
 	return data
@@ -239,8 +272,9 @@ func (s *WSStream) header(data []byte) []byte {
 
 // startMessage begins a data message at its first frame.
 func (s *WSStream) startMessage(at time.Time) {
-	s.msg = &WSMessage{Text: s.opcode == WSText, Start: at}
+	s.msg = &WSMessage{Text: s.opcode == WSText, Start: at, Compressed: s.compressed}
 	s.hash = sha256.New()
+	s.zbuf = s.zbuf[:0]
 	s.prefix = s.prefix[:0]
 	s.body = s.body[:0]
 	s.over = false
@@ -262,6 +296,21 @@ func (s *WSStream) payload(p []byte, at time.Time) {
 	if s.msg == nil {
 		s.startMessage(at)
 	}
+	if s.msg.Compressed {
+		s.msg.WireBytes += int64(len(p))
+		if s.msg.WireBytes > maxWSCompressed {
+			s.err = ErrWSTooLarge
+			return
+		}
+		s.zbuf = append(s.zbuf, p...)
+		return
+	}
+	s.data(p)
+}
+
+// data takes payload bytes of the message in progress, decompressed when
+// it was compressed.
+func (s *WSStream) data(p []byte) {
 	s.msg.Bytes += int64(len(p))
 	s.hash.Write(p)
 	if s.msg.Text && len(s.prefix) < wsTypePrefix {
@@ -299,6 +348,17 @@ func (s *WSStream) endFrame(at time.Time, onMessage func(*WSMessage), onControl 
 	s.msg.End = at
 	if !s.fin {
 		return
+	}
+	if s.msg.Compressed {
+		// The message stays in progress if it does not decompress.
+		if err := s.inflate.inflate(s.zbuf, s.data); err != nil {
+			s.err = err
+			return
+		}
+		s.zbuf = s.zbuf[:0]
+		if cap(s.zbuf) > 1<<20 {
+			s.zbuf = nil // a large message's buffer is not kept
+		}
 	}
 	m := s.msg
 	m.Hash = "sha256:" + hex.EncodeToString(s.hash.Sum(nil))

@@ -271,7 +271,13 @@ type NetContentCounts struct {
 	// Responses API request and carry its digest (P-42).
 	WSModelRequests int `json:"ws_model_requests,omitempty"`
 	WSRefused       int `json:"ws_refused,omitempty"`
-	WSUnparsed      int `json:"ws_unparsed,omitempty"`
+	// WSRefusedReasons counts the refused directions by the reason the
+	// parser gave (N-43), at most 16 reasons, the rest under "(other)".
+	WSRefusedReasons map[string]int `json:"ws_refused_reasons,omitempty"`
+	// WSDeflate counts the accepts that agreed to permessage-deflate,
+	// whose messages are decoded (N-43).
+	WSDeflate  int `json:"ws_deflate,omitempty"`
+	WSUnparsed int `json:"ws_unparsed,omitempty"`
 	// rustls counts (tls-rustls-aead, N-39, N-40): frames discarded before
 	// their direction validated, read frames with no socket, ignored
 	// rebinds of an encrypter, encrypters whose socket had a state of its

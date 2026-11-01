@@ -682,3 +682,18 @@ func TestDiagnosticsDoNotChangeAssess(t *testing.T) {
 		}
 	}
 }
+
+// The WebSocket line names the permessage-deflate accepts, and each
+// refusal reason gets a line of its own (N-43).
+func TestContentLinesNameWebSocketRefusals(t *testing.T) {
+	d := &models.ProbeDiagnostics{
+		ContentMethods: map[string]models.ContentMethodState{"tls-rustls-aead": {Requests: "active", Responses: "active"}},
+		NetContent:     &models.NetContentCounts{WebSockets: 2, WSAccepted: 2, WSRefused: 1, WSDeflate: 1, WSRefusedReasons: map[string]int{`unsupported extension "x"`: 1}},
+	}
+	got := strings.Join(contentLines(d), "\n")
+	for _, want := range []string{"refused=1 ", " deflate=1", "\nnet probe websocket refused: 1: unsupported extension \"x\""} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lines %q lack %q", got, want)
+		}
+	}
+}

@@ -19,6 +19,14 @@ import (
 // hash is that of the message's unmasked payload; the server's messages
 // between two client messages are one turn, a net_response attestation.
 
+// maxWSPending bounds the client bytes held, when the upgrade request
+// offered an extension, until the accept says which was agreed.
+const maxWSPending = 1 << 20
+
+// maxWSReasons bounds the distinct refusal reasons the coverage keeps; the
+// rest count under "(other)".
+const maxWSReasons = 16
+
 // maxWSTypes bounds the type names a turn's summary keeps, and the
 // response ids.
 const maxWSTypes = 16
@@ -38,11 +46,24 @@ type wsConn struct {
 	// client and server parse the two directions; nil until the upgrade
 	// request (client) or the accept (server) was seen.
 	client, server *tlsparse.WSStream
-	// refused: the accept negotiated an extension, so neither direction
-	// is parsed.
+	// refused: the accept negotiated an extension the parser cannot
+	// decode, so neither direction is parsed.
 	refused bool
+	// offered: the upgrade request offered an extension, so the client's
+	// frames may be compressed and are held in pending until the accept
+	// says what was agreed (N-43).
+	offered bool
+	pending []wsChunk
+	held    int
 	turn    *wsTurn
 	at      time.Time // the time of the read being parsed, for OnData
+}
+
+// wsChunk is client bytes held until the accept.
+type wsChunk struct {
+	p       []byte
+	missing int
+	at      time.Time
 }
 
 // wsTurn accumulates the server messages after a client message.
@@ -62,6 +83,7 @@ func (o *Observer) wsUpgrade(c *tlsConn, req *tlsparse.HTTPRequest) {
 	o.coverage.WebSockets++
 	w := &wsConn{client: tlsparse.NewWSStream(true)}
 	w.client.KeepText = maxModelRequest
+	w.offered = req.Headers.Get("Sec-WebSocket-Extensions") != ""
 	if c.last != nil && c.last.target != "" {
 		w.target = models.CanonicalNetTarget("WS", c.host, c.port, req.Path, req.Query)
 		w.paired = true
@@ -70,9 +92,11 @@ func (o *Observer) wsUpgrade(c *tlsConn, req *tlsparse.HTTPRequest) {
 }
 
 // wsAccept switches the read side of c to WebSocket frames after the 101
-// response r, or refuses both directions when r negotiated an extension:
-// permessage-deflate compresses the payloads, which are not decoded.
-func (o *Observer) wsAccept(c *tlsConn, r *tlsparse.Response) {
+// response r, decoding both directions when r agreed to permessage-deflate
+// (N-43), or refuses both when r negotiated an extension the parser cannot
+// honour, counting the reason. The client bytes held for the accept are
+// then parsed.
+func (o *Observer) wsAccept(tgid uint32, c *tlsConn, r *tlsparse.Response) {
 	o.coverage.WSAccepted++
 	if c.ws == nil {
 		c.ws = &wsConn{}
@@ -81,17 +105,53 @@ func (o *Observer) wsAccept(c *tlsConn, r *tlsparse.Response) {
 		}
 	}
 	w := c.ws
-	if r.Extensions != "" {
-		w.refused = true
-		o.coverage.WSRefused++
+	deflate, err := tlsparse.ParseWSExtensions(r.Extensions)
+	if err != nil {
+		w.refused, w.pending = true, nil
+		reason := err.Error()
+		var xe *tlsparse.WSExtensionError
+		if errors.As(err, &xe) {
+			reason = xe.Reason
+		}
+		o.wsRefuse(reason)
 		return
 	}
 	w.server = tlsparse.NewWSStream(false)
 	w.server.OnData = func(p []byte) {
-		t := w.turnAt(w.at)
+		// A compressed message's bytes arrive at its last frame; the turn
+		// starts at its first.
+		at := w.server.MessageStart()
+		if at.IsZero() {
+			at = w.at
+		}
+		t := w.turnAt(at)
 		t.bytes += int64(len(p))
 		t.hash.Write(p)
 	}
+	if deflate != nil {
+		o.coverage.WSDeflate++
+		w.server.Inflate(deflate.ServerNoContextTakeover)
+		if w.client != nil {
+			w.client.Inflate(deflate.ClientNoContextTakeover)
+		}
+	}
+	held := w.pending
+	w.pending, w.offered = nil, false
+	for _, ch := range held {
+		o.wsClientBytes(tgid, c, ch.p, ch.missing, ch.at)
+	}
+}
+
+// wsRefuse counts one refused WebSocket direction and its reason.
+func (o *Observer) wsRefuse(reason string) {
+	o.coverage.WSRefused++
+	if o.coverage.WSRefusedReasons == nil {
+		o.coverage.WSRefusedReasons = map[string]int{}
+	}
+	if _, ok := o.coverage.WSRefusedReasons[reason]; !ok && len(o.coverage.WSRefusedReasons) >= maxWSReasons {
+		reason = "(other)"
+	}
+	o.coverage.WSRefusedReasons[reason]++
 }
 
 func (w *wsConn) turnAt(at time.Time) *wsTurn {
@@ -101,11 +161,18 @@ func (w *wsConn) turnAt(at time.Time) *wsTurn {
 	return w.turn
 }
 
-// wsFailed counts the error that ended one direction's parsing.
+// wsFailed counts the error that ended one direction's parsing: a
+// compressed frame with no agreed extension or a message over the
+// decoder's bound is a refusal, with its reason; anything else (a
+// malformed frame, data that does not decompress, missing bytes) leaves
+// the direction unparsed.
 func (o *Observer) wsFailed(err error) {
-	if errors.Is(err, tlsparse.ErrWSCompressed) {
-		o.coverage.WSRefused++
-	} else {
+	switch {
+	case errors.Is(err, tlsparse.ErrWSCompressed):
+		o.wsRefuse("a compressed frame with no extension agreed")
+	case errors.Is(err, tlsparse.ErrWSTooLarge):
+		o.wsRefuse("a compressed message over the decoder's bound")
+	default:
 		o.coverage.WSUnparsed++
 	}
 }
@@ -115,6 +182,16 @@ func (o *Observer) wsFailed(err error) {
 func (o *Observer) wsClientBytes(tgid uint32, c *tlsConn, p []byte, missing int, ts time.Time) {
 	w := c.ws
 	if w.refused || w.client == nil {
+		return
+	}
+	if w.offered && w.server == nil {
+		if w.held+len(p) > maxWSPending {
+			w.refused, w.pending = true, nil
+			o.wsRefuse("client frames before the accept over 1 MiB")
+			return
+		}
+		w.held += len(p)
+		w.pending = append(w.pending, wsChunk{p: append([]byte(nil), p...), missing: missing, at: ts})
 		return
 	}
 	err := w.client.Feed(p, missing, ts, func(m *tlsparse.WSMessage) {

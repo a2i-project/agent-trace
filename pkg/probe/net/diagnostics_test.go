@@ -95,15 +95,19 @@ func TestNetContentCounts_CopiesEveryField(t *testing.T) {
 			f.SetInt(v)
 		case reflect.Uint64:
 			f.SetUint(uint64(v))
+		case reflect.Map:
+			f.Set(reflect.ValueOf(map[string]int{name: int(v)}))
 		}
 		switch wv.Field(i).Kind() {
 		case reflect.Int:
 			wv.Field(i).SetInt(v)
 		case reflect.Uint64:
 			wv.Field(i).SetUint(uint64(v))
+		case reflect.Map:
+			wv.Field(i).Set(reflect.ValueOf(map[string]int{name: int(v)}))
 		}
 	}
-	if got := netContentCounts(cov); *got != want {
+	if got := netContentCounts(cov); !reflect.DeepEqual(*got, want) {
 		t.Errorf("netContentCounts = %+v, want %+v", *got, want)
 	}
 }

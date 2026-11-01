@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"maps"
 	stdnet "net"
 	"os"
 	"path/filepath"
@@ -916,6 +917,7 @@ func (o *Observer) TrackPID(pid int32) error {
 // never configured.
 func (o *Observer) Coverage() Coverage {
 	cov := o.coverage
+	cov.WSRefusedReasons = maps.Clone(cov.WSRefusedReasons)
 	snapshot := func() kernelCounts {
 		return kernelCounts{
 			faulted:    o.finalFaulted.Load(),
@@ -1139,7 +1141,7 @@ func netContentCounts(c Coverage) *models.NetContentCounts {
 		ResponsesIncomplete: c.ResponsesIncomplete, ResponsesTruncated: c.ResponsesTruncated, ResponsesUnparsed: c.ResponsesUnparsed,
 		SSEEvents: c.SSEEvents, ReadsUnvalidated: c.ReadsUnvalidated, ReadFaults: c.ReadFaults,
 		WebSockets: c.WebSockets, WSAccepted: c.WSAccepted, WSRequests: c.WSRequests, WSServerMessages: c.WSServerMessages, WSModelRequests: c.WSModelRequests,
-		WSRefused: c.WSRefused, WSUnparsed: c.WSUnparsed,
+		WSRefused: c.WSRefused, WSRefusedReasons: c.WSRefusedReasons, WSDeflate: c.WSDeflate, WSUnparsed: c.WSUnparsed,
 		AEADUnvalidated: c.AEADUnvalidated, AEADUnbound: c.AEADUnbound, AEADRebound: c.AEADRebound, AEADUnpaired: c.AEADUnpaired,
 	}
 }

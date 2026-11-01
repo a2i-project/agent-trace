@@ -222,7 +222,7 @@ func (o *Observer) feedRead(key sslKey, payload []byte, missing int, ts time.Tim
 	if err := c.resp.Feed(payload, missing, ts, func(r *tlsparse.Response) {
 		o.emitNetResponse(key.tgid, c, r)
 		if tlsparse.IsWebSocketAccept(r) {
-			o.wsAccept(c, r)
+			o.wsAccept(key.tgid, c, r)
 		}
 	}); err != nil {
 		o.coverage.ResponsesUnparsed++

@@ -162,8 +162,9 @@ func (f *contentMethodsFlag) Set(v string) error {
 
 // contentLines are the net probe's lines for its content methods (N-39) and
 // WebSocket counts (N-41): one line with each method's request and response
-// state, and one with the WebSocket and rustls counters when any is above
-// zero. None without content capture.
+// state, one with the WebSocket and rustls counters when any is above
+// zero, and one per WebSocket refusal reason (N-43). None without content
+// capture.
 func contentLines(d *models.ProbeDiagnostics) []string {
 	if d == nil || len(d.ContentMethods) == 0 {
 		return nil
@@ -178,6 +179,12 @@ func contentLines(d *models.ProbeDiagnostics) []string {
 	if c := d.NetContent; c != nil && c.WebSockets+c.WSAccepted+c.WSRefused+c.WSUnparsed+c.AEADUnvalidated+c.AEADUnbound+c.AEADRebound+c.AEADUnpaired > 0 {
 		lines = append(lines, fmt.Sprintf("net probe websocket: upgrades=%d accepted=%d requests=%d serverMessages=%d refused=%d unparsed=%d aeadUnvalidated=%d aeadUnbound=%d aeadRebound=%d aeadUnpaired=%d",
 			c.WebSockets, c.WSAccepted, c.WSRequests, c.WSServerMessages, c.WSRefused, c.WSUnparsed, c.AEADUnvalidated, c.AEADUnbound, c.AEADRebound, c.AEADUnpaired))
+		if c.WSDeflate > 0 {
+			lines[len(lines)-1] += fmt.Sprintf(" deflate=%d", c.WSDeflate)
+		}
+		for _, r := range sortedKeys(c.WSRefusedReasons) {
+			lines = append(lines, fmt.Sprintf("net probe websocket refused: %d: %s", c.WSRefusedReasons[r], r))
+		}
 	}
 	return lines
 }

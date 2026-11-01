@@ -68,7 +68,11 @@ type Coverage struct {
 	WSRequests       int // client messages emitted as net_request
 	WSServerMessages int // server messages counted into net_response turns
 	WSModelRequests  int // client messages that parsed as a Responses API request and carry its digest (P-42)
-	WSRefused        int // WebSocket directions not parsed: an extension negotiated (permessage-deflate) or a compressed frame
+	WSRefused        int // WebSocket directions not parsed: an extension the parser cannot decode, a compressed frame with none agreed, a compressed message over the decoder's bound, client frames before the accept over 1 MiB
+	// WSRefusedReasons counts each refusal by its reason (at most 16, the
+	// rest under "(other)").
+	WSRefusedReasons map[string]int
+	WSDeflate        int // accepts that agreed to permessage-deflate, decoded (N-43)
 	WSUnparsed       int // WebSocket directions ended by a malformed frame or missing bytes
 
 	// rustls (tls-rustls-aead, N-39, N-40).
