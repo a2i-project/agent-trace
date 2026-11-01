@@ -656,7 +656,6 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	}
 
 	if o.plan.sslPath != "" {
-		o.sslRingSize = uint64(o.tlsObjs.SslEvents.MaxEntries())
 		if err := o.prepareSSL(cfg); err != nil {
 			return err
 		}
@@ -729,6 +728,7 @@ func (o *Observer) prepareSSL(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("open executable %s: %w", path, err)
 	}
+	o.sslRingSize = uint64(o.tlsObjs.SslEvents.MaxEntries())
 	sslReader, err := ringbuf.NewReader(o.tlsObjs.SslEvents)
 	if err != nil {
 		return fmt.Errorf("open ssl ring buffer: %w", err)
@@ -835,8 +835,10 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 	// counted another function's returns. A failed switch leaves the
 	// counts unmeasured.
 	var zero, on uint32 = 0, 1
-	if err := o.tlsObjs.SslWriteCounting.Update(&zero, &on, ebpf.UpdateAny); err == nil {
-		o.sslWrites = &sslWriteMeter{stat: o.tlsObjs.SslWriteStat}
+	if m := o.tlsObjs.SslWriteCounting; m != nil && o.tlsObjs.SslWriteStat != nil {
+		if err := m.Update(&zero, &on, ebpf.UpdateAny); err == nil {
+			o.sslWrites = &sslWriteMeter{stat: o.tlsObjs.SslWriteStat}
+		}
 	}
 	o.tlsActive = true
 	o.writeOffset = chosen.FileOff

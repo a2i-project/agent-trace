@@ -25,6 +25,25 @@ var tlsMethodPrograms = map[string][]string{
 	MethodGoCrypto:   {"probe_go_write", "probe_go_write_ret", "probe_go_read", "probe_go_read_ret"},
 }
 
+// tlsUserMaps are the maps userspace reads or writes for each content
+// method, "" for every capture with content. Each is loaded with its method
+// even when none of the loaded programs references it (ssl_read_counting is
+// referenced by the _ex programs only, and tls-symbols's validation sets it
+// all the same). TestTLSUserMaps_CoverEveryAccess checks this table against
+// every access to the objects in the package's code.
+var tlsUserMaps = map[string][]string{
+	"":               {"tracked_pids", "tracked_stat", "tracked_seeded"},
+	MethodTLSSymbols: {"ssl_events", "ssl_write_counting", "ssl_write_stat", "ssl_read_counting"},
+	MethodOpenSSLEx:  {"ssl_events", "ssl_write_counting", "ssl_write_stat", "ssl_read_counting"},
+	MethodRustlsAEAD: {"aead_cfg", "aead_events"},
+	MethodGoCrypto:   {"go_events", "go_stat"},
+}
+
+// tlsCounterMaps are the counters kernelCounters reads when they are
+// loaded: a counter whose programs are not loaded counts nothing, so its
+// absence reads as zero.
+var tlsCounterMaps = []string{"faulted_reads", "drop_count", "untracked_count", "read_fault_count", "read_drop_count", "aead_drop_count", "go_drop_count"}
+
 // methods lists the configured content methods.
 func (p contentPlan) methods() []string {
 	var m []string
@@ -41,9 +60,10 @@ func (p contentPlan) methods() []string {
 }
 
 // selectTLSPrograms keeps in spec the common programs and those of methods,
-// and the maps they reference (their own instructions and the functions
-// they call), and removes every other program and map. It fails when a
-// listed program is missing or a method is unknown.
+// the maps they reference (their own instructions and the functions they
+// call) and the maps userspace uses for those methods (tlsUserMaps), and
+// removes every other program and map. It fails when a listed program or
+// map is missing or a method is unknown.
 func selectTLSPrograms(spec *ebpf.CollectionSpec, methods []string) error {
 	keep := map[string]bool{}
 	for _, name := range tlsCommonPrograms {
@@ -59,6 +79,14 @@ func selectTLSPrograms(spec *ebpf.CollectionSpec, methods []string) error {
 		}
 	}
 	maps := map[string]bool{}
+	for _, m := range append([]string{""}, methods...) {
+		for _, name := range tlsUserMaps[m] {
+			if spec.Maps[name] == nil {
+				return fmt.Errorf("tls object has no map %s", name)
+			}
+			maps[name] = true
+		}
+	}
 	for name := range keep {
 		ps, ok := spec.Programs[name]
 		if !ok {

@@ -1,8 +1,13 @@
 package net
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -43,7 +48,8 @@ func TestTLSPrograms_EachBelongsToOneMethod(t *testing.T) {
 
 // The programs selected for loading depend only on the configured methods:
 // exactly the common ones and those of each configured method, with the
-// maps they reference and no others. Claude Code's tls-symbols loads no Go,
+// maps they reference and the maps userspace uses for those methods, and no
+// others. Claude Code's tls-symbols loads no Go,
 // rustls or _ex program and none of their rings.
 func TestSelectTLSPrograms_OnlyTheConfiguredMethods(t *testing.T) {
 	all := []string{MethodTLSSymbols, MethodOpenSSLEx, MethodRustlsAEAD, MethodGoCrypto}
@@ -71,6 +77,11 @@ func TestSelectTLSPrograms_OnlyTheConfiguredMethods(t *testing.T) {
 			t.Errorf("%v: programs %v, want %v", methods, got, want)
 		}
 		wantMaps := map[string]bool{}
+		for _, m := range append([]string{""}, methods...) {
+			for _, n := range tlsUserMaps[m] {
+				wantMaps[n] = true
+			}
+		}
 		for _, name := range want {
 			for _, ins := range full.Programs[name].Instructions {
 				if ref := ins.Reference(); full.Maps[ref] != nil {
@@ -159,4 +170,142 @@ func hasJumpBack(insns asm.Instructions) bool {
 		}
 	}
 	return false
+}
+
+// tlsFuncMethods says for which content methods each function of the
+// package that touches a map of the TLS objects runs: "" for every capture
+// with content. kernelCounters reads counters that may be absent.
+var tlsFuncMethods = map[string][]string{
+	"prepareTLS":           {""},
+	"TrackPID":             {""},
+	"prepareSSL":           {MethodTLSSymbols, MethodOpenSSLEx},
+	"attachAndValidateTLS": {MethodTLSSymbols, MethodOpenSSLEx},
+	"validateRead":         {MethodTLSSymbols, MethodOpenSSLEx},
+	"prepareAEAD":          {MethodRustlsAEAD},
+	"prepareGo":            {MethodGoCrypto},
+}
+
+// Every access the package's code makes to a map of the TLS objects is to
+// a map selected for every method its function runs for (tlsUserMaps), or,
+// in kernelCounters, to a counter it reads only when loaded; a function not
+// classified fails the test. So no map userspace uses for a configured
+// method can be left unloaded.
+func TestTLSUserMaps_CoverEveryAccess(t *testing.T) {
+	tags := map[string]string{} // field name -> map name
+	mt := reflect.TypeOf(tlsbpfMaps{})
+	for i := 0; i < mt.NumField(); i++ {
+		tags[mt.Field(i).Name] = mt.Field(i).Tag.Get("ebpf")
+	}
+	user := map[string]map[string]bool{}
+	for m, names := range tlsUserMaps {
+		user[m] = map[string]bool{}
+		for _, n := range names {
+			user[m][n] = true
+		}
+	}
+	counters := map[string]bool{}
+	for _, n := range tlsCounterMaps {
+		counters[n] = true
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	seen := 0
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") || strings.HasPrefix(path, "tlsbpf_") || strings.HasPrefix(path, "bpf_") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				inner, ok := sel.X.(*ast.SelectorExpr)
+				if !ok || inner.Sel.Name != "tlsObjs" {
+					return true
+				}
+				name, isMap := tags[sel.Sel.Name]
+				if !isMap {
+					return true
+				}
+				seen++
+				fn := fd.Name.Name
+				at := fset.Position(sel.Pos())
+				if fn == "kernelCounters" {
+					if !counters[name] {
+						t.Errorf("%s: kernelCounters reads %s, not in tlsCounterMaps", at, name)
+					}
+					return true
+				}
+				methods, ok := tlsFuncMethods[fn]
+				if !ok {
+					t.Errorf("%s: %s touches map %s and is not in tlsFuncMethods", at, fn, name)
+					return true
+				}
+				for _, m := range methods {
+					if !user[""][name] && !user[m][name] {
+						t.Errorf("%s: %s touches map %s, which tlsUserMaps does not select for %q", at, fn, name, m)
+					}
+				}
+				return true
+			})
+		}
+	}
+	if seen < 10 {
+		t.Errorf("found %d map accesses; the scan is broken", seen)
+	}
+}
+
+// Every map in the userspace tables exists in the object, and selecting
+// any combination of methods keeps the user maps of those methods.
+func TestSelectTLSPrograms_KeepsTheUserMaps(t *testing.T) {
+	full, err := loadTlsbpf()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for m, names := range tlsUserMaps {
+		for _, n := range names {
+			if full.Maps[n] == nil {
+				t.Errorf("tlsUserMaps[%q] names %s, not in the object", m, n)
+			}
+		}
+	}
+	for _, n := range tlsCounterMaps {
+		if full.Maps[n] == nil {
+			t.Errorf("tlsCounterMaps names %s, not in the object", n)
+		}
+	}
+	all := []string{MethodTLSSymbols, MethodOpenSSLEx, MethodRustlsAEAD, MethodGoCrypto}
+	for mask := 0; mask < 1<<len(all); mask++ {
+		methods := []string{""}
+		var configured []string
+		for i, m := range all {
+			if mask&(1<<i) != 0 {
+				methods = append(methods, m)
+				configured = append(configured, m)
+			}
+		}
+		spec, _ := loadTlsbpf()
+		if err := selectTLSPrograms(spec, configured); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range methods {
+			for _, n := range tlsUserMaps[m] {
+				if spec.Maps[n] == nil {
+					t.Errorf("%v: map %s, which userspace uses for %q, not selected", configured, n, m)
+				}
+			}
+		}
+	}
 }

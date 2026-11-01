@@ -172,8 +172,13 @@ func (o *Observer) validateRead(timeout time.Duration) {
 			o.readActive.Store(true)
 			// From here a fault reading SSL_read_ex's byte count is a
 			// lost response, counted (tls-openssl-ex).
-			var zero, on uint32 = 0, 1
-			_ = o.tlsObjs.SslReadCounting.Update(&zero, &on, ebpf.UpdateAny)
+			// The map is selected for both SSL-side methods
+			// (tlsUserMaps); the check keeps an object loaded without it
+			// harmless.
+			if m := o.tlsObjs.SslReadCounting; m != nil {
+				var zero, on uint32 = 0, 1
+				_ = m.Update(&zero, &on, ebpf.UpdateAny)
+			}
 			_ = o.tlsCache.Store(o.tlsBuildID, tlsoffset.Target{Path: o.plan.sslPath, BuildID: o.tlsBuildID, SSLWrite: o.writeOffset, SSLRead: cand.FileOff})
 		}
 		timer := time.NewTimer(timeout)
