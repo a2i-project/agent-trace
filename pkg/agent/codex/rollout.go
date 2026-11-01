@@ -286,7 +286,17 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 			continue // a subagent's copy of its parent's metadata
 		}
 		if s := out.meta.SubagentHistoryOrdinal; s != nil && (rec.Ordinal == nil || *rec.Ordinal < *s) {
-			continue // the parent's history the subagent starts with
+			// The parent's history the subagent starts with: no claim, but
+			// its first model request carries it.
+			if rec.Type == "response_item" {
+				var ri responseItem
+				if err := json.Unmarshal(rec.Payload, &ri); err != nil {
+					rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("%s:%d: %v", name, line, err))
+					continue
+				}
+				reqs.replayed(ri.Type, rec.Payload)
+			}
+			continue
 		}
 		ts, err := time.Parse(time.RFC3339Nano, rec.Timestamp)
 		if err != nil {

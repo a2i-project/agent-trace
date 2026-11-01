@@ -32,8 +32,10 @@ func digest(t *testing.T, payload string) models.ModelItemDigest {
 // sends recorded since the previous one (tool outputs, user, developer and
 // system messages, additional_tools), continuing the response the previous
 // one named. The model's own items (reasoning, calls, assistant messages)
-// are not sent. A subagent's replayed history is skipped, and its requests
-// follow the main thread's (I-91).
+// are not sent. A subagent's first request carries the history it replays,
+// every response item before its history start, the model's own included,
+// but not the parent's token usage records; its requests follow the main
+// thread's (I-91).
 func TestParseReadsTheModelRequests(t *testing.T) {
 	dir := t.TempDir()
 	tools := `{"type":"additional_tools","id":"at_1","role":"developer","tools":[{"name":"exec"}]}`
@@ -56,14 +58,16 @@ func TestParseReadsTheModelRequests(t *testing.T) {
 		usage("2026-10-31T23:40:20.500Z", "10", thread, "resp_2"),
 		itemAt("2026-10-31T23:40:20.600Z", 1793490020600, `{"type":"SubAgentActivity","id":"f1","kind":"started","agent_thread_id":"sub-1"}`),
 	)
-	subMeta := `{"timestamp":"2026-10-31T23:40:21.000Z","ordinal":0,"type":"session_meta","payload":{"id":"sub-1","session_id":"` + thread + `","cli_version":"0.166.0","subagent_history_start_ordinal":3}}`
+	subMeta := `{"timestamp":"2026-10-31T23:40:21.000Z","ordinal":0,"type":"session_meta","payload":{"id":"sub-1","session_id":"` + thread + `","cli_version":"0.166.0","subagent_history_start_ordinal":5}}`
 	subUser := `{"type":"message","id":"m_9","role":"user","content":[{"type":"input_text","text":"sub task"}]}`
 	write(t, filepath.Join(dir, "task.rollout", "subagents", "a.jsonl"),
 		subMeta,
 		respItem("2026-10-31T23:40:21.000Z", "1", user),
-		usage("2026-10-31T23:40:21.000Z", "2", thread, "resp_1"),
-		respItem("2026-10-31T23:40:22.000Z", "3", subUser),
-		usage("2026-10-31T23:40:23.000Z", "4", "sub-1", "resp_s1"),
+		respItem("2026-10-31T23:40:21.000Z", "2", reasoning),
+		usage("2026-10-31T23:40:21.000Z", "3", thread, "resp_1"),
+		respItem("2026-10-31T23:40:21.000Z", "4", callItem),
+		respItem("2026-10-31T23:40:22.000Z", "5", subUser),
+		usage("2026-10-31T23:40:23.000Z", "6", "sub-1", "resp_s1"),
 	)
 	_, rep, err := Adapter{}.Parse(main)
 	if err != nil || len(rep.ParseErrors) != 0 {
@@ -83,7 +87,7 @@ func TestParseReadsTheModelRequests(t *testing.T) {
 	want := []req{
 		{0, "", "resp_1", []models.ModelItemDigest{digest(t, tools), digest(t, dev), digest(t, user)}, at("2026-10-31T23:40:18.500Z")},
 		{1, "resp_1", "resp_2", []models.ModelItemDigest{digest(t, out)}, at("2026-10-31T23:40:20.500Z")},
-		{2, "", "resp_s1", []models.ModelItemDigest{digest(t, subUser)}, at("2026-10-31T23:40:23.000Z")},
+		{2, "", "resp_s1", []models.ModelItemDigest{digest(t, user), digest(t, reasoning), digest(t, callItem), digest(t, subUser)}, at("2026-10-31T23:40:23.000Z")},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("requests\n%+v\nwant\n%+v", got, want)

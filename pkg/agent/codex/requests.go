@@ -49,6 +49,18 @@ func (r *requestReader) item(typ, role string, payload json.RawMessage) {
 	}
 }
 
+// replayed takes one response_item payload of the history a subagent
+// starts with, the records before its history start ordinal: its first
+// request carries every such item, the model's own included, before the
+// items the subagent's own records add (I-91).
+func (r *requestReader) replayed(typ string, payload json.RawMessage) {
+	if strings.HasSuffix(typ, "_output") {
+		r.pending = append(r.pending, withoutEmptyText(payload))
+		return
+	}
+	r.pending = append(r.pending, append(json.RawMessage(nil), payload...))
+}
+
 // withoutEmptyText is a tool output's payload as Codex sends it: its
 // "output" list without the parts that are exactly an empty input_text
 // ({"type":"input_text","text":""}), which Codex leaves out of the request
