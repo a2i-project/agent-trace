@@ -669,6 +669,12 @@ var versionLock = regexp.MustCompile(`^/(?:home/[^/]+|root)/\.local/state/claude
 // when every event of the process up to both the close and the rename is an
 // open, write or close of the lock or the directory's ambiguous rename. An
 // agent's file in this shape is not folded and stays visible.
+//
+// The one-batch bound stays, unlike the named shape's, which takes the
+// create at any distance (I-104): this shape exists only in captures made
+// before P-25, every one of which folds within it, and its open names the
+// lock and carries the lock's hash, not the empty-content hash that shows
+// an open created its file.
 func foldNamedLockRewrite(g models.GroundTruth, used []bool, replace map[int]models.GroundTruth) {
 	for o, open := range g {
 		if used[o] || open.ActionType != models.FileOpen || open.PID == 0 || !versionLock.MatchString(open.Target) {

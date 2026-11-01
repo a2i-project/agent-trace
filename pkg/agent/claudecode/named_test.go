@@ -199,6 +199,43 @@ func TestNamedFoldIgnoresInterleavedEvents(t *testing.T) {
 	}
 }
 
+// I-104: the create of a named replace is taken whatever its distance in
+// time from the open, as I-99 and I-101 take a create for Codex and agy:
+// where the probe's reads split a burst of records depends on load (P-18),
+// so the create and the open may come in two batches, microseconds or more
+// apart. The fold judges the names and the order of the process's events
+// on the temporary and the target, never their time.
+func TestNamedFoldTakesACreateReadInAnEarlierBatch(t *testing.T) {
+	const x = "/w/a.txt"
+	for name, gap := range map[string]time.Duration{
+		"one batch":                          time.Nanosecond,
+		"the next batch, 11 microseconds on": 11 * time.Microsecond,
+		"a second later":                     time.Second,
+	} {
+		for shape, g := range map[string]models.GroundTruth{
+			"read before the rename": namedWrite(10, x, "100.5b5474087431", "sha256:h", 100),
+			"read after the rename":  namedWriteMerged(10, x, "100.5b5474087431", "sha256:h", 100),
+			"the version lock":       namedWrite(10, "/home/u/.local/state/claude/locks/2.1.306.lock", "68f796c1", "sha256:h", 100),
+		} {
+			t.Run(name+"/"+shape, func(t *testing.T) {
+				// Every event from the open on moves by the gap; in the
+				// merged shape the source stays with the create.
+				first := 1
+				if g[1].ActionType == models.FileRename {
+					first = 2
+				}
+				for i := first; i < len(g); i++ {
+					g[i].Timestamp = g[i].Timestamp.Add(gap)
+				}
+				got := Adapter{}.NormalizeStream(g)
+				if len(got) != 1 || got[0].ActionType != models.FileWrite || got[0].OutputHash == nil || *got[0].OutputHash != "sha256:h" || !got[0].Timestamp.Equal(at(10)) {
+					t.Errorf("folded = %v, want one write at the create's time with the close's hash", targets(got))
+				}
+			})
+		}
+	}
+}
+
 // I-76: the process's events on other paths may also lie between the create
 // and the open, and between a merged source and the create, as they may
 // after the open. They stay; any event of the process on the target or on
