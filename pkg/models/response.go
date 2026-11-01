@@ -47,6 +47,20 @@ type ResponseAttestation struct {
 	// SSE summarizes a text/event-stream body. Nil for any other body, and
 	// for a stream whose content coding the probe cannot decode.
 	SSE *SSESummary `json:"sse,omitempty"`
+	// WebSocket summarizes the server messages of a WebSocket turn: the
+	// messages a server sent on an upgraded connection between two client
+	// messages (N-41). Nil for an HTTP response.
+	WebSocket *WebSocketSummary `json:"websocket,omitempty"`
+}
+
+// WebSocketSummary counts the server messages of one WebSocket turn.
+type WebSocketSummary struct {
+	// Messages is the number of complete data messages.
+	Messages int `json:"messages"`
+	// Types counts them by the top-level JSON "type" of a text message,
+	// "(text)" or "(binary)" without one. At most 16 names are kept; the
+	// others are counted under "(other)".
+	Types map[string]int `json:"types,omitempty"`
 }
 
 // SSESummary counts the events of a server-sent event stream.

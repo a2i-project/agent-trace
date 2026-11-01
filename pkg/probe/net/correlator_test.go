@@ -12,10 +12,11 @@ import (
 
 func newTestObserver() *Observer {
 	return &Observer{
-		conns:    make(map[uint64]*connection),
-		tlsConns: make(map[sslKey]*tlsConn),
-		readOK:   make(chan struct{}),
-		events:   make(chan models.GroundTruthEvent, 16),
+		conns:     make(map[uint64]*connection),
+		tlsConns:  make(map[sslKey]*tlsConn),
+		aeadBound: make(map[sslKey]uint64),
+		readOK:    make(chan struct{}),
+		events:    make(chan models.GroundTruthEvent, 16),
 	}
 }
 

@@ -80,6 +80,10 @@ type watchConfig struct {
 	// for content capture (Tier 3 S5+). Empty means identity-only (SNI only).
 	NetExePath string
 
+	// NetContent lists further content methods by name and the file each
+	// hooks (--net-content METHOD=PATH, N-39).
+	NetContent []probenet.ContentMethod
+
 	// NetCachePath is the JSON cache file for pre-computed TLS offsets.
 	// Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json when empty.
 	NetCachePath string
@@ -122,6 +126,7 @@ var probeBuilders = map[string]builderFunc{
 		return probenet.New(probenet.Config{
 			EventBufSize: cfg.EventBufSize,
 			ExePath:      cfg.NetExePath,
+			Content:      cfg.NetContent,
 			CachePath:    cfg.NetCachePath,
 		})
 	},
@@ -133,6 +138,48 @@ var probeBuilders = map[string]builderFunc{
 func responseLine(state string, nc probenet.Coverage) string {
 	return fmt.Sprintf("net probe responses: state=%s responses=%d unpaired=%d unattributed=%d incomplete=%d truncated=%d unparsed=%d sseEvents=%d readsUnvalidated=%d readFaults=%d readDrops=%d",
 		state, nc.Responses, nc.ResponsesUnpaired, nc.ResponsesUnattributed, nc.ResponsesIncomplete, nc.ResponsesTruncated, nc.ResponsesUnparsed, nc.SSEEvents, nc.ReadsUnvalidated, nc.ReadFaults, nc.ReadDrops)
+}
+
+// contentMethodsFlag collects --net-content METHOD=PATH flags.
+type contentMethodsFlag []probenet.ContentMethod
+
+func (f *contentMethodsFlag) String() string {
+	var parts []string
+	for _, m := range *f {
+		parts = append(parts, m.Method+"="+m.Path)
+	}
+	return strings.Join(parts, ",")
+}
+
+func (f *contentMethodsFlag) Set(v string) error {
+	method, path, ok := strings.Cut(v, "=")
+	if !ok || method == "" || path == "" {
+		return fmt.Errorf("want METHOD=PATH, got %q", v)
+	}
+	*f = append(*f, probenet.ContentMethod{Method: method, Path: path})
+	return nil
+}
+
+// contentLines are the net probe's lines for its content methods (N-39) and
+// WebSocket counts (N-41): one line with each method's request and response
+// state, and one with the WebSocket and rustls counters when any is above
+// zero. None without content capture.
+func contentLines(d *models.ProbeDiagnostics) []string {
+	if d == nil || len(d.ContentMethods) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("net probe content methods:")
+	for _, name := range sortedKeys(d.ContentMethods) {
+		m := d.ContentMethods[name]
+		fmt.Fprintf(&b, " %s requests=%s responses=%s;", name, m.Requests, m.Responses)
+	}
+	lines := []string{strings.TrimSuffix(b.String(), ";")}
+	if c := d.NetContent; c != nil && c.WebSockets+c.WSAccepted+c.WSRefused+c.WSUnparsed+c.AEADUnvalidated+c.AEADUnbound+c.AEADRebound+c.AEADUnpaired > 0 {
+		lines = append(lines, fmt.Sprintf("net probe websocket: upgrades=%d accepted=%d requests=%d serverMessages=%d refused=%d unparsed=%d aeadUnvalidated=%d aeadUnbound=%d aeadRebound=%d aeadUnpaired=%d",
+			c.WebSockets, c.WSAccepted, c.WSRequests, c.WSServerMessages, c.WSRefused, c.WSUnparsed, c.AEADUnvalidated, c.AEADUnbound, c.AEADRebound, c.AEADUnpaired))
+	}
+	return lines
 }
 
 // diagnosticsLine is a probe's occupancy and content counters on one line
@@ -397,6 +444,7 @@ func main() {
 	var workspace, probesFlag, procFilter, out string
 	var bufSize, rootPID int
 	var netExePath, netCachePath string
+	var netContent contentMethodsFlag
 	var agentName, agentHome string
 
 	flag.StringVar(&workspace, "workspace", "", "Path to the workspace to watch (fs probe)")
@@ -406,6 +454,7 @@ func main() {
 	flag.IntVar(&bufSize, "buf", 4096, "Per-probe event channel buffer size")
 	flag.IntVar(&rootPID, "root-pid", 0, "Attach the proc probe's ancestry root to this already-running PID instead of launching the agent. RACE: anything that PID did before this call is invisible to the proc probe (the fs probe is unaffected). Mutually exclusive with a trailing -- <command>.")
 	flag.StringVar(&netExePath, "net-exe-path", "", "Path to the TLS library (e.g. libssl.so.3) for SSL_write content capture (net probe, Tier 3 S5+). Empty = identity-only (SNI).")
+	flag.Var(&netContent, "net-content", "A content method and the file it hooks, as METHOD=PATH (net probe; repeatable): "+probenet.MethodTLSSymbols+" (as --net-exe-path), "+probenet.MethodOpenSSLEx+", "+probenet.MethodRustlsAEAD+". At most one of the first two.")
 	flag.StringVar(&netCachePath, "net-cache-path", "", "JSON cache file for pre-computed TLS offsets (net probe). Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json.")
 	flag.StringVar(&agentName, "agent", "", "Adapter whose security-sensitive harness files are snapshotted at start and stop ("+strings.Join(agent.Names(), ", ")+"). Default: the files of every adapter")
 	flag.StringVar(&agentHome, "agent-home", "", "Home directory of the user the agent runs as, which a declared ~/ file resolves against. Default: the home of the user who ran sudo ($SUDO_UID), else root's")
@@ -426,7 +475,7 @@ func main() {
 		log.Fatal(err)
 	}
 	opts := watchOptions{
-		cfg:       watchConfig{Workspace: workspace, ProcFilter: procFilter, EventBufSize: bufSize, NetExePath: netExePath, NetCachePath: netCachePath},
+		cfg:       watchConfig{Workspace: workspace, ProcFilter: procFilter, EventBufSize: bufSize, NetExePath: netExePath, NetContent: netContent, NetCachePath: netCachePath},
 		probes:    probesFlag,
 		out:       out,
 		rootPID:   rootPID,
@@ -784,9 +833,13 @@ func runWatch(opts watchOptions) error {
 		if err := netObs.TLSAttachError(); err != nil {
 			log.Printf("net probe TLS attach warning: %v", err)
 		}
-		fmt.Println(responseLine(netObs.CaptureCoverage().Responses, nc))
+		netCov := netObs.CaptureCoverage()
+		fmt.Println(responseLine(netCov.Responses, nc))
 		if err := netObs.ResponseAttachError(); err != nil {
 			log.Printf("net probe response capture warning: %v", err)
+		}
+		for _, l := range contentLines(netCov.Diagnostics) {
+			fmt.Println(l)
 		}
 	}
 

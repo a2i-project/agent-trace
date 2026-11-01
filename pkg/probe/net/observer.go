@@ -121,6 +121,63 @@ type Config struct {
 	// SSL_write offset to produce a parseable HTTP request before trying
 	// the next candidate (N-D4). Defaults to 5s.
 	ValidationTimeout time.Duration
+
+	// Content lists content methods by name with the executable or library
+	// each hooks, as the agent's profile chooses them (N-39): at most one
+	// of MethodTLSSymbols and MethodOpenSSLEx (the SSL side, which ExePath
+	// also sets as MethodTLSSymbols), and MethodRustlsAEAD. Empty with no
+	// ExePath: identity-only.
+	Content []ContentMethod
+}
+
+// Content method names, as config/agents.json names them (N-39).
+const (
+	MethodTLSSymbols = "tls-symbols"    // SSL_write and SSL_read
+	MethodOpenSSLEx  = "tls-openssl-ex" // SSL_write_ex and SSL_read_ex
+	MethodRustlsAEAD = "tls-rustls-aead"
+)
+
+// ContentMethod is one content method and the file it hooks.
+type ContentMethod struct {
+	Method string
+	Path   string
+}
+
+// contentPlan is Config's content methods resolved: the SSL side's method
+// and file, and the rustls file; "" for a side not configured.
+type contentPlan struct {
+	sslMethod, sslPath string
+	aeadPath           string
+}
+
+// planContent resolves cfg's content methods, refusing an unknown method,
+// a method without a path, or two SSL-side methods.
+func planContent(cfg Config) (contentPlan, error) {
+	var p contentPlan
+	ms := cfg.Content
+	if cfg.ExePath != "" {
+		ms = append([]ContentMethod{{Method: MethodTLSSymbols, Path: cfg.ExePath}}, ms...)
+	}
+	for _, m := range ms {
+		if m.Path == "" {
+			return p, fmt.Errorf("content method %s names no file", m.Method)
+		}
+		switch m.Method {
+		case MethodTLSSymbols, MethodOpenSSLEx:
+			if p.sslMethod != "" {
+				return p, fmt.Errorf("content methods %s and %s both hook SSL calls; a capture takes one", p.sslMethod, m.Method)
+			}
+			p.sslMethod, p.sslPath = m.Method, m.Path
+		case MethodRustlsAEAD:
+			if p.aeadPath != "" {
+				return p, fmt.Errorf("content method %s given twice", m.Method)
+			}
+			p.aeadPath = m.Path
+		default:
+			return p, fmt.Errorf("unknown content method %q (%s, %s or %s)", m.Method, MethodTLSSymbols, MethodOpenSSLEx, MethodRustlsAEAD)
+		}
+	}
+	return p, nil
 }
 
 // connection is per-connection correlator state, keyed by the socket inode
@@ -282,6 +339,29 @@ type Observer struct {
 
 	tlsConns map[sslKey]*tlsConn
 	coverage Coverage
+
+	// plan is the content methods New resolved from cfg.
+	plan contentPlan
+	// writeProgs and readProgs are the entry and return programs of the
+	// SSL side's method: SSL_write and SSL_read, or their _ex forms.
+	writeProgs, readProgs [2]*ebpf.Program
+
+	// The rustls side (N-39, N-40), set up by prepareAEAD; aeadReader is
+	// nil without it. aeadLinks are its uprobes and its sys_enter hook.
+	aeadExe      *link.Executable
+	aeadLinks    []link.Link
+	aeadReader   *ringbuf.Reader
+	aeadRing     ringMeter
+	aeadRingSize uint64
+	aeadDraining atomic.Bool
+	aeadScan     tlsoffset.AEADResult
+	// Owned by correlate: whether a rustls write frame began with an
+	// HTTP/1.x request line and a read frame with a status line, which
+	// validate the located methods; and the first socket each encrypter
+	// was bound to.
+	aeadWriteValid, aeadReadValid bool
+	aeadBound                     map[sslKey]uint64
+	finalAEADDrops                atomic.Uint64
 }
 
 // rawTracepoint is one program and the raw tracepoint it attaches to.
@@ -451,11 +531,19 @@ func New(cfg Config) (*Observer, error) {
 	}
 	o.tracking.Store(cfg.TrackedPID > 0)
 
-	if cfg.ExePath != "" {
+	plan, err := planContent(cfg)
+	if err != nil {
+		_ = reader.Close()
+		closeAll()
+		return nil, err
+	}
+	o.plan = plan
+	o.aeadBound = map[sslKey]uint64{}
+	if plan.sslPath != "" || plan.aeadPath != "" {
 		if err := o.prepareTLS(cfg); err != nil {
 			_ = reader.Close()
 			closeAll()
-			return nil, fmt.Errorf("prepare SSL_write content capture: %w", err)
+			return nil, fmt.Errorf("prepare content capture: %w", err)
 		}
 	}
 
@@ -469,23 +557,123 @@ func New(cfg Config) (*Observer, error) {
 // complete header block; validation only needs the request line.
 var httpRequestLineRE = regexp.MustCompile(`^[A-Z]{2,10} \S+ HTTP/1\.[01]\r\n`)
 
-// prepareTLS loads tls.bpf.c's objects, seeds its tracked_pids, opens the
-// executable and the ssl_events ring buffer, resolves SSL_write candidates
-// in cfg.ExePath, and attaches the uprobe at the first (highest-ranked)
-// candidate. Validation is a separate mandatory step performed by
-// net.Observer.Start, not New, because the process(es) whose traffic will
-// validate a candidate may not exist yet at New time. The first candidate
-// is attached here all the same: a process started after New and tracked
-// before Start (an agent started by watch) can send its first
-// request before Start runs, and a uprobe attached only in Start missed
-// that frame, so validation then waited for a second request that may
-// never come. The frame waits in ssl_events until validation reads it.
+// prepareTLS loads tls.bpf.c's objects, seeds its tracked_pids and
+// attaches its fork and exit tracepoints, then prepares each configured
+// side: prepareSSL for SSL_write and SSL_read or their _ex forms,
+// prepareAEAD for rustls (N-39). A side that cannot be prepared (its file
+// unreadable, its anchors not found) fails New: the method is refused,
+// never silently dropped.
 func (o *Observer) prepareTLS(cfg Config) (err error) {
-	scan, err := tlsoffset.Scan(cfg.ExePath)
+	tlsSpec, err := loadTlsbpf()
 	if err != nil {
-		return fmt.Errorf("scan ELF for SSL_write: %w", err)
+		return fmt.Errorf("load tls bpf spec: %w", err)
 	}
-	candidates, buildID, readCands := scan.Write, scan.BuildID, scan.Read
+	if cfg.TrackedPIDsMax != 0 {
+		tlsSpec.Maps["tracked_pids"].MaxEntries = cfg.TrackedPIDsMax
+	}
+	if o.plan.aeadPath == "" {
+		// The rustls ring is not read: one page instead of 4 MiB.
+		tlsSpec.Maps["aead_events"].MaxEntries = uint32(os.Getpagesize())
+	}
+	if err := tlsSpec.LoadAndAssign(&o.tlsObjs, nil); err != nil {
+		return fmt.Errorf("load tls eBPF objects: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			closeLinks(o.aeadLinks)
+			o.aeadLinks = nil
+			if o.aeadReader != nil {
+				_ = o.aeadReader.Close()
+				o.aeadReader = nil
+			}
+			closeLinks(o.firstLinks)
+			closeLinks(o.firstReadLinks)
+			o.firstLinks, o.firstReadLinks = nil, nil
+			if o.sslReader != nil {
+				_ = o.sslReader.Close()
+				o.sslReader = nil
+			}
+			if o.tlsForkLink != nil {
+				_ = o.tlsForkLink.Close()
+				o.tlsForkLink = nil
+			}
+			if o.tlsExitLink != nil {
+				_ = o.tlsExitLink.Close()
+				o.tlsExitLink = nil
+			}
+			o.exe = nil
+			_ = o.tlsObjs.Close()
+			o.tlsObjs = tlsbpfObjects{}
+			o.tlsTracked = nil
+		}
+	}()
+
+	tlsTracked := &trackedCounter{stat: o.tlsObjs.TrackedStat, seededMap: o.tlsObjs.TrackedSeeded, capacity: o.tlsObjs.TrackedPids.MaxEntries()}
+	if cfg.TrackedPID > 0 {
+		p := uint32(cfg.TrackedPID)
+		one := uint8(1)
+		if err := tlsTracked.seed(o.tlsObjs.TrackedPids, &p, &one); err != nil {
+			return fmt.Errorf("update tls tracked_pids: %w", err)
+		}
+	}
+	o.tlsTracked = tlsTracked
+
+	if o.tlsForkLink, err = link.AttachRawTracepoint(link.RawTracepointOptions{Name: "task_newtask", Program: o.tlsObjs.HandleFork}); err != nil {
+		return fmt.Errorf("attach tls task_newtask: %w", err)
+	}
+	if o.tlsExitLink, err = link.AttachRawTracepoint(link.RawTracepointOptions{Name: "sched_process_exit", Program: o.tlsObjs.HandleExit}); err != nil {
+		return fmt.Errorf("attach tls sched_process_exit: %w", err)
+	}
+	o.sslRingSize = uint64(o.tlsObjs.SslEvents.MaxEntries())
+
+	if o.plan.sslPath != "" {
+		if err := o.prepareSSL(cfg); err != nil {
+			return err
+		}
+	}
+	if o.plan.aeadPath != "" {
+		if err := o.prepareAEAD(); err != nil {
+			return fmt.Errorf("prepare %s content capture: %w", MethodRustlsAEAD, err)
+		}
+	}
+	return nil
+}
+
+// prepareSSL resolves the SSL side's write and read candidates in its file,
+// by symbol or by the method's locator (tlsoffset.Scan for tls-symbols,
+// tlsoffset.ScanOpenSSLEx for tls-openssl-ex), opens the file and the
+// ssl_events reader, and attaches the write probes at the first
+// (highest-ranked) candidate. Validation is a separate mandatory step
+// performed by net.Observer.Start, not New, because the process(es) whose
+// traffic will validate a candidate may not exist yet at New time. The first
+// candidate is attached here all the same: a process started after New and
+// tracked before Start (an agent started by watch) can send its first
+// request before Start runs, and a uprobe attached only in Start missed that
+// frame, so validation then waited for a second request that may never
+// come. The frame waits in ssl_events until validation reads it.
+func (o *Observer) prepareSSL(cfg Config) error {
+	path := o.plan.sslPath
+	scan := tlsoffset.Scan
+	cacheKey := func(id string) string { return id }
+	o.writeProgs = [2]*ebpf.Program{o.tlsObjs.ProbeSslWrite, o.tlsObjs.ProbeSslWriteReturn}
+	o.readProgs = [2]*ebpf.Program{o.tlsObjs.ProbeSslReadEntry, o.tlsObjs.ProbeSslReadReturn}
+	if o.plan.sslMethod == MethodOpenSSLEx {
+		scan = tlsoffset.ScanOpenSSLEx
+		// Kept apart from tls-symbols' offsets for the same build.
+		cacheKey = func(id string) string {
+			if id == "" {
+				return ""
+			}
+			return id + "/" + MethodOpenSSLEx
+		}
+		o.writeProgs = [2]*ebpf.Program{o.tlsObjs.ProbeSslWriteEx, o.tlsObjs.ProbeSslWriteExReturn}
+		o.readProgs = [2]*ebpf.Program{o.tlsObjs.ProbeSslReadExEntry, o.tlsObjs.ProbeSslReadExReturn}
+	}
+	res, err := scan(path)
+	if err != nil {
+		return fmt.Errorf("scan %s for %s: %w", path, o.plan.sslMethod, err)
+	}
+	candidates, buildID, readCands := res.Write, cacheKey(res.BuildID), res.Read
 
 	cachePath := cfg.CachePath
 	if cachePath == "" {
@@ -499,61 +687,17 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 		}
 	}
 	if len(candidates) == 0 {
-		return fmt.Errorf("no SSL_write candidates found in %s", cfg.ExePath)
+		return fmt.Errorf("no write candidates found in %s", path)
 	}
 
-	tlsSpec, err := loadTlsbpf()
+	exe, err := link.OpenExecutable(path)
 	if err != nil {
-		return fmt.Errorf("load tls bpf spec: %w", err)
+		return fmt.Errorf("open executable %s: %w", path, err)
 	}
-	if cfg.TrackedPIDsMax != 0 {
-		tlsSpec.Maps["tracked_pids"].MaxEntries = cfg.TrackedPIDsMax
-	}
-	if err := tlsSpec.LoadAndAssign(&o.tlsObjs, nil); err != nil {
-		return fmt.Errorf("load tls eBPF objects: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = o.tlsObjs.Close()
-		}
-	}()
-
-	tlsTracked := &trackedCounter{stat: o.tlsObjs.TrackedStat, seededMap: o.tlsObjs.TrackedSeeded, capacity: o.tlsObjs.TrackedPids.MaxEntries()}
-	if cfg.TrackedPID > 0 {
-		p := uint32(cfg.TrackedPID)
-		one := uint8(1)
-		if err := tlsTracked.seed(o.tlsObjs.TrackedPids, &p, &one); err != nil {
-			return fmt.Errorf("update tls tracked_pids: %w", err)
-		}
-	}
-
-	exe, err := link.OpenExecutable(cfg.ExePath)
-	if err != nil {
-		return fmt.Errorf("open executable %s: %w", cfg.ExePath, err)
-	}
-
 	sslReader, err := ringbuf.NewReader(o.tlsObjs.SslEvents)
 	if err != nil {
 		return fmt.Errorf("open ssl ring buffer: %w", err)
 	}
-
-	tlsForkLink, err := link.AttachRawTracepoint(link.RawTracepointOptions{Name: "task_newtask", Program: o.tlsObjs.HandleFork})
-	if err != nil {
-		_ = sslReader.Close()
-		return fmt.Errorf("attach tls task_newtask: %w", err)
-	}
-
-	tlsExitLink, err := link.AttachRawTracepoint(link.RawTracepointOptions{Name: "sched_process_exit", Program: o.tlsObjs.HandleExit})
-	if err != nil {
-		_ = tlsForkLink.Close()
-		_ = sslReader.Close()
-		return fmt.Errorf("attach tls sched_process_exit: %w", err)
-	}
-
-	o.tlsForkLink = tlsForkLink
-	o.tlsExitLink = tlsExitLink
-	o.tlsTracked = tlsTracked
-	o.sslRingSize = uint64(o.tlsObjs.SslEvents.MaxEntries())
 	o.exe = exe
 	o.sslReader = sslReader
 	o.tlsCache = cache
@@ -565,7 +709,7 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	if ls, err := o.attachWrite(candidates[0].FileOff); err == nil {
 		o.firstLinks = ls
 	}
-	// The SSL_read probes at the first read candidate, for the same reason:
+	// The read probes at the first read candidate, for the same reason:
 	// the response to a request sent before Start must not be missed.
 	if len(o.readCands) > 0 {
 		if ls, err := o.attachRead(o.readCands[0].FileOff); err == nil {
@@ -638,13 +782,13 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 		// for a symbol-resolution bug that isn't there.
 		switch {
 		case stopped:
-			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s before the capture stopped", cfg.ExePath)
+			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s before the capture stopped", o.plan.sslPath)
 		case framesSeen > 0:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): captured %d frame(s), none began with an HTTP/1.x request line -- HTTP/2 plaintext cannot validate an offset, and its content is not parsed",
-				cfg.ExePath, len(o.tlsCandidates), framesSeen)
+				o.plan.sslPath, len(o.tlsCandidates), framesSeen)
 		default:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): no frame was captured from a tracked process within %s",
-				cfg.ExePath, len(o.tlsCandidates), timeout)
+				o.plan.sslPath, len(o.tlsCandidates), timeout)
 		}
 		_ = o.sslReader.Close()
 		return
@@ -661,7 +805,7 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 	}
 	o.tlsActive = true
 	o.writeOffset = chosen.FileOff
-	target := tlsoffset.Target{Path: cfg.ExePath, BuildID: o.tlsBuildID, SSLWrite: chosen.FileOff}
+	target := tlsoffset.Target{Path: o.plan.sslPath, BuildID: o.tlsBuildID, SSLWrite: chosen.FileOff}
 	if prev := o.tlsCache.Lookup(o.tlsBuildID); prev != nil && prev.SSLWrite == chosen.FileOff {
 		target.SSLRead = prev.SSLRead // kept until a validation replaces it
 	}
@@ -785,6 +929,7 @@ func (o *Observer) Coverage() Coverage {
 			helloFault: o.finalHelloFaults.Load(),
 			readFault:  o.finalReadFaults.Load(),
 			readDrop:   o.finalReadDrops.Load(),
+			aeadDrop:   o.finalAEADDrops.Load(),
 		}
 	}
 	var k kernelCounts
@@ -798,7 +943,8 @@ func (o *Observer) Coverage() Coverage {
 		}
 	}
 	cov.FaultedReads += k.faulted
-	cov.RingbufDrops += k.netDrop + k.tlsDrop
+	cov.RingbufDrops += k.netDrop + k.tlsDrop + k.aeadDrop
+	cov.AEADRingDrops += k.aeadDrop
 	cov.NetRingDrops += k.netDrop
 	cov.TLSRingDrops += k.tlsDrop
 	cov.UntrackedChildren += k.untracked
@@ -830,6 +976,7 @@ type kernelCounts struct {
 	helloFault uint64 // hello reads that faulted on a connection still waiting for its hello
 	readFault  uint64 // SSL_read buffers that faulted
 	readDrop   uint64 // SSL_read frames the TLS ring buffer discarded
+	aeadDrop   uint64 // rustls frames and bind records the aead_events ring discarded
 }
 
 // kernelCounters sums the counters above. An error means a map could not be
@@ -857,6 +1004,7 @@ func (o *Observer) kernelCounters() (k kernelCounts, err error) {
 	add(&k.untracked, o.tlsObjs.UntrackedCount)
 	add(&k.readFault, o.tlsObjs.ReadFaultCount)
 	add(&k.readDrop, o.tlsObjs.ReadDropCount)
+	add(&k.aeadDrop, o.tlsObjs.AeadDropCount)
 	return k, err
 }
 
@@ -889,19 +1037,18 @@ func (o *Observer) Events() <-chan models.GroundTruthEvent {
 // (N-26).
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 	cov := o.Coverage()
-	content := models.ContentActive
-	switch {
-	case o.cfg.ExePath == "":
-		content = models.ContentIdentityOnly
-	case o.tlsAttachErr != nil:
-		content = models.ContentAttachFailed
-	}
-	responses := models.ContentActive
-	switch {
-	case o.cfg.ExePath == "":
-		responses = models.ContentIdentityOnly
-	case !o.readActive.Load():
-		responses = models.ContentAttachFailed
+	methods := o.contentMethods()
+	content, responses := models.ContentIdentityOnly, models.ContentIdentityOnly
+	if len(methods) > 0 {
+		content, responses = models.ContentActive, models.ContentActive
+		for _, m := range methods {
+			if m.Requests != models.ContentActive {
+				content = models.ContentAttachFailed
+			}
+			if m.Responses != models.ContentActive {
+				responses = models.ContentAttachFailed
+			}
+		}
 	}
 	return models.ProbeCoverage{
 		Ran:               o.tracking.Load(),
@@ -915,13 +1062,35 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		HelloFaults:       cov.HelloFaults,
 		Responses:         responses,
 		ResponseGaps:      cov.ReadFaults + cov.ReadDrops + uint64(cov.ResponsesUnparsed+cov.ResponsesTruncated+cov.ResponsesUnattributed),
-		Diagnostics:       o.diagnostics(cov),
+		Diagnostics:       o.diagnostics(cov, methods),
 	}
+}
+
+// contentMethods is the state of each configured content method (N-39).
+// The SSL side's requests are active once its write offset validated and
+// its responses once its read offset did; the rustls side's once a write
+// frame began with a request line and a read frame with a status line.
+// Read after Stop.
+func (o *Observer) contentMethods() map[string]models.ContentMethodState {
+	state := func(ok bool) string {
+		if ok {
+			return models.ContentActive
+		}
+		return models.ContentAttachFailed
+	}
+	m := map[string]models.ContentMethodState{}
+	if o.plan.sslPath != "" {
+		m[o.plan.sslMethod] = models.ContentMethodState{Requests: state(o.tlsAttachErr == nil && o.tlsActive), Responses: state(o.readActive.Load())}
+	}
+	if o.plan.aeadPath != "" {
+		m[MethodRustlsAEAD] = models.ContentMethodState{Requests: state(o.aeadWriteValid), Responses: state(o.aeadReadValid)}
+	}
+	return m
 }
 
 // diagnostics assembles the occupancy and content counters of the capture
 // (N-33). Diagnostics only: Assess reads none of them.
-func (o *Observer) diagnostics(cov Coverage) *models.ProbeDiagnostics {
+func (o *Observer) diagnostics(cov Coverage, methods map[string]models.ContentMethodState) *models.ProbeDiagnostics {
 	d := &models.ProbeDiagnostics{
 		Rings: map[string]models.RingStats{"net_events": {
 			SizeBytes: o.netRingSize, PeakBytes: o.netRing.peak.Load(), Records: o.netRing.records.Load(), Drops: cov.NetRingDrops,
@@ -942,6 +1111,14 @@ func (o *Observer) diagnostics(cov Coverage) *models.ProbeDiagnostics {
 	if o.sslWrites != nil {
 		d.SSLWrites = o.sslWrites.counts()
 	}
+	if o.aeadReader != nil {
+		d.Rings["aead_events"] = models.RingStats{
+			SizeBytes: o.aeadRingSize, PeakBytes: o.aeadRing.peak.Load(), Records: o.aeadRing.records.Load(), Drops: cov.AEADRingDrops,
+		}
+	}
+	if len(methods) > 0 {
+		d.ContentMethods = methods
+	}
 	return d
 }
 
@@ -957,6 +1134,9 @@ func netContentCounts(c Coverage) *models.NetContentCounts {
 		Responses: c.Responses, ResponsesUnpaired: c.ResponsesUnpaired, ResponsesUnattributed: c.ResponsesUnattributed,
 		ResponsesIncomplete: c.ResponsesIncomplete, ResponsesTruncated: c.ResponsesTruncated, ResponsesUnparsed: c.ResponsesUnparsed,
 		SSEEvents: c.SSEEvents, ReadsUnvalidated: c.ReadsUnvalidated, ReadFaults: c.ReadFaults,
+		WebSockets: c.WebSockets, WSAccepted: c.WSAccepted, WSRequests: c.WSRequests, WSServerMessages: c.WSServerMessages,
+		WSRefused: c.WSRefused, WSUnparsed: c.WSUnparsed,
+		AEADUnvalidated: c.AEADUnvalidated, AEADUnbound: c.AEADUnbound, AEADRebound: c.AEADRebound, AEADUnpaired: c.AEADUnpaired,
 	}
 }
 
@@ -1035,6 +1215,14 @@ func (o *Observer) Stop() error {
 		if o.sslReader != nil {
 			_ = o.sslReader.Flush() // sslFeed drains the TLS ring and returns
 		}
+		// The rustls side: its probes and socket hook detached, its ring
+		// drained the same way.
+		closeLinksReverse(o.aeadLinks)
+		o.aeadLinks = nil
+		o.aeadDraining.Store(true)
+		if o.aeadReader != nil {
+			_ = o.aeadReader.Flush()
+		}
 		<-o.stopped
 		// correlate has returned, so Start has decided whether
 		// validateRead runs; stop it and wait for it to release its links.
@@ -1055,6 +1243,7 @@ func (o *Observer) Stop() error {
 		o.finalHelloFaults.Store(k.helloFault)
 		o.finalReadFaults.Store(k.readFault)
 		o.finalReadDrops.Store(k.readDrop)
+		o.finalAEADDrops.Store(k.aeadDrop)
 		o.kernelCountersFinal.Store(true)
 		if o.netTracked != nil {
 			o.netTracked.snapshot()
@@ -1069,6 +1258,9 @@ func (o *Observer) Stop() error {
 		_ = o.reader.Close()
 		if o.sslReader != nil {
 			_ = o.sslReader.Close() // idempotent
+		}
+		if o.aeadReader != nil {
+			_ = o.aeadReader.Close()
 		}
 		_ = o.tlsObjs.Close()
 		_ = o.objs.Close()
@@ -1125,14 +1317,27 @@ func (o *Observer) correlate() {
 	sslCh := make(chan sslRecord, 64)
 	go o.sslFeed(sslCh)
 
+	var aeadCh chan sslRecord
+	if o.aeadReader != nil {
+		aeadCh = make(chan sslRecord, 64)
+		go o.aeadFeed(aeadCh)
+	}
+
 	// Each feeder's channel is set to nil once it closes: a closed channel is
 	// always ready, so leaving it in the select would spin this goroutine at
 	// 100% CPU until the other feeder finished. A nil channel blocks forever
 	// and drops out of the select instead.
 	defer o.flushOpenConnections()
 	defer o.flushResponses()
-	for netCh != nil || sslCh != nil {
+	for netCh != nil || sslCh != nil || aeadCh != nil {
 		select {
+		case rec, ok := <-aeadCh:
+			if !ok {
+				aeadCh = nil
+				continue
+			}
+			o.handleAEADRecord(rec, time.Unix(0, int64(rec.hdr.TsNs)+o.bootOffsetNs))
+
 		case rec, ok := <-netCh:
 			if !ok {
 				netCh = nil

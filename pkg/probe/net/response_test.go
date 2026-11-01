@@ -231,9 +231,9 @@ func TestTLSConns_Bounded(t *testing.T) {
 func TestCaptureCoverage_ResponseState(t *testing.T) {
 	o := &Observer{}
 	if got := o.CaptureCoverage().Responses; got != models.ContentIdentityOnly {
-		t.Errorf("no ExePath: %q", got)
+		t.Errorf("no content method: %q", got)
 	}
-	o.cfg.ExePath = "/x"
+	o.plan = contentPlan{sslMethod: MethodTLSSymbols, sslPath: "/x"}
 	o.coverage = Coverage{ResponsesUnparsed: 1, ResponsesTruncated: 2, ResponsesUnattributed: 3}
 	cov := o.CaptureCoverage()
 	if cov.Responses != models.ContentAttachFailed || cov.ResponseGaps != 6 {

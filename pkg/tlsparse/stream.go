@@ -30,3 +30,11 @@ func (s *Stream) Len() int {
 func (s *Stream) consume(n int) {
 	s.buf = s.buf[n:]
 }
+
+// Take returns the buffered, unconsumed bytes and empties the stream: what
+// follows the last request on a connection that changes protocol.
+func (s *Stream) Take() []byte {
+	b := s.buf
+	s.buf = nil
+	return b
+}

@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 0dc0cf7 on 2026-10-31.
+Checked against commit 04cb380 on 2026-11-01.
 
 ## Objective
 
@@ -16,7 +16,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry` with its harness-implied markers on an open, a request or a connection, V-33 and V-52, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
 | `pkg/models/coverage.go` | `ProbeCoverage`, `ProbeDiagnostics` (with `RingStats`, `TrackedSetStats`, `NetContentCounts`), `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema`, `MinCoverageSchema` |
 | `pkg/models/fsmounts.go` | `FSMounts`, `Mount`: the fs probe's mount table in `fs_scope` (P-33) |
-| `pkg/models/response.go` | `ResponseAttestation`, `SSESummary`: the record a `net_response` event carries (N-29) |
+| `pkg/models/response.go` | `ResponseAttestation`, `SSESummary`, `WebSocketSummary`: the record a `net_response` event carries (N-29; a WebSocket turn's, N-41) |
 | `pkg/models/sensitive.go` | `SensitiveSnapshot`, `SensitiveFile`, `SensitiveState`, `SensitiveChange` and their state, format and kind names: the snapshot of the harness's sensitive files (V-40) |
 | `pkg/verification/completeness.go` | `Assess`: turns coverage counters into Reasons (event loss) and Notes (content gaps) |
 
@@ -112,13 +112,14 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 
 ### Diagnostics
 
-`ProbeCoverage.Diagnostics` (`models.ProbeDiagnostics`, coverage schema 2) records how close a capture came to its limits, for the experiment record (P-34). `Assess` reads none of it, so it changes no Reason, Note or verdict (`TestDiagnosticsDoNotChangeAssess` in `cmd/watch`). A capture written before it, and a probe that keeps none (fs), has none: not measured, which is not zero. Every count inside is written, zero included. A field added later within schema 2 (`ssl_writes`, N-36) is absent from a capture written before it, which reads as not measured.
+`ProbeCoverage.Diagnostics` (`models.ProbeDiagnostics`, coverage schema 2) records how close a capture came to its limits, for the experiment record (P-34). `Assess` reads none of it, so it changes no Reason, Note or verdict (`TestDiagnosticsDoNotChangeAssess` in `cmd/watch`). A capture written before it, and a probe that keeps none (fs), has none: not measured, which is not zero. Every count inside is written, zero included. A field added later within schema 2 (`ssl_writes`, N-36; `content_methods`, N-39; the WebSocket and rustls counts of `net_content`, N-41, written only when above zero) is absent from a capture written before it, which reads as not measured.
 
 | Field | JSON | Meaning |
 |---|---|---|
-| `Rings` | `rings` | per kernel ring buffer, by map name (proc: `events`; net: `net_events`, and `ssl_events` with content capture): `size_bytes`; `peak_bytes`, the highest occupancy the reader saw, sampled at each record it read (the bytes not yet consumed, the record and its 8-byte header included), a lower bound short of the true peak by at most one record; `records`, the records read; `drops`, the records the kernel discarded because the ring was full (on `ssl_events`, write frames; `RingbufDrops` is the sum over the probe's rings); `read_drops`, on `ssl_events` only, the `SSL_read` frames discarded (part of `ResponseGaps`) |
+| `Rings` | `rings` | per kernel ring buffer, by map name (proc: `events`; net: `net_events`, `ssl_events` with content capture, and `aead_events` with the content method `tls-rustls-aead`): `size_bytes`; `peak_bytes`, the highest occupancy the reader saw, sampled at each record it read (the bytes not yet consumed, the record and its 8-byte header included), a lower bound short of the true peak by at most one record; `records`, the records read; `drops`, the records the kernel discarded because the ring was full (on `ssl_events`, write frames; `RingbufDrops` is the sum over the probe's rings); `read_drops`, on `ssl_events` only, the `SSL_read` frames discarded (part of `ResponseGaps`) |
 | `TrackedSets` | `tracked_sets` | per eBPF object's `tracked_pids` map (proc: `proc`; net: `net`, and `tls` with content capture): `capacity`; `peak`, the highest number of entries, counted by the kernel at each insert plus the pids userspace seeded; `at_stop`, the entries when the probe stopped. A `peak` equal to `capacity` means a further insert may have failed, which `UntrackedChildren` counts |
-| `NetContent` | `net_content` | net only: the correlator's counters, connections, hostnames, requests with content, h2 offered (`content_unsupported`) and seen (`h2_preface`, `h2_preface_unvalidated`, `frames_h2`), unattributed and truncated frames, dials, DNS, datagrams and the response counts ([13_probe_net.md](13_probe_net.md), N-33) |
+| `NetContent` | `net_content` | net only: the correlator's counters, connections, hostnames, requests with content, h2 offered (`content_unsupported`) and seen (`h2_preface`, `h2_preface_unvalidated`, `frames_h2`), unattributed and truncated frames, dials, DNS, datagrams and the response counts ([13_probe_net.md](13_probe_net.md), N-33), and, each omitted when zero, the WebSocket counts (`websockets`, `ws_accepted`, `ws_requests`, `ws_server_messages`, `ws_refused`, `ws_unparsed`, N-41) and the rustls counts (`aead_unvalidated`, `aead_unbound`, `aead_rebound`, `aead_unpaired`, N-40) |
+| `ContentMethods` | `content_methods` | net only, with content capture: per configured content method by name (`tls-symbols`, `tls-openssl-ex`, `tls-rustls-aead`), `requests` and `responses`, each `active` or `attach_failed`; the probe's `content` and `responses` are `active` only when every method's are (N-39) |
 | `SSLWrites` | `ssl_writes` | net only, with content capture, once the `SSL_write` offset validated and counting was switched on (absent otherwise: not measured): per call of a tracked process whose return was seen, `calls`, `partial` (returned more than zero and less than asked), `failed` (returned zero or less, an error or a retry such as `SSL_ERROR_WANT_WRITE`), `bytes_requested` (the lengths asked, summed) and `bytes_written` (the positive returns, summed); the content is copied at the return, as many bytes as written, so a partial or failed call contributes exactly what it wrote (N-36, N-37) |
 
 ### ground_truth.json
