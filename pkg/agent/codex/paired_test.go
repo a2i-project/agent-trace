@@ -81,7 +81,7 @@ func verifyAt(t *testing.T, dir string, a agent.Adapter, claims models.Trajector
 	in := agent.PrepareWithBaseline(a, claims, g, &b, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(a, "0.166.0", g)
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(a, "0.166.0")
-	in.Trace.Decl = agent.Trace(a, g)
+	in.Trace.Decl = agent.Trace(a, g, "")
 	return verification.Verify(in)
 }
 

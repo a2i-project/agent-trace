@@ -308,6 +308,31 @@ type conversation struct {
 	unlinked int
 }
 
+// statedID is the conversation id the database states, the
+// cascade_id of its one trajectory_meta row, which is the id agy prints and
+// names the database by (I-105); empty when the database states none, as a
+// fixture that keeps the steps only, or more than one, or one that is not a
+// conversation id.
+func statedID(db *sql.DB) string {
+	rows, err := db.Query(`select cascade_id from trajectory_meta`)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = rows.Close() }()
+	id := ""
+	for n := 0; rows.Next(); n++ {
+		var s sql.NullString
+		if n > 0 || rows.Scan(&s) != nil || !s.Valid {
+			return ""
+		}
+		id = s.String
+	}
+	if rows.Err() != nil || !conversationID.MatchString(id) {
+		return ""
+	}
+	return id
+}
+
 // readConversation reads one conversation database. thread is empty for the
 // main conversation and the subagent's conversation id otherwise: it becomes
 // each claim's ThreadID and prefixes its BlockID, so the blocks of two
@@ -320,6 +345,9 @@ func readConversation(path, thread string) (*conversation, error) {
 		return c, err
 	}
 	defer done()
+	if thread == "" {
+		rep.TraceSession = statedID(db)
+	}
 	rows, err := db.Query(`select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx`)
 	if err != nil {
 		return c, fmt.Errorf("read steps: %w", err)

@@ -33,6 +33,7 @@ func TestTrace_TheReadRuleHoldsOnEveryAdaptersTrace(t *testing.T) {
 		"Codex rollout":          {codex.Adapter{}.Trace("", "/home/u"), "/home/u/.codex/sessions/2026/11/01/rollout-2026-11-01T12-00-00-" + id + ".jsonl"},
 		"Codex thread database":  {codex.Adapter{}.Trace("", "/home/u"), "/home/u/.codex/state_5.sqlite"},
 		"agy conversation":       {gemini.Adapter{}.Trace("", "/home/u"), "/home/u/.gemini/antigravity-cli/conversations/" + id + ".db"},
+		"agy session database":   {gemini.Adapter{}.SessionTrace("", "/home/u", id), "/home/u/.gemini/antigravity-cli/conversations/" + id + ".db"},
 	}
 	for name, tr := range traces {
 		if tr.decl == nil || !tr.decl.Covers(tr.path) {

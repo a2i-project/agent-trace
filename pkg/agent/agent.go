@@ -501,6 +501,10 @@ type Report struct {
 	// Input.ModelRequestMethod (P-43).
 	ModelRequests      []verification.ModelRequest `json:"model_requests,omitempty"`
 	ModelRequestMethod string                      `json:"model_request_method,omitempty"`
+	// TraceSession is the id of the session the record states it is, when
+	// the adapter's trace declaration depends on it (SessionTraceDeclarer,
+	// I-105): agy's conversation id.
+	TraceSession string `json:"trace_session,omitempty"`
 }
 
 // Count records a tool call that produced no entry.

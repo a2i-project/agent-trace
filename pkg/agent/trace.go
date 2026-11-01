@@ -26,8 +26,22 @@ type TraceDeclarer interface {
 	Trace(workspace, home string) *verification.TraceDecl
 }
 
-// Trace is the adapter's trace declaration for a capture, or nil.
-func Trace(a Adapter, g models.GroundTruthFile) *verification.TraceDecl {
+// SessionTraceDeclarer is a TraceDeclarer whose trace is the files of one
+// session, named by the session's id, which the session's own record states
+// (Report.TraceSession): agy names a conversation's database by the
+// conversation's id, and the account's other conversations are not the
+// session's trace (I-105). Given the id, SessionTrace declares that
+// session's files only; Trace declares what the adapter can name without
+// it.
+type SessionTraceDeclarer interface {
+	TraceDeclarer
+	SessionTrace(workspace, home, session string) *verification.TraceDecl
+}
+
+// Trace is the adapter's trace declaration for a capture, or nil. session
+// is the id the session's record states (Report.TraceSession), empty when it
+// states none.
+func Trace(a Adapter, g models.GroundTruthFile, session string) *verification.TraceDecl {
 	d, ok := a.(TraceDeclarer)
 	if !ok {
 		return nil
@@ -35,6 +49,9 @@ func Trace(a Adapter, g models.GroundTruthFile) *verification.TraceDecl {
 	home := ""
 	if g.Sensitive != nil {
 		home = g.Sensitive.Home
+	}
+	if s, ok := a.(SessionTraceDeclarer); ok && session != "" {
+		return s.SessionTrace(g.Workspace, home, session)
 	}
 	return d.Trace(g.Workspace, home)
 }

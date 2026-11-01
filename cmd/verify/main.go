@@ -148,7 +148,7 @@ func run(args []string, out, errOut io.Writer) int {
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, rep.AgentVersion)
 	// The session's own trace files, and what reading them found (V-59).
-	trace.Decl = agent.Trace(adapter, gt)
+	trace.Decl = agent.Trace(adapter, gt, rep.TraceSession)
 	in.Trace = trace
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)

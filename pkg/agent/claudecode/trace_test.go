@@ -71,7 +71,7 @@ func tools306TraceInput(t *testing.T, g models.GroundTruthFile, extra models.Gro
 		t.Fatal(err)
 	}
 	in := agent.PrepareWithBaseline(Adapter{}, tr, g, &b, verification.Options{IntervalSlack: 500 * time.Millisecond})
-	in.Trace.Decl = agent.Trace(Adapter{}, g)
+	in.Trace.Decl = agent.Trace(Adapter{}, g, "")
 	return in
 }
 
