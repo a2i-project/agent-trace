@@ -272,8 +272,8 @@ func newHashSeamObserver(t testing.TB, dir string, hashFD func(int) (string, err
 		cfg:                 Config{PathFilter: dir},
 		pendingHashOpens:    map[string]int{},
 		pathGeneration:      map[string]uint64{},
-		shadowHashes:        map[string]string{},
-		shadowHashesByInode: map[inodeKey]string{},
+		shadowHashes:        map[string]shadowHash{},
+		shadowHashesByInode: map[inodeKey]shadowHash{},
 		lastWriteAt:         map[string]time.Time{},
 		hashFD:              hashFD,
 		// settleDelay left zero: these tests drive settleSnapshot/
@@ -1444,12 +1444,66 @@ func TestInputHashIsStatedOnlyWhenMeasured(t *testing.T) {
 		t.Errorf("a second open of a born-here file the probe never hashed carries %s, want none: its content may have changed", h)
 	}
 
-	obs.shadowHashes[before] = "sha256:real"
+	obs.shadowHashes[before] = shadowHash{hash: "sha256:real"}
 	if h, ok := obs.inputHash(before, -1, 0, nil, ""); !ok || h != "sha256:real" {
 		t.Errorf("a hashed file = %q, %v, want its settled digest", h, ok)
 	}
 	if _, ok := obs.inputHash(filepath.Join(dir, "missing"), -1, 0, nil, ""); ok {
 		t.Error("a file that cannot be identified carries an input hash")
+	}
+}
+
+// P-45: an inode number is reused once its file is deleted. A file created
+// on the inode of a deleted file the probe hashed must not take that file's
+// hash, by inode or by path, and its first open is still its creating open.
+// The inode's entries are planted with an earlier birth time, as a deleted
+// file's would be, since the test cannot make the kernel reuse an inode.
+func TestInputHashIgnoresADeletedFilesHashOnAReusedInode(t *testing.T) {
+	dir := t.TempDir()
+	obs := newHashSeamObserver(t, dir, func(int) (string, error) { return "", nil })
+	obs.startedAt = time.Now()
+	time.Sleep(10 * time.Millisecond)
+
+	path := filepath.Join(dir, "conv.db-wal")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	key, born, _, ok := (&Observer{}).identify(path, -1, 0, nil, "")
+	if !ok || born.IsZero() {
+		t.Skip("this filesystem reports no birth time; an inode's reuse is then not told apart (a known limit)")
+	}
+	const handle = "h:conv.db-wal"
+	obs.identities = map[string]identity{handle: {key: key, born: born}}
+	older := born.Add(-time.Second).UnixNano()
+	stale := shadowHash{hash: "sha256:deleted", key: key, born: older, known: true}
+	obs.shadowHashesByInode[key] = stale
+	obs.shadowHashes[path] = stale
+	obs.openedInodes = map[inodeKey]int64{key: older}
+
+	open := func() (string, bool) { return obs.inputHash(path, 0, 1, []byte{1}, handle) }
+	if h, ok := open(); !ok || h != emptyFileHash {
+		t.Errorf("the creating open of a file on a reused inode = %q, %v, want the empty-content hash", h, ok)
+	}
+	if h, ok := open(); ok {
+		t.Errorf("a second open carries %s, want none: the deleted file's hash is not this file's", h)
+	}
+
+	// The same file's own settled hash is still found by its inode.
+	obs.shadowHashesByInode[key] = shadowHash{hash: "sha256:own", key: key, born: born.UnixNano(), known: true}
+	if h, ok := open(); !ok || h != "sha256:own" {
+		t.Errorf("the file's own settled hash = %q, %v, want sha256:own", h, ok)
+	}
+
+	// By path, without a handle: a path entry read from another inode is
+	// not this file's; one whose file is unknown is kept, as before.
+	delete(obs.shadowHashesByInode, key)
+	obs.shadowHashes[path] = shadowHash{hash: "sha256:other", key: inodeKey{dev: key.dev, ino: key.ino + 1}, known: true}
+	if h, ok := obs.inputHash(path, -1, 0, nil, ""); ok {
+		t.Errorf("an open by path carries %s, the hash of the file the path named before", h)
+	}
+	obs.shadowHashes[path] = shadowHash{hash: "sha256:unknown"}
+	if h, ok := obs.inputHash(path, -1, 0, nil, ""); !ok || h != "sha256:unknown" {
+		t.Errorf("a path hash whose file is unknown = %q, %v, want it kept", h, ok)
 	}
 }
 

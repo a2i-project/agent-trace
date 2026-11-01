@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -107,7 +106,9 @@ type Observer struct {
 	// stopDrainBudget; tests lower it to provoke the count.
 	stopDrain        time.Duration
 	pendingHashOpens map[string]int
-	shadowHashes     map[string]string
+	// shadowHashes holds the last settled hash of each path, with the file
+	// it was read from (shadowHash).
+	shadowHashes map[string]shadowHash
 
 	// shadowHashesByInode is shadowHashes' companion index, keyed by the
 	// file's (device, inode) instead of its path. A path-keyed lookup alone
@@ -119,14 +120,19 @@ type Observer struct {
 	// index survives renames for free. Populated in hashSettledFD from the
 	// fd it just hashed; consulted in processRawEvent as a fallback when a
 	// FAN_OPEN's path isn't (yet, or ever again) a key in shadowHashes.
-	shadowHashesByInode map[inodeKey]string
+	// An inode number is reused once its file is deleted, so each entry
+	// keeps the birth time of the file it was read from, and an open of a
+	// file born at another time does not take it (P-45).
+	shadowHashesByInode map[inodeKey]shadowHash
 	// startedAt is when Start ran. A file born at or after it was created
 	// during the capture, so its first open is the one that created it, and
 	// the file was empty at that open (P-22).
 	startedAt time.Time
-	// openedInodes are the files the probe has seen opened, so that only a
-	// born-here file's first open is read as its creation.
-	openedInodes map[inodeKey]bool
+	// openedInodes are the files the probe has seen opened, each with the
+	// birth time (nanoseconds, 0 when unknown) of the file last opened on
+	// that inode, so that only a born-here file's first open is read as its
+	// creation, also when the file reuses a deleted file's inode (P-45).
+	openedInodes map[inodeKey]int64
 
 	// pathGeneration counts write-class events (FAN_CREATE / FAN_MODIFY /
 	// FAN_CLOSE_WRITE) seen per path. hashSettled snapshots the generation
@@ -403,8 +409,8 @@ func assemble(cfg Config, fd int, set markedSet, mountFD int, dirs *dirCache) (*
 		stopped:             make(chan struct{}),
 		cfg:                 cfg,
 		pendingHashOpens:    make(map[string]int),
-		shadowHashes:        make(map[string]string),
-		shadowHashesByInode: make(map[inodeKey]string),
+		shadowHashes:        make(map[string]shadowHash),
+		shadowHashesByInode: make(map[inodeKey]shadowHash),
 		pathGeneration:      make(map[string]uint64),
 		handleGeneration:    make(map[string]uint64),
 		openGeneration:      make(map[openKey]uint64),
@@ -540,16 +546,17 @@ func (o *Observer) Start() {
 			}
 			if err == nil && info.Mode().IsRegular() {
 				if h, err := content.SHA256File(path); err == nil {
+					key, born, known := statxID(unix.AT_FDCWD, path, unix.AT_SYMLINK_NOFOLLOW)
+					sh := shadowHash{hash: h, key: key, born: born, known: known}
 					// A hash the read loop settled meanwhile is newer than
 					// this read and is kept.
 					o.mu.Lock()
 					if _, ok := o.shadowHashes[path]; !ok {
-						o.shadowHashes[path] = h
+						o.shadowHashes[path] = sh
 					}
-					if st, ok := info.Sys().(*syscall.Stat_t); ok {
-						key := inodeKey{dev: uint64(st.Dev), ino: st.Ino}
+					if known {
 						if _, ok := o.shadowHashesByInode[key]; !ok {
-							o.shadowHashesByInode[key] = h
+							o.shadowHashesByInode[key] = sh
 						}
 					}
 					o.mu.Unlock()
@@ -1172,17 +1179,21 @@ const emptyFileHash = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4
 // unverified, not compared against a stamp (P-22, V-29).
 func (o *Observer) inputHash(path string, mountFD int, handleType int32, handleData []byte, handle string) (string, bool) {
 	key, born, byHandle, identified := o.identify(path, mountFD, handleType, handleData, handle)
+	bornNS := nanos(born)
 	first := false
 	if identified {
 		o.mu.Lock()
 		if o.openedInodes == nil {
-			o.openedInodes = make(map[inodeKey]bool)
+			o.openedInodes = make(map[inodeKey]int64)
 		}
-		first = !o.openedInodes[key]
-		o.openedInodes[key] = true
+		// A file born at another time than the one last opened on its inode
+		// is a new file on a reused inode (P-45).
+		prev, seen := o.openedInodes[key]
+		first = !seen || (prev != 0 && bornNS != 0 && prev != bornNS)
+		o.openedInodes[key] = bornNS
 		o.mu.Unlock()
 	}
-	if h, ok := o.lookupShadowHash(path, key, identified && byHandle); ok {
+	if h, ok := o.lookupShadowHash(path, key, bornNS, identified, identified && byHandle); ok {
 		return h, true
 	}
 	// Only the first open of a file born after Start is its creating open. A
@@ -1236,15 +1247,60 @@ func (o *Observer) identify(path string, mountFD int, handleType int32, handleDa
 		return inodeKey{}, time.Time{}, byHandle, false
 	}
 	defer func() { _ = unix.Close(fd) }()
-	var st unix.Statx_t
-	if err := unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_INO|unix.STATX_BTIME, &st); err != nil {
+	key, ns, ok := statxID(fd, "", unix.AT_EMPTY_PATH)
+	if !ok {
 		return inodeKey{}, time.Time{}, byHandle, false
+	}
+	if ns != 0 {
+		born = time.Unix(0, ns)
+	}
+	return key, born, byHandle, true
+}
+
+// statxID reads the device, inode and birth time (nanoseconds since the
+// epoch, 0 when the filesystem reports none) of the file path names
+// relative to dirfd, with one statx. The device is encoded as stat's st_dev
+// (unix.Mkdev of statx's major and minor number), so the key equals
+// inodeKeyFromFD's.
+func statxID(dirfd int, path string, flags int) (key inodeKey, born int64, ok bool) {
+	var st unix.Statx_t
+	if err := unix.Statx(dirfd, path, flags, unix.STATX_INO|unix.STATX_BTIME, &st); err != nil {
+		return inodeKey{}, 0, false
 	}
 	key = inodeKey{dev: unix.Mkdev(st.Dev_major, st.Dev_minor), ino: st.Ino}
 	if st.Mask&unix.STATX_BTIME != 0 {
-		born = time.Unix(st.Btime.Sec, int64(st.Btime.Nsec))
+		born = nanos(time.Unix(st.Btime.Sec, int64(st.Btime.Nsec)))
 	}
-	return key, born, byHandle, true
+	return key, born, true
+}
+
+// nanos is t in nanoseconds since the epoch, 0 for the zero time.
+func nanos(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
+}
+
+// shadowHash is a settled hash and the file it was read from: its device and
+// inode and its birth time (0 when unknown), known when they could be read.
+// A file is deleted and its inode number given to a new file, so a hash
+// whose file differs from the file an open names is not that file's (P-45).
+type shadowHash struct {
+	hash  string
+	key   inodeKey
+	born  int64
+	known bool
+}
+
+// of reports whether h may be the hash of the file identified as key, born
+// at born: always when either side's file is unknown, else when the inodes
+// are the same and the birth times, where both are known, are equal.
+func (h shadowHash) of(key inodeKey, born int64, identified bool) bool {
+	if !identified || !h.known {
+		return true
+	}
+	return h.key == key && (h.born == 0 || born == 0 || h.born == born)
 }
 
 // lookupShadowHash returns the settled hash of the file a FAN_OPEN on path
@@ -1254,8 +1310,11 @@ func (o *Observer) identify(path string, mountFD int, handleType int32, handleDa
 // shadowHashes is keyed by the path a file had when it was last hashed (at
 // its FAN_CLOSE_WRITE settle), and the probe does not link a FAN_MOVED_FROM
 // to its FAN_MOVED_TO, so a rename orphans the path-keyed entry. Device+inode
-// identifies the file regardless of what it's currently named.
-func (o *Observer) lookupShadowHash(path string, key inodeKey, byInode bool) (string, bool) {
+// identifies the file regardless of what it's currently named. An entry
+// read from another file than the one identified (key, born) is stale and
+// dropped: the inode was reused by a file born later, or the path now names
+// another inode (P-45).
+func (o *Observer) lookupShadowHash(path string, key inodeKey, born int64, identified, byInode bool) (string, bool) {
 	// The inode first: after an atomic replace the path names a new inode
 	// whose hash was settled under the temporary's name, while the path's
 	// own entry still holds the replaced file's hash. The path is the
@@ -1264,12 +1323,19 @@ func (o *Observer) lookupShadowHash(path string, key inodeKey, byInode bool) (st
 	defer o.mu.Unlock()
 	if byInode {
 		if h, ok := o.shadowHashesByInode[key]; ok {
-			o.shadowHashes[path] = h
-			return h, true
+			if h.of(key, born, true) {
+				o.shadowHashes[path] = h
+				return h.hash, true
+			}
+			delete(o.shadowHashesByInode, key)
 		}
 	}
 	h, ok := o.shadowHashes[path]
-	return h, ok
+	if ok && !h.of(key, born, identified) {
+		delete(o.shadowHashes, path)
+		return "", false
+	}
+	return h.hash, ok
 }
 
 // identitiesSize bounds the identities cache; a full cache starts over.
@@ -1604,15 +1670,17 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 		return "", false
 	}
 
-	o.mu.Lock()
-	o.shadowHashes[target] = d
+	sh := shadowHash{hash: d}
 	if pathFD >= 0 {
-		if key, ok := inodeKeyFromFD(pathFD); ok {
-			if o.shadowHashesByInode == nil {
-				o.shadowHashesByInode = make(map[inodeKey]string)
-			}
-			o.shadowHashesByInode[key] = d
+		sh.key, sh.born, sh.known = statxID(pathFD, "", unix.AT_EMPTY_PATH)
+	}
+	o.mu.Lock()
+	o.shadowHashes[target] = sh
+	if sh.known {
+		if o.shadowHashesByInode == nil {
+			o.shadowHashesByInode = make(map[inodeKey]shadowHash)
 		}
+		o.shadowHashesByInode[sh.key] = sh
 	}
 	o.mu.Unlock()
 
