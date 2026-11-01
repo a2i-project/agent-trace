@@ -102,6 +102,7 @@ type ContentMethod struct {
 	Library string `json:"library,omitempty"`
 	Parser  string `json:"parser,omitempty"`
 	Reason  string `json:"reason,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
 // ContentNone is the content method of an agent without content capture.
