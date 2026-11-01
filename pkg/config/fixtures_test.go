@@ -11,6 +11,7 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/claudecode"
+	_ "github.com/agent-trace/agent-trace/pkg/agent/codex"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/gemini"
 	"github.com/agent-trace/agent-trace/pkg/config"
 )
@@ -26,8 +27,8 @@ func repoConfig(t *testing.T) *config.Config {
 
 // TestEveryAdapterInTheConfigIsRegistered: an entry for an adapter that does
 // not exist would configure nothing, unless it lists no version: the profile
-// of an agent captured before its adapter is built (Codex, I-79), which only
-// the capture scripts read.
+// of an agent captured before its adapter is built (I-79), which only the
+// capture scripts read.
 func TestEveryAdapterInTheConfigIsRegistered(t *testing.T) {
 	c := repoConfig(t)
 	for _, name := range c.Names() {
@@ -97,6 +98,8 @@ func TestEveryListedFixtureHasItsVersion(t *testing.T) {
 					checkClaudeCodeFixture(t, a, dir, v.Version)
 				case "gemini":
 					checkGeminiFixture(t, a, dir, v.Version)
+				case "codex":
+					checkCodexFixture(t, a, dir, v.Version)
 				default:
 					t.Errorf("no version check for adapter %q: add one here", name)
 				}
@@ -162,6 +165,27 @@ func checkGeminiFixture(t *testing.T, a agent.Adapter, dir, version string) {
 		}
 		if rep.AgentVersion != "" && rep.AgentVersion != version {
 			t.Errorf("%s: the adapter reports version %q, the config says %s", db, rep.AgentVersion, version)
+		}
+	}
+}
+
+// checkCodexFixture: a rollout states the CLI version in its session_meta,
+// and the adapter reports it; every rollout of the fixture, subagents
+// included, must agree.
+func checkCodexFixture(t *testing.T, a agent.Adapter, dir, version string) {
+	t.Helper()
+	rollouts, _ := filepath.Glob(filepath.Join(dir, "*.rollout.jsonl"))
+	if len(rollouts) == 0 {
+		t.Errorf("%s: no *.rollout.jsonl", dir)
+	}
+	for _, r := range rollouts {
+		_, rep, err := a.Parse(r)
+		if err != nil || len(rep.ParseErrors) > 0 {
+			t.Errorf("%s: %v %v", r, err, rep.ParseErrors)
+			continue
+		}
+		if rep.AgentVersion != version {
+			t.Errorf("%s: the adapter reports version %q, the config says %s", r, rep.AgentVersion, version)
 		}
 	}
 }

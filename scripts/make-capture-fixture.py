@@ -64,7 +64,8 @@ e-mail address found in the raw transcripts, the recorded and the current
 capture directory in either form, and any session key name left unrewritten,
 and deletes its output and fails if one is left.
 
-Ground truth events, pids, timestamps and coverage are kept as captured.
+Ground truth events, pids, timestamps and coverage are kept as captured,
+except the probes' diagnostics, which are left out.
 
     scripts/make-capture-fixture.py CAPTURE_DIR OUTPUT_DIR [TASK_LABEL]
 
@@ -92,6 +93,28 @@ reduced the same way into the same place in OUTPUT_DIR, and so are the
 subagents it names, down to four levels, as the adapter follows them; one the
 conversation names but the capture lacks is reported and left out. The
 private-string check reads the written databases' bytes.
+
+A Codex capture is recognised by its <TASK_LABEL>.rollout.jsonl (I-82). Its
+rollouts hold the account's user and account ids (session_meta), OpenAI's
+instructions, the model's reasoning and every tool output; its database
+snapshots (<label>.rollout/databases) hold every thread of the account and
+are left out. The fixture keeps, of the task's rollout and of each subagent
+rollout in <TASK_LABEL>.rollout/subagents, the records the adapter reads,
+each cut to the fields it reads: the session_meta's thread ids, CLI
+version, working directory and subagent history start; the model's calls
+and their outputs (type, name, call id, status, turn); and the completed
+items (thread, turn, completion times; a command's argv, status and exit
+code; a file change's paths, kinds, an add's content and a move's target;
+an extension's kind; a subagent's thread). Records before a subagent's
+history start are left out. An add's content the rewriting would change is
+refused, since the adapter claims its hash. In the ground truths, three
+more things are rewritten: the rollout files of threads that are not the
+capture's own runs, which the harness reads at start-up, become
+sessions/2000/01/01/rollout-2000-01-01T00-00-00-<placeholder>.jsonl; the
+two ids naming each skill directory under ~/.agents/skills/synced become
+placeholders; and the 40-digit cache key of the harness's app caches
+becomes zeros. The private-string check also looks for the account ids,
+the other threads' ids and the skill directories' ids.
 """
 import json
 import os
@@ -184,6 +207,51 @@ def rewrite(s, label):
     return s.replace(os.environ.get("USER", "\0"), "user")
 
 
+codex_rollout = os.path.join(capture, task + ".rollout.jsonl")
+CODEX_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+codex_subs = {}  # private id -> placeholder
+codex_private = set()
+if os.path.exists(codex_rollout):
+    # The capture's own threads, whose rollout names may stay.
+    own = set()
+    for label in labels:
+        for root, _, files in os.walk(capture):
+            for name in files:
+                if name.endswith(".jsonl") and (name == label + ".rollout.jsonl" or os.path.basename(root) == "subagents"):
+                    with open(os.path.join(root, name)) as f:
+                        for line in f:
+                            o = json.loads(line)
+                            if o.get("type") == "session_meta":
+                                own.add(o["payload"].get("id"))
+                                for k in ("creator_user_id", "creator_account_id"):
+                                    if o["payload"].get(k):
+                                        codex_private.add(o["payload"][k])
+    n_other = 0
+    for label in labels:
+        with open(os.path.join(capture, label + ".ground_truth.json")) as f:
+            text = f.read()
+        for m in re.finditer(r"/\.codex/sessions/\d{4}/\d\d/\d\d/rollout-[0-9T-]{19}-(" + CODEX_UUID + r")\.jsonl", text):
+            tid = m.group(1)
+            if tid not in own and m.group(0) not in codex_subs:
+                n_other += 1
+                codex_subs[m.group(0)] = "/.codex/sessions/2000/01/01/rollout-2000-01-01T00-00-00-00000000-0000-0000-0000-%012d.jsonl" % n_other
+                codex_private.add(tid)
+        for m in re.finditer(r"/\.agents/skills/synced/(" + CODEX_UUID + r")_(" + CODEX_UUID + r")", text):
+            codex_private.update(m.groups())
+    for i, u in enumerate(sorted(u for u in codex_private if re.fullmatch(CODEX_UUID, u))):
+        codex_subs.setdefault(u, "00000000-0000-0000-0000-%012d" % (900 + i))
+    print("codex: %d other threads' rollouts and %d private ids rewritten" % (n_other, len(codex_private)))
+CODEX_APP_CACHE = re.compile(r"(/\.codex/cache/codex_apps_[a-z_]+/)[0-9a-f]{40}")
+
+
+def rewrite_codex(s):
+    if not codex_subs and not os.path.exists(codex_rollout):
+        return s
+    for old in sorted(codex_subs, key=len, reverse=True):
+        s = s.replace(old, codex_subs[old])
+    return CODEX_APP_CACHE.sub(lambda m: m.group(1) + "0" * 40, s)
+
+
 def elide_snapshot(target):
     if target.startswith("/bin/bash -c -l SNAPSHOT_FILE="):
         return target.split("\n", 1)[0] + "\n      <snapshot script elided>"
@@ -194,11 +262,15 @@ for label in labels:
     with open(os.path.join(capture, label + ".ground_truth.json")) as f:
         g = json.load(f)
     g["workspace"] = "/ws/" + label
+    # The probes' diagnostics describe the recording machine's rings and
+    # tracked sets; no verdict reads them, and no fixture keeps them.
+    for probe in ((g.get("coverage") or {}).get("probes") or {}).values():
+        probe.pop("diagnostics", None)
     for e in g["events"]:
         e["target"] = elide_snapshot(e["target"])
     # Rewrite the whole file, so paths outside the events (the scope record's
     # mounts) are covered too.
-    text = rewrite(json.dumps(g, indent=1), label)
+    text = rewrite(rewrite_codex(json.dumps(g, indent=1)), label)
     with open(os.path.join(out, label + ".ground_truth.json"), "w") as f:
         f.write(text + "\n")
 
@@ -556,7 +628,79 @@ def reduce_subagents(ids):
     return n
 
 
-if os.path.exists(gemini_db):
+# --- Codex: the rollouts (see the docstring) ---
+
+CODEX_META = ("id", "session_id", "cli_version", "cwd", "parent_thread_id", "subagent_history_start_ordinal")
+CODEX_CALLS = ("custom_tool_call", "function_call", "custom_tool_call_output", "function_call_output")
+
+
+def reduce_item(it):
+    keep = {k: it[k] for k in ("type", "id") if k in it}
+    t = it.get("type")
+    if t == "CommandExecution":
+        keep.update({k: it[k] for k in ("command", "status", "exit_code") if k in it})
+    elif t == "FileChange":
+        keep["status"] = it.get("status")
+        changes = {}
+        for path, c in it.get("changes", {}).items():
+            slim = {"type": c.get("type")}
+            if c.get("type") == "add":
+                if rewrite(c.get("content", ""), task) != c.get("content", ""):
+                    sys.exit("an added file's content holds a private path; refusing to alter the content its hash is claimed from")
+                slim["content"] = c.get("content")
+            if "move_path" in c:
+                slim["move_path"] = c["move_path"]
+            changes[path] = slim
+        keep["changes"] = changes
+    elif t in ("Extension", "SubAgentActivity"):
+        keep.update({k: it[k] for k in ("kind", "agent_thread_id") if k in it})
+    return keep
+
+
+def reduce_rollout(src, dst):
+    kept, start, first = [], None, True
+    with open(src) as f:
+        for line in f:
+            o = json.loads(line)
+            p = o.get("payload")
+            if o.get("type") == "session_meta":
+                if not first:
+                    continue
+                first = False
+                start = p.get("subagent_history_start_ordinal")
+                kept.append({"timestamp": o["timestamp"], "ordinal": o.get("ordinal"), "type": "session_meta",
+                             "payload": {k: p[k] for k in CODEX_META if k in p}})
+                continue
+            if start is not None and (o.get("ordinal") is None or o["ordinal"] < start):
+                continue
+            rec = None
+            if o.get("type") == "response_item" and isinstance(p, dict) and p.get("type") in CODEX_CALLS:
+                slim = {k: p[k] for k in ("type", "name", "call_id", "status") if k in p}
+                meta = p.get("internal_chat_message_metadata_passthrough") or {}
+                if "turn_id" in meta:
+                    slim["internal_chat_message_metadata_passthrough"] = {"turn_id": meta["turn_id"]}
+                rec = slim
+            elif o.get("type") == "event_msg" and isinstance(p, dict) and p.get("type") == "item_completed":
+                rec = {k: p[k] for k in ("type", "thread_id", "turn_id", "started_at_ms", "completed_at_ms") if k in p}
+                rec["item"] = reduce_item(p.get("item") or {})
+            if rec is not None:
+                kept.append({"timestamp": o["timestamp"], "ordinal": o.get("ordinal"), "type": o["type"], "payload": rec})
+    os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+    with open(dst, "w") as f:
+        for r in kept:
+            f.write(rewrite(json.dumps(r), task) + "\n")
+    return len(kept)
+
+
+if os.path.exists(codex_rollout):
+    n = reduce_rollout(codex_rollout, os.path.join(out, task + ".rollout.jsonl"))
+    sub_dir = os.path.join(capture, task + ".rollout", "subagents")
+    if os.path.isdir(sub_dir):
+        for name in sorted(os.listdir(sub_dir)):
+            if name.endswith(".jsonl"):
+                n += reduce_rollout(os.path.join(sub_dir, name), os.path.join(out, task + ".rollout", "subagents", name))
+    record_kind = "rollout records"
+elif os.path.exists(gemini_db):
     n, ids = reduce_conversation(gemini_db, os.path.join(out, task + ".conversation.db"))
     n += reduce_subagents(ids)
     record_kind = "conversation steps"
@@ -570,7 +714,7 @@ if os.path.isdir(sub):
             n += reduce_transcript(os.path.join(sub, name), os.path.join(out, task + ".session", "subagents", name))
 # Nothing private may be left in what was written.
 user = os.environ.get("USER", "")
-forbidden = {home} | org_ids | emails | ({user} if len(user) > 2 else set())
+forbidden = {home} | org_ids | emails | codex_private | ({user} if len(user) > 2 else set())
 # Every form of the recorded and the current capture directory must be gone.
 forbidden |= set(roots) | {mangle(r) for r in roots}
 leaks = []

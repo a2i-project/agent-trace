@@ -65,7 +65,8 @@ with open(os.path.join(os.environ["FAKE_DIR"], "events.json"), "w") as f:
     json.dump(events, f)
 `
 
-// fakeCodex stands in for an agent with a profile and no adapter (I-79): it
+// fakeCodex stands in for Codex, and for an agent with a profile and no
+// adapter (I-79) under a copy of its profile: it
 // prints its thread id as codex exec --json does, writes a rollout under
 // ~/.codex/sessions whose turn context names the model and effort it was
 // given and, when the prompt names spawn_agent, a subagent rollout that
@@ -97,7 +98,7 @@ with open(os.path.join(d, "rollout-2026-10-31T10-00-00-%s.jsonl" % tid), "w") as
 if "spawn_agent" in prompt:
     sid = str(uuid.uuid4())
     with open(os.path.join(d, "rollout-2026-10-31T10-00-01-%s.jsonl" % sid), "w") as f:
-        f.write(rec(0, "session_meta", {"id": sid, "session_id": tid, "subagent_history_start_ordinal": 3}))
+        f.write(rec(0, "session_meta", {"id": sid, "session_id": tid, "cli_version": "0.166.0", "subagent_history_start_ordinal": 3}))
         f.write(rec(1, "turn_context", {"model": "parent-history", "effort": effort}))
         f.write(rec(2, "response_item", {"type": "function_call", "name": "spawn_agent"}))
         f.write(rec(3, "turn_context", {"model": model, "effort": effort}))
@@ -365,7 +366,10 @@ func TestCaptureOfAnAgentWithoutAnAdapter(t *testing.T) {
 	root, tmp, env := layout(t, "")
 	out := filepath.Join(tmp, "out")
 	catalog := privateCatalog(t, root, tmp)
-	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "codex",
+	// Codex has an adapter (I-82); a copy of its profile under a name no
+	// adapter has, with no version, is an agent captured before its adapter.
+	copyProfile(t, root, "codex", "noadapter")
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "noadapter",
 		"--task", "parallel", "--allow-unconfigured-version", out)
 	cmd.Env = env
 	b, err := cmd.CombinedOutput()
@@ -373,7 +377,7 @@ func TestCaptureOfAnAgentWithoutAnAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("capture: %v\n%s", err, log)
 	}
-	for _, want := range []string{"NOTE: this build has no codex adapter", "1 subagent rollout(s) copied", "2 database snapshot(s) taken", "done (no adapter, no verdict)"} {
+	for _, want := range []string{"NOTE: this build has no noadapter adapter", "1 subagent rollout(s) copied", "2 database snapshot(s) taken", "done (no adapter, no verdict)"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("log lacks %q:\n%s", want, log)
 		}
@@ -447,6 +451,31 @@ func privateCatalog(t *testing.T, root, tmp string) string {
 	sum := strings.Fields(string(b))[0]
 	setCatalogHash(t, root, sum)
 	return catalog
+}
+
+// copyProfile adds a copy of the test config's profile from under the name
+// to, with no version listed.
+func copyProfile(t *testing.T, root, from, to string) {
+	t.Helper()
+	path := filepath.Join(root, "config", "agents.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c map[string]any
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	adapters := c["adapters"].(map[string]any)
+	var p map[string]any
+	pb, _ := json.Marshal(adapters[from])
+	if err := json.Unmarshal(pb, &p); err != nil {
+		t.Fatal(err)
+	}
+	p["versions"] = []any{}
+	adapters[to] = p
+	nb, _ := json.Marshal(c)
+	write(t, path, string(nb), 0o644)
 }
 
 func setCatalogHash(t *testing.T, root, sum string) {

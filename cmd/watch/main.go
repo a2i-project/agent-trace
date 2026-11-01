@@ -49,6 +49,7 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/claudecode"
+	_ "github.com/agent-trace/agent-trace/pkg/agent/codex"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/gemini"
 	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/models"

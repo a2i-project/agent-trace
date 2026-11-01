@@ -274,7 +274,15 @@
         ],
         "field": "last"
       },
-      "versions": [],
+      "versions": [
+        {
+          "version": "0.166.0",
+          "verified": "2026-11-01",
+          "fixtures": [
+            "pkg/agent/codex/testdata/paired-codex-0.166.0-basic"
+          ]
+        }
+      ],
       "version_lock": {
         "note": "codex exec makes no update check, and the invocation passes -c check_for_update_on_startup=false for uniformity; the version is frozen at 0.166.0 for the project (the user's decision of 2026-10-31). No environment variable is needed."
       },

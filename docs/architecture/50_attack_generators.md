@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit 5626600 on 2026-10-28.
+Checked against commit 510276e on 2026-11-01.
 
 ## Objective
 
@@ -60,7 +60,7 @@ Detected without classified is the failure the scorer exists to expose: the righ
 
 `WithImplied(full, mutated, record)` puts the harness-implied claims of `full` back into a trajectory a generator made from `WithoutImplied(full)`: each right after the claim of the agent's own it followed (after the nearest earlier remaining one when that claim was omitted), placed by the record's positions so a retimed omission keeps them, and dropped when its call (the own claims of its tool and timestamp) was omitted entirely or had a target substituted, since the adapter would then derive none. `WithImplied(full, WithoutImplied(full), Record{})` is `full`. `cmd/analyze`'s sweep verifies every attacked run this way ([40_tools.md](40_tools.md)); `attack` cannot, since normalized JSON carries no implied claim.
 
-`attack` reads a session through an adapter (or normalized JSON with `--normalized`, which refuses a trajectory naming `implied_by`), drops the harness-implied claims the adapter derived (`WithoutImplied`, with a note on standard error), applies one generator, writes the mutated trajectory as normalized JSON and the record as JSON. `--select sensitive` restricts the choice, `--field` and `--retime` apply to substitution and omission, and `--avoid-ground-truth FILE` forbids any fabricated or substituted target that the capture observed, so a mutation cannot be true by accident. `verify --normalized --agent NAME` then verifies the mutated claims, using the adapter for the observed side. See [40_tools.md](40_tools.md).
+`attack` reads a session through an adapter (Claude Code, Codex or Gemini, by `--agent` or detection) (or normalized JSON with `--normalized`, which refuses a trajectory naming `implied_by`), drops the harness-implied claims the adapter derived (`WithoutImplied`, with a note on standard error), applies one generator, writes the mutated trajectory as normalized JSON and the record as JSON. `--select sensitive` restricts the choice, `--field` and `--retime` apply to substitution and omission, and `--avoid-ground-truth FILE` forbids any fabricated or substituted target that the capture observed, so a mutation cannot be true by accident. `verify --normalized --agent NAME` then verifies the mutated claims, using the adapter for the observed side. See [40_tools.md](40_tools.md).
 
 ### The evaluation tests
 
