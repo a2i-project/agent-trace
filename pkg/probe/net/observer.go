@@ -577,12 +577,14 @@ func New(cfg Config) (*Observer, error) {
 // complete header block; validation only needs the request line.
 var httpRequestLineRE = regexp.MustCompile(`^[A-Z]{2,10} \S+ HTTP/1\.[01]\r\n`)
 
-// prepareTLS loads tls.bpf.c's objects, seeds its tracked_pids and
-// attaches its fork and exit tracepoints, then prepares each configured
-// side: prepareSSL for SSL_write and SSL_read or their _ex forms,
-// prepareAEAD for rustls (N-39). A side that cannot be prepared (its file
-// unreadable, its anchors not found) fails New: the method is refused,
-// never silently dropped.
+// prepareTLS loads the tls.bpf.c programs of the configured content methods
+// and the maps they use, and no other (selectTLSPrograms), so a method a
+// capture does not use can never stop another from loading. It seeds
+// tracked_pids and attaches the fork and exit tracepoints, then prepares
+// each configured side: prepareSSL for SSL_write and SSL_read or their _ex
+// forms, prepareAEAD for rustls (N-39), prepareGo for Go (N-48). A side
+// that cannot be prepared (its file unreadable, its anchors not found) fails
+// New: the method is refused, never silently dropped.
 func (o *Observer) prepareTLS(cfg Config) (err error) {
 	tlsSpec, err := loadTlsbpf()
 	if err != nil {
@@ -591,17 +593,14 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	if cfg.TrackedPIDsMax != 0 {
 		tlsSpec.Maps["tracked_pids"].MaxEntries = cfg.TrackedPIDsMax
 	}
-	if o.plan.aeadPath == "" {
-		// The rustls ring is not read: one page instead of 4 MiB.
-		tlsSpec.Maps["aead_events"].MaxEntries = uint32(os.Getpagesize())
+	if err := selectTLSPrograms(tlsSpec, o.plan.methods()); err != nil {
+		return err
 	}
-	if o.plan.goPath == "" {
-		// Nor the Go ring.
-		tlsSpec.Maps["go_events"].MaxEntries = uint32(os.Getpagesize())
-	}
-	if err := tlsSpec.LoadAndAssign(&o.tlsObjs, nil); err != nil {
+	coll, err := ebpf.NewCollection(tlsSpec)
+	if err != nil {
 		return fmt.Errorf("load tls eBPF objects: %w", err)
 	}
+	assignCollection(&o.tlsObjs, coll)
 	defer func() {
 		if err != nil {
 			closeLinks(o.goLinks)
@@ -655,9 +654,9 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 	if o.tlsExitLink, err = link.AttachRawTracepoint(link.RawTracepointOptions{Name: "sched_process_exit", Program: o.tlsObjs.HandleExit}); err != nil {
 		return fmt.Errorf("attach tls sched_process_exit: %w", err)
 	}
-	o.sslRingSize = uint64(o.tlsObjs.SslEvents.MaxEntries())
 
 	if o.plan.sslPath != "" {
+		o.sslRingSize = uint64(o.tlsObjs.SslEvents.MaxEntries())
 		if err := o.prepareSSL(cfg); err != nil {
 			return err
 		}
@@ -1148,11 +1147,13 @@ func (o *Observer) diagnostics(cov Coverage, methods map[string]models.ContentMe
 		d.TrackedSets["net"] = o.netTracked.stats()
 	}
 	if o.tlsTracked != nil {
+		d.TrackedSets["tls"] = o.tlsTracked.stats()
+	}
+	if o.plan.sslPath != "" {
 		readDrops := cov.ReadDrops
 		d.Rings["ssl_events"] = models.RingStats{
 			SizeBytes: o.sslRingSize, PeakBytes: o.sslRing.peak.Load(), Records: o.sslRing.records.Load(), Drops: cov.TLSRingDrops, ReadDrops: &readDrops,
 		}
-		d.TrackedSets["tls"] = o.tlsTracked.stats()
 	}
 	if o.sslWrites != nil {
 		d.SSLWrites = o.sslWrites.counts()

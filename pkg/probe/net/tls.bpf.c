@@ -1107,11 +1107,57 @@ static __always_inline void go_fill(struct ssl_frame *e, __u64 id, struct go_arg
 	e->hdr.method = SSL_METHOD_GO;
 }
 
+// go_copy is the state of one return's copy, shared with its bpf_loop
+// callback go_chunk.
+struct go_copy {
+	__u64 id;
+	struct go_arg a;
+	__u64 n;   // bytes to copy
+	__u64 off; // bytes copied so far
+	__u32 dir;
+	__u32 faulted;
+};
+
+// go_chunk copies chunk i of a return's bytes into one frame. Each chunk is
+// one call under bpf_loop, so the verifier checks the body once, with its
+// entry state widened, instead of every path through GO_CHUNKS_MAX copies
+// of it: the open-coded loop, whose variable offsets and lengths it kept
+// apart, exceeded its limit of a million instructions on Linux 7.0 (as the
+// proc probe's path walk did, P-36). It returns 1 to end the loop.
+static long go_chunk(__u32 i, void *ctx)
+{
+	struct go_copy *c = ctx;
+	__u64 off = c->off;
+	if (off >= c->n)
+		return 1;
+	__u32 zero = 0;
+	struct ssl_frame *e = bpf_map_lookup_elem(&ssl_heap, &zero);
+	if (!e)
+		return 1;
+	__u64 left = c->n - off;
+	__u32 len = SSL_CAP_LEN;
+	if (left < SSL_CAP_LEN)
+		len = (__u32)left;
+	barrier_var(len);
+	if (len == 0 || len > SSL_CAP_LEN)
+		return 1;
+	if (bpf_probe_read_user(e->payload, len, (void *)(c->a.buf + off))) {
+		c->faulted = 1;
+		return 1;
+	}
+	go_fill(e, c->id, &c->a, len, len, c->dir);
+	if (bpf_ringbuf_output(&go_events, e, sizeof(e->hdr) + len, 0))
+		count_percpu(c->dir == SSL_DIR_WRITE ? (void *)&go_drop_count : (void *)&read_drop_count);
+	c->off = off + len;
+	return 0;
+}
+
 // go_return takes the goroutine's stash back at a RET and, for a result
 // above zero, copies that many bytes (never more than the slice's length)
-// in frames of at most SSL_CAP_LEN, at most GO_CHUNKS_MAX of them; bytes
-// past those are announced by an empty frame whose total counts them, so
-// the stream sees them as missing (N-44).
+// in frames of at most SSL_CAP_LEN, at most GO_CHUNKS_MAX of them (go_chunk
+// under bpf_loop); bytes past those are announced by an empty frame whose
+// total counts them, so the stream sees them as missing (N-44). A faulted
+// copy counts once and ends the call's frames.
 static __always_inline int go_return(struct pt_regs *ctx, __u32 dir)
 {
 	__u64 id = bpf_get_current_pid_tgid();
@@ -1121,38 +1167,27 @@ static __always_inline int go_return(struct pt_regs *ctx, __u32 dir)
 	struct go_arg *ap = bpf_map_lookup_elem(&go_args, &k);
 	if (!ap)
 		return 0;
-	struct go_arg a = *ap;
+	struct go_copy c = {.id = id, .a = *ap, .dir = dir};
 	bpf_map_delete_elem(&go_args, &k);
 	go_count(dir, 1);
 	__s64 ret = (__s64)ctx->ax;
 	if (ret <= 0)
 		return 0;
-	__u64 n = (__u64)ret;
-	if (n > a.len)
-		n = a.len;
-
-	__u32 zero = 0;
-	struct ssl_frame *e = bpf_map_lookup_elem(&ssl_heap, &zero);
-	if (!e)
+	c.n = (__u64)ret;
+	if (c.n > c.a.len)
+		c.n = c.a.len;
+	bpf_loop(GO_CHUNKS_MAX, go_chunk, &c, 0);
+	if (c.faulted) {
+		count_percpu(dir == SSL_DIR_WRITE ? (void *)&faulted_reads : (void *)&read_fault_count);
 		return 0;
-	__u64 off = 0;
-	for (int i = 0; i < GO_CHUNKS_MAX; i++) {
-		if (off >= n)
-			break;
-		__u64 left = n - off;
-		__u32 len = left > SSL_CAP_LEN ? SSL_CAP_LEN : (__u32)left;
-		if (bpf_probe_read_user(e->payload, len, (void *)(a.buf + off))) {
-			count_percpu(dir == SSL_DIR_WRITE ? (void *)&faulted_reads : (void *)&read_fault_count);
-			return 0;
-		}
-		go_fill(e, id, &a, len, len, dir);
-		if (bpf_ringbuf_output(&go_events, e, sizeof(e->hdr) + len, 0))
-			count_percpu(dir == SSL_DIR_WRITE ? (void *)&go_drop_count : (void *)&read_drop_count);
-		off += len;
 	}
-	if (off < n) {
-		__u64 left = n - off;
-		go_fill(e, id, &a, 0, left > 0xffffffffULL ? 0xffffffff : (__u32)left, dir);
+	if (c.off < c.n) {
+		__u32 zero = 0;
+		struct ssl_frame *e = bpf_map_lookup_elem(&ssl_heap, &zero);
+		if (!e)
+			return 0;
+		__u64 left = c.n - c.off;
+		go_fill(e, id, &c.a, 0, left > 0xffffffffULL ? 0xffffffff : (__u32)left, dir);
 		if (bpf_ringbuf_output(&go_events, e, sizeof(e->hdr), 0))
 			count_percpu(dir == SSL_DIR_WRITE ? (void *)&go_drop_count : (void *)&read_drop_count);
 	}

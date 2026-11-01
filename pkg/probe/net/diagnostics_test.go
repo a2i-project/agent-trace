@@ -144,7 +144,13 @@ func TestCaptureCoverage_DiagnosticsSplitDropsByRing(t *testing.T) {
 		t.Errorf("NetContent = %+v, want the correlator's counts", d.NetContent)
 	}
 
+	// With a rustls method alone the ssl_events ring is not loaded (N-49).
 	o.tlsTracked = &trackedCounter{capacity: 4096, final: &models.TrackedSetStats{Capacity: 4096, Peak: 2, AtStop: 1}}
+	o.plan = contentPlan{aeadPath: "/x"}
+	if _, ok := o.CaptureCoverage().Diagnostics.Rings["ssl_events"]; ok {
+		t.Error("ssl_events reported without an SSL-side method")
+	}
+	o.plan = contentPlan{sslMethod: MethodTLSSymbols, sslPath: "/x"}
 	o.sslRingSize = 4 << 20
 	d = o.CaptureCoverage().Diagnostics
 	ssl, ok := d.Rings["ssl_events"]
