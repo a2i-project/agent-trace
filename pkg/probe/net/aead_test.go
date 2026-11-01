@@ -243,14 +243,19 @@ func TestPlanContent(t *testing.T) {
 	}
 }
 
-// The probe's content state is active only when every configured method's
-// is; each method's state is in the diagnostics.
+// The probe's content state is active when any configured method's is
+// (N-42); each method's state is in the diagnostics and MethodContent reads
+// it.
 func TestCaptureCoverage_ContentMethods(t *testing.T) {
 	o := &Observer{plan: contentPlan{sslMethod: MethodOpenSSLEx, sslPath: "/x", aeadPath: "/x"}}
-	o.aeadWriteValid, o.aeadReadValid = true, true
 	cov := o.CaptureCoverage()
 	if cov.Content != models.ContentAttachFailed || cov.Responses != models.ContentAttachFailed {
-		t.Errorf("SSL side never validated: content %s responses %s", cov.Content, cov.Responses)
+		t.Errorf("no method validated: content %s responses %s", cov.Content, cov.Responses)
+	}
+	o.aeadWriteValid, o.aeadReadValid = true, true
+	cov = o.CaptureCoverage()
+	if cov.Content != models.ContentActive || cov.Responses != models.ContentActive {
+		t.Errorf("the rustls side validated: content %s responses %s, want active", cov.Content, cov.Responses)
 	}
 	want := map[string]models.ContentMethodState{
 		MethodOpenSSLEx:  {Requests: models.ContentAttachFailed, Responses: models.ContentAttachFailed},
@@ -259,9 +264,10 @@ func TestCaptureCoverage_ContentMethods(t *testing.T) {
 	if !reflect.DeepEqual(cov.Diagnostics.ContentMethods, want) {
 		t.Errorf("methods %+v", cov.Diagnostics.ContentMethods)
 	}
-	o.tlsActive = true
-	o.readActive.Store(true)
-	if cov := o.CaptureCoverage(); cov.Content != models.ContentActive || cov.Responses != models.ContentActive {
-		t.Errorf("both sides validated: content %s responses %s", cov.Content, cov.Responses)
+	if req, resp := cov.MethodContent(MethodOpenSSLEx); req != models.ContentAttachFailed || resp != models.ContentAttachFailed {
+		t.Errorf("MethodContent(%s) = %s, %s", MethodOpenSSLEx, req, resp)
+	}
+	if req, _ := cov.MethodContent(MethodTLSSymbols); req != models.ContentIdentityOnly {
+		t.Errorf("a method not configured reads %s, want identity_only", req)
 	}
 }

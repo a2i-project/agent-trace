@@ -1038,15 +1038,19 @@ func (o *Observer) Events() <-chan models.GroundTruthEvent {
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 	cov := o.Coverage()
 	methods := o.contentMethods()
+	// The probe's state is active when any configured method's is (N-42):
+	// one method that saw nothing does not mark the content the others read
+	// as not captured. An adapter reads the state of the method its claims
+	// depend on (models.ProbeCoverage.MethodContent).
 	content, responses := models.ContentIdentityOnly, models.ContentIdentityOnly
 	if len(methods) > 0 {
-		content, responses = models.ContentActive, models.ContentActive
+		content, responses = models.ContentAttachFailed, models.ContentAttachFailed
 		for _, m := range methods {
-			if m.Requests != models.ContentActive {
-				content = models.ContentAttachFailed
+			if m.Requests == models.ContentActive {
+				content = models.ContentActive
 			}
-			if m.Responses != models.ContentActive {
-				responses = models.ContentAttachFailed
+			if m.Responses == models.ContentActive {
+				responses = models.ContentActive
 			}
 		}
 	}

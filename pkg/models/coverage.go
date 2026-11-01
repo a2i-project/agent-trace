@@ -134,10 +134,27 @@ type ProbeDiagnostics struct {
 	SSLWrites *SSLWriteCounts `json:"ssl_writes,omitempty"`
 	// ContentMethods is the state of each content method the capture was
 	// configured with, by its name (N-39): requests and responses, each a
-	// Content* value. ProbeCoverage.Content and Responses are active only
-	// when every configured method's are. Nil without content capture.
+	// Content* value. ProbeCoverage.Content and Responses are active when
+	// any configured method's are (N-42); MethodContent reads one method's.
+	// Nil without content capture.
 	// Net probe only.
 	ContentMethods map[string]ContentMethodState `json:"content_methods,omitempty"`
+}
+
+// MethodContent is the request and response content state of one content
+// method (N-42): the state the capture recorded for it, identity_only for a
+// method it was not configured with, and, for a capture with no per-method
+// record (written before N-39, or one without content capture), the probe's
+// own Content and Responses, which a single-method capture's are.
+func (p ProbeCoverage) MethodContent(method string) (requests, responses string) {
+	if p.Diagnostics == nil || p.Diagnostics.ContentMethods == nil {
+		return p.Content, p.Responses
+	}
+	m, ok := p.Diagnostics.ContentMethods[method]
+	if !ok {
+		return ContentIdentityOnly, ContentIdentityOnly
+	}
+	return m.Requests, m.Responses
 }
 
 // ContentMethodState is what one content method captured.
