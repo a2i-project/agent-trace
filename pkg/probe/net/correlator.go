@@ -33,7 +33,7 @@ type Coverage struct {
 	FramesUnattributed int    // ssl_frame whose request could not be joined to a connection or parsed
 	ContentUnsupported int    // connections whose ClientHello offered h2 in ALPN, whatever was negotiated
 	FaultedReads       uint64 // SSL_write calls whose plaintext read faulted in-kernel (see D5)
-	RingbufDrops       uint64 // records the net and TLS ring buffers discarded because they were full: NetRingDrops plus TLSRingDrops
+	RingbufDrops       uint64 // records the net, TLS and rustls ring buffers discarded because they were full: NetRingDrops plus TLSRingDrops plus AEADRingDrops
 	NetRingDrops       uint64 // records the net ring buffer discarded (N-33)
 	TLSRingDrops       uint64 // write frames the TLS ring buffer discarded (N-33)
 	UntrackedChildren  uint64 // descendants left untracked because a tracked_pids map was full (lower bound)
@@ -61,6 +61,21 @@ type Coverage struct {
 	ReadsUnvalidated      int    // SSL_read frames discarded before a read began with a status line, which validates the SSL_read offset
 	ReadFaults            uint64 // SSL_read buffers whose read faulted in-kernel
 	ReadDrops             uint64 // SSL_read frames the TLS ring buffer discarded because it was full
+
+	// WebSocket (N-41), on any content method's streams.
+	WebSockets       int // request streams switched to WebSocket frames by an upgrade request
+	WSAccepted       int // 101 responses accepting a WebSocket
+	WSRequests       int // client messages emitted as net_request
+	WSServerMessages int // server messages counted into net_response turns
+	WSRefused        int // WebSocket directions not parsed: an extension negotiated (permessage-deflate) or a compressed frame
+	WSUnparsed       int // WebSocket directions ended by a malformed frame or missing bytes
+
+	// rustls (tls-rustls-aead, N-39, N-40).
+	AEADUnvalidated int    // rustls frames discarded before a frame of their direction began with an HTTP/1.x request or status line
+	AEADUnbound     int    // rustls read frames with no socket (no receive seen on their thread), kept per decrypter
+	AEADRebound     int    // binds of an encrypter to a socket other than its first, ignored
+	AEADUnpaired    int    // encrypters bound to a socket whose reads had begun a state of their own
+	AEADRingDrops   uint64 // rustls frames and bind records the aead_events ring discarded because it was full
 }
 
 // sslKey identifies the connection a run of ssl_frames belongs to: the
@@ -69,8 +84,13 @@ type Coverage struct {
 // connection identity the uprobes see; it keeps apart the streams of
 // connections one thread serves in turn, as an event loop does. A pointer
 // the allocator reuses for a later connection continues the earlier key.
+//
+// kind keeps apart the identities of the rustls side (N-40): keyAEADEnc and
+// keyAEADDec are its encrypter and decrypter objects, keySock a socket inode
+// number its records were bound to; keySSL, the zero value, is an SSL*.
 type sslKey struct {
 	tgid uint32
+	kind uint8
 	ssl  uint64
 }
 
@@ -87,6 +107,12 @@ type tlsConn struct {
 	// h2 is set when the request stream began with the HTTP/2 preface and
 	// cleared when a request parses on it (an SSL* reused for HTTP/1.1).
 	h2 bool
+	// keys are the keys o.tlsConns holds this state under: its own, and the
+	// socket a rustls encrypter was bound to (N-40).
+	keys []sslKey
+	// ws is the WebSocket state once an upgrade request or accept was seen
+	// on the connection (N-41).
+	ws *wsConn
 }
 
 // sentRequest is what a response needs of the request it answers.
@@ -106,7 +132,7 @@ func (o *Observer) tlsConn(key sslKey, ts time.Time) *tlsConn {
 		if len(o.tlsConns) >= maxTLSConns {
 			o.evictTLSConn()
 		}
-		c = &tlsConn{req: tlsparse.NewStream(), resp: tlsparse.NewResponseParser()}
+		c = &tlsConn{req: tlsparse.NewStream(), resp: tlsparse.NewResponseParser(), keys: []sslKey{key}}
 		c.resp.Bodyless = func() bool { return c.last != nil && c.last.method == "HEAD" }
 		o.tlsConns[key] = c
 	}
@@ -134,6 +160,10 @@ func (o *Observer) evictTLSConn() {
 // number of bytes the call wrote beyond the captured payload.
 func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts time.Time) {
 	c := o.tlsConn(key, ts)
+	if c.ws != nil && (c.ws.client != nil || c.ws.refused) {
+		o.wsClientBytes(key.tgid, c, payload, missing, ts)
+		return
+	}
 	if c.req.Len() == 0 && bytes.HasPrefix(payload, h2ClientPreface) {
 		c.h2 = true
 		o.coverage.H2Preface++
@@ -174,6 +204,14 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 			c.host, c.port = host, port
 		}
 		c.last = sent
+		if tlsparse.IsWebSocketUpgrade(req) {
+			// What follows on this stream is the client's frames (N-41).
+			o.wsUpgrade(c, req)
+			if rest := c.req.Take(); len(rest) > 0 {
+				o.wsClientBytes(key.tgid, c, rest, 0, ts)
+			}
+			return
+		}
 	}
 }
 

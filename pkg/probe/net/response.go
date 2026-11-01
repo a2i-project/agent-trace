@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -33,14 +34,15 @@ const maxHeldReads = 256
 // N-29), as a request line validates the SSL_write offset.
 var httpStatusLineRE = regexp.MustCompile(`^HTTP/1\.[01] [1-5][0-9]{2}[ \r]`)
 
-// attachWrite attaches the SSL_write entry and return probes at off; the
-// return emits the write frame (N-37). Both or neither.
+// attachWrite attaches the SSL side's write entry and return probes
+// (SSL_write's, or SSL_write_ex's for tls-openssl-ex) at off; the return
+// emits the write frame (N-37). Both or neither.
 func (o *Observer) attachWrite(off uint64) ([]link.Link, error) {
-	entry, err := o.exe.Uprobe("", o.tlsObjs.ProbeSslWrite, &link.UprobeOptions{Address: off})
+	entry, err := o.exe.Uprobe("", o.writeProgs[0], &link.UprobeOptions{Address: off})
 	if err != nil {
 		return nil, err
 	}
-	ret, err := o.exe.Uretprobe("", o.tlsObjs.ProbeSslWriteReturn, &link.UprobeOptions{Address: off})
+	ret, err := o.exe.Uretprobe("", o.writeProgs[1], &link.UprobeOptions{Address: off})
 	if err != nil {
 		_ = entry.Close()
 		return nil, err
@@ -48,14 +50,14 @@ func (o *Observer) attachWrite(off uint64) ([]link.Link, error) {
 	return []link.Link{entry, ret}, nil
 }
 
-// attachRead attaches the SSL_read entry probe and return probe at a file
-// offset of the executable.
+// attachRead attaches the SSL side's read entry and return probes
+// (SSL_read's, or SSL_read_ex's) at a file offset of the executable.
 func (o *Observer) attachRead(off uint64) ([]link.Link, error) {
-	entry, err := o.exe.Uprobe("", o.tlsObjs.ProbeSslReadEntry, &link.UprobeOptions{Address: off})
+	entry, err := o.exe.Uprobe("", o.readProgs[0], &link.UprobeOptions{Address: off})
 	if err != nil {
 		return nil, err
 	}
-	ret, err := o.exe.Uretprobe("", o.tlsObjs.ProbeSslReadReturn, &link.UprobeOptions{Address: off})
+	ret, err := o.exe.Uretprobe("", o.readProgs[1], &link.UprobeOptions{Address: off})
 	if err != nil {
 		_ = entry.Close()
 		return nil, err
@@ -120,7 +122,7 @@ func (o *Observer) startRead() {
 	}
 	o.readCands = cands
 	if len(cands) == 0 {
-		o.readAttachErr = fmt.Errorf("no SSL_read candidate in %s", o.cfg.ExePath)
+		o.readAttachErr = fmt.Errorf("no SSL_read candidate in %s", o.plan.sslPath)
 		close(o.readDone)
 		return
 	}
@@ -153,7 +155,11 @@ func (o *Observer) validateRead(timeout time.Duration) {
 		accept := func() {
 			o.readLinks = links
 			o.readActive.Store(true)
-			_ = o.tlsCache.Store(o.tlsBuildID, tlsoffset.Target{Path: o.cfg.ExePath, BuildID: o.tlsBuildID, SSLWrite: o.writeOffset, SSLRead: cand.FileOff})
+			// From here a fault reading SSL_read_ex's byte count is a
+			// lost response, counted (tls-openssl-ex).
+			var zero, on uint32 = 0, 1
+			_ = o.tlsObjs.SslReadCounting.Update(&zero, &on, ebpf.UpdateAny)
+			_ = o.tlsCache.Store(o.tlsBuildID, tlsoffset.Target{Path: o.plan.sslPath, BuildID: o.tlsBuildID, SSLWrite: o.writeOffset, SSLRead: cand.FileOff})
 		}
 		timer := time.NewTimer(timeout)
 		select {
@@ -173,13 +179,13 @@ func (o *Observer) validateRead(timeout time.Duration) {
 			default:
 			}
 			closeLinks(links)
-			o.readAttachErr = fmt.Errorf("no SSL_read candidate validated in %s before the capture stopped: no read of a tracked process began with an HTTP/1.x status line", o.cfg.ExePath)
+			o.readAttachErr = fmt.Errorf("no SSL_read candidate validated in %s before the capture stopped: no read of a tracked process began with an HTTP/1.x status line", o.plan.sslPath)
 			return
 		case <-timer.C:
 			closeLinks(links)
 		}
 	}
-	o.readAttachErr = fmt.Errorf("no SSL_read candidate validated in %s (%d tried): no read of a tracked process began with an HTTP/1.x status line within %s each", o.cfg.ExePath, len(o.readCands), timeout)
+	o.readAttachErr = fmt.Errorf("no SSL_read candidate validated in %s (%d tried): no read of a tracked process began with an HTTP/1.x status line within %s each", o.plan.sslPath, len(o.readCands), timeout)
 }
 
 // ResponseAttachError reports why response capture is inactive: content
@@ -201,9 +207,30 @@ func (o *Observer) handleSSLRead(key sslKey, payload []byte, missing int, ts tim
 		o.readValid = true
 		close(o.readOK)
 	}
+	o.feedRead(key, payload, missing, ts)
+}
+
+// feedRead feeds one validated read to its connection: the server's
+// WebSocket frames once a 101 accepted a WebSocket (N-41), the response
+// parser otherwise.
+func (o *Observer) feedRead(key sslKey, payload []byte, missing int, ts time.Time) {
 	c := o.tlsConn(key, ts)
-	if err := c.resp.Feed(payload, missing, ts, func(r *tlsparse.Response) { o.emitNetResponse(key.tgid, c, r) }); err != nil {
+	if c.ws != nil && (c.ws.server != nil || c.ws.refused) {
+		o.wsServerBytes(key.tgid, c, payload, missing, ts)
+		return
+	}
+	if err := c.resp.Feed(payload, missing, ts, func(r *tlsparse.Response) {
+		o.emitNetResponse(key.tgid, c, r)
+		if tlsparse.IsWebSocketAccept(r) {
+			o.wsAccept(c, r)
+		}
+	}); err != nil {
 		o.coverage.ResponsesUnparsed++
+	}
+	if c.ws != nil && c.ws.server != nil && c.resp.Upgraded() {
+		if rest := c.resp.TakeUpgraded(); len(rest) > 0 {
+			o.wsServerBytes(key.tgid, c, rest, 0, ts)
+		}
 	}
 }
 
@@ -271,14 +298,19 @@ func hostTarget(host string, port int) string {
 }
 
 // closeTLSConn ends the capture of one connection: its response in
-// progress is emitted as incomplete, stamped at its last read.
+// progress, or its WebSocket turn, is emitted as incomplete, stamped at its
+// last read, and every key it is held under is released.
 func (o *Observer) closeTLSConn(key sslKey) {
 	c := o.tlsConns[key]
 	if c == nil {
 		return
 	}
 	c.resp.Close(c.lastSeen, func(r *tlsparse.Response) { o.emitNetResponse(key.tgid, c, r) })
-	delete(o.tlsConns, key)
+	o.wsEndTurn(key.tgid, c, false)
+	for _, k := range c.keys {
+		delete(o.tlsConns, k)
+		delete(o.aeadBound, k)
+	}
 }
 
 // flushResponses emits every response still in progress when the capture
@@ -296,6 +328,9 @@ func (o *Observer) flushResponses() {
 		}
 		if keys[i].tgid != keys[j].tgid {
 			return keys[i].tgid < keys[j].tgid
+		}
+		if keys[i].kind != keys[j].kind {
+			return keys[i].kind < keys[j].kind
 		}
 		return keys[i].ssl < keys[j].ssl
 	})

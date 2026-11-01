@@ -13,35 +13,59 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type tlsbpfAeadConfig struct {
+	_       structs.HostLayout
+	OkTag   uint32
+	OkKnown uint32
+}
+
+type tlsbpfAeadDecArg struct {
+	_     structs.HostLayout
+	Sret  uint64
+	Self  uint64
+	InPtr uint64
+	InLen uint64
+}
+
+type tlsbpfEncKey struct {
+	_    structs.HostLayout
+	Self uint64
+	Tgid uint32
+	Pad  uint32
+}
+
 type tlsbpfSslFrame struct {
 	_       structs.HostLayout
 	Hdr     tlsbpfSslFrameHdr
-	Payload [16384]uint8
+	Payload [32768]uint8
 }
 
 type tlsbpfSslFrameHdr struct {
-	_     structs.HostLayout
-	TsNs  uint64
-	Ssl   uint64
-	Tgid  uint32
-	Tid   uint32
-	Len   uint32
-	Total uint32
-	Dir   uint32
-	Pad   uint32
+	_      structs.HostLayout
+	TsNs   uint64
+	Ssl    uint64
+	Sock   uint64
+	Tgid   uint32
+	Tid    uint32
+	Len    uint32
+	Total  uint32
+	Dir    uint32
+	Method uint32
 }
 
 type tlsbpfSslReadArg struct {
-	_   structs.HostLayout
-	Buf uint64
-	Ssl uint64
+	_         structs.HostLayout
+	Buf       uint64
+	Ssl       uint64
+	Readbytes uint64
 }
 
 type tlsbpfSslWriteArg struct {
-	_   structs.HostLayout
-	Buf uint64
-	Ssl uint64
-	Num uint64
+	_       structs.HostLayout
+	Buf     uint64
+	Ssl     uint64
+	Num     uint64
+	Written uint64
 }
 
 type tlsbpfSslWriteCounts struct {
@@ -63,26 +87,42 @@ type tlsbpfTrackedStat struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	tlsbpfMapDropCount            = "drop_count"
-	tlsbpfMapFaultedReads         = "faulted_reads"
-	tlsbpfMapReadDropCount        = "read_drop_count"
-	tlsbpfMapReadFaultCount       = "read_fault_count"
-	tlsbpfMapSslEvents            = "ssl_events"
-	tlsbpfMapSslHeap              = "ssl_heap"
-	tlsbpfMapSslReadArgs          = "ssl_read_args"
-	tlsbpfMapSslWriteArgs         = "ssl_write_args"
-	tlsbpfMapSslWriteCounting     = "ssl_write_counting"
-	tlsbpfMapSslWriteStat         = "ssl_write_stat"
-	tlsbpfMapTrackedPids          = "tracked_pids"
-	tlsbpfMapTrackedSeeded        = "tracked_seeded"
-	tlsbpfMapTrackedStat          = "tracked_stat"
-	tlsbpfMapUntrackedCount       = "untracked_count"
-	tlsbpfProgHandleExit          = "handle_exit"
-	tlsbpfProgHandleFork          = "handle_fork"
-	tlsbpfProgProbeSslReadEntry   = "probe_ssl_read_entry"
-	tlsbpfProgProbeSslReadReturn  = "probe_ssl_read_return"
-	tlsbpfProgProbeSslWrite       = "probe_ssl_write"
-	tlsbpfProgProbeSslWriteReturn = "probe_ssl_write_return"
+	tlsbpfMapAeadBound               = "aead_bound"
+	tlsbpfMapAeadCfg                 = "aead_cfg"
+	tlsbpfMapAeadDecArgs             = "aead_dec_args"
+	tlsbpfMapAeadDropCount           = "aead_drop_count"
+	tlsbpfMapAeadEvents              = "aead_events"
+	tlsbpfMapDropCount               = "drop_count"
+	tlsbpfMapFaultedReads            = "faulted_reads"
+	tlsbpfMapLastRecv                = "last_recv"
+	tlsbpfMapPendingEnc              = "pending_enc"
+	tlsbpfMapReadDropCount           = "read_drop_count"
+	tlsbpfMapReadFaultCount          = "read_fault_count"
+	tlsbpfMapSslEvents               = "ssl_events"
+	tlsbpfMapSslHeap                 = "ssl_heap"
+	tlsbpfMapSslReadArgs             = "ssl_read_args"
+	tlsbpfMapSslReadCounting         = "ssl_read_counting"
+	tlsbpfMapSslWriteArgs            = "ssl_write_args"
+	tlsbpfMapSslWriteCounting        = "ssl_write_counting"
+	tlsbpfMapSslWriteStat            = "ssl_write_stat"
+	tlsbpfMapTrackedPids             = "tracked_pids"
+	tlsbpfMapTrackedSeeded           = "tracked_seeded"
+	tlsbpfMapTrackedStat             = "tracked_stat"
+	tlsbpfMapUntrackedCount          = "untracked_count"
+	tlsbpfProgAeadSysEnter           = "aead_sys_enter"
+	tlsbpfProgHandleExit             = "handle_exit"
+	tlsbpfProgHandleFork             = "handle_fork"
+	tlsbpfProgProbeAeadDecryptEntry  = "probe_aead_decrypt_entry"
+	tlsbpfProgProbeAeadDecryptReturn = "probe_aead_decrypt_return"
+	tlsbpfProgProbeAeadEncrypt       = "probe_aead_encrypt"
+	tlsbpfProgProbeSslReadEntry      = "probe_ssl_read_entry"
+	tlsbpfProgProbeSslReadExEntry    = "probe_ssl_read_ex_entry"
+	tlsbpfProgProbeSslReadExReturn   = "probe_ssl_read_ex_return"
+	tlsbpfProgProbeSslReadReturn     = "probe_ssl_read_return"
+	tlsbpfProgProbeSslWrite          = "probe_ssl_write"
+	tlsbpfProgProbeSslWriteEx        = "probe_ssl_write_ex"
+	tlsbpfProgProbeSslWriteExReturn  = "probe_ssl_write_ex_return"
+	tlsbpfProgProbeSslWriteReturn    = "probe_ssl_write_return"
 )
 
 // loadTlsbpf returns the embedded CollectionSpec for tlsbpf.
@@ -127,25 +167,41 @@ type tlsbpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tlsbpfProgramSpecs struct {
-	HandleExit          *ebpf.ProgramSpec `ebpf:"handle_exit"`
-	HandleFork          *ebpf.ProgramSpec `ebpf:"handle_fork"`
-	ProbeSslReadEntry   *ebpf.ProgramSpec `ebpf:"probe_ssl_read_entry"`
-	ProbeSslReadReturn  *ebpf.ProgramSpec `ebpf:"probe_ssl_read_return"`
-	ProbeSslWrite       *ebpf.ProgramSpec `ebpf:"probe_ssl_write"`
-	ProbeSslWriteReturn *ebpf.ProgramSpec `ebpf:"probe_ssl_write_return"`
+	AeadSysEnter           *ebpf.ProgramSpec `ebpf:"aead_sys_enter"`
+	HandleExit             *ebpf.ProgramSpec `ebpf:"handle_exit"`
+	HandleFork             *ebpf.ProgramSpec `ebpf:"handle_fork"`
+	ProbeAeadDecryptEntry  *ebpf.ProgramSpec `ebpf:"probe_aead_decrypt_entry"`
+	ProbeAeadDecryptReturn *ebpf.ProgramSpec `ebpf:"probe_aead_decrypt_return"`
+	ProbeAeadEncrypt       *ebpf.ProgramSpec `ebpf:"probe_aead_encrypt"`
+	ProbeSslReadEntry      *ebpf.ProgramSpec `ebpf:"probe_ssl_read_entry"`
+	ProbeSslReadExEntry    *ebpf.ProgramSpec `ebpf:"probe_ssl_read_ex_entry"`
+	ProbeSslReadExReturn   *ebpf.ProgramSpec `ebpf:"probe_ssl_read_ex_return"`
+	ProbeSslReadReturn     *ebpf.ProgramSpec `ebpf:"probe_ssl_read_return"`
+	ProbeSslWrite          *ebpf.ProgramSpec `ebpf:"probe_ssl_write"`
+	ProbeSslWriteEx        *ebpf.ProgramSpec `ebpf:"probe_ssl_write_ex"`
+	ProbeSslWriteExReturn  *ebpf.ProgramSpec `ebpf:"probe_ssl_write_ex_return"`
+	ProbeSslWriteReturn    *ebpf.ProgramSpec `ebpf:"probe_ssl_write_return"`
 }
 
 // tlsbpfMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tlsbpfMapSpecs struct {
+	AeadBound        *ebpf.MapSpec `ebpf:"aead_bound"`
+	AeadCfg          *ebpf.MapSpec `ebpf:"aead_cfg"`
+	AeadDecArgs      *ebpf.MapSpec `ebpf:"aead_dec_args"`
+	AeadDropCount    *ebpf.MapSpec `ebpf:"aead_drop_count"`
+	AeadEvents       *ebpf.MapSpec `ebpf:"aead_events"`
 	DropCount        *ebpf.MapSpec `ebpf:"drop_count"`
 	FaultedReads     *ebpf.MapSpec `ebpf:"faulted_reads"`
+	LastRecv         *ebpf.MapSpec `ebpf:"last_recv"`
+	PendingEnc       *ebpf.MapSpec `ebpf:"pending_enc"`
 	ReadDropCount    *ebpf.MapSpec `ebpf:"read_drop_count"`
 	ReadFaultCount   *ebpf.MapSpec `ebpf:"read_fault_count"`
 	SslEvents        *ebpf.MapSpec `ebpf:"ssl_events"`
 	SslHeap          *ebpf.MapSpec `ebpf:"ssl_heap"`
 	SslReadArgs      *ebpf.MapSpec `ebpf:"ssl_read_args"`
+	SslReadCounting  *ebpf.MapSpec `ebpf:"ssl_read_counting"`
 	SslWriteArgs     *ebpf.MapSpec `ebpf:"ssl_write_args"`
 	SslWriteCounting *ebpf.MapSpec `ebpf:"ssl_write_counting"`
 	SslWriteStat     *ebpf.MapSpec `ebpf:"ssl_write_stat"`
@@ -181,13 +237,21 @@ func (o *tlsbpfObjects) Close() error {
 //
 // It can be passed to loadTlsbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tlsbpfMaps struct {
+	AeadBound        *ebpf.Map `ebpf:"aead_bound"`
+	AeadCfg          *ebpf.Map `ebpf:"aead_cfg"`
+	AeadDecArgs      *ebpf.Map `ebpf:"aead_dec_args"`
+	AeadDropCount    *ebpf.Map `ebpf:"aead_drop_count"`
+	AeadEvents       *ebpf.Map `ebpf:"aead_events"`
 	DropCount        *ebpf.Map `ebpf:"drop_count"`
 	FaultedReads     *ebpf.Map `ebpf:"faulted_reads"`
+	LastRecv         *ebpf.Map `ebpf:"last_recv"`
+	PendingEnc       *ebpf.Map `ebpf:"pending_enc"`
 	ReadDropCount    *ebpf.Map `ebpf:"read_drop_count"`
 	ReadFaultCount   *ebpf.Map `ebpf:"read_fault_count"`
 	SslEvents        *ebpf.Map `ebpf:"ssl_events"`
 	SslHeap          *ebpf.Map `ebpf:"ssl_heap"`
 	SslReadArgs      *ebpf.Map `ebpf:"ssl_read_args"`
+	SslReadCounting  *ebpf.Map `ebpf:"ssl_read_counting"`
 	SslWriteArgs     *ebpf.Map `ebpf:"ssl_write_args"`
 	SslWriteCounting *ebpf.Map `ebpf:"ssl_write_counting"`
 	SslWriteStat     *ebpf.Map `ebpf:"ssl_write_stat"`
@@ -199,13 +263,21 @@ type tlsbpfMaps struct {
 
 func (m *tlsbpfMaps) Close() error {
 	return _TlsbpfClose(
+		m.AeadBound,
+		m.AeadCfg,
+		m.AeadDecArgs,
+		m.AeadDropCount,
+		m.AeadEvents,
 		m.DropCount,
 		m.FaultedReads,
+		m.LastRecv,
+		m.PendingEnc,
 		m.ReadDropCount,
 		m.ReadFaultCount,
 		m.SslEvents,
 		m.SslHeap,
 		m.SslReadArgs,
+		m.SslReadCounting,
 		m.SslWriteArgs,
 		m.SslWriteCounting,
 		m.SslWriteStat,
@@ -226,21 +298,37 @@ type tlsbpfVariables struct {
 //
 // It can be passed to loadTlsbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tlsbpfPrograms struct {
-	HandleExit          *ebpf.Program `ebpf:"handle_exit"`
-	HandleFork          *ebpf.Program `ebpf:"handle_fork"`
-	ProbeSslReadEntry   *ebpf.Program `ebpf:"probe_ssl_read_entry"`
-	ProbeSslReadReturn  *ebpf.Program `ebpf:"probe_ssl_read_return"`
-	ProbeSslWrite       *ebpf.Program `ebpf:"probe_ssl_write"`
-	ProbeSslWriteReturn *ebpf.Program `ebpf:"probe_ssl_write_return"`
+	AeadSysEnter           *ebpf.Program `ebpf:"aead_sys_enter"`
+	HandleExit             *ebpf.Program `ebpf:"handle_exit"`
+	HandleFork             *ebpf.Program `ebpf:"handle_fork"`
+	ProbeAeadDecryptEntry  *ebpf.Program `ebpf:"probe_aead_decrypt_entry"`
+	ProbeAeadDecryptReturn *ebpf.Program `ebpf:"probe_aead_decrypt_return"`
+	ProbeAeadEncrypt       *ebpf.Program `ebpf:"probe_aead_encrypt"`
+	ProbeSslReadEntry      *ebpf.Program `ebpf:"probe_ssl_read_entry"`
+	ProbeSslReadExEntry    *ebpf.Program `ebpf:"probe_ssl_read_ex_entry"`
+	ProbeSslReadExReturn   *ebpf.Program `ebpf:"probe_ssl_read_ex_return"`
+	ProbeSslReadReturn     *ebpf.Program `ebpf:"probe_ssl_read_return"`
+	ProbeSslWrite          *ebpf.Program `ebpf:"probe_ssl_write"`
+	ProbeSslWriteEx        *ebpf.Program `ebpf:"probe_ssl_write_ex"`
+	ProbeSslWriteExReturn  *ebpf.Program `ebpf:"probe_ssl_write_ex_return"`
+	ProbeSslWriteReturn    *ebpf.Program `ebpf:"probe_ssl_write_return"`
 }
 
 func (p *tlsbpfPrograms) Close() error {
 	return _TlsbpfClose(
+		p.AeadSysEnter,
 		p.HandleExit,
 		p.HandleFork,
+		p.ProbeAeadDecryptEntry,
+		p.ProbeAeadDecryptReturn,
+		p.ProbeAeadEncrypt,
 		p.ProbeSslReadEntry,
+		p.ProbeSslReadExEntry,
+		p.ProbeSslReadExReturn,
 		p.ProbeSslReadReturn,
 		p.ProbeSslWrite,
+		p.ProbeSslWriteEx,
+		p.ProbeSslWriteExReturn,
 		p.ProbeSslWriteReturn,
 	)
 }

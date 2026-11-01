@@ -118,8 +118,9 @@ type ProbeCoverage struct {
 // note or verdict depends on it (P-34, N-33).
 type ProbeDiagnostics struct {
 	// Rings is keyed by the kernel ring buffer's map name: "events" (proc),
-	// "net_events" and "ssl_events" (net; ssl_events only when content
-	// capture was configured).
+	// "net_events", "ssl_events" and "aead_events" (net; ssl_events only
+	// when content capture was configured, aead_events only with the
+	// tls-rustls-aead method).
 	Rings map[string]RingStats `json:"rings,omitempty"`
 	// TrackedSets is keyed by the eBPF object whose tracked_pids map it
 	// describes: "proc", "net" and "tls" (tls only when content capture was
@@ -131,6 +132,18 @@ type ProbeDiagnostics struct {
 	// means not measured: no content capture, an offset that never
 	// validated, or a capture written before the field. Net probe only.
 	SSLWrites *SSLWriteCounts `json:"ssl_writes,omitempty"`
+	// ContentMethods is the state of each content method the capture was
+	// configured with, by its name (N-39): requests and responses, each a
+	// Content* value. ProbeCoverage.Content and Responses are active only
+	// when every configured method's are. Nil without content capture.
+	// Net probe only.
+	ContentMethods map[string]ContentMethodState `json:"content_methods,omitempty"`
+}
+
+// ContentMethodState is what one content method captured.
+type ContentMethodState struct {
+	Requests  string `json:"requests"`
+	Responses string `json:"responses"`
 }
 
 // SSLWriteCounts compares, per SSL_write call of a tracked process, the
@@ -228,6 +241,25 @@ type NetContentCounts struct {
 	SSEEvents             int    `json:"sse_events"`
 	ReadsUnvalidated      int    `json:"reads_unvalidated"`
 	ReadFaults            uint64 `json:"read_faults"`
+	// WebSocket counts (N-41): request streams switched by an upgrade, 101
+	// accepts, client messages emitted as net_request, server messages
+	// counted into net_response turns, directions refused for an extension
+	// or a compressed frame, directions ended by a malformed frame or
+	// missing bytes.
+	WebSockets       int `json:"websockets,omitempty"`
+	WSAccepted       int `json:"ws_accepted,omitempty"`
+	WSRequests       int `json:"ws_requests,omitempty"`
+	WSServerMessages int `json:"ws_server_messages,omitempty"`
+	WSRefused        int `json:"ws_refused,omitempty"`
+	WSUnparsed       int `json:"ws_unparsed,omitempty"`
+	// rustls counts (tls-rustls-aead, N-39, N-40): frames discarded before
+	// their direction validated, read frames with no socket, ignored
+	// rebinds of an encrypter, encrypters whose socket had a state of its
+	// own.
+	AEADUnvalidated int `json:"aead_unvalidated,omitempty"`
+	AEADUnbound     int `json:"aead_unbound,omitempty"`
+	AEADRebound     int `json:"aead_rebound,omitempty"`
+	AEADUnpaired    int `json:"aead_unpaired,omitempty"`
 }
 
 // Coverage is the per-probe loss record that travels with a ground truth file.
