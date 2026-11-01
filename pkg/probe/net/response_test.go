@@ -201,18 +201,6 @@ func TestResponses_GapsAndFlush(t *testing.T) {
 	}
 }
 
-func TestHandleSSLFrame_TruncatedWriteDropsTheStream(t *testing.T) {
-	o := newTestObserver()
-	k := sslKey{tgid: 1, ssl: 1}
-	o.handleSSLFrame(k, []byte("POST /a HTTP/1.1\r\nHost: h.example.com\r\nContent-Length: 30000\r\n\r\nxx"), 20000, time.Now())
-	if evs := drainNow(o); len(evs) != 0 {
-		t.Fatalf("events %+v", evs)
-	}
-	if o.coverage.FramesTruncated != 1 || o.coverage.FramesUnattributed != 1 || o.tlsConns[k].req.Len() != 0 {
-		t.Errorf("coverage %+v", o.coverage)
-	}
-}
-
 func TestTLSConns_Bounded(t *testing.T) {
 	o := newTestObserver()
 	o.readValid = true

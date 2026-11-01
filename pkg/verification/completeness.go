@@ -102,6 +102,11 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.ResponseGaps > 0 {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d response gap(s) (SSL_read data faulted, discarded, truncated or unparsed), so some responses are missing or attested incompletely; no claim depends on a response (N-29)", name, p.ResponseGaps))
 		}
+		// A cut request is in the ground truth with its target; only its
+		// body is missing, so a claim of it reads unverified (N-44, N-45).
+		if p.RequestsCut > 0 {
+			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d request(s) written in a call larger than the probe copies were recorded cut, with their target and without their body, so a claim of one is never confirmed (N-44)", name, p.RequestsCut))
+		}
 	}
 	c.Complete = len(c.Reasons) == 0
 	return c

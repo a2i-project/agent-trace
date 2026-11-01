@@ -42,7 +42,8 @@ type Coverage struct {
 	IOURingOps         uint64 // io_uring operations of any kind by tracked processes; diagnostic
 	IOURingRings       uint64 // io_uring rings set up by tracked processes; diagnostic
 	HelloFaults        uint64 // hello reads that faulted on a connection still waiting for its hello; content gap (no hostname), not event loss
-	FramesTruncated    int    // SSL_write calls larger than the capture copies; the request stream is dropped and counted in FramesUnattributed too
+	FramesTruncated    int    // SSL_write calls larger than the capture copies; a request whose head the copied bytes hold is emitted cut (RequestsCut), otherwise the request stream is dropped and counted in FramesUnattributed too
+	RequestsCut        int    // requests emitted cut: their head was copied and bytes of their body were not (N-44); counted in WithContent too
 
 	// HTTP/2 (N-33). Diagnostic: the frames are handled as before.
 	H2Preface            int // TLS connections whose request stream began with the HTTP/2 client preface
@@ -118,6 +119,10 @@ type tlsConn struct {
 	// ws is the WebSocket state once an upgrade request or accept was seen
 	// on the connection (N-41).
 	ws *wsConn
+	// skip is the number of bytes of a cut request's body still to come
+	// after the bytes the capture missed (N-44): the stream passes over
+	// them before it parses the next request.
+	skip int
 }
 
 // sentRequest is what a response needs of the request it answers.
@@ -177,15 +182,57 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 		o.coverage.FramesH2++
 	}
 	if missing > 0 {
-		// The request stream has a hole: a body hashed across it would be
-		// wrong, and its framing cannot be trusted past it.
-		c.req = tlsparse.NewStream()
 		o.coverage.FramesTruncated++
+	}
+	if c.skip > 0 {
+		// The rest of a cut request's body (N-44): bytes the call wrote
+		// first, then the bytes it wrote beyond the copy.
+		n := min(len(payload), c.skip)
+		payload, c.skip = payload[n:], c.skip-n
+		if len(payload) == 0 {
+			n = min(missing, c.skip)
+			missing, c.skip = missing-n, c.skip-n
+		}
+		if len(payload) == 0 && missing == 0 {
+			return
+		}
+	}
+	c.req.Append(payload)
+	if !o.parseRequests(key, c, ts) {
+		if missing > 0 && c.ws != nil {
+			// The hole follows the client frames after an upgrade.
+			o.wsClientBytes(key.tgid, c, nil, missing, ts)
+		}
+		return
+	}
+	if missing == 0 {
+		return
+	}
+	// The request stream has a hole: a body hashed across it would be
+	// wrong. A request whose head was copied is emitted cut, with no hash,
+	// and answers the response that follows (N-44); its framing goes on past
+	// the hole only when its length says where it ends.
+	req, skip, ok, err := tlsparse.CutHTTP1(c.req, missing)
+	if err != nil || !ok {
+		c.req = tlsparse.NewStream()
 		o.coverage.FramesUnattributed++
 		return
 	}
-	c.req.Append(payload)
+	c.h2 = false
+	sent := &sentRequest{method: req.Method}
+	if target, host, port, ok := o.emitNetRequest(key.tgid, req, true, ts); ok {
+		sent.target = target
+		c.host, c.port = host, port
+	}
+	c.last = sent
+	c.req = tlsparse.NewStream()
+	c.skip = max(skip, 0)
+}
 
+// parseRequests emits every complete request the connection's stream holds.
+// It reports false when the stream is done with: its bytes did not parse and
+// were discarded, or the connection switched to WebSocket frames.
+func (o *Observer) parseRequests(key sslKey, c *tlsConn, ts time.Time) bool {
 	for {
 		req, ok, err := tlsparse.ParseHTTP1(c.req)
 		if err != nil {
@@ -197,14 +244,14 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 			// against the same malformed prefix.
 			c.req = tlsparse.NewStream()
 			o.coverage.FramesUnattributed++
-			return
+			return false
 		}
 		if !ok {
-			return // need more bytes; wait for the next ssl_frame
+			return true // need more bytes; wait for the next ssl_frame
 		}
 		c.h2 = false
 		sent := &sentRequest{method: req.Method}
-		if target, host, port, ok := o.emitNetRequest(key.tgid, req, ts); ok {
+		if target, host, port, ok := o.emitNetRequest(key.tgid, req, false, ts); ok {
 			sent.target = target
 			c.host, c.port = host, port
 		}
@@ -215,7 +262,7 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 			if rest := c.req.Take(); len(rest) > 0 {
 				o.wsClientBytes(key.tgid, c, rest, 0, ts)
 			}
-			return
+			return false
 		}
 	}
 }
@@ -226,9 +273,12 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 // connection state itself, so a request line's target host need not equal
 // any (tgid, fd) tracked in o.conns for the event to be emitted.
 //
+// A cut request (N-44) is emitted with RequestCut set and no RequestHash:
+// bytes of its body were not captured.
+//
 // It returns the target, host and port, with ok false when the request
 // could not be attributed to a host and nothing was emitted.
-func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts time.Time) (target, host string, port int, ok bool) {
+func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, cut bool, ts time.Time) (target, host string, port int, ok bool) {
 	host = req.Headers.Get("Host")
 	if host == "" {
 		host = o.newestHostForTGID(tgid)
@@ -248,7 +298,7 @@ func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts tim
 	target = models.CanonicalNetTarget(req.Method, host, port, req.Path, req.Query)
 
 	var reqHash *string
-	if len(req.Body) > 0 {
+	if len(req.Body) > 0 && !cut {
 		sum := sha256.Sum256(req.Body)
 		h := "sha256:" + hex.EncodeToString(sum[:])
 		reqHash = &h
@@ -259,10 +309,14 @@ func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, ts tim
 		ActionType:  models.NetRequest,
 		Target:      target,
 		RequestHash: reqHash,
+		RequestCut:  cut,
 		PID:         tgid,
 	}
 
 	o.coverage.WithContent++
+	if cut {
+		o.coverage.RequestsCut++
+	}
 	select {
 	case o.events <- event:
 	default:

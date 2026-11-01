@@ -336,6 +336,11 @@ const (
 	DiffOutputHash  = "output_hash"
 	DiffExitCode    = "exit_code"
 	DiffRequestHash = "request_hash"
+	// DiffRequestCut names an observed request recorded cut (N-44): its
+	// target was read and bytes of its body were not, so it confirms no
+	// claim, whatever the claim states. It appears only among a pair's
+	// unverified fields.
+	DiffRequestCut = "request_cut"
 )
 
 // unverifiedFields names the content fields the claim states and the event
@@ -368,7 +373,12 @@ func unverifiedFields(entry models.TrajectoryEntry, event models.GroundTruthEven
 			out = append(out, DiffExitCode)
 		}
 	case models.NetRequest:
-		if entry.RequestHash != nil && event.RequestHash == nil {
+		// A cut request (N-44) never confirms a claim, even one that states
+		// no body: the probe did not see the whole request.
+		switch {
+		case event.RequestCut:
+			out = append(out, DiffRequestCut)
+		case entry.RequestHash != nil && event.RequestHash == nil:
 			out = append(out, DiffRequestHash)
 		}
 	}
@@ -866,7 +876,7 @@ func (p Partition) setAsideHousekeeping(housekeeping func(models.GroundTruthEven
 	out.Observed, out.Owner = nil, nil
 	var aside []models.GroundTruthEvent
 	for i, e := range p.Observed {
-		if p.Owner[i] == nil && (e.ActionType == models.NetConnect || e.ActionType == models.NetRequest) && !e.TargetTruncated && !claimed[e.Target] && housekeeping(e) {
+		if p.Owner[i] == nil && (e.ActionType == models.NetConnect || e.ActionType == models.NetRequest) && !e.TargetTruncated && !claimed[e.Target] && housekeeping(requestShape(e)) {
 			aside = append(aside, e)
 			continue
 		}
@@ -877,6 +887,19 @@ func (p Partition) setAsideHousekeeping(housekeeping func(models.GroundTruthEven
 		return p, nil
 	}
 	return out, aside
+}
+
+// requestShape is the event a housekeeping declaration recognises. A
+// declaration names a request by its process, target and whether it has a
+// body, never by its content (V-54, N-44). A cut request has a body, which
+// the probe did not capture whole, so it carries no hash: it is presented
+// with a placeholder hash, which says only that a body exists.
+func requestShape(e models.GroundTruthEvent) models.GroundTruthEvent {
+	if e.ActionType == models.NetRequest && e.RequestCut && e.RequestHash == nil {
+		body := "sha256:cut"
+		e.RequestHash = &body
+	}
+	return e
 }
 
 // collapseOpenRuns removes from the aligned sequence each level-0 open whose

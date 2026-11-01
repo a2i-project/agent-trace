@@ -40,6 +40,8 @@ func TestAssess(t *testing.T) {
 		{name: "faulted reads are a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, FaultedReads: 4}}), wantComplete: true, wantNotes: 1},
 		{name: "attach failure is a note, not a loss", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},
 		{name: "response gaps are a note, not a loss (N-29)", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentActive, Responses: models.ContentActive, ResponseGaps: 3}}), wantComplete: true, wantNotes: 1},
+		{name: "cut requests are a note, not a loss (N-44)", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentActive, Responses: models.ContentActive, RequestsCut: 2}}), wantComplete: true, wantNotes: 1},
+		{name: "cut requests on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, RequestsCut: 2}}), wantComplete: true},
 		{name: "response gaps on a probe that did not run are ignored", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: false, ResponseGaps: 3}}), wantComplete: true},
 		{name: "inactive response capture is a note", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentActive, Responses: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},
 		{name: "inactive response capture after a failed request capture is one note", cov: cov(map[string]models.ProbeCoverage{"net": {Ran: true, Content: models.ContentAttachFailed, Responses: models.ContentAttachFailed}}), wantComplete: true, wantNotes: 1},

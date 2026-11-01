@@ -212,3 +212,43 @@ func TestParseHTTP1_ABodyTailAheadOfTheNextRequestIsNotARequest(t *testing.T) {
 		t.Fatalf("the tail and the next request: %+v %v, want ErrMalformedRequest", req, err)
 	}
 }
+
+func TestCutHTTP1(t *testing.T) {
+	head := "POST /m HTTP/1.1\r\nHost: h.example.com\r\nContent-Length: 100\r\n\r\n"
+	cases := []struct {
+		name     string
+		buf      string
+		missing  int
+		ok       bool
+		skip     int
+		err      bool
+		consumed bool
+	}{
+		{name: "head and part of the body, the rest to come", buf: head + "0123456789", missing: 40, ok: true, skip: 50, consumed: true},
+		{name: "missed bytes end the body exactly", buf: head + "0123456789", missing: 90, ok: true, skip: 0, consumed: true},
+		{name: "missed bytes run past the body", buf: head + "0123456789", missing: 91, ok: true, skip: -1, consumed: true},
+		{name: "chunked body", buf: "POST /c HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nab", missing: 5, ok: true, skip: -1, consumed: true},
+		{name: "head incomplete", buf: "POST /m HTTP/1.1\r\nHost: h.exa", missing: 5},
+		{name: "complete request is not cut", buf: "GET / HTTP/1.1\r\nHost: h\r\n\r\n", missing: 5},
+		{name: "malformed head", buf: "xPOST /m HTTP/1.1\r\nHost: h\r\n\r\n", missing: 5, err: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewStream()
+			s.Append([]byte(tc.buf))
+			req, skip, ok, err := CutHTTP1(s, tc.missing)
+			if (err != nil) != tc.err || ok != tc.ok {
+				t.Fatalf("ok %v err %v", ok, err)
+			}
+			if (s.Len() == 0) != tc.consumed {
+				t.Errorf("%d bytes left", s.Len())
+			}
+			if !ok {
+				return
+			}
+			if skip != tc.skip || req.Body != nil || req.Method != "POST" || req.Headers.Get("Host") == "" {
+				t.Errorf("skip %d, request %+v", skip, req)
+			}
+		})
+	}
+}

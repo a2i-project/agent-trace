@@ -112,6 +112,12 @@ type GroundTruthEvent struct {
 	// body, computed from the plaintext captured pre-encryption. Nil when
 	// the request had no body, or the action isn't a NetRequest.
 	RequestHash *string `json:"request_hash,omitempty"`
+	// RequestCut is true on a NetRequest whose body the probe did not
+	// capture whole: the request was written in a call larger than the
+	// probe copies, so its head (method, target, headers) was read and
+	// bytes of its body were not (N-44). RequestHash is then nil, and the
+	// verifier never reads the request as confirming a claim (N-45).
+	RequestCut bool `json:"request_cut,omitempty"`
 	// Response is the attestation record of a NetResponse event (N-29).
 	// Nil on every other action type.
 	Response *ResponseAttestation `json:"response,omitempty"`

@@ -1068,6 +1068,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 		HelloFaults:       cov.HelloFaults,
 		Responses:         responses,
 		ResponseGaps:      cov.ReadFaults + cov.ReadDrops + uint64(cov.ResponsesUnparsed+cov.ResponsesTruncated+cov.ResponsesUnattributed),
+		RequestsCut:       uint64(cov.RequestsCut),
 		Diagnostics:       o.diagnostics(cov, methods),
 	}
 }
@@ -1136,7 +1137,7 @@ func netContentCounts(c Coverage) *models.NetContentCounts {
 		Dials: c.Dials, AddressProbes: c.AddressProbes, OpenAtStop: c.OpenAtStop, Replaced: c.Replaced,
 		HellosFollowed: c.HellosFollowed, DNS: c.DNS, DNSNamed: c.DNSNamed, DNSUnparsed: c.DNSUnparsed, Datagrams: c.Datagrams,
 		ContentUnsupported: c.ContentUnsupported, H2Preface: c.H2Preface, H2PrefaceUnvalidated: c.H2PrefaceUnvalidated, FramesH2: c.FramesH2,
-		FramesUnattributed: c.FramesUnattributed, FramesTruncated: c.FramesTruncated,
+		FramesUnattributed: c.FramesUnattributed, FramesTruncated: c.FramesTruncated, RequestsCut: c.RequestsCut,
 		Responses: c.Responses, ResponsesUnpaired: c.ResponsesUnpaired, ResponsesUnattributed: c.ResponsesUnattributed,
 		ResponsesIncomplete: c.ResponsesIncomplete, ResponsesTruncated: c.ResponsesTruncated, ResponsesUnparsed: c.ResponsesUnparsed,
 		SSEEvents: c.SSEEvents, ReadsUnvalidated: c.ReadsUnvalidated, ReadFaults: c.ReadFaults,

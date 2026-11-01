@@ -105,6 +105,11 @@ type ProbeCoverage struct {
 	// skipped. A content gap on attestation, never event loss: no claim
 	// depends on a response (N-29). Net probe only.
 	ResponseGaps uint64 `json:"response_gaps,omitempty"`
+	// RequestsCut counts the requests recorded cut: written in a call larger
+	// than the probe copies, with their head read and bytes of their body
+	// missed (N-44). A content gap, never event loss: each such request is
+	// in the ground truth with RequestCut set. Net probe only.
+	RequestsCut uint64 `json:"requests_cut,omitempty"`
 	// Diagnostics holds the probe's occupancy and content counters (schema
 	// 2). Nil means not measured: a capture written before the record, or a
 	// probe that keeps none (fs). The verifier reads none of it.
@@ -244,10 +249,14 @@ type NetContentCounts struct {
 	// None is parsed into a request.
 	FramesH2 int `json:"frames_h2"`
 	// FramesUnattributed counts write frames that yielded no request: they
-	// did not parse as HTTP/1.1, had no host, or were truncated.
+	// did not parse as HTTP/1.1, had no host, or were truncated with no
+	// request head in the bytes copied.
 	FramesUnattributed int `json:"frames_unattributed"`
 	// FramesTruncated counts write frames larger than the capture copies.
 	FramesTruncated int `json:"frames_truncated"`
+	// RequestsCut counts the requests emitted cut (N-44): a truncated frame
+	// cut their body after their head was copied. Each is in WithContent.
+	RequestsCut int `json:"requests_cut"`
 	// Responses and the counts after it are the response side (N-29).
 	Responses             int    `json:"responses"`
 	ResponsesUnpaired     int    `json:"responses_unpaired"`

@@ -37,28 +37,83 @@ type HTTPRequest struct {
 // On success, exactly the bytes of that one request are consumed from s, so
 // pipelined requests are read by calling ParseHTTP1 again on what remains.
 func ParseHTTP1(s *Stream) (*HTTPRequest, bool, error) {
-	headerEnd := bytes.Index(s.buf, []byte("\r\n\r\n"))
-	if headerEnd == -1 {
+	req, bodyStart, ok, err := parseHead(s.buf)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	body, consumedBody, ok, err := readBody(s.buf[bodyStart:], req.Headers)
+	if err != nil {
+		return nil, false, err
+	}
+	if !ok {
 		return nil, false, nil
 	}
-	bodyStart := headerEnd + 4
+	req.Body = body
+	s.consume(bodyStart + consumedBody)
+	return req, true, nil
+}
 
-	requestLineEnd := bytes.Index(s.buf[:headerEnd], []byte("\r\n"))
+// CutHTTP1 reads the request at the front of s when the capture missed
+// missing bytes right after the last byte of s, so the request's body is cut
+// (N-44). It returns the request with its head and no Body, and skip: how
+// many bytes of its body still follow the missed ones, or -1 when where the
+// request ends cannot be told (a chunked body, or missed bytes that run past
+// the end of a body of known length into what follows). On success it
+// consumes all of s.
+//
+// ok is false, with nothing consumed, when s holds no complete head (there is
+// nothing to name), or a complete request, which is not cut: ParseHTTP1
+// reads that one. A complete head that is malformed is ErrMalformedRequest,
+// as in ParseHTTP1.
+func CutHTTP1(s *Stream, missing int) (req *HTTPRequest, skip int, ok bool, err error) {
+	req, bodyStart, ok, err := parseHead(s.buf)
+	if err != nil || !ok {
+		return nil, 0, false, err
+	}
+	have := s.buf[bodyStart:]
+	if _, _, done, err := readBody(have, req.Headers); err != nil {
+		return nil, 0, false, err
+	} else if done {
+		return nil, 0, false, nil
+	}
+	skip = -1
+	if !isChunked(req.Headers) {
+		// readBody needs more bytes only for a length it was given.
+		n, _, _ := contentLength(req.Headers)
+		if rest := n - len(have) - missing; rest >= 0 {
+			skip = rest
+		}
+	}
+	s.consume(len(s.buf))
+	return req, skip, true, nil
+}
+
+// parseHead parses the request line and header block at the front of buf,
+// returning the request without its body and where the body starts. ok is
+// false when the head is not complete yet.
+func parseHead(buf []byte) (req *HTTPRequest, bodyStart int, ok bool, err error) {
+	headerEnd := bytes.Index(buf, []byte("\r\n\r\n"))
+	if headerEnd == -1 {
+		return nil, 0, false, nil
+	}
+	bodyStart = headerEnd + 4
+
+	requestLineEnd := bytes.Index(buf[:headerEnd], []byte("\r\n"))
 	var requestLine []byte
 	var headerBlock []byte
 	if requestLineEnd == -1 {
 		// No headers at all, just a request line immediately followed by
 		// the blank line.
-		requestLine = s.buf[:headerEnd]
+		requestLine = buf[:headerEnd]
 		headerBlock = nil
 	} else {
-		requestLine = s.buf[:requestLineEnd]
-		headerBlock = s.buf[requestLineEnd+2 : headerEnd]
+		requestLine = buf[:requestLineEnd]
+		headerBlock = buf[requestLineEnd+2 : headerEnd]
 	}
 
 	method, path, query, err := parseRequestLine(requestLine)
 	if err != nil {
-		return nil, false, err
+		return nil, 0, false, err
 	}
 
 	var headers textproto.MIMEHeader
@@ -70,29 +125,12 @@ func ParseHTTP1(s *Stream) (*HTTPRequest, bool, error) {
 		// here since we appended the closing CRLF ourselves, so any
 		// non-nil, non-EOF error is a real malformed-header condition.
 		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, false, ErrMalformedRequest
+			return nil, 0, false, ErrMalformedRequest
 		}
 	} else {
 		headers = textproto.MIMEHeader{}
 	}
-
-	body, consumedBody, ok, err := readBody(s.buf[bodyStart:], headers)
-	if err != nil {
-		return nil, false, err
-	}
-	if !ok {
-		return nil, false, nil
-	}
-
-	req := &HTTPRequest{
-		Method:  method,
-		Path:    path,
-		Query:   query,
-		Headers: headers,
-		Body:    body,
-	}
-	s.consume(bodyStart + consumedBody)
-	return req, true, nil
+	return &HTTPRequest{Method: method, Path: path, Query: query, Headers: headers}, bodyStart, true, nil
 }
 
 // parseRequestLine splits "METHOD target HTTP/1.x" into its parts. target is

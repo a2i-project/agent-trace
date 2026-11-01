@@ -221,10 +221,10 @@ func startStalledTLSServer(t *testing.T, host string, release <-chan struct{}) (
 // switched on and is not counted. It also checks the content captured at
 // the return (N-37): the request parses, once, and its body hashes to the
 // bytes the client sent, so no failed or partial call put a byte in the
-// stream twice. The content is checked when each call asks at most 16 KiB,
-// the most a frame copies: asked for the whole rest, OpenSSL returns far
-// more, and a frame with bytes missing drops its stream (N-30). Asked for
-// one record at a time, the calls fail with WANT_WRITE and are retried with
+// stream twice. The body's hash is checked when each call asks at most
+// 16 KiB, the most a frame copies: asked for the whole rest, OpenSSL returns
+// far more, and the request is then emitted cut, once, without a hash
+// (N-44, checkCutRequest). Asked for one record at a time, the calls fail with WANT_WRITE and are retried with
 // the same bytes, the pattern the Claude Code pilot showed (N-37).
 func TestObserver_SSLWriteCountsPartialWrites(t *testing.T) {
 	for _, tc := range []struct {
@@ -337,10 +337,11 @@ func testSSLWritePartial(t *testing.T, chunk int, checkContent bool) {
 	}
 
 	<-eventsDone
+	cov := obs.Coverage()
 	if !checkContent {
+		checkCutRequest(t, cov, requests, host, total)
 		return
 	}
-	cov := obs.Coverage()
 	if cov.FramesTruncated != 0 || cov.FramesUnattributed != 0 || cov.FaultedReads != 0 || cov.TLSRingDrops != 0 {
 		t.Errorf("content lost: truncated %d, unattributed %d, faulted %d, ring drops %d; want 0 (a write over %d bytes is truncated)",
 			cov.FramesTruncated, cov.FramesUnattributed, cov.FaultedReads, cov.TLSRingDrops, 16384)
@@ -357,5 +358,34 @@ func testSSLWritePartial(t *testing.T, chunk int, checkContent bool) {
 	}
 	if r.RequestHash == nil || *r.RequestHash != wantHash {
 		t.Errorf("request body hash = %v, want %s: the captured stream does not hold each byte of the body once", r.RequestHash, wantHash)
+	}
+}
+
+// checkCutRequest reads the requests of the run whose calls asked for the
+// whole rest of the body (N-44). A call that returned more than the copy cuts
+// the request: it is emitted once, with its target, cut and without a hash,
+// and the body's Content-Length makes the stream pass over the rest of the
+// body, so no frame is unattributed. A run in which no call returned more
+// than the copy must hash the body whole instead.
+func checkCutRequest(t *testing.T, cov Coverage, requests []models.GroundTruthEvent, host string, total int) {
+	t.Helper()
+	t.Logf("truncated frames %d, requests cut %d, unattributed %d", cov.FramesTruncated, cov.RequestsCut, cov.FramesUnattributed)
+	wantTarget := models.CanonicalNetTarget("POST", host, 0, "/upload", "")
+	if len(requests) != 1 || requests[0].Target != wantTarget {
+		t.Fatalf("net_request events %+v, want one of %s", requests, wantTarget)
+	}
+	r := requests[0]
+	if cov.FramesUnattributed != 0 || cov.FaultedReads != 0 || cov.TLSRingDrops != 0 {
+		t.Errorf("unattributed %d, faulted %d, ring drops %d; want 0", cov.FramesUnattributed, cov.FaultedReads, cov.TLSRingDrops)
+	}
+	if cov.FramesTruncated == 0 {
+		sum := sha256.Sum256(partialWriteBody(total))
+		if want := "sha256:" + hex.EncodeToString(sum[:]); r.RequestCut || r.RequestHash == nil || *r.RequestHash != want {
+			t.Errorf("no call was truncated, but the request is %+v, want the body hashed whole (%s)", r, want)
+		}
+		return
+	}
+	if !r.RequestCut || r.RequestHash != nil || cov.RequestsCut != 1 {
+		t.Errorf("request %+v, requests cut %d: want one request, cut and without a hash", r, cov.RequestsCut)
 	}
 }
