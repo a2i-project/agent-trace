@@ -48,6 +48,10 @@ type Response struct {
 	Complete        bool // the body ended by its framing
 	Truncated       bool // bytes of the response were missed
 	SSE             *SSEStats
+	// Upgrade and Extensions are the Upgrade and Sec-WebSocket-Extensions
+	// headers of a 101 response, lowercased, at most 128 bytes; "" otherwise.
+	// Extensions is "?" for a header present but longer or not printable.
+	Upgrade, Extensions string
 }
 
 // ResponseParser reassembles the HTTP/1.x responses of one connection from
@@ -71,6 +75,7 @@ type ResponseParser struct {
 	sse       *sseParser
 	encoded   []byte // compressed event stream, decoded at the end
 	encOver   bool
+	upgraded  []byte // bytes after a 101 response's head, for TakeUpgraded
 }
 
 const (
@@ -148,6 +153,18 @@ func (p *ResponseParser) Feed(data []byte, missing int, at time.Time, emit func(
 	return nil
 }
 
+// Upgraded reports whether a 101 response switched the connection to
+// another protocol; Feed then parses nothing more.
+func (p *ResponseParser) Upgraded() bool { return p.state == stUpgraded }
+
+// TakeUpgraded returns, once, the bytes that followed the 101 response's
+// head in the read that held it: the first bytes of the new protocol.
+func (p *ResponseParser) TakeUpgraded() []byte {
+	b := p.upgraded
+	p.upgraded = nil
+	return b
+}
+
 // Close ends the connection's capture: a response whose header block was
 // read is emitted as incomplete.
 func (p *ResponseParser) Close(at time.Time, emit func(*Response)) {
@@ -213,9 +230,15 @@ func (p *ResponseParser) header(data []byte, at time.Time, emit func(*Response))
 	p.hash = sha256.New()
 
 	if status == 101 {
+		r.Upgrade = boundedLower(strings.TrimSpace(headers.Get("Upgrade")))
+		ext := strings.TrimSpace(strings.Join(headers.Values("Sec-WebSocket-Extensions"), ", "))
+		if r.Extensions = boundedLower(ext); r.Extensions == "" && ext != "" {
+			r.Extensions = "?" // present but too long or not printable: still an extension
+		}
 		p.state = stBody
 		p.finish(true, at, emit)
 		p.state = stUpgraded
+		p.upgraded = rest
 		return nil, nil
 	}
 	if status == 204 || status == 304 || (p.Bodyless != nil && p.Bodyless()) {
