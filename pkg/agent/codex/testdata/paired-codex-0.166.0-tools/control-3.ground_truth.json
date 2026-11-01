@@ -6930,7 +6930,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_062cb1de3c2a655a016ae78fdacc5c819192c8a1c94ab88e79"
+      "resp_19"
      ]
     }
    }
@@ -7186,7 +7186,7 @@
    "request_hash": "sha256:852af7ed08ffaa3564ab51050392c86a0c3ce69db7921f33defab2d2153358c3",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_062cb1de3c2a655a016ae78fdacc5c819192c8a1c94ab88e79",
+    "previous_response_id": "resp_19",
     "items": [
      {
       "type": "additional_tools",
@@ -7254,7 +7254,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_062cb1de3c2a655a016ae78fdb68688191832bd79cd5dd8a9e"
+      "resp_20"
      ]
     }
    }
@@ -7803,7 +7803,7 @@
    "request_hash": "sha256:05c3f3b17aa34ec126afbe2cdf7bfad6e2423ea3e7e3db3da749e040d58c06fe",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_062cb1de3c2a655a016ae78fdb68688191832bd79cd5dd8a9e",
+    "previous_response_id": "resp_20",
     "items": [
      {
       "type": "custom_tool_call_output",
@@ -7841,7 +7841,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_062cb1de3c2a655a016ae78fdd4da481919e6de8af7f874d67"
+      "resp_21"
      ]
     }
    }
@@ -8362,7 +8362,7 @@
    "request_hash": "sha256:1394c8607cf4c4b0ee474c1f319afa9cdfc1063c15a25c424bfe7972cb6c970d",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_062cb1de3c2a655a016ae78fdd4da481919e6de8af7f874d67",
+    "previous_response_id": "resp_21",
     "items": [
      {
       "type": "custom_tool_call_output",
@@ -8428,7 +8428,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_062cb1de3c2a655a016ae78fe307008191a52854923854e3c8"
+      "resp_22"
      ]
     }
    }
@@ -8665,7 +8665,7 @@
    "request_hash": "sha256:30de163cf3d956a008860bcbd9213ff6d6b8dde6093e5f2d62b4147e5736cd2d",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_062cb1de3c2a655a016ae78fe307008191a52854923854e3c8",
+    "previous_response_id": "resp_22",
     "items": [
      {
       "type": "custom_tool_call_output",
@@ -8730,7 +8730,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_062cb1de3c2a655a016ae78fe4661c81919c582069403e491f"
+      "resp_23"
      ]
     }
    }
@@ -10825,7 +10825,7 @@
    "request_hash": "sha256:acd8dbc41116bcec30b7bc6fa7b27a1910c3a44a643b953581695c3fce282513",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_062cb1de3c2a655a016ae78fe4661c81919c582069403e491f",
+    "previous_response_id": "resp_23",
     "items": [
      {
       "type": "function_call_output",
@@ -10973,7 +10973,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_062cb1de3c2a655a016ae78fe5b4688191baec4d5f418a31a1"
+      "resp_24"
      ]
     }
    }
@@ -11068,7 +11068,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_0a0624bdec11708d016ae78fe60e6881918adb095260c5c235"
+      "resp_25"
      ]
     }
    }
@@ -11282,7 +11282,7 @@
    "request_hash": "sha256:2136ea5d859a221b075dc31211d6a9909b8482ec4803bbb0b2e7b96193b9316f",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_0a0624bdec11708d016ae78fe60e6881918adb095260c5c235",
+    "previous_response_id": "resp_25",
     "items": [
      {
       "type": "additional_tools",
@@ -11636,7 +11636,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_0a0624bdec11708d016ae78fe69a74819198dfe60e83b62a3c"
+      "resp_26"
      ]
     }
    }
@@ -12018,7 +12018,7 @@
    "request_hash": "sha256:96b246a1f9ea36a28f05baa7166ebf78b5dadb406323840826e930b4899fb9f4",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_062cb1de3c2a655a016ae78fe5b4688191baec4d5f418a31a1",
+    "previous_response_id": "resp_24",
     "items": [
      {
       "type": "function_call_output",
@@ -12089,7 +12089,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_062cb1de3c2a655a016ae78fe7dd008191be7c9b92c0d1343d"
+      "resp_27"
      ]
     }
    }

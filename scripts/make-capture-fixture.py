@@ -119,6 +119,14 @@ two ids naming each skill directory under ~/.agents/skills/synced become
 placeholders; and the 40-digit cache key of the harness's app caches
 becomes zeros. The private-string check also looks for the account ids,
 the other threads' ids and the skill directories' ids.
+
+In every fixture, last, each model server response id (`resp_` and at
+least 32 hex digits; a content capture's model requests name the response
+they continue) becomes `resp_1`, `resp_2`, ... in order of first
+appearance, walking the written text files in path order, with one mapping
+across all of them. A kept content, output or diff that holds one is
+refused, since its hash is claimed. A response id left in any written file
+fails the private-string check.
 """
 import json
 import os
@@ -196,6 +204,9 @@ if recorded != capture:
 os.makedirs(out, exist_ok=True)
 SESSION_KEY = re.compile(r"(/\.claude/sessions/\d+\.)[0-9a-f]{64}")
 ZERO_KEY = "0" * 64
+# A model server's response id (OpenAI's resp_ and 50 hex digits), which a
+# content capture's model requests name as the response they continue.
+RESPONSE_ID = re.compile(r"\bresp_[0-9a-f]{32,}\b")
 
 
 def rewrite(s, label):
@@ -666,8 +677,8 @@ def cat_path(it):
 
 
 def kept_text(text, what):
-    if rewrite(text, task) != text:
-        sys.exit(what + " holds a private path; refusing to alter the content its hash is claimed from")
+    if rewrite(text, task) != text or RESPONSE_ID.search(text):
+        sys.exit(what + " holds a private path or a server response id; refusing to alter the content its hash is claimed from")
     return text
 
 
@@ -756,6 +767,28 @@ if os.path.isdir(sub):
     for name in sorted(os.listdir(sub)):
         if name.endswith(".jsonl"):
             n += reduce_transcript(os.path.join(sub, name), os.path.join(out, task + ".session", "subagents", name))
+# Server response ids become resp_1, resp_2, ... in order of first
+# appearance, walking the written files in path order, with one mapping for
+# the whole fixture, so a request still names the response it continues.
+# Every text file is rewritten; a file that is not UTF-8 text is left as it
+# is and checked below.
+response_ids = {}
+for root, dirs, files in sorted(os.walk(out)):
+    dirs.sort()
+    for name in sorted(files):
+        path = os.path.join(root, name)
+        with open(path, "rb") as f:
+            raw = f.read()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        new = RESPONSE_ID.sub(lambda m: response_ids.setdefault(m.group(0), "resp_%d" % (len(response_ids) + 1)), text)
+        if new != text:
+            with open(path, "w") as f:
+                f.write(new)
+if response_ids:
+    print("%d server response ids rewritten" % len(response_ids))
 # Nothing private may be left in what was written.
 user = os.environ.get("USER", "")
 forbidden = {home} | org_ids | emails | codex_private | ({user} if len(user) > 2 else set())
@@ -772,6 +805,8 @@ for root, _, files in os.walk(out):
                 leaks.append((path, word))
         if any(m.group(0)[-64:] != ZERO_KEY for m in SESSION_KEY.finditer(text)):
             leaks.append((path, "session key name"))
+        if RESPONSE_ID.search(text):
+            leaks.append((path, "server response id"))
 if leaks:
     for path, word in leaks:
         print("private string left in", path, file=sys.stderr)

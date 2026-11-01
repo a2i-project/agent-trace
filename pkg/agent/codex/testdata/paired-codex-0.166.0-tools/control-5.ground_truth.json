@@ -6957,7 +6957,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_080762ed8f78c17b016ae79000317c8191886877d110432390"
+      "resp_37"
      ]
     }
    }
@@ -7201,7 +7201,7 @@
    "request_hash": "sha256:60bc010df4e5efb23dd178644e154a1560e1d803f6c06db4ad4ec763fc71e85c",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_080762ed8f78c17b016ae79000317c8191886877d110432390",
+    "previous_response_id": "resp_37",
     "items": [
      {
       "type": "additional_tools",
@@ -7273,7 +7273,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_080762ed8f78c17b016ae79000c9808191b083bf0ca736403e"
+      "resp_38"
      ]
     }
    }
@@ -7825,7 +7825,7 @@
    "request_hash": "sha256:27c04bdb506d6b376f2f986ecc255d22c99213083f729a723fcf4d7211c4945f",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_080762ed8f78c17b016ae79000c9808191b083bf0ca736403e",
+    "previous_response_id": "resp_38",
     "items": [
      {
       "type": "custom_tool_call_output",
@@ -7863,7 +7863,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_080762ed8f78c17b016ae790027eb0819191974a7caecf816b"
+      "resp_39"
      ]
     }
    }
@@ -8390,7 +8390,7 @@
    "request_hash": "sha256:53908c7a4d7269a85884b62ba56de23bc869b92fd642ac0324827a3f1197165c",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_080762ed8f78c17b016ae790027eb0819191974a7caecf816b",
+    "previous_response_id": "resp_39",
     "items": [
      {
       "type": "custom_tool_call_output",
@@ -8435,7 +8435,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_080762ed8f78c17b016ae7900373488191b8127648945f72bd"
+      "resp_40"
      ]
     }
    }
@@ -8693,7 +8693,7 @@
    "request_hash": "sha256:72f5ab04e40753feb8af02ecc8f341a7a3c44a907ab7d7e7bca4716195676ef7",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_080762ed8f78c17b016ae7900373488191b8127648945f72bd",
+    "previous_response_id": "resp_40",
     "items": [
      {
       "type": "custom_tool_call_output",
@@ -8758,7 +8758,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_080762ed8f78c17b016ae79004c0c48191bc732b1f7dcece7a"
+      "resp_41"
      ]
     }
    }
@@ -9297,7 +9297,7 @@
    "request_hash": "sha256:d3d439e4be1e057047be9ea7543bf705668997462dc0523d65894f40fc2bdc8a",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_080762ed8f78c17b016ae79004c0c48191bc732b1f7dcece7a",
+    "previous_response_id": "resp_41",
     "items": [
      {
       "type": "function_call_output",
@@ -11074,7 +11074,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_080762ed8f78c17b016ae79005f5ec819196e655e06ffc12d7"
+      "resp_42"
      ]
     }
    }
@@ -11117,7 +11117,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_06366fe60707b3c8016ae7900627088191aab19c960645f9e2"
+      "resp_43"
      ]
     }
    }
@@ -11406,7 +11406,7 @@
    "request_hash": "sha256:f49889f42052e96d752fc4b63547eb4079a90c185a6c20d59c525e852168a635",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_06366fe60707b3c8016ae7900627088191aab19c960645f9e2",
+    "previous_response_id": "resp_43",
     "items": [
      {
       "type": "additional_tools",
@@ -11548,7 +11548,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_06366fe60707b3c8016ae79006a0048191812cf9f86563b075"
+      "resp_44"
      ]
     }
    }
@@ -12075,7 +12075,7 @@
    "request_hash": "sha256:579e56cb9a9d40f7272158f6e1dbbfc5ac51256dd9b7b229b2a887c65f04db6f",
    "model_request": {
     "type": "response.create",
-    "previous_response_id": "resp_080762ed8f78c17b016ae79005f5ec819196e655e06ffc12d7",
+    "previous_response_id": "resp_42",
     "items": [
      {
       "type": "function_call_output",
@@ -12146,7 +12146,7 @@
       "responsesapi.websocket_timing": 1
      },
      "response_ids": [
-      "resp_080762ed8f78c17b016ae79007e35481918c25d71193bf1a53"
+      "resp_45"
      ]
     }
    }
