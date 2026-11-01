@@ -1177,13 +1177,16 @@ check() {
 }
 field() { sed -n "s/^$1=//p" <<<"$2"; }
 # agent_version AGENT: the version the installed agent states now, read the way
-# the capture script reads it (the profile's version command and field).
+# the capture script reads it (the profile's version command and field, in a
+# throwaway home, I-90).
 agent_version() {
-  local args field
+  local args field home
   read -r -a args <<<"$(profile "$1" version_command args)"
   [ "${#args[@]}" -gt 0 ] || args=(--version)
   field=$(profile "$1" version_command field)
-  "$(profile "$1" binary)" "${args[@]}" 2>/dev/null | awk -v last="$([ "$field" = last ] && echo 1)" '{print (last ? $NF : $1)}'
+  home=$(mktemp -d "${TMPDIR:-/tmp}/agent-trace-version.XXXXXX")
+  HOME="$home" "$(profile "$1" binary)" "${args[@]}" 2>/dev/null | awk -v last="$([ "$field" = last ] && echo 1)" '{print (last ? $NF : $1)}'
+  rm -rf -- "$home"
 }
 run_dir() { # agent version task mode index
   local d="$out/$1-$2/${3//:/-}"

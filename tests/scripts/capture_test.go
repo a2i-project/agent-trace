@@ -24,6 +24,8 @@ const fakeClaude = `#!/usr/bin/env python3
 import json, os, re, sys
 args = sys.argv[1:]
 if args[:1] == ["--version"]:
+    with open(os.path.join(os.environ["FAKE_DIR"], "version.home"), "a") as f:
+        f.write(os.environ["HOME"] + "\n")
     print("2.1.306 (Claude Code)"); sys.exit()
 sid = args[args.index("--session-id") + 1]
 model = args[args.index("--model") + 1]
@@ -311,6 +313,26 @@ func TestCaptureOfAnIntactTranscriptIsUnchanged(t *testing.T) {
 	}
 	if p, _ := os.ReadFile(filepath.Join(out, "control-prompt.txt")); strings.Contains(string(p), "agent-trace-control.txt") {
 		t.Errorf("control-prompt.txt names the edit file: %s", p)
+	}
+}
+
+// The version query runs once, in a throwaway home the script removes, so
+// it cannot leave state in the agent's home that the first run then
+// changes (Codex 0.166.0 leaves its arg0 staging directory, I-90).
+func TestTheVersionQueryRunsInAThrowawayHome(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--task", "basic", filepath.Join(tmp, "out"))
+	cmd.Env = env
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("capture: %v\n%s", err, b)
+	}
+	b, err := os.ReadFile(filepath.Join(tmp, "fake", "version.home"))
+	homes := strings.Fields(string(b))
+	if err != nil || len(homes) != 1 || homes[0] == filepath.Join(tmp, "home") {
+		t.Fatalf("version queried with HOME %v (%v), want once in a throwaway home", homes, err)
+	}
+	if _, err := os.Stat(homes[0]); !os.IsNotExist(err) {
+		t.Errorf("the throwaway home %s is left: %v", homes[0], err)
 	}
 }
 

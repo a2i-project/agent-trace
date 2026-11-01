@@ -452,7 +452,14 @@ if [ -n "$p_isolation_env" ] && [ -n "${!p_isolation_env:-}" ]; then
   # shellcheck disable=SC2206
   agent_flags=(${!p_isolation_env})
 fi
-version=$("$agent_bin" "${p_version_args[@]}" 2>/dev/null | awk -v last="$([ "$p_version_field" = last ] && echo 1)" '{print (last ? $NF : $1)}')
+# The version query runs in a throwaway home, removed after it, so it leaves
+# nothing in the agent's home for the first run to change: Codex 0.166.0
+# exits from --version without removing the staging directory it creates
+# under ~/.codex/tmp/arg0-linux, which the next run's start-up renames and
+# deletes (I-90).
+version_home=$(mktemp -d "${TMPDIR:-/tmp}/agent-trace-version.XXXXXX")
+version=$(HOME="$version_home" "$agent_bin" "${p_version_args[@]}" 2>/dev/null | awk -v last="$([ "$p_version_field" = last ] && echo 1)" '{print (last ? $NF : $1)}')
+rm -rf -- "$version_home"
 [ -n "$version" ] || { echo "$p_binary ${p_version_args[*]} printed nothing" >&2; exit 1; }
 # The environment the agent needs from the session (agy logs in through the
 # Secret Service on the session bus); setpriv --reset-env below clears the
