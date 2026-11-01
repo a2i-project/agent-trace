@@ -533,10 +533,30 @@ type ContentClaimer interface {
 	NeedsContent(models.TrajectoryEntry) bool
 }
 
-// contentRead reports whether the capture read the agent's request content:
-// the net probe's content capture was active (N-16).
-func contentRead(c *models.Coverage) bool {
-	return c != nil && c.Probes["net"].Content == models.ContentActive
+// ContentMethodDeclarer is implemented by an adapter whose content claims
+// depend on one content method of the net probe (N-42): ContentMethod names
+// it for a claim, such as tls-rustls-aead for Codex's model traffic, or ""
+// for the probe's state as a whole. An adapter without it reads the whole,
+// which for a single-method capture is that method's.
+type ContentMethodDeclarer interface {
+	ContentMethod(models.TrajectoryEntry) string
+}
+
+// contentRead reports whether the capture read the request content a claim
+// depends on: the state of the content method the adapter declares for it,
+// else the net probe's content capture as a whole (N-16, N-42).
+func contentRead(a Adapter, c *models.Coverage, e models.TrajectoryEntry) bool {
+	if c == nil {
+		return false
+	}
+	net := c.Probes["net"]
+	if d, ok := a.(ContentMethodDeclarer); ok {
+		if m := d.ContentMethod(e); m != "" {
+			req, _ := net.MethodContent(m)
+			return req == models.ContentActive
+		}
+	}
+	return net.Content == models.ContentActive
 }
 
 // Prepare turns a capture and an adapter into verification input: observed
@@ -549,10 +569,10 @@ func contentRead(c *models.Coverage) bool {
 // events the verifier pairs keep their exact targets (I-41).
 func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, measured verification.Baseline, opts verification.Options) verification.Input {
 	g = Rooted(a, g)
-	if cc, ok := a.(ContentClaimer); ok && !contentRead(g.Coverage) {
+	if cc, ok := a.(ContentClaimer); ok {
 		kept := make(models.Trajectory, 0, len(claims))
 		for _, c := range claims {
-			if !cc.NeedsContent(c) {
+			if !cc.NeedsContent(c) || contentRead(a, g.Coverage, c) {
 				kept = append(kept, c)
 			}
 		}

@@ -80,6 +80,16 @@ func Assess(cov *models.Coverage) Completeness {
 		if p.Content == models.ContentAttachFailed {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: content capture failed to attach, identity only", name))
 		}
+		// With several content methods, one that read nothing while
+		// another did leaves the probe's content active (N-42); each such
+		// method gets its own note.
+		if d := p.Diagnostics; d != nil && p.Content == models.ContentActive {
+			for _, m := range sortedMethods(d.ContentMethods) {
+				if st := d.ContentMethods[m]; st.Requests != models.ContentActive {
+					c.Notes = append(c.Notes, fmt.Sprintf("%s probe: content method %s did not validate (%s), so claims that depend on it are not checked", name, m, st.Requests))
+				}
+			}
+		}
 		if p.HelloFaults > 0 {
 			c.Notes = append(c.Notes, fmt.Sprintf("%s probe: %d ClientHello read(s) faulted, so a connection may be reported by address instead of hostname", name, p.HelloFaults))
 		}
@@ -133,4 +143,14 @@ func (o Outcome) ExitCode() int {
 	default:
 		return 2
 	}
+}
+
+// sortedMethods returns the content method names in order.
+func sortedMethods(m map[string]models.ContentMethodState) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

@@ -118,3 +118,17 @@ func TestAssess_ACaptureWithoutTheTreeCountIsUnchanged(t *testing.T) {
 		t.Errorf("Assess = %+v, want complete with the V-35 note only", c)
 	}
 }
+
+// A content method that read nothing while another did is a note of its
+// own, and the probe's content stays active (N-42).
+func TestAssess_SilentContentMethodIsANote(t *testing.T) {
+	net := models.ProbeCoverage{Ran: true, Content: models.ContentActive, Responses: models.ContentActive, Diagnostics: &models.ProbeDiagnostics{ContentMethods: map[string]models.ContentMethodState{
+		"tls-rustls-aead": {Requests: models.ContentActive, Responses: models.ContentActive},
+		"tls-openssl-ex":  {Requests: models.ContentAttachFailed, Responses: models.ContentAttachFailed},
+	}}}
+	c := Assess(&models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"net": net}})
+	want := "net probe: content method tls-openssl-ex did not validate (attach_failed), so claims that depend on it are not checked"
+	if !c.Complete || len(c.Notes) != 1 || c.Notes[0] != want {
+		t.Errorf("complete %v, notes %q; want complete with the note %q", c.Complete, c.Notes, want)
+	}
+}
