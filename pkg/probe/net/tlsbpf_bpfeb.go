@@ -37,7 +37,7 @@ type tlsbpfEncKey struct {
 type tlsbpfSslFrame struct {
 	_       structs.HostLayout
 	Hdr     tlsbpfSslFrameHdr
-	Payload [32768]uint8
+	Payload [16384]uint8
 }
 
 type tlsbpfSslFrameHdr struct {

@@ -66,12 +66,14 @@ struct ssl_frame_hdr {
 	__u32 method;
 };
 
-// The payload has twice the room a frame carries, so a copy at an offset
-// below SSL_CAP_LEN of at most SSL_CAP_LEN bytes stays inside it, which the
-// verifier can prove for the copy of rustls's chunked payloads.
+// ssl_heap holds one of these per CPU. A per-CPU map value is capped at
+// 32 KiB (PCPU_MIN_UNIT_SIZE), so the payload stays SSL_CAP_LEN: every copy
+// into it starts at offset 0, rustls's chunked payloads included (one frame
+// per chunk, see probe_aead_encrypt). TestTLSMapSpecsWithinKernelLimits
+// checks the size.
 struct ssl_frame {
 	struct ssl_frame_hdr hdr;
-	__u8 payload[2 * SSL_CAP_LEN];
+	__u8 payload[SSL_CAP_LEN];
 };
 
 // Same shape and gating role as net.bpf.c's tracked_pids, and like it this
@@ -720,9 +722,13 @@ struct chunk {
 };
 
 // probe_aead_encrypt copies the plaintext of an application record at
-// encrypt's entry: one slice, or up to AEAD_CHUNKS_MAX chunks of a
-// Multiple payload (a vectored write), its [start, end) range. Fewer bytes
-// copied than the record holds make a truncated frame. The thread's
+// encrypt's entry. A Single payload is one frame. A Multiple payload (a
+// vectored write) is one frame per chunk that overlaps its [start, end)
+// range, up to AEAD_CHUNKS_MAX chunks, in order, each copied at offset 0 of
+// the heap: the stream appends them as it appends any frames. A record
+// holds at most 16 KiB of plaintext, so no chunk's part exceeds a frame;
+// chunks past the limit are not copied, and an empty frame whose total is
+// the bytes not reached makes the stream see them as missing. The thread's
 // pending_enc names the encrypter for the bind at its next send.
 SEC("uprobe/aead_encrypt")
 int probe_aead_encrypt(struct pt_regs *ctx)
@@ -744,52 +750,50 @@ int probe_aead_encrypt(struct pt_regs *ctx)
 	if (!e)
 		return 0;
 
-	__u64 total;
-	__u32 off = 0;
 	if (m.w[0] == 0) {
-		total = m.w[2];
+		__u64 total = m.w[2];
 		__u32 len = total > SSL_CAP_LEN ? SSL_CAP_LEN : (__u32)total;
 		if (bpf_probe_read_user(e->payload, len, (void *)m.w[1])) {
 			count_percpu(&faulted_reads);
 			return 0;
 		}
-		off = len;
+		aead_fill(e, id, self, 0, len, total > 0xffffffffULL ? 0xffffffff : (__u32)total, SSL_DIR_WRITE);
+		aead_output(e, len);
 	} else {
 		__u64 chunks = m.w[0], n = m.w[1], start = m.w[2], end = m.w[3];
-		total = end > start ? end - start : 0;
 		__u64 pos = 0;
 		for (int i = 0; i < AEAD_CHUNKS_MAX; i++) {
-			if (i >= n || pos >= end || off >= SSL_CAP_LEN)
+			if (i >= n || pos >= end)
 				break;
 			struct chunk c;
 			if (bpf_probe_read_user(&c, sizeof(c), (void *)(chunks + i * sizeof(c)))) {
 				count_percpu(&faulted_reads);
 				return 0;
 			}
-			__u64 lo = pos > start ? pos : start;
-			__u64 hi = pos + c.len < end ? pos + c.len : end;
+			__u64 base = pos;
 			pos += c.len;
+			__u64 lo = base > start ? base : start;
+			__u64 hi = pos < end ? pos : end;
 			if (hi <= lo)
 				continue;
 			__u64 cnt = hi - lo;
-			__u32 o = off & (SSL_CAP_LEN - 1);
-			if (cnt > SSL_CAP_LEN - o)
-				cnt = SSL_CAP_LEN - o;
-			__u32 c32 = (__u32)cnt & (2 * SSL_CAP_LEN - 1);
-			if (c32 > SSL_CAP_LEN)
-				c32 = SSL_CAP_LEN;
-			if (bpf_probe_read_user(&e->payload[o], c32, (void *)(c.ptr + (lo - (pos - c.len))))) {
+			__u32 len = cnt > SSL_CAP_LEN ? SSL_CAP_LEN : (__u32)cnt;
+			if (bpf_probe_read_user(e->payload, len, (void *)(c.ptr + (lo - base)))) {
 				count_percpu(&faulted_reads);
 				return 0;
 			}
-			off = o + c32;
+			aead_fill(e, id, self, 0, len, cnt > 0xffffffffULL ? 0xffffffff : (__u32)cnt, SSL_DIR_WRITE);
+			aead_output(e, len);
+		}
+		if (pos < end) {
+			// Chunks past the limit: an empty frame whose total is the
+			// bytes not reached, so the stream sees them as missing.
+			__u64 from = pos > start ? pos : start;
+			__u64 left = end - from;
+			aead_fill(e, id, self, 0, 0, left > 0xffffffffULL ? 0xffffffff : (__u32)left, SSL_DIR_WRITE);
+			aead_output(e, 0);
 		}
 	}
-	__u32 t32 = total > 0xffffffffULL ? 0xffffffff : (__u32)total;
-	if (off > SSL_CAP_LEN)
-		off = SSL_CAP_LEN;
-	aead_fill(e, id, self, 0, off, t32, SSL_DIR_WRITE);
-	aead_output(e, off);
 	bpf_map_update_elem(&pending_enc, &id, &self, BPF_ANY);
 	return 0;
 }

@@ -42,6 +42,7 @@ known before it is trusted on a real agent.
   `make generate` (`go generate ./pkg/probe/...`, which runs `bpf2go`) and
   commit the regenerated `.o` and `_bpfel.go`/`_bpfeb.go` files with the
   source change.
+* A map's value must stay within the kernel's limits, which only a privileged load checks: a per-CPU value at most 32 KiB, an array value and a hash value below 4 MiB, a hash key at most 512 bytes, a ring buffer a power-of-two multiple of the page. `TestTLSMapSpecsWithinKernelLimits` (`pkg/probe/net`) checks the net probe's two objects unprivileged.
 * A new kernel-side loss counter is snapshotted in the observer's `Stop()`
   before the maps close, and is surfaced through the coverage record. The rule
   is in [`../architecture/10_probes_common.md`](../architecture/10_probes_common.md).
