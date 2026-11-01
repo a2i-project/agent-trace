@@ -114,9 +114,18 @@ var bookkeepingVersions = map[string]bool{"0.166.0": true}
 // six runs for each file).
 const databases = `(?:state_5|thread_history_1|logs_2|goals_1|queue_1|memories_1)\.sqlite(?:-wal|-shm)?`
 
+// maintenanceLock is the lock of the harness's SQLite maintenance (I-95):
+// the strings of the 0.166.0 binary name it beside the logs database's
+// checkpoint and pruning statements. On the codex-parity-1 long run the
+// harness process opened it once, 60 s after it started, just before it
+// opened logs_2.sqlite, and closed it empty at its exit; no control, each
+// shorter than a minute, touched it.
+const maintenanceLock = `\.sqlite-maintenance\.lock`
+
 // HarnessBookkeeping declares the writes, closes and deletes of the
-// harness's databases under ~/.codex, of the measured version (V-50). Not
-// an open, another file or another version.
+// harness's databases under ~/.codex, and the open and close of its
+// maintenance lock, of the measured version (V-50, I-95). Not an open of a
+// database, a write of the lock, another file or another version.
 func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthEvent) bool {
 	if !bookkeepingVersions[version] {
 		return nil
@@ -129,10 +138,15 @@ func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthE
 		h = regexp.QuoteMeta(home)
 	}
 	files := regexp.MustCompile(`^` + h + `/\.codex/` + databases + `$`)
+	lock := regexp.MustCompile(`^` + h + `/\.codex/` + maintenanceLock + `$`)
 	return func(e models.GroundTruthEvent) bool {
 		switch e.ActionType {
-		case models.FileWrite, models.FileClose, models.FileDelete:
+		case models.FileWrite, models.FileDelete:
 			return files.MatchString(e.Target)
+		case models.FileClose:
+			return files.MatchString(e.Target) || lock.MatchString(e.Target)
+		case models.FileOpen:
+			return lock.MatchString(e.Target)
 		}
 		return false
 	}

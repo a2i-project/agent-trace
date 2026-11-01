@@ -290,13 +290,21 @@ func TestDeclarations(t *testing.T) {
 	}
 	bk := a.HarnessBookkeeping("0.166.0", "/home/u")
 	for e, want := range map[models.GroundTruthEvent]bool{
-		{ActionType: models.FileDelete, Target: "/home/u/.codex/state_5.sqlite-wal"}:  true,
-		{ActionType: models.FileWrite, Target: "/home/u/.codex/logs_2.sqlite"}:        true,
-		{ActionType: models.FileOpen, Target: "/home/u/.codex/logs_2.sqlite"}:         false,
-		{ActionType: models.FileWrite, Target: "/home/v/.codex/logs_2.sqlite"}:        false,
-		{ActionType: models.FileWrite, Target: "/home/u/.codex/auth.json"}:            false,
-		{ActionType: models.FileWrite, Target: "/home/u/.codex/other_1.sqlite-wal"}:   false,
-		{ActionType: models.FileWrite, Target: "/home/u/.codex/state_5.sqlite-wal.x"}: false,
+		{ActionType: models.FileDelete, Target: "/home/u/.codex/state_5.sqlite-wal"}:       true,
+		{ActionType: models.FileWrite, Target: "/home/u/.codex/logs_2.sqlite"}:             true,
+		{ActionType: models.FileOpen, Target: "/home/u/.codex/logs_2.sqlite"}:              false,
+		{ActionType: models.FileWrite, Target: "/home/v/.codex/logs_2.sqlite"}:             false,
+		{ActionType: models.FileWrite, Target: "/home/u/.codex/auth.json"}:                 false,
+		{ActionType: models.FileWrite, Target: "/home/u/.codex/other_1.sqlite-wal"}:        false,
+		{ActionType: models.FileWrite, Target: "/home/u/.codex/state_5.sqlite-wal.x"}:      false,
+		{ActionType: models.FileOpen, Target: "/home/u/.codex/.sqlite-maintenance.lock"}:   true,
+		{ActionType: models.FileClose, Target: "/home/u/.codex/.sqlite-maintenance.lock"}:  true,
+		{ActionType: models.FileWrite, Target: "/home/u/.codex/.sqlite-maintenance.lock"}:  false,
+		{ActionType: models.FileDelete, Target: "/home/u/.codex/.sqlite-maintenance.lock"}: false,
+		{ActionType: models.FileRename, Target: "/home/u/.codex/.sqlite-maintenance.lock"}: false,
+		{ActionType: models.FileOpen, Target: "/home/v/.codex/.sqlite-maintenance.lock"}:   false,
+		{ActionType: models.FileOpen, Target: "/home/u/.codex/x/.sqlite-maintenance.lock"}: false,
+		{ActionType: models.FileOpen, Target: "/home/u/.codex/sqlite-maintenance.lock"}:    false,
 	} {
 		if bk(e) != want {
 			t.Errorf("bookkeeping %v %s != %v", e.ActionType, e.Target, want)

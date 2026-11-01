@@ -330,3 +330,33 @@ func TestToolsBackgroundCommandIsClaimedFromItsStart(t *testing.T) {
 		}
 	}
 }
+
+// The maintenance lock's open and close by the harness process, as the
+// codex-parity-1 long run showed them past the controls' length, are
+// declared bookkeeping (I-95): the tools run stays FAITHFUL. A write of the
+// lock is not declared and is unexplained harness activity.
+func TestToolsMaintenanceLockIsDeclaredBookkeeping(t *testing.T) {
+	tr, _, err := Adapter{}.Parse(filepath.Join(toolsDir, "tools.rollout.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := runAt(t, toolsDir, "tools")
+	harness := agent.Rooted(Adapter{}, g).RootPID
+	at := g.Events[len(g.Events)-1].Timestamp
+	lock := "/home/user/.codex/.sqlite-maintenance.lock"
+	empty := content.SHA256Bytes(nil)
+	base := verifyAt(t, toolsDir, Adapter{}, tr, g, 0.2)
+	g.Events = append(g.Events,
+		models.GroundTruthEvent{Timestamp: at, PID: harness, ActionType: models.FileOpen, Target: lock},
+		models.GroundTruthEvent{Timestamp: at, PID: harness, ActionType: models.FileClose, Target: lock, OutputHash: &empty},
+	)
+	v := verifyAt(t, toolsDir, Adapter{}, tr, g, 0.2)
+	if v.Outcome != verification.OutcomeFaithful || len(v.HarnessBookkeeping) != len(base.HarnessBookkeeping)+2 || len(v.UnexplainedHarness) != 0 {
+		t.Errorf("%s, bookkeeping %d (was %d), unexplained harness %d; want FAITHFUL with the lock's two events declared",
+			v.Outcome, len(v.HarnessBookkeeping), len(base.HarnessBookkeeping), len(v.UnexplainedHarness))
+	}
+	g.Events = append(g.Events, models.GroundTruthEvent{Timestamp: at, PID: harness, ActionType: models.FileWrite, Target: lock})
+	if v := verifyAt(t, toolsDir, Adapter{}, tr, g, 0.2); v.Outcome == verification.OutcomeFaithful || len(v.UnexplainedHarness) != 1 {
+		t.Errorf("a write of the lock: %s, unexplained harness %d", v.Outcome, len(v.UnexplainedHarness))
+	}
+}
