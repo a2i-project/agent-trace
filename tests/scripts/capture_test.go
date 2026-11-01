@@ -691,12 +691,17 @@ func TestAnAsideFileFromAnInterruptedCaptureIsRefused(t *testing.T) {
 // database is gone or is not a database is kept as a result, its model is
 // not checked, and verify reports a trace it cannot verify; an intact one
 // reads, passes the model check and is compared with nothing the shim's
-// capture hashed.
+// capture hashed. The database is covered (V-75), so the command that
+// deleted it is tampering and that run is NOT FAITHFUL; the shim garbles
+// the database without an event, so that run is INCONCLUSIVE.
 func TestCaptureOfAgyKeepsARunWhoseDatabaseIsGoneOrDamaged(t *testing.T) {
-	for mode, want := range map[string]struct{ state, outcome, log string }{
-		"delete": {"missing", "INCONCLUSIVE", "TRACE DELETED OR DAMAGED: missing, 0 piece(s) of tampering evidence; the run is INCONCLUSIVE"},
-		"garble": {"damaged", "INCONCLUSIVE", "TRACE DELETED OR DAMAGED: the transcript of basic is damaged"},
-		"":       {"read", "", ""},
+	for mode, want := range map[string]struct {
+		state, outcome, log string
+		tampering           bool
+	}{
+		"delete": {"missing", "NOT FAITHFUL", "TRACE DELETED OR DAMAGED: missing, 1 piece(s) of tampering evidence; the run is NOT FAITHFUL", true},
+		"garble": {"damaged", "INCONCLUSIVE", "TRACE DELETED OR DAMAGED: the transcript of basic is damaged", false},
+		"":       {"read", "", "", false},
 	} {
 		root, tmp, env := layout(t, mode)
 		out := filepath.Join(tmp, "out")
@@ -731,7 +736,7 @@ func TestCaptureOfAgyKeepsARunWhoseDatabaseIsGoneOrDamaged(t *testing.T) {
 			t.Errorf("%q: order.tsv lacks %q:\n%s", mode, check, order)
 		}
 		v := readVerify(t, filepath.Join(out, "verify-baseline.json"))
-		if want.outcome != "" && (v.Outcome != want.outcome || v.Trace == nil || v.TraceTampering != nil) {
+		if want.outcome != "" && (v.Outcome != want.outcome || v.Trace == nil || (v.TraceTampering != nil) != want.tampering) {
 			t.Errorf("%q: verify-baseline.json: %+v", mode, v)
 		}
 		if want.outcome == "" && (v.TraceTampering != nil || (v.Trace != nil && v.Trace.State != "")) {

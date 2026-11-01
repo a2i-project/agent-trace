@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 0dc0cf7 on 2026-10-31.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60), O-37 (V-75, V-76).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29), O-20 (N-31), O-21 (P-39) and O-23 (P-36) are closed; the others are undecided.
 
@@ -108,14 +108,6 @@ Question: Can a `git_commit` claim be checked against the file events of the com
 Options: (a) keep V-47; (b) pair a `git_commit` claim with the close of the ref file whose content hash equals the hash of the claimed id's ref line, in the fs lane, and require the commit's object write; (c) as (b) without the object check.
 Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, never aligned and never a finding, and the run is at best INCONCLUSIVE. The fs probe already records the ref and object writes inside the workspace with their closed-file hashes, so no new kernel probe is needed. A packed ref (`.git/packed-refs`), a commit made by a `git` outside the tracked tree, or a repository outside the fs scope would need their own rules.
 Blocked by: An agent that emits `git_commit` claims. No current adapter does.
-
-### O-37: Which write-class events on agy's SQLite trace are tampering
-Status: Open.
-Date: 2026-11-01.
-Question: V-59 reads every write-class event (`file_write`, `file_close`, `file_rename`, `file_delete`) on a covered trace path by a process other than the harness's as tampering, and the user ruled that reading the trace is not. A stock SQLite client that only reads agy's conversation database opens it for writing and leaves a `file_close` of the database and of its `-wal` and `-shm`; for a database no other process holds open it also creates, writes and deletes the `-wal` and `-shm`, and may checkpoint a non-empty `-wal` into the database (I-102). Which events on which paths should count?
-Options: (a) cover the databases with their `-wal` and `-journal`, not `-shm` (an index rebuilt from the log, written through a shared mapping by every reader, holding no step), and amend V-59 for every adapter: a `file_close` by a process that made no `file_write` of that path since its open changed nothing and is not tampering; a read of a conversation agy holds open (its own and its subagents' during the run) then leaves nothing, while a writable read of another conversation still creates and deletes its `-wal` and reads as tampering unless opened read-only; (b) cover the databases with `-wal`, `-shm` and `-journal` under V-59 as it stands, and record as a known limit that an agent reading agy's trace with a writable SQLite connection is NOT FAITHFUL; (c) also cover `brain/<uuid>/.system_generated/`, the transcripts and step outputs of the same conversation, under (a) or (b) (the agent's own artifacts under `brain/<uuid>/`, which `write_to_file` writes, are outside it); (d) keep I-102's main files only.
-Current behaviour: (d), I-102. Recommendation: (a), with (c) once a capture shows no other process writes there in an honest run (none at hand does).
-Blocked by: The user's ruling; (a) changes `pkg/verification` and V-59 for every adapter.
 
 ## Proposals (not decided)
 

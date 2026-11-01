@@ -14,27 +14,32 @@ import (
 )
 
 // The declaration names every conversation database of the home as a main
-// session file and covers nothing, so no event reads as tampering until
-// O-37 is decided (I-102).
+// session file, and covers each database with its -wal and -journal, both
+// transient, not its -shm (I-102, V-75, V-76).
 func TestTraceDeclaresTheConversationDatabases(t *testing.T) {
 	const id = "0b18d7d3-41b4-4dfe-b649-e8ba776c383a"
 	conv := "/home/u/.gemini/antigravity-cli/conversations/"
 	d := Adapter{}.Trace("/ws/basic", "/home/u")
-	if d == nil || d.Covers != nil {
-		t.Fatalf("declaration %+v, want Main only", d)
+	if d == nil || d.Covers == nil || d.Main == nil || d.Transient == nil {
+		t.Fatalf("declaration %+v, want Covers, Main and Transient", d)
 	}
-	for path, want := range map[string]bool{
-		conv + id + ".db":     true,
-		conv + id + ".db-wal": false,
-		conv + id + ".db-shm": false,
-		conv + "x.db":         false,
-		"/home/u/.gemini/antigravity-cli/conversation_summaries.db":                                false,
-		"/home/u/.gemini/antigravity-cli/brain/" + id + "/.system_generated/logs/transcript.jsonl": false,
-		"/home/v/.gemini/antigravity-cli/conversations/" + id + ".db":                              false,
-		conv + id + ".db (deleted)": false,
+	type want struct{ main, covers, transient bool }
+	for path, w := range map[string]want{
+		conv + id + ".db":         {true, true, false},
+		conv + id + ".db-wal":     {false, true, true},
+		conv + id + ".db-journal": {false, true, true},
+		conv + id + ".db-shm":     {false, false, false},
+		conv + "x.db":             {false, false, false},
+		conv + "x.db-wal":         {false, false, false},
+		"/home/u/.gemini/antigravity-cli/conversation_summaries.db":                                {false, false, false},
+		"/home/u/.gemini/antigravity-cli/brain/" + id + "/.system_generated/logs/transcript.jsonl": {false, false, false},
+		"/home/v/.gemini/antigravity-cli/conversations/" + id + ".db":                              {false, false, false},
+		"/home/v/.gemini/antigravity-cli/conversations/" + id + ".db-wal":                          {false, false, false},
+		conv + id + ".db (deleted)":     {false, false, false},
+		conv + id + ".db-wal (deleted)": {false, false, false},
 	} {
-		if got := d.Main(path); got != want {
-			t.Errorf("%s: main = %v, want %v", path, got, want)
+		if got := (want{d.Main(path), d.Covers(path), d.Transient(path)}); got != w {
+			t.Errorf("%s: main, covers, transient = %v, want %v", path, got, w)
 		}
 	}
 	d = Adapter{}.Trace("", "")
@@ -76,7 +81,8 @@ func TestReadTraceFailsClosed(t *testing.T) {
 }
 
 // On the paired basic capture the declaration finds the database the
-// harness wrote and closed with a hash, and changes no verdict.
+// harness wrote and closed with a hash, reads none of the harness's own
+// events on it as tampering, and changes no verdict.
 func TestPairedTheDeclarationChangesNoVerdict(t *testing.T) {
 	g := pairedRun(t, "basic")
 	tr, _, err := Adapter{}.Parse(filepath.Join(pairedDir, "basic.conversation.db"))
@@ -91,8 +97,8 @@ func TestPairedTheDeclarationChangesNoVerdict(t *testing.T) {
 	without := verification.Verify(in)
 	in.Trace.Decl = agent.Trace(Adapter{}, g)
 	v := verification.Verify(in)
-	if len(v.TraceTampering) != 0 || v.Trace.Declared {
-		t.Fatalf("tampering %+v, declared %v, want none and no covered paths", v.TraceTampering, v.Trace.Declared)
+	if len(v.TraceTampering) != 0 || !v.Trace.Declared {
+		t.Fatalf("tampering %+v, declared %v, want none and covered paths", v.TraceTampering, v.Trace.Declared)
 	}
 	if len(v.Trace.Files) != 1 || !strings.HasSuffix(v.Trace.Files[0].Path, ".db") || v.Trace.Files[0].Last == nil ||
 		v.Trace.Files[0].Last.ActionType != models.FileClose || v.Trace.Files[0].Last.OutputHash == nil {
