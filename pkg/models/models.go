@@ -115,6 +115,10 @@ type GroundTruthEvent struct {
 	// Response is the attestation record of a NetResponse event (N-29).
 	// Nil on every other action type.
 	Response *ResponseAttestation `json:"response,omitempty"`
+	// ModelRequest is the digest of a NetRequest that is a WebSocket
+	// message holding an OpenAI Responses API request (P-42). Nil on every
+	// other event.
+	ModelRequest *ModelRequestDigest `json:"model_request,omitempty"`
 	// Cwd is the working directory of the process when it made a
 	// ProcessExec attempt, as an absolute path from the process's root
 	// directory (P-36). A relative program path or argument in Target is

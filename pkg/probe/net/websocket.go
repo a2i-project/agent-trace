@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"hash"
+	"slices"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -18,8 +19,13 @@ import (
 // hash is that of the message's unmasked payload; the server's messages
 // between two client messages are one turn, a net_response attestation.
 
-// maxWSTypes bounds the type names a turn's summary keeps.
+// maxWSTypes bounds the type names a turn's summary keeps, and the
+// response ids.
 const maxWSTypes = 16
+
+// maxModelRequest is the longest client text message kept whole, briefly,
+// for its Responses API digest (P-42); a longer one gets none.
+const maxModelRequest = 16 << 20
 
 // wsConn is the WebSocket state of one connection.
 type wsConn struct {
@@ -46,6 +52,7 @@ type wsTurn struct {
 	hash       hash.Hash
 	messages   int
 	types      map[string]int
+	ids        []string
 	truncated  bool
 }
 
@@ -54,6 +61,7 @@ type wsTurn struct {
 func (o *Observer) wsUpgrade(c *tlsConn, req *tlsparse.HTTPRequest) {
 	o.coverage.WebSockets++
 	w := &wsConn{client: tlsparse.NewWSStream(true)}
+	w.client.KeepText = maxModelRequest
 	if c.last != nil && c.last.target != "" {
 		w.target = models.CanonicalNetTarget("WS", c.host, c.port, req.Path, req.Query)
 		w.paired = true
@@ -145,6 +153,9 @@ func (o *Observer) wsServerBytes(tgid uint32, c *tlsConn, p []byte, missing int,
 			name = "(other)"
 		}
 		t.types[name]++
+		if id := m.ResponseID; id != "" && len(t.ids) < maxWSTypes && !slices.Contains(t.ids, id) {
+			t.ids = append(t.ids, id)
+		}
 		o.coverage.WSServerMessages++
 	}, func(op byte) {
 		if op == tlsparse.WSClose {
@@ -169,7 +180,18 @@ func (o *Observer) emitWSRequest(tgid uint32, w *wsConn, m *tlsparse.WSMessage) 
 	}
 	h := m.Hash
 	o.coverage.WSRequests++
-	o.send(models.GroundTruthEvent{Timestamp: m.Start, ActionType: models.NetRequest, Target: w.target, RequestHash: &h, PID: tgid})
+	e := models.GroundTruthEvent{Timestamp: m.Start, ActionType: models.NetRequest, Target: w.target, RequestHash: &h, PID: tgid}
+	if m.Body != nil {
+		if r, ok := tlsparse.ParseResponsesRequest(m.Body); ok {
+			d := &models.ModelRequestDigest{Type: r.Type, PreviousResponseID: r.PreviousResponseID, Truncated: r.Truncated, Items: []models.ModelItemDigest{}}
+			for _, it := range r.Items {
+				d.Items = append(d.Items, models.ModelItemDigest{Type: it.Type, Role: it.Role, CallID: it.CallID, Hash: it.Hash})
+			}
+			e.ModelRequest = d
+			o.coverage.WSModelRequests++
+		}
+	}
+	o.send(e)
 }
 
 // wsEndTurn emits the turn in progress on c, if any, as a net_response
@@ -204,7 +226,7 @@ func (o *Observer) wsEndTurn(tgid uint32, c *tlsConn, complete bool) {
 		Complete:  complete,
 		Truncated: t.truncated,
 		Paired:    w.paired,
-		WebSocket: &models.WebSocketSummary{Messages: t.messages, Types: t.types},
+		WebSocket: &models.WebSocketSummary{Messages: t.messages, Types: t.types, ResponseIDs: t.ids},
 	}
 	if len(t.types) == 0 {
 		att.WebSocket.Types = nil

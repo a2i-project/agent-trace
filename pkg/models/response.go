@@ -61,6 +61,36 @@ type WebSocketSummary struct {
 	// "(text)" or "(binary)" without one. At most 16 names are kept; the
 	// others are counted under "(other)".
 	Types map[string]int `json:"types,omitempty"`
+	// ResponseIDs are the response ids the turn's messages named (the
+	// "id" of their "response" object, P-42), distinct, in order, at most
+	// 16.
+	ResponseIDs []string `json:"response_ids,omitempty"`
+}
+
+// ModelRequestDigest is what the net probe keeps of one Responses API
+// request sent as a WebSocket message (P-42): never its text, the digest of
+// each input item, which an adapter computes the same way from its record
+// (tlsparse.ResponsesItemDigest), so the verifier can check each request
+// against the request the record says was sent (P-43).
+type ModelRequestDigest struct {
+	// Type is the message's "type", "response.create".
+	Type string `json:"type"`
+	// PreviousResponseID is the response the request continues; "" for one
+	// that names none.
+	PreviousResponseID string `json:"previous_response_id,omitempty"`
+	// Items are the input items, in order.
+	Items []ModelItemDigest `json:"items"`
+	// Truncated is set when the input held more than 4096 items.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+// ModelItemDigest is the digest of one Responses API item.
+type ModelItemDigest struct {
+	Type   string `json:"type"`
+	Role   string `json:"role,omitempty"`
+	CallID string `json:"call_id,omitempty"`
+	// Hash is tlsparse.ResponsesItemHash of the item.
+	Hash string `json:"hash"`
 }
 
 // SSESummary counts the events of a server-sent event stream.

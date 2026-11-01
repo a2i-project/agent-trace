@@ -493,6 +493,14 @@ type Report struct {
 	// verifier as Input.ServerCalls, which joins them to the capture's
 	// responses (V-45).
 	ServerCalls []verification.ServerCall `json:"server_calls,omitempty"`
+	// ModelRequests are the requests the record says the harness sent to
+	// its model API, each with its input items digested as the net probe
+	// digests a captured request (tlsparse.ResponsesItemDigest), and
+	// ModelRequestMethod the content method that carries them; a caller
+	// passes them to the verifier as Input.ModelRequests and
+	// Input.ModelRequestMethod (P-43).
+	ModelRequests      []verification.ModelRequest `json:"model_requests,omitempty"`
+	ModelRequestMethod string                      `json:"model_request_method,omitempty"`
 }
 
 // Count records a tool call that produced no entry.
