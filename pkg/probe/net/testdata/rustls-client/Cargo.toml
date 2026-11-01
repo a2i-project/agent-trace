@@ -1,0 +1,15 @@
+# Test client of TestObserver_RustlsAEADWebSocket (pkg/probe/net): a rustls
+# client with the ring provider that speaks one WebSocket session. CI builds
+# it with `cargo build --release --locked`; nothing else in the repository
+# depends on it.
+[package]
+name = "agent-trace-rustls-client"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rustls = { version = "=0.23.37", default-features = false, features = ["ring", "std", "tls12"] }
+
+[profile.release]
+strip = true
