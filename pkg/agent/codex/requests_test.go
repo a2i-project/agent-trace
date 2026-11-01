@@ -111,3 +111,36 @@ func TestParseModelRequestsEdges(t *testing.T) {
 		t.Errorf("another thread's record: %v, errors %v, requests %+v", err, rep.ParseErrors, rep.ModelRequests)
 	}
 }
+
+// Codex sends a tool output without the parts of its output list that are
+// exactly an empty input_text, and sends the agent_message another agent
+// delivered to the thread; the request carries each as sent (I-97).
+func TestParseModelRequestsAsCodexSendsThem(t *testing.T) {
+	dir := t.TempDir()
+	empty := `{"type":"custom_tool_call_output","id":"co_1","call_id":"c1","output":[{"type":"input_text","text":"Script completed\n"},{"type":"input_text","text":""}],"internal_chat_message_metadata_passthrough":{"turn_id":"t1"}}`
+	sent := `{"type":"custom_tool_call_output","call_id":"c1","output":[{"type":"input_text","text":"Script completed\n"}]}`
+	// A part that is not exactly an empty input_text is kept.
+	other := `{"type":"function_call_output","id":"fo_1","call_id":"c2","output":[{"type":"input_text","text":"","note":1},{"type":"output_text","text":""},{"type":"input_image","image_url":"x"}]}`
+	text := `{"type":"function_call_output","id":"fo_2","call_id":"c3","output":"{\"timed_out\":false}"}`
+	msg := `{"type":"agent_message","id":"am_1","author":"/root/a","recipient":"/root","content":[{"type":"input_text","text":"done"}]}`
+	p := write(t, filepath.Join(dir, "task.rollout.jsonl"),
+		meta(thread),
+		usage("2026-10-31T23:40:18.000Z", "1", thread, "resp_1"),
+		respItem("2026-10-31T23:40:19.000Z", "2", empty),
+		respItem("2026-10-31T23:40:19.000Z", "3", other),
+		respItem("2026-10-31T23:40:19.000Z", "4", text),
+		respItem("2026-10-31T23:40:19.000Z", "5", msg),
+		usage("2026-10-31T23:40:20.000Z", "6", thread, "resp_2"),
+	)
+	_, rep, err := Adapter{}.Parse(p)
+	if err != nil || len(rep.ParseErrors) != 0 || len(rep.ModelRequests) != 2 {
+		t.Fatalf("%v %v %+v", err, rep.ParseErrors, rep.ModelRequests)
+	}
+	want := []models.ModelItemDigest{digest(t, sent), digest(t, other), digest(t, text), digest(t, msg)}
+	if got := rep.ModelRequests[1].Items; !reflect.DeepEqual(got, want) {
+		t.Errorf("items\n%+v\nwant\n%+v", got, want)
+	}
+	if digest(t, empty).Hash == digest(t, sent).Hash {
+		t.Error("the recorded output and the one sent hash alike; the test proves nothing")
+	}
+}

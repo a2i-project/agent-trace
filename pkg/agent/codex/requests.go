@@ -21,7 +21,8 @@ import (
 // returns (the tool outputs, whose type ends in "_output", the user,
 // developer and system messages, and the additional_tools record) are the
 // request the next token_usage_record answered, continuing the response
-// the previous one named.
+// the previous one named. An agent_message, the message another agent
+// sent the thread, is sent too (I-97).
 
 // modelRequestMethod is the content method that carries Codex's model
 // traffic: its native executable's rustls (N-39).
@@ -40,9 +41,49 @@ type requestReader struct {
 
 // item takes one response_item payload of the given type and role.
 func (r *requestReader) item(typ, role string, payload json.RawMessage) {
-	if strings.HasSuffix(typ, "_output") || typ == "additional_tools" || (typ == "message" && sentRoles[role]) {
+	switch {
+	case strings.HasSuffix(typ, "_output"):
+		r.pending = append(r.pending, withoutEmptyText(payload))
+	case typ == "additional_tools" || typ == "agent_message" || (typ == "message" && sentRoles[role]):
 		r.pending = append(r.pending, append(json.RawMessage(nil), payload...))
 	}
+}
+
+// withoutEmptyText is a tool output's payload as Codex sends it: its
+// "output" list without the parts that are exactly an empty input_text
+// ({"type":"input_text","text":""}), which Codex leaves out of the request
+// although its record keeps them (I-97). A payload with no such part is
+// returned as recorded.
+func withoutEmptyText(payload json.RawMessage) json.RawMessage {
+	keep := append(json.RawMessage(nil), payload...)
+	var fields map[string]json.RawMessage
+	var parts []json.RawMessage
+	if json.Unmarshal(payload, &fields) != nil || json.Unmarshal(fields["output"], &parts) != nil {
+		return keep
+	}
+	kept := parts[:0:0]
+	for _, p := range parts {
+		var part map[string]json.RawMessage
+		var typ, text string
+		if json.Unmarshal(p, &part) == nil && len(part) == 2 &&
+			json.Unmarshal(part["type"], &typ) == nil && typ == "input_text" &&
+			json.Unmarshal(part["text"], &text) == nil && text == "" {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	if len(kept) == len(parts) {
+		return keep
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return keep
+	}
+	fields["output"] = out
+	if b, err := json.Marshal(fields); err == nil {
+		return b
+	}
+	return keep
 }
 
 // response ends the pending request at a token_usage_record naming the
