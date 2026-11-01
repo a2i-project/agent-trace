@@ -194,13 +194,18 @@ func checkModelRequests(reqs []ModelRequest, method string, ground models.Ground
 // index among the captured requests with a digest, each with the response
 // its turn named. A warm-up carries no input item; its turn, the first
 // WebSocket turn after it with its process and target before the next
-// request there, names one response, shows no output item event and keeps
-// every type name; no recorded request names that response, as the one it
-// got or the one it continues; and a captured request continues it.
+// request there, past the turns naming only a response a recorded request
+// got (another connection's, V-71), names one response, shows no output
+// item event and keeps every type name; no recorded request names that
+// response, as the one it got or the one it continues; and a captured
+// request continues it.
 func warmUps(reqs []ModelRequest, ground models.GroundTruth) map[int]string {
-	named := map[string]bool{}
+	named, got := map[string]bool{}, map[string]bool{}
 	for _, r := range reqs {
 		named[r.ResponseID], named[r.PreviousResponseID] = true, true
+		if r.ResponseID != "" {
+			got[r.ResponseID] = true
+		}
 	}
 	continued := map[string]bool{}
 	type ev struct {
@@ -242,8 +247,11 @@ func warmUps(reqs []ModelRequest, ground models.GroundTruth) map[int]string {
 		if !ok {
 			continue
 		}
-		delete(open, k)
 		ws := x.e.Response.WebSocket
+		if len(ws.ResponseIDs) == 1 && got[ws.ResponseIDs[0]] {
+			continue // the turn of a recorded request, sent on another connection
+		}
+		delete(open, k)
 		if len(ws.ResponseIDs) != 1 || outputItems(ws.Types) {
 			continue
 		}

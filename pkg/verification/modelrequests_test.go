@@ -175,3 +175,44 @@ func TestCheckModelRequestsWarmUps(t *testing.T) {
 		t.Errorf("the request continuing a named response: %+v", r.Checks[1])
 	}
 }
+
+// Two connections of one process to one target interleave: a subagent's
+// warm-up is sent before the main thread's turn arrives. That turn names a
+// response a recorded request got, so it is not the warm-up's turn; the
+// next one is (V-71).
+func TestCheckModelRequestsInterleavedWarmUps(t *testing.T) {
+	a, b, c, d := item("c1", "sha256:a"), item("c2", "sha256:b"), item("c3", "sha256:c"), item("c4", "sha256:d")
+	empty := []string{"response.created", "response.completed"}
+	output := []string{"response.created", "response.output_item.added", "response.output_item.done", "response.completed"}
+	reqs := []ModelRequest{
+		{Index: 0, ResponseID: "r1", Items: []models.ModelItemDigest{a, b}},
+		{Index: 1, PreviousResponseID: "r1", ResponseID: "r2", Items: []models.ModelItemDigest{c}},
+		{Index: 2, ResponseID: "s1", Items: []models.ModelItemDigest{d}},
+	}
+	ground := func(between string) models.GroundTruth {
+		return models.GroundTruth{
+			sentAt(1, wsRequest("")), wsTurn(2, "wm", empty...),
+			sentAt(3, wsRequest("wm", a, b)), wsTurn(4, "r1", output...),
+			sentAt(5, wsRequest("r1", c)),
+			sentAt(6, wsRequest("")),
+			wsTurn(7, between, output...),
+			wsTurn(8, "ws", empty...),
+			sentAt(9, wsRequest("ws", d)), wsTurn(10, "s1", output...),
+		}
+	}
+	cov := methodCoverage(models.ContentActive)
+	r := checkModelRequests(reqs, "tls-rustls-aead", ground("r2"), cov)
+	if r.Corroborated() != 3 || len(r.WarmUps) != 2 || len(r.Unrecorded) != 0 {
+		t.Fatalf("%d corroborated, %d warm-ups, %d unrecorded; checks %+v", r.Corroborated(), len(r.WarmUps), len(r.Unrecorded), r.Checks)
+	}
+	if w := r.Checks[2].WarmUp; w == nil || !w.Timestamp.Equal(time.Unix(6, 0)) {
+		t.Errorf("the subagent's request joined via %+v", w)
+	}
+	// A turn between them naming a response no recorded request got is the
+	// empty request's turn, as before: it shows an output item, so the
+	// empty request is no warm-up.
+	r = checkModelRequests(reqs, "tls-rustls-aead", ground("r9"), cov)
+	if len(r.WarmUps) != 1 || r.Checks[2].Corroborated {
+		t.Errorf("%d warm-ups; subagent check %+v", len(r.WarmUps), r.Checks[2])
+	}
+}
