@@ -701,7 +701,9 @@ func TestCaptureOfAgyKeepsARunWhoseDatabaseIsGoneOrDamaged(t *testing.T) {
 		root, tmp, env := layout(t, mode)
 		out := filepath.Join(tmp, "out")
 		cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "gemini", "--task", "basic", out)
-		cmd.Env = env
+		// The agy profile requires a session bus; CI runners have none, and the
+		// shim never uses it.
+		cmd.Env = append(env, "DBUS_SESSION_BUS_ADDRESS=unix:path="+filepath.Join(tmp, "bus"), "XDG_RUNTIME_DIR="+tmp)
 		b, err := cmd.CombinedOutput()
 		log := string(b)
 		if err != nil {
