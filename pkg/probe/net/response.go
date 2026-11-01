@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"regexp"
@@ -33,6 +34,20 @@ const maxHeldReads = 256
 // read. The first read that matches validates the SSL_read offset (N-D4,
 // N-29), as a request line validates the SSL_write offset.
 var httpStatusLineRE = regexp.MustCompile(`^HTTP/1\.[01] [1-5][0-9]{2}[ \r]`)
+
+// validRequestStart reports whether a write validates a content method's
+// write side (N-D4): it begins with an HTTP/1.x request line or the HTTP/2
+// client preface (N-46).
+func validRequestStart(p []byte) bool {
+	return httpRequestLineRE.Match(p) || bytes.HasPrefix(p, h2ClientPreface)
+}
+
+// validResponseStart reports whether a read validates a read side: it
+// begins with an HTTP/1.x status line or an HTTP/2 server's SETTINGS frame
+// (N-46).
+func validResponseStart(p []byte) bool {
+	return httpStatusLineRE.Match(p) || tlsparse.IsH2ServerPreface(p)
+}
 
 // attachWrite attaches the SSL side's write entry and return probes
 // (SSL_write's, or SSL_write_ex's for tls-openssl-ex) at off; the return
@@ -200,7 +215,7 @@ func (o *Observer) ResponseAttachError() error {
 // offset is unvalidated, and reads are discarded.
 func (o *Observer) handleSSLRead(key sslKey, payload []byte, missing int, ts time.Time) {
 	if !o.readValid {
-		if !httpStatusLineRE.Match(payload) {
+		if !validResponseStart(payload) {
 			o.coverage.ReadsUnvalidated++
 			return
 		}
@@ -219,6 +234,11 @@ func (o *Observer) feedRead(key sslKey, payload []byte, missing int, ts time.Tim
 		o.wsServerBytes(key.tgid, c, payload, missing, ts)
 		return
 	}
+	if c.h2 != nil || !c.readStarted && tlsparse.IsH2ServerPreface(payload) {
+		o.h2ServerBytes(key.tgid, c, payload, missing, ts)
+		return
+	}
+	c.readStarted = true
 	if err := c.resp.Feed(payload, missing, ts, func(r *tlsparse.Response) {
 		o.emitNetResponse(key.tgid, c, r)
 		if tlsparse.IsWebSocketAccept(r) {
@@ -240,22 +260,29 @@ func (o *Observer) feedRead(key sslKey, payload []byte, missing int, ts time.Tim
 // pipelining); with none, the connection's host as https://host[:port];
 // with no host either, nothing is emitted and the response is counted.
 func (o *Observer) emitNetResponse(tgid uint32, c *tlsConn, r *tlsparse.Response) {
-	paired := c.last != nil && c.last.target != ""
+	sent := c.last
+	c.last = nil
+	o.emitResponse(tgid, c, r, sent)
+}
+
+// emitResponse emits r as the answer to sent, the request it answers, or,
+// with none, names the connection's host; it reports whether it emitted.
+func (o *Observer) emitResponse(tgid uint32, c *tlsConn, r *tlsparse.Response, sent *sentRequest) bool {
+	paired := sent != nil && sent.target != ""
 	var target string
 	switch {
 	case paired:
-		target = c.last.target
+		target = sent.target
 	case c.host != "":
 		target = hostTarget(c.host, c.port)
 		o.coverage.ResponsesUnpaired++
 	}
-	c.last = nil
 	if r.Truncated {
 		o.coverage.ResponsesTruncated++
 	}
 	if target == "" {
 		o.coverage.ResponsesUnattributed++
-		return
+		return false
 	}
 	if !r.Complete {
 		o.coverage.ResponsesIncomplete++
@@ -289,6 +316,7 @@ func (o *Observer) emitNetResponse(tgid uint32, c *tlsConn, r *tlsparse.Response
 	default:
 		o.dropped.Add(1)
 	}
+	return true
 }
 
 // hostTarget names a connection by host alone, in the form of a request
@@ -306,6 +334,7 @@ func (o *Observer) closeTLSConn(key sslKey) {
 		return
 	}
 	c.resp.Close(c.lastSeen, func(r *tlsparse.Response) { o.emitNetResponse(key.tgid, c, r) })
+	o.h2Close(key.tgid, c)
 	o.wsEndTurn(key.tgid, c, false)
 	for _, k := range c.keys {
 		delete(o.tlsConns, k)

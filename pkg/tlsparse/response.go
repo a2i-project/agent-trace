@@ -66,16 +66,91 @@ type ResponseParser struct {
 	state     int
 	hdr       []byte
 	cur       *Response
-	hash      hash.Hash
 	framing   int
 	remaining int64
 	chunk     int
 	line      []byte
 	trailer   int
-	sse       *sseParser
-	encoded   []byte // compressed event stream, decoded at the end
-	encOver   bool
+	sink      *bodySink
 	upgraded  []byte // bytes after a 101 response's head, for TakeUpgraded
+}
+
+// bodySink hashes a response body as it streams and counts its server-sent
+// events, buffering a compressed event stream for decoding at its end. The
+// HTTP/1.x parser and the HTTP/2 layer (N-46) share it.
+type bodySink struct {
+	hash    hash.Hash
+	sse     *sseParser
+	encoded []byte // compressed event stream, decoded at the end
+	encOver bool
+}
+
+// newBodySink starts a body hash.
+func newBodySink() *bodySink {
+	return &bodySink{hash: sha256.New()}
+}
+
+// countEvents sets the sink up to count the events of r's body when r, whose
+// content type and coding are set, is an event stream in a coding it reads.
+func (b *bodySink) countEvents(r *Response) {
+	if r.ContentType == "text/event-stream" {
+		switch r.ContentEncoding {
+		case "", "identity":
+			b.sse = newSSEParser()
+		case "gzip", "x-gzip", "deflate":
+			b.sse = newSSEParser()
+			b.encoded = []byte{}
+		}
+	}
+}
+
+// consume adds body bytes.
+func (b *bodySink) consume(r *Response, p []byte) {
+	if len(p) == 0 {
+		return
+	}
+	r.BodyBytes += int64(len(p))
+	b.hash.Write(p)
+	switch {
+	case b.encoded != nil:
+		if len(b.encoded)+len(p) > maxCompressedSSE {
+			b.encOver = true
+			p = p[:maxCompressedSSE-len(b.encoded)]
+		}
+		b.encoded = append(b.encoded, p...)
+	case b.sse != nil:
+		b.sse.write(p)
+	}
+}
+
+// miss counts n body bytes the capture missed: the response is truncated
+// and its event count overflows.
+func (b *bodySink) miss(r *Response, n int64) {
+	r.BodyBytes += n
+	r.Truncated = true
+	if b.sse != nil {
+		b.sse.overflow()
+	}
+}
+
+// finish ends the body: the hash when it is complete and not truncated, and
+// the event count.
+func (b *bodySink) finish(r *Response, complete bool, at time.Time) {
+	r.End = at
+	r.Complete = complete
+	if complete && !r.Truncated {
+		r.BodyHash = "sha256:" + hex.EncodeToString(b.hash.Sum(nil))
+	}
+	if b.sse != nil && b.encoded != nil {
+		if !b.decodeSSE(r.ContentEncoding) {
+			b.sse = nil
+		} else if b.encOver {
+			b.sse.overflow()
+		}
+	}
+	if b.sse != nil {
+		r.SSE = &b.sse.stats
+	}
 }
 
 const (
@@ -227,7 +302,7 @@ func (p *ResponseParser) header(data []byte, at time.Time, emit func(*Response))
 	r.RequestID = requestID(headers)
 	r.ContentType = mediaType(headers.Get("Content-Type"))
 	r.ContentEncoding = boundedLower(strings.TrimSpace(headers.Get("Content-Encoding")))
-	p.hash = sha256.New()
+	p.sink = newBodySink()
 
 	if status == 101 {
 		r.Upgrade = boundedLower(strings.TrimSpace(headers.Get("Upgrade")))
@@ -256,16 +331,7 @@ func (p *ResponseParser) header(data []byte, at time.Time, emit func(*Response))
 		}
 	}
 
-	if r.ContentType == "text/event-stream" {
-		switch r.ContentEncoding {
-		case "", "identity":
-			p.sse = newSSEParser()
-		case "gzip", "x-gzip", "deflate":
-			p.sse = newSSEParser()
-			p.encoded = []byte{}
-		}
-	}
-
+	p.sink.countEvents(r)
 	p.state = stBody
 	switch {
 	case chunked:
@@ -387,10 +453,7 @@ func (p *ResponseParser) miss(n int64, at time.Time, emit func(*Response)) error
 		}
 		return ErrMalformedResponse
 	}
-	p.cur.Truncated = true
-	if p.sse != nil {
-		p.sse.overflow()
-	}
+	p.sink.miss(p.cur, 0)
 	switch {
 	case p.framing == frClose:
 		p.cur.BodyBytes += n
@@ -414,43 +477,18 @@ func (p *ResponseParser) miss(n int64, at time.Time, emit func(*Response)) error
 }
 
 func (p *ResponseParser) consume(b []byte) {
-	if len(b) == 0 {
-		return
-	}
-	p.cur.BodyBytes += int64(len(b))
-	p.hash.Write(b)
-	switch {
-	case p.encoded != nil:
-		if len(p.encoded)+len(b) > maxCompressedSSE {
-			p.encOver = true
-			b = b[:maxCompressedSSE-len(p.encoded)]
-		}
-		p.encoded = append(p.encoded, b...)
-	case p.sse != nil:
-		p.sse.write(b)
-	}
+	p.sink.consume(p.cur, b)
 }
 
 func (p *ResponseParser) finish(complete bool, at time.Time, emit func(*Response)) {
 	r := p.cur
-	r.End = at
-	r.Complete = complete
-	if complete && !r.Truncated && p.hash != nil {
-		r.BodyHash = "sha256:" + hex.EncodeToString(p.hash.Sum(nil))
+	if p.sink == nil {
+		// A response that ended with its head (a 101, 204 or 304, an
+		// answer to a HEAD) before its body was set up.
+		p.sink = &bodySink{hash: sha256.New()}
 	}
-	if p.sse != nil {
-		if p.encoded != nil {
-			if !p.decodeSSE() {
-				p.sse = nil
-			} else if p.encOver {
-				p.sse.overflow()
-			}
-		}
-	}
-	if p.sse != nil {
-		r.SSE = &p.sse.stats
-	}
-	p.cur, p.hash, p.sse, p.encoded, p.encOver = nil, nil, nil, nil, false
+	p.sink.finish(r, complete, at)
+	p.cur, p.sink = nil, nil
 	p.state = stHeader
 	emit(r)
 }
@@ -458,17 +496,17 @@ func (p *ResponseParser) finish(complete bool, at time.Time, emit func(*Response
 // decodeSSE decodes the buffered compressed event stream into the SSE
 // parser. A prefix that ends early still counts the events it holds. It
 // reports false when the coding cannot be read at all.
-func (p *ResponseParser) decodeSSE() bool {
+func (b *bodySink) decodeSSE(coding string) bool {
 	var r io.Reader
 	var err error
-	switch p.cur.ContentEncoding {
+	switch coding {
 	case "gzip", "x-gzip":
-		r, err = gzip.NewReader(bytes.NewReader(p.encoded))
+		r, err = gzip.NewReader(bytes.NewReader(b.encoded))
 	case "deflate":
 		// "deflate" is zlib-wrapped by the standard, raw by some servers.
-		r, err = zlib.NewReader(bytes.NewReader(p.encoded))
+		r, err = zlib.NewReader(bytes.NewReader(b.encoded))
 		if err != nil {
-			r, err = flate.NewReader(bytes.NewReader(p.encoded)), nil
+			r, err = flate.NewReader(bytes.NewReader(b.encoded)), nil
 		}
 	default:
 		return false
@@ -476,9 +514,9 @@ func (p *ResponseParser) decodeSSE() bool {
 	if err != nil {
 		return false
 	}
-	_, err = io.Copy(sseWriter{p.sse}, io.LimitReader(r, maxDecodedSSE))
+	_, err = io.Copy(sseWriter{b.sse}, io.LimitReader(r, maxDecodedSSE))
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
-		p.sse.overflow()
+		b.sse.overflow()
 	}
 	return true
 }

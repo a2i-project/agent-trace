@@ -16,15 +16,16 @@ import (
 )
 
 // h2Frames is what an h2 client writes first: the preface, then a SETTINGS
-// frame (type 4, empty), then a HEADERS frame header with no block.
+// frame (type 4, empty), then a HEADERS frame on stream 0, which breaks the
+// protocol.
 var h2Frames = [][]byte{
 	append(append([]byte{}, h2ClientPreface...), 0, 0, 0, 4, 0, 0, 0, 0, 0),
 	{0, 0, 0, 1, 4, 0, 0, 0, 1},
 	{0, 0, 0, 0, 1, 0, 0, 0, 0},
 }
 
-// An h2 connection's frames count under the h2 counters and yield no
-// request; the existing counters see them as before (N-33).
+// An h2 connection's frames count under the h2 counters (N-33); a frame that
+// breaks the protocol ends the direction, counted in H2Unparsed (N-46).
 func TestHandleSSLFrame_H2ConnectionIsCounted(t *testing.T) {
 	o := newTestObserver()
 	key := sslKey{tgid: 1, ssl: 7}
@@ -37,8 +38,8 @@ func TestHandleSSLFrame_H2ConnectionIsCounted(t *testing.T) {
 	if o.coverage.FramesH2 != len(h2Frames) {
 		t.Errorf("FramesH2 = %d, want %d", o.coverage.FramesH2, len(h2Frames))
 	}
-	if o.coverage.WithContent != 0 {
-		t.Errorf("WithContent = %d, want 0 on an h2 connection", o.coverage.WithContent)
+	if o.coverage.WithContent != 0 || o.coverage.H2Unparsed != 1 {
+		t.Errorf("WithContent = %d, H2Unparsed = %d, want 0 and 1", o.coverage.WithContent, o.coverage.H2Unparsed)
 	}
 	select {
 	case ev := <-o.events:
@@ -48,8 +49,9 @@ func TestHandleSSLFrame_H2ConnectionIsCounted(t *testing.T) {
 }
 
 // An HTTP/1.1 connection, whatever its ClientHello offered, parses as before
-// and counts nothing under h2; an SSL* reused for HTTP/1.1 after an h2
-// connection stops counting as h2 once a request parses on it.
+// and counts nothing under h2. An SSL* reused for HTTP/1.1 after an h2
+// connection: its first request breaks the h2 framing and is lost, and the
+// next one parses as HTTP/1.1 (N-46).
 func TestHandleSSLFrame_HTTP1ConnectionIsNotH2(t *testing.T) {
 	o := newTestObserver()
 	key := sslKey{tgid: 1, ssl: 8}
@@ -68,10 +70,10 @@ func TestHandleSSLFrame_HTTP1ConnectionIsNotH2(t *testing.T) {
 	o.handleSSLFrame(reused, req, 0, time.Now())
 	o.handleSSLFrame(reused, req, 0, time.Now())
 	if o.coverage.FramesH2 != 2 {
-		t.Errorf("FramesH2 = %d, want 2: the preface and the frame whose request ended h2", o.coverage.FramesH2)
+		t.Errorf("FramesH2 = %d, want 2: the preface and the request that ended the h2 direction", o.coverage.FramesH2)
 	}
-	if o.coverage.WithContent != 3 {
-		t.Errorf("WithContent = %d, want 3", o.coverage.WithContent)
+	if o.coverage.WithContent != 2 || o.coverage.H2Unparsed != 1 {
+		t.Errorf("WithContent = %d, H2Unparsed = %d, want 2 and 1", o.coverage.WithContent, o.coverage.H2Unparsed)
 	}
 }
 

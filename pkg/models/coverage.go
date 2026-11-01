@@ -222,7 +222,7 @@ type TrackedSetStats struct {
 type NetContentCounts struct {
 	Connections   int `json:"connections"`    // connections recorded at connect
 	WithHostname  int `json:"with_hostname"`  // connections whose ClientHello named a host
-	WithContent   int `json:"with_content"`   // HTTP/1.1 requests emitted as net_request
+	WithContent   int `json:"with_content"`   // HTTP requests emitted as net_request
 	Dials         int `json:"dials"`          // connections closed with no name and nothing written (N-22)
 	AddressProbes int `json:"address_probes"` // connections to port 0, not emitted
 	OpenAtStop    int `json:"open_at_stop"`   // connections still open at the stop (N-21)
@@ -233,21 +233,32 @@ type NetContentCounts struct {
 	DNSNamed       int `json:"dns_named"`    // of those, the ones that carry the question
 	DNSUnparsed    int `json:"dns_unparsed"` // sends to port 53 that did not parse as a query
 	Datagrams      int `json:"datagrams"`    // addressed datagrams recorded (N-28)
-	// ContentUnsupported counts the connections whose ClientHello offered h2
-	// in ALPN, whatever the server chose.
+	// ContentUnsupported counted the connections whose ClientHello offered
+	// h2 in ALPN, whatever the server chose. Since the HTTP/2 layer (N-46)
+	// it is no longer counted: zero in a newer capture.
 	ContentUnsupported int `json:"content_unsupported"`
 	// H2Preface counts the TLS connections whose request stream began with
 	// the HTTP/2 client connection preface: h2 negotiated, seen in the
 	// plaintext. Counted only while content capture is active.
 	H2Preface int `json:"h2_preface"`
-	// H2PrefaceUnvalidated counts the write frames that began with the
-	// HTTP/2 preface while SSL_write offset validation was reading, before
-	// content capture was active. Validation accepts HTTP/1.x only, so these
-	// are h2 connections the content counts above miss.
+	// H2PrefaceUnvalidated counted the write frames that began with the
+	// HTTP/2 preface while SSL_write offset validation read them. Since the
+	// preface validates an offset (N-46) it is no longer counted.
 	H2PrefaceUnvalidated int `json:"h2_preface_unvalidated"`
 	// FramesH2 counts the write frames on connections counted in H2Preface.
-	// None is parsed into a request.
 	FramesH2 int `json:"frames_h2"`
+	// HTTP/2 layer counts (N-46): requests and responses emitted from h2
+	// streams (each also in WithContent or Responses), directions that
+	// stopped parsing (a protocol or HPACK error, bytes missed outside a
+	// DATA payload), streams not followed (a header block that is no
+	// request or response, a stream past the bound), and request streams
+	// that began like an h2 frame without the preface (a connection older
+	// than the capture).
+	H2Requests  int `json:"h2_requests,omitempty"`
+	H2Responses int `json:"h2_responses,omitempty"`
+	H2Unparsed  int `json:"h2_unparsed,omitempty"`
+	H2Malformed int `json:"h2_malformed,omitempty"`
+	H2NoPreface int `json:"h2_no_preface,omitempty"`
 	// FramesUnattributed counts write frames that yielded no request: they
 	// did not parse as HTTP/1.1, had no host, or were truncated with no
 	// request head in the bytes copied.

@@ -31,7 +31,7 @@ type Coverage struct {
 	HellosFollowed     int    // ClientHellos whose first send did not hold them whole, followed into later sends (N-31)
 	WithContent        int    // at least one HTTP request attributed to a connection
 	FramesUnattributed int    // ssl_frame whose request could not be joined to a connection or parsed
-	ContentUnsupported int    // connections whose ClientHello offered h2 in ALPN, whatever was negotiated
+	ContentUnsupported int    // no longer counted (N-46): before it, connections whose ClientHello offered h2 in ALPN
 	FaultedReads       uint64 // SSL_write calls whose plaintext read faulted in-kernel (see D5)
 	RingbufDrops       uint64 // records the net, TLS and rustls ring buffers discarded because they were full: NetRingDrops plus TLSRingDrops plus AEADRingDrops
 	NetRingDrops       uint64 // records the net ring buffer discarded (N-33)
@@ -45,10 +45,16 @@ type Coverage struct {
 	FramesTruncated    int    // SSL_write calls larger than the capture copies; a request whose head the copied bytes hold is emitted cut (RequestsCut), otherwise the request stream is dropped and counted in FramesUnattributed too
 	RequestsCut        int    // requests emitted cut: their head was copied and bytes of their body were not (N-44); counted in WithContent too
 
-	// HTTP/2 (N-33). Diagnostic: the frames are handled as before.
+	// HTTP/2 (N-33, N-46): the connections whose request stream begins with
+	// the client preface are parsed by the HTTP/2 layer.
 	H2Preface            int // TLS connections whose request stream began with the HTTP/2 client preface
 	H2PrefaceUnvalidated int // write frames that began with the preface while offset validation read them, before content capture was active
 	FramesH2             int // write frames on connections counted in H2Preface, the preface's included
+	H2Requests           int // requests emitted from HTTP/2 streams; counted in WithContent too
+	H2Responses          int // responses emitted from HTTP/2 streams; counted in Responses too
+	H2Unparsed           int // HTTP/2 directions that stopped parsing: a protocol or HPACK error, or bytes missed outside a DATA payload; a lost server direction counts in ResponsesUnparsed too
+	H2Malformed          int // HTTP/2 streams not followed: a header block that is no request or response, or a stream past the bound
+	H2NoPreface          int // request streams that did not parse as HTTP/1.x and began like an HTTP/2 frame: an h2 connection whose preface came before the capture
 
 	// Response capture (N-29). All diagnostic; ResponseGaps in
 	// ProbeCoverage sums the ones that mean missing response data.
@@ -110,9 +116,12 @@ type tlsConn struct {
 	host     string // host and port of the latest attributed request
 	port     int
 	lastSeen time.Time
-	// h2 is set when the request stream began with the HTTP/2 preface and
-	// cleared when a request parses on it (an SSL* reused for HTTP/1.1).
-	h2 bool
+	// h2 is the HTTP/2 state once the request stream began with the client
+	// preface, or the read side with a server's SETTINGS frame (N-46).
+	h2 *h2Conn
+	// readStarted is set once a read was fed to the HTTP/1.x response
+	// parser, after which a SETTINGS frame no longer starts the h2 side.
+	readStarted bool
 	// keys are the keys o.tlsConns holds this state under: its own, and the
 	// socket a rustls encrypter was bound to (N-40).
 	keys []sslKey
@@ -174,15 +183,40 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 		o.wsClientBytes(key.tgid, c, payload, missing, ts)
 		return
 	}
-	if c.req.Len() == 0 && bytes.HasPrefix(payload, h2ClientPreface) {
-		c.h2 = true
-		o.coverage.H2Preface++
+	if c.h2 != nil && c.h2.refused {
+		if !validRequestStart(payload) {
+			return
+		}
+		// A request line or preface: the key was reused for a new
+		// connection.
+		o.h2Close(key.tgid, c)
+		c.h2 = nil
 	}
-	if c.h2 {
-		o.coverage.FramesH2++
+	if c.req.Len() == 0 && c.skip == 0 && bytes.HasPrefix(payload, h2ClientPreface) && (c.h2 == nil || c.h2.client == nil || c.h2.client.Err() != nil) {
+		// A new h2 connection: the first, or one that reuses the key after
+		// the previous one's client direction ended.
+		o.h2Start(key.tgid, c)
+	}
+	if c.h2 == nil && c.req.Len() == 0 && c.skip == 0 && !httpRequestLineRE.Match(payload) && tlsparse.LooksLikeH2Frame(payload) {
+		// An h2 connection whose preface came before the capture: its
+		// header tables are unknown, so both directions are refused.
+		c.h2 = &h2Conn{refused: true}
+		o.coverage.H2NoPreface++
+		o.coverage.FramesUnattributed++
+		return
 	}
 	if missing > 0 {
 		o.coverage.FramesTruncated++
+	}
+	if c.h2 != nil && c.h2.client != nil {
+		if c.h2.client.Err() == nil || !httpRequestLineRE.Match(payload) {
+			o.coverage.FramesH2++
+			o.h2ClientBytes(key.tgid, c, payload, missing, ts)
+			return
+		}
+		// An HTTP/1.x request after the h2 connection ended: the key was
+		// reused for HTTP/1.1.
+		c.h2 = nil
 	}
 	if c.skip > 0 {
 		// The rest of a cut request's body (N-44): bytes the call wrote
@@ -218,7 +252,6 @@ func (o *Observer) handleSSLFrame(key sslKey, payload []byte, missing int, ts ti
 		o.coverage.FramesUnattributed++
 		return
 	}
-	c.h2 = false
 	sent := &sentRequest{method: req.Method}
 	if target, host, port, ok := o.emitNetRequest(key.tgid, req, true, ts); ok {
 		sent.target = target
@@ -249,7 +282,6 @@ func (o *Observer) parseRequests(key sslKey, c *tlsConn, ts time.Time) bool {
 		if !ok {
 			return true // need more bytes; wait for the next ssl_frame
 		}
-		c.h2 = false
 		sent := &sentRequest{method: req.Method}
 		if target, host, port, ok := o.emitNetRequest(key.tgid, req, false, ts); ok {
 			sent.target = target
@@ -279,29 +311,43 @@ func (o *Observer) parseRequests(key sslKey, c *tlsConn, ts time.Time) bool {
 // It returns the target, host and port, with ok false when the request
 // could not be attributed to a host and nothing was emitted.
 func (o *Observer) emitNetRequest(tgid uint32, req *tlsparse.HTTPRequest, cut bool, ts time.Time) (target, host string, port int, ok bool) {
+	var reqHash *string
+	if len(req.Body) > 0 && !cut {
+		sum := sha256.Sum256(req.Body)
+		h := "sha256:" + hex.EncodeToString(sum[:])
+		reqHash = &h
+	}
+	return o.emitRequest(tgid, req, reqHash, cut, ts)
+}
+
+// requestTarget attributes a request to a host and builds its target, as
+// emitNetRequest does, without emitting anything. ok is false when the
+// request names no host and its process has no connection with an SNI name.
+func (o *Observer) requestTarget(tgid uint32, req *tlsparse.HTTPRequest) (target, host string, port int, ok bool) {
 	host = req.Headers.Get("Host")
 	if host == "" {
 		host = o.newestHostForTGID(tgid)
 	}
 	if host == "" {
-		o.coverage.FramesUnattributed++
 		return "", "", 0, false
 	}
-
 	if i := strings.LastIndexByte(host, ':'); i != -1 && !strings.Contains(host[i:], "]") {
 		if p, err := parsePort(host[i+1:]); err == nil {
 			port = p
 			host = host[:i]
 		}
 	}
+	return models.CanonicalNetTarget(req.Method, host, port, req.Path, req.Query), host, port, true
+}
 
-	target = models.CanonicalNetTarget(req.Method, host, port, req.Path, req.Query)
-
-	var reqHash *string
-	if len(req.Body) > 0 && !cut {
-		sum := sha256.Sum256(req.Body)
-		h := "sha256:" + hex.EncodeToString(sum[:])
-		reqHash = &h
+// emitRequest emits a request whose body hash is computed: nil with no body
+// or a cut one. An HTTP/1.x request's comes from its body, an HTTP/2
+// request's from its stream (N-46).
+func (o *Observer) emitRequest(tgid uint32, req *tlsparse.HTTPRequest, reqHash *string, cut bool, ts time.Time) (target, host string, port int, ok bool) {
+	target, host, port, ok = o.requestTarget(tgid, req)
+	if !ok {
+		o.coverage.FramesUnattributed++
+		return "", "", 0, false
 	}
 
 	event := models.GroundTruthEvent{

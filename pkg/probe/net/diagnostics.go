@@ -9,6 +9,7 @@ import (
 	"github.com/cilium/ebpf/ringbuf"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/tlsparse"
 )
 
 // ringbufHdrSize is the kernel's per-record ring buffer header
@@ -177,4 +178,4 @@ func (m *sslWriteMeter) snapshot() {
 
 // h2ClientPreface is the HTTP/2 client connection preface (RFC 9113, section
 // 3.4): the first bytes a client writes on a connection that negotiated h2.
-var h2ClientPreface = []byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+var h2ClientPreface = tlsparse.H2ClientPreface

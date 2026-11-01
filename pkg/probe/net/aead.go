@@ -134,7 +134,7 @@ func (o *Observer) handleAEADRecord(rec sslRecord, ts time.Time) {
 		o.aeadBind(sslKey{tgid: h.Tgid, kind: keyAEADEnc, ssl: h.Ssl}, h.Sock, ts)
 	case sslDirRead:
 		if !o.aeadReadValid {
-			if !httpStatusLineRE.Match(rec.payload) {
+			if !validResponseStart(rec.payload) {
 				o.coverage.AEADUnvalidated++
 				return
 			}
@@ -148,7 +148,7 @@ func (o *Observer) handleAEADRecord(rec sslRecord, ts time.Time) {
 		o.feedRead(key, rec.payload, missing, ts)
 	default:
 		if !o.aeadWriteValid {
-			if !httpRequestLineRE.Match(rec.payload) {
+			if !validRequestStart(rec.payload) {
 				o.coverage.AEADUnvalidated++
 				return
 			}

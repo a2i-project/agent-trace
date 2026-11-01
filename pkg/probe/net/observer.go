@@ -266,9 +266,6 @@ type Observer struct {
 	sslRingSize uint64
 	netTracked  *trackedCounter
 	tlsTracked  *trackedCounter
-	// h2Unvalidated counts the write frames offset validation read that
-	// began with the HTTP/2 preface.
-	h2Unvalidated atomic.Uint64
 
 	// iouringSubmitUnseen is set when the kernel has no io_uring_submit_req
 	// tracepoint, so io_uring operations cannot be classified; every ring a
@@ -722,7 +719,8 @@ func (o *Observer) prepareSSL(cfg Config) error {
 
 // attachAndValidateTLS is the validation step (N-D4): attach the
 // SSL_write probes at each candidate in turn and require its first captured
-// frame from a tracked process to look like an HTTP/1.x request line (D4:
+// frame from a tracked process to begin with an HTTP/1.x request line or
+// the HTTP/2 client preface (validRequestStart; D4:
 // runtime validation is authoritative, the ELF scan's score is only a
 // sorting hint). Called from Start, which blocks on it -- see Start's doc
 // comment for why that's acceptable despite Start having no error return.
@@ -777,15 +775,14 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 	}
 	if !validated {
 		// Distinguish "the offset is wrong / nothing wrote" from "the
-		// offset is fine but the plaintext isn't HTTP/1.x". The second case
-		// is what an ALPN-negotiated h2 connection looks like from here, and
-		// reporting it as a failed offset search sends the reader hunting
-		// for a symbol-resolution bug that isn't there.
+		// offset is fine but the plaintext is neither HTTP/1.x nor HTTP/2",
+		// so the reader does not hunt for a symbol-resolution bug that
+		// isn't there.
 		switch {
 		case stopped:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s before the capture stopped", o.plan.sslPath)
 		case framesSeen > 0:
-			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): captured %d frame(s), none began with an HTTP/1.x request line -- HTTP/2 plaintext cannot validate an offset, and its content is not parsed",
+			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): captured %d frame(s), none began with an HTTP/1.x request line or the HTTP/2 client preface",
 				o.plan.sslPath, len(o.tlsCandidates), framesSeen)
 		default:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): no frame was captured from a tracked process within %s",
@@ -814,7 +811,8 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 }
 
 // validateSSLWriteCandidate blocks for up to timeout waiting for one write
-// frame on o.sslReader and, if it looks like an HTTP/1.x request line,
+// frame on o.sslReader and, if validRequestStart accepts it (an HTTP/1.x
+// request line or the HTTP/2 preface),
 // decodes and returns it (ok=true) so the caller can feed it to the
 // correlator instead of discarding it -- a short-lived tracked process may
 // never call SSL_write again after the one write that validated the offset,
@@ -826,7 +824,7 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 //
 // seen reports whether a write frame arrived at all (1) or the read timed
 // out / the reader was closed (0), which is what lets the caller tell a
-// wrong offset apart from non-HTTP/1.x plaintext.
+// wrong offset apart from plaintext that is neither HTTP/1.x nor HTTP/2.
 func (o *Observer) validateSSLWriteCandidate(timeout time.Duration) (rec sslRecord, seen int, ok bool) {
 	o.sslReader.SetDeadline(time.Now().Add(timeout))
 	for {
@@ -847,10 +845,7 @@ func (o *Observer) validateSSLWriteCandidate(timeout time.Duration) (rec sslReco
 			}
 			continue
 		}
-		if !httpRequestLineRE.Match(rec.payload) {
-			if bytes.HasPrefix(rec.payload, h2ClientPreface) {
-				o.h2Unvalidated.Add(1)
-			}
+		if !validRequestStart(rec.payload) {
 			return sslRecord{}, 1, false
 		}
 		return rec, 1, true
@@ -958,7 +953,6 @@ func (o *Observer) Coverage() Coverage {
 	cov.ReadFaults += k.readFault
 	cov.ReadDrops += k.readDrop
 	cov.ReadsUnvalidated += int(o.heldDropped.Load())
-	cov.H2PrefaceUnvalidated += int(o.h2Unvalidated.Load())
 	if o.iouringSubmitUnseen {
 		cov.IOURingNetOps += k.uringRing
 	}
@@ -1137,6 +1131,7 @@ func netContentCounts(c Coverage) *models.NetContentCounts {
 		Dials: c.Dials, AddressProbes: c.AddressProbes, OpenAtStop: c.OpenAtStop, Replaced: c.Replaced,
 		HellosFollowed: c.HellosFollowed, DNS: c.DNS, DNSNamed: c.DNSNamed, DNSUnparsed: c.DNSUnparsed, Datagrams: c.Datagrams,
 		ContentUnsupported: c.ContentUnsupported, H2Preface: c.H2Preface, H2PrefaceUnvalidated: c.H2PrefaceUnvalidated, FramesH2: c.FramesH2,
+		H2Requests: c.H2Requests, H2Responses: c.H2Responses, H2Unparsed: c.H2Unparsed, H2Malformed: c.H2Malformed, H2NoPreface: c.H2NoPreface,
 		FramesUnattributed: c.FramesUnattributed, FramesTruncated: c.FramesTruncated, RequestsCut: c.RequestsCut,
 		Responses: c.Responses, ResponsesUnpaired: c.ResponsesUnpaired, ResponsesUnattributed: c.ResponsesUnattributed,
 		ResponsesIncomplete: c.ResponsesIncomplete, ResponsesTruncated: c.ResponsesTruncated, ResponsesUnparsed: c.ResponsesUnparsed,
@@ -1580,12 +1575,6 @@ func (o *Observer) resolveHello(conn *connection) bool {
 	conn.host = hello.ServerName
 	conn.alpn = hello.ALPN
 	o.coverage.WithHostname++
-	for _, proto := range hello.ALPN {
-		if proto == "h2" {
-			o.coverage.ContentUnsupported++
-			break
-		}
-	}
 	return true
 }
 
