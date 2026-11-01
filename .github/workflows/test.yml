@@ -22,9 +22,15 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
+    - name: Build the rustls test client
+      # TestObserver_RustlsAEADWebSocket hooks a rustls client (N-39); its
+      # source and pinned Cargo.lock are in pkg/probe/net/testdata. The
+      # runner image has cargo; the crates are downloaded here.
+      run: cargo build --release --locked --manifest-path pkg/probe/net/testdata/rustls-client/Cargo.toml
+
     - name: Run all tests (Unit, Integration, and E2E)
       # We run everything with sudo so the eBPF/fanotify tests execute fully
-      run: sudo go test -v ./...
+      run: sudo env AGENT_TRACE_RUSTLS_CLIENT="$PWD/pkg/probe/net/testdata/rustls-client/target/release/agent-trace-rustls-client" go test -v ./...
 
   bpf-freshness:
     name: BPF Objects Up To Date

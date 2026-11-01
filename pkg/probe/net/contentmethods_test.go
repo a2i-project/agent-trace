@@ -360,8 +360,8 @@ func TestRustlsClient_CompletesItsSession(t *testing.T) {
 
 // TestObserver_RustlsAEADWebSocket runs tls-rustls-aead (N-39, N-40) on a
 // rustls client named by AGENT_TRACE_RUSTLS_CLIENT, and is skipped without
-// one: building it needs Rust crates the repository does not vendor. The
-// client takes the port and a message, connects to 127.0.0.1 with the name
+// one. The client is testdata/rustls-client, which CI builds with cargo
+// (its crates downloaded at the build, pinned by Cargo.lock). It takes the port and a message, connects to 127.0.0.1 with the name
 // localhost, accepts any certificate, sends the upgrade request for /ws?x=1
 // with Host localhost:PORT, reads the 101 head, sends one masked text frame
 // with the message, and reads to the end of the connection.
