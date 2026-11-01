@@ -60,6 +60,15 @@ type WSMessage struct {
 	// message is text holding a JSON object and the member, at most 64
 	// printable bytes, is within its first 4 KiB; "" otherwise.
 	Type string
+	// ResponseID is the "id" of the top-level "response" object of such a
+	// message, within its first 4 KiB (an OpenAI Responses API event names
+	// its response so), at most 256 printable bytes; "" otherwise.
+	ResponseID string
+	// Body is the whole unmasked payload of a text message no longer than
+	// the stream's KeepText, nil otherwise. It is valid only during the
+	// onMessage call that receives the message, for a digest of it; the
+	// plaintext is never kept (N-D3).
+	Body []byte
 }
 
 // WSStream parses the frames of one direction of a WebSocket connection,
@@ -68,6 +77,9 @@ type WSStream struct {
 	// OnData, when set, receives the unmasked payload bytes of every data
 	// frame, in order, as they are parsed.
 	OnData func([]byte)
+	// KeepText, when above zero, is the longest text message whose whole
+	// payload is passed to onMessage as WSMessage.Body.
+	KeepText int
 
 	client bool // frames from the client, which must be masked
 	err    error
@@ -85,6 +97,8 @@ type WSStream struct {
 	msg    *WSMessage // message in progress, nil between messages
 	hash   hash.Hash
 	prefix []byte
+	body   []byte // the whole text message while it fits KeepText
+	over   bool   // the message outgrew KeepText
 	ctl    []byte // control frame payload
 }
 
@@ -228,6 +242,8 @@ func (s *WSStream) startMessage(at time.Time) {
 	s.msg = &WSMessage{Text: s.opcode == WSText, Start: at}
 	s.hash = sha256.New()
 	s.prefix = s.prefix[:0]
+	s.body = s.body[:0]
+	s.over = false
 }
 
 func (s *WSStream) payload(p []byte, at time.Time) {
@@ -250,6 +266,13 @@ func (s *WSStream) payload(p []byte, at time.Time) {
 	s.hash.Write(p)
 	if s.msg.Text && len(s.prefix) < wsTypePrefix {
 		s.prefix = append(s.prefix, p[:min(len(p), wsTypePrefix-len(s.prefix))]...)
+	}
+	if s.msg.Text && s.KeepText > 0 && !s.over {
+		if len(s.body)+len(p) > s.KeepText {
+			s.over, s.body = true, s.body[:0]
+		} else {
+			s.body = append(s.body, p...)
+		}
 	}
 	if s.OnData != nil {
 		s.OnData(p)
@@ -281,11 +304,16 @@ func (s *WSStream) endFrame(at time.Time, onMessage func(*WSMessage), onControl 
 	m.Hash = "sha256:" + hex.EncodeToString(s.hash.Sum(nil))
 	if m.Text {
 		m.Type = jsonType(s.prefix)
+		m.ResponseID = jsonResponseID(s.prefix)
+		if s.KeepText > 0 && !s.over {
+			m.Body = s.body
+		}
 	}
 	s.msg, s.hash = nil, nil
 	if onMessage != nil {
 		onMessage(m)
 	}
+	m.Body = nil
 }
 
 // jsonType returns the string value of the top-level "type" member of the
@@ -315,6 +343,50 @@ func jsonType(b []byte) string {
 		}
 		if !skipJSONValue(d) {
 			return ""
+		}
+	}
+}
+
+// jsonResponseID returns the "id" string of the top-level "response"
+// object of the JSON object b begins with (b may be a truncated prefix), or
+// "" when there is none or it is not at most 256 printable bytes.
+func jsonResponseID(b []byte) string {
+	d := json.NewDecoder(bytes.NewReader(b))
+	if t, err := d.Token(); err != nil || t != json.Delim('{') {
+		return ""
+	}
+	for {
+		k, err := d.Token()
+		key, ok := k.(string)
+		if err != nil || !ok {
+			return ""
+		}
+		if key != "response" {
+			if !skipJSONValue(d) {
+				return ""
+			}
+			continue
+		}
+		if t, err := d.Token(); err != nil || t != json.Delim('{') {
+			return ""
+		}
+		for {
+			k, err := d.Token()
+			key, ok := k.(string)
+			if err != nil || !ok {
+				return ""
+			}
+			if key == "id" {
+				v, err := d.Token()
+				s, ok := v.(string)
+				if err != nil || !ok || len(s) > maxRequestID || !printable(s) {
+					return ""
+				}
+				return s
+			}
+			if !skipJSONValue(d) {
+				return ""
+			}
 		}
 	}
 }

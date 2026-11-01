@@ -56,6 +56,12 @@ type Input struct {
 	// joined to the capture's responses and reported, never aligned. Nil
 	// checks nothing.
 	ServerCalls []ServerCall
+	// ModelRequests are the requests the harness's record says it sent to
+	// its model API, and ModelRequestMethod the content method that carries
+	// them, as the adapter declares it (P-43). Each is checked against the
+	// captured requests and reported, never aligned. Nil checks nothing.
+	ModelRequests      []ModelRequest
+	ModelRequestMethod string
 	// Trace is the adapter's declaration of the session's own trace files
 	// and what the reader found when it read them (V-59). The zero value
 	// declares nothing and says the trace was read.
@@ -208,6 +214,10 @@ type Verdict struct {
 	// whole. Corroboration of the call only, nothing about its query or
 	// results. Not a finding and no effect on the outcome either way.
 	ServerCalls []ServerCallCheck
+	// ModelRequests is the check of the recorded model requests against the
+	// captured ones (P-43). Not a finding and no effect on the outcome
+	// either way. Nil when the adapter recorded none.
+	ModelRequests *ModelRequestReport
 	// TraceTampering: write-class events on the session's declared trace
 	// files by a process other than the agent's own, and write-class claims
 	// of those files (V-59). A finding: a run whose trace was tampered with
@@ -429,6 +439,9 @@ func Verify(in Input) Verdict {
 	in.Baseline = withoutLateOpens(in.Baseline, late)
 	owned := harnessOwnedEvents(in.Options.HarnessOwned, late)
 	v.Completeness = Assess(in.Coverage)
+	// The model requests need no process tree, so they are checked even
+	// when the outcome is decided early (P-43).
+	v.ModelRequests = checkModelRequests(in.ModelRequests, in.ModelRequestMethod, in.Ground, in.Coverage)
 
 	finish := func() Verdict {
 		v.Faithful = v.Outcome == OutcomeFaithful

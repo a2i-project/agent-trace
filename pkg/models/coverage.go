@@ -267,8 +267,11 @@ type NetContentCounts struct {
 	WSAccepted       int `json:"ws_accepted,omitempty"`
 	WSRequests       int `json:"ws_requests,omitempty"`
 	WSServerMessages int `json:"ws_server_messages,omitempty"`
-	WSRefused        int `json:"ws_refused,omitempty"`
-	WSUnparsed       int `json:"ws_unparsed,omitempty"`
+	// WSModelRequests counts the client messages that parsed as a
+	// Responses API request and carry its digest (P-42).
+	WSModelRequests int `json:"ws_model_requests,omitempty"`
+	WSRefused       int `json:"ws_refused,omitempty"`
+	WSUnparsed      int `json:"ws_unparsed,omitempty"`
 	// rustls counts (tls-rustls-aead, N-39, N-40): frames discarded before
 	// their direction validated, read frames with no socket, ignored
 	// rebinds of an encrypter, encrypters whose socket had a state of its

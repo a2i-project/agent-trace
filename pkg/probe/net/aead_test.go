@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/tlsparse"
 )
 
 // wsFrameBytes encodes one WebSocket frame, masked with a fixed key when
@@ -269,5 +270,41 @@ func TestCaptureCoverage_ContentMethods(t *testing.T) {
 	}
 	if req, _ := cov.MethodContent(MethodTLSSymbols); req != models.ContentIdentityOnly {
 		t.Errorf("a method not configured reads %s, want identity_only", req)
+	}
+}
+
+// A client message holding a Responses API request carries its digest, and
+// a turn the response ids its messages named (P-42).
+func TestWebSocket_ModelRequestDigest(t *testing.T) {
+	o := newTestObserver()
+	o.events = make(chan models.GroundTruthEvent, 64)
+	o.readValid = true
+	ts := time.Unix(1, 0)
+	key := sslKey{tgid: 5, ssl: 9}
+	o.handleSSLFrame(key, []byte(upgradeReq), 0, ts)
+	o.handleSSLRead(key, []byte(accept101), 0, ts)
+	item := `{"type":"custom_tool_call_output","call_id":"call_1","output":"seed\n"}`
+	o.handleSSLFrame(key, wsFrameBytes(0x1, true, `{"type":"response.create","previous_response_id":"resp_0","input":[`+item+`]}`), 0, ts)
+	o.handleSSLRead(key, wsFrameBytes(0x1, false, `{"type":"response.created","response":{"id":"resp_1"}}`), 0, ts)
+	o.handleSSLRead(key, wsFrameBytes(0x1, false, `{"type":"response.completed","response":{"id":"resp_1","status":"completed"}}`), 0, ts)
+	o.handleSSLFrame(key, wsFrameBytes(0x1, true, `not json`), 0, ts)
+	evs := drain(o)
+	var reqs []*models.ModelRequestDigest
+	var ids []string
+	for _, e := range evs {
+		if e.ActionType == models.NetRequest && strings.HasPrefix(e.Target, "WS ") {
+			reqs = append(reqs, e.ModelRequest)
+		}
+		if e.Response != nil && e.Response.WebSocket != nil {
+			ids = e.Response.WebSocket.ResponseIDs
+		}
+	}
+	h, _ := tlsparse.ResponsesItemHash([]byte(item))
+	want := &models.ModelRequestDigest{Type: "response.create", PreviousResponseID: "resp_0", Items: []models.ModelItemDigest{{Type: "custom_tool_call_output", CallID: "call_1", Hash: h}}}
+	if len(reqs) != 2 || !reflect.DeepEqual(reqs[0], want) || reqs[1] != nil {
+		t.Errorf("digests %+v, want %+v and none for a message that is not a request", reqs, want)
+	}
+	if !reflect.DeepEqual(ids, []string{"resp_1"}) || o.coverage.WSModelRequests != 1 {
+		t.Errorf("response ids %v, model requests %d", ids, o.coverage.WSModelRequests)
 	}
 }

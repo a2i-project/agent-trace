@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit d0c8faa on 2026-11-01.
+Checked against commit a26d4fc on 2026-11-01.
 
 ## Objective
 
@@ -79,7 +79,7 @@ Only `ExitsClaimed` changes verifier behaviour today. The other fields are decla
 
 ### Report
 
-`Report` makes what was not measured visible: `ToolCalls` (invocations in the session), `Entries` (claims produced), `AgentVersion` (the harness version the session states, if any), `UnmappedByTool` (tool calls that produced no entry, by name), `UnknownTools` (tools neither mapped nor declared non-effectful, which may have acted unseen), `ParseErrors`, `Degradations` (each precision loss in words), and `ServerCalls`, the calls the harness's model API ran on its own side, each with its tool, id, the session's request id for it and the model API host, which also count in `UnmappedByTool` and which `cmd/verify` passes to the verifier as `Input.ServerCalls` (V-45). `cmd/verify` prints all but the last before the verdict, and the server-side calls with the verifier's check of each.
+`Report` makes what was not measured visible: `ToolCalls` (invocations in the session), `Entries` (claims produced), `AgentVersion` (the harness version the session states, if any), `UnmappedByTool` (tool calls that produced no entry, by name), `UnknownTools` (tools neither mapped nor declared non-effectful, which may have acted unseen), `ParseErrors`, `Degradations` (each precision loss in words), and `ServerCalls`, the calls the harness's model API ran on its own side, each with its tool, id, the session's request id for it and the model API host, which also count in `UnmappedByTool` and which `cmd/verify` passes to the verifier as `Input.ServerCalls` (V-45), `ModelRequests` and `ModelRequestMethod`, the requests the record says the harness sent to its model API with each input item digested by `tlsparse.ResponsesItemDigest`, and the content method that carries them, which `cmd/verify` passes as `Input.ModelRequests` and `Input.ModelRequestMethod` (P-43; no adapter fills them yet). `cmd/verify` prints all but the last before the verdict, and the server-side calls with the verifier's check of each.
 
 ## Technologies
 

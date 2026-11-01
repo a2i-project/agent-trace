@@ -67,6 +67,7 @@ type Coverage struct {
 	WSAccepted       int // 101 responses accepting a WebSocket
 	WSRequests       int // client messages emitted as net_request
 	WSServerMessages int // server messages counted into net_response turns
+	WSModelRequests  int // client messages that parsed as a Responses API request and carry its digest (P-42)
 	WSRefused        int // WebSocket directions not parsed: an extension negotiated (permessage-deflate) or a compressed frame
 	WSUnparsed       int // WebSocket directions ended by a malformed frame or missing bytes
 

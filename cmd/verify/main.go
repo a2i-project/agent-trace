@@ -141,7 +141,8 @@ func run(args []string, out, errOut io.Writer) int {
 	in.BaselineSubtree = agent.BaselineSubtree(adapter, baseline, gt.Workspace) // V-38
 	in.Sensitive = agent.SensitiveInput(adapter, gt, baseline)                  // V-40
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
-	in.ServerCalls = rep.ServerCalls // V-45
+	in.ServerCalls = rep.ServerCalls                                                    // V-45
+	in.ModelRequests, in.ModelRequestMethod = rep.ModelRequests, rep.ModelRequestMethod // P-43
 	// The harness's bookkeeping files of the version the session records (V-50).
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, rep.AgentVersion, gt)
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
@@ -317,6 +318,7 @@ func report(w io.Writer, r reportInput) {
 	}
 	capability, responses := splitResponses(v.Capability)
 	printServerCalls(w, v.ServerCalls)
+	printModelRequests(w, v.ModelRequests)
 	p("Capability:   %d  (listeners and sockets observed, never claimable, not part of the verdict)\n", len(capability))
 	if len(responses) > 0 {
 		p("Responses:    %d  (HTTP responses read over TLS, attested only: never claimable, not part of the verdict)\n", len(responses))
@@ -500,6 +502,36 @@ func printServerCalls(w io.Writer, checks []verification.ServerCallCheck) {
 			status = "not corroborated: " + c.Reason
 		}
 		_, _ = fmt.Fprintf(w, "  %s %s %s request %s: %s\n", c.Call.Timestamp.Format(time.RFC3339Nano), c.Call.Tool, c.Call.ID, c.Call.RequestID, status)
+	}
+}
+
+// printModelRequests reports the check of the recorded model requests
+// (P-43), only when the record holds some: how many the capture
+// corroborates, each with its join or the reason it fails, and the
+// captured requests no recorded request joined.
+func printModelRequests(w io.Writer, r *verification.ModelRequestReport) {
+	if r == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Model requests: %d recorded, corroborated: %d, captured and unrecorded: %d  (content method %s, %s; each recorded request against the captured request continuing the same response, item for item; reported, not part of the verdict, unmeasured on a live capture, P-43)\n",
+		len(r.Checks), r.Corroborated(), len(r.Unrecorded), r.Method, r.State)
+	for _, c := range r.Checks {
+		status := "corroborated"
+		if !c.Corroborated {
+			status = "not corroborated: " + c.Reason
+		}
+		prev := c.Request.PreviousResponseID
+		if prev == "" {
+			prev = "(none)"
+		}
+		seen := ""
+		if c.Request.ResponseID != "" && !c.ResponseSeen {
+			seen = "; its response " + c.Request.ResponseID + " was not seen"
+		}
+		_, _ = fmt.Fprintf(w, "  #%d continuing %s, %d items: %s%s\n", c.Request.Index, prev, len(c.Request.Items), status, seen)
+	}
+	for _, e := range r.Unrecorded {
+		_, _ = fmt.Fprintf(w, "  unrecorded: %s %s continuing %q, %d items\n", e.Timestamp.Format(time.RFC3339Nano), e.Target, e.ModelRequest.PreviousResponseID, len(e.ModelRequest.Items))
 	}
 }
 
@@ -977,6 +1009,10 @@ type jsonReport struct {
 	// (V-45).
 	ServerCalls []verification.ServerCallCheck `json:"server_calls,omitempty"`
 
+	// ModelRequests is present only when the record holds model requests
+	// (P-43).
+	ModelRequests *verification.ModelRequestReport `json:"model_requests,omitempty"`
+
 	// RestingWrites is present only when the baseline holds write-class
 	// rules that apply to the run: the paths where an unclaimed in-process
 	// write is not detectable (V-37).
@@ -1106,6 +1142,7 @@ func writeJSONReport(path string, r reportInput) error {
 	rep.Alignment.UnexplainedHarnessCommands = harnessCommandExecs(v.UnexplainedHarnessCommands)
 	rep.versionJSON = r.version.json()
 	rep.ServerCalls = v.ServerCalls
+	rep.ModelRequests = v.ModelRequests
 	rep.Alignment.BaselinedWritesOutsideHarness = v.BaselinedWritesOutsideHarness
 	rep.Alignment.RepeatedOpens = v.RepeatedOpens
 	rep.Alignment.HarnessBookkeeping = v.HarnessBookkeeping
