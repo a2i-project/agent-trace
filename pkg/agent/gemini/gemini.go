@@ -315,9 +315,9 @@ type conversation struct {
 
 // statedID is the conversation id the database states, the
 // cascade_id of its one trajectory_meta row, which is the id agy prints and
-// names the database by (I-105); empty when the database states none, as a
-// fixture that keeps the steps only, or more than one, or one that is not a
-// conversation id.
+// names the database by (I-105); empty when the database states none, more
+// than one, or one that is not a conversation id. The fixtures keep it
+// (I-110).
 func statedID(db *sql.DB) string {
 	rows, err := db.Query(`select cascade_id from trajectory_meta`)
 	if err != nil {

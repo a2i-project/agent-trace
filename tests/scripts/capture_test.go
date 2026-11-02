@@ -261,8 +261,9 @@ func runCapture(t *testing.T, mode string) (out, log string, code int) {
 }
 
 type verifyJSON struct {
-	Outcome string `json:"outcome"`
-	Trace   *struct {
+	Outcome   string `json:"outcome"`
+	SessionID string `json:"session_id"`
+	Trace     *struct {
 		State    string `json:"state"`
 		Compared bool   `json:"compared"`
 	} `json:"trace"`
@@ -693,7 +694,9 @@ func TestAnAsideFileFromAnInterruptedCaptureIsRefused(t *testing.T) {
 // reads, passes the model check and is compared with nothing the shim's
 // capture hashed. The database is covered (V-75), so the command that
 // deleted it is tampering and that run is NOT FAITHFUL; the shim garbles
-// the database without an event, so that run is INCONCLUSIVE.
+// the database without an event, so that run is INCONCLUSIVE. The id agy
+// printed is kept in basic.session-id.txt and passed to verify, which
+// takes it whether or not the database survived (I-110).
 func TestCaptureOfAgyKeepsARunWhoseDatabaseIsGoneOrDamaged(t *testing.T) {
 	for mode, want := range map[string]struct {
 		state, outcome, log string
@@ -741,6 +744,13 @@ func TestCaptureOfAgyKeepsARunWhoseDatabaseIsGoneOrDamaged(t *testing.T) {
 		}
 		if want.outcome == "" && (v.TraceTampering != nil || (v.Trace != nil && v.Trace.State != "")) {
 			t.Errorf("intact: verify-baseline.json: %+v", v)
+		}
+		id, _ := os.ReadFile(filepath.Join(out, "basic.session-id.txt"))
+		if len(strings.TrimSpace(string(id))) != 36 || v.SessionID != strings.TrimSpace(string(id)) {
+			t.Errorf("%q: basic.session-id.txt %q, verify's session_id %q", mode, id, v.SessionID)
+		}
+		if _, err := os.Stat(filepath.Join(out, "control-1.session-id.txt")); err != nil {
+			t.Errorf("%q: the control's session id is not recorded: %v", mode, err)
 		}
 	}
 }

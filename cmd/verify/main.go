@@ -47,9 +47,10 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.DurationVar(&slack, "interval-slack", 500*time.Millisecond, "Widen each claim's interval by this much on both sides before checking the observed action falls inside it: the probes and the agent do not share a clock")
 	fs.BoolVar(&normalized, "normalized", false, "Read --trajectory as normalized trajectory JSON (what cmd/attack writes) and use --agent only for the ground truth side")
 	fs.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits even if the adapter's format records them")
-	var jsonPath string
+	var jsonPath, sessionID string
 	var traceHash bool
 	fs.BoolVar(&traceHash, "check-trace-hash", false, "Compare the session file read with the last content the probe hashed of the session's declared main file, and read a difference as a damaged trace (V-59). Only for the file the capture left, unmodified: a fixture rewritten after the capture differs")
+	fs.StringVar(&sessionID, "session-id", "", "The session's id as the capture recorded it (what the agent printed, or the id it was given). For an adapter whose trace is one session's files (agy, Codex) it decides the trace in place of the id the session's record states (I-110); without it the record's id decides, as before")
 	fs.StringVar(&jsonPath, "json", "", "Also write the whole verdict as JSON to this file: every list, the coverage, and each command with the events beneath it")
 	vflags := addVersionFlags(fs)
 	if err := fs.Parse(args); err != nil {
@@ -147,8 +148,12 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, rep.AgentVersion, gt)
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, rep.AgentVersion)
-	// The session's own trace files, and what reading them found (V-59).
-	trace.Decl = agent.Trace(adapter, gt, agent.SessionOf(rep, ""))
+	// The session's own trace files, and what reading them found (V-59),
+	// named by the id the capture recorded when it is given (I-110).
+	if sessionID != "" && rep.TraceSession != "" && rep.TraceSession != sessionID {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("the session's record states id %s, the capture recorded %s: the capture's id decides the trace (I-110)", rep.TraceSession, sessionID))
+	}
+	trace.Decl = agent.Trace(adapter, gt, agent.SessionOf(rep, sessionID))
 	in.Trace = trace
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)
@@ -157,8 +162,9 @@ func run(args []string, out, errOut io.Writer) int {
 		trajectoryPath: trajectoryPath, groundTruthPath: groundTruthPath, adapter: adapter.Name(),
 		reader: readerNote(normalized, adapter.Name()),
 		parse:  rep, baseline: baseline, entries: len(tr), gt: gt, verdict: v,
-		version: vcheck,
+		version: vcheck, sessionID: sessionID,
 	}
+	_, ri.sessionScoped = adapter.(agent.SessionTraceDeclarer)
 	report(out, ri)
 	if jsonPath != "" {
 		if err := writeJSONReport(jsonPath, ri); err != nil {
@@ -207,6 +213,10 @@ type reportInput struct {
 	gt                                               models.GroundTruthFile
 	verdict                                          verification.Verdict
 	version                                          versionCheck
+	// sessionID is the id --session-id gave, and sessionScoped whether the
+	// adapter's trace depends on it (I-110).
+	sessionID     string
+	sessionScoped bool
 }
 
 func report(w io.Writer, r reportInput) {
@@ -217,6 +227,12 @@ func report(w io.Writer, r reportInput) {
 	printVersionCheck(w, r.version)
 	p("trajectory:   %s (%d entries, %s)\n", r.trajectoryPath, r.entries, r.reader)
 	p("ground truth: %s (%d events, root pid %d)\n", r.groundTruthPath, len(r.gt.Events), r.gt.RootPID)
+	switch {
+	case r.sessionID != "" && r.sessionScoped:
+		p("session id:   %s (recorded by the capture; it decides the trace, I-110)\n", r.sessionID)
+	case r.sessionID != "":
+		p("session id:   %s (recorded by the capture; the %s adapter's trace does not depend on it)\n", r.sessionID, r.adapter)
+	}
 	switch {
 	case r.gt.FSScope != nil:
 		p("fs scope:     %s, %d filesystem(s) marked, %d unmarked, %d event(s) dropped outside the agent's tree and the workspace\n", r.gt.FSScope.Rule, len(r.gt.FSScope.Mounts), len(r.gt.FSScope.Unmarked), r.gt.FSScope.DroppedOutside)
@@ -990,9 +1006,12 @@ type jsonCommand struct {
 
 // jsonReport is the machine-readable verdict.
 type jsonReport struct {
-	Trajectory   string                    `json:"trajectory"`
-	GroundTruth  string                    `json:"ground_truth"`
-	Adapter      string                    `json:"adapter"`
+	Trajectory  string `json:"trajectory"`
+	GroundTruth string `json:"ground_truth"`
+	Adapter     string `json:"adapter"`
+	// SessionID is present only when --session-id gave the session's id
+	// (I-110).
+	SessionID    string                    `json:"session_id,omitempty"`
 	RootPID      uint32                    `json:"root_pid"`
 	Workspace    string                    `json:"workspace,omitempty"`
 	FSScope      *models.FSScope           `json:"fs_scope,omitempty"`
@@ -1130,7 +1149,7 @@ type jsonOrphan struct {
 func writeJSONReport(path string, r reportInput) error {
 	v := r.verdict
 	rep := jsonReport{
-		Trajectory: r.trajectoryPath, GroundTruth: r.groundTruthPath, Adapter: r.adapter,
+		Trajectory: r.trajectoryPath, GroundTruth: r.groundTruthPath, Adapter: r.adapter, SessionID: r.sessionID,
 		RootPID: r.gt.RootPID, Workspace: r.gt.Workspace, FSScope: r.gt.FSScope, Baseline: r.baseline, Parse: r.parse,
 		Outcome: v.Outcome.String(), ExitCode: v.Outcome.ExitCode(), Findings: v.Findings(), Advisory: v.Advisory, Ambiguous: v.Ambiguous, Reasons: v.Reasons, Degradations: v.Degradations,
 		Alignment: jsonAlignment{

@@ -98,3 +98,63 @@ func sha(t *testing.T, path string) string {
 	}
 	return h
 }
+
+const codexBasic = "../../pkg/agent/codex/testdata/paired-codex-0.166.0-basic/"
+
+// --session-id names the session whose files are the trace (I-110): with
+// the id the record states the verdict is the one without it, plus the
+// line naming it; for a rollout that is gone it narrows the declaration to
+// the session's rollout, where without it every rollout the capture
+// observed is declared; an id other than the record's decides and is
+// reported; an adapter whose trace does not depend on it says so.
+func TestSessionIDFromTheCaptureDecidesTheTrace(t *testing.T) {
+	const thread = "01a19455-d74e-72a2-99d3-367c07be5a85"
+	g := codexBasic + "basic.ground_truth.json"
+	dir := t.TempDir()
+	_, plain, _ := verify(t, "--agent", "codex", "--trajectory", codexBasic+"basic.rollout.jsonl", "--ground-truth", g)
+	js := filepath.Join(dir, "v.json")
+	code, out, errOut := verify(t, "--agent", "codex", "--trajectory", codexBasic+"basic.rollout.jsonl", "--ground-truth", g, "--session-id", thread, "--json", js)
+	line := "session id:   " + thread + " (recorded by the capture; it decides the trace, I-110)\n"
+	if errOut != "" || strings.Replace(out, line, "", 1) != plain || !strings.Contains(out, line) {
+		t.Fatalf("exit %d, stderr %q; with the record's own id the report should only gain the line:\n%s", code, errOut, out)
+	}
+	var rep struct {
+		SessionID string                   `json:"session_id"`
+		Trace     *verification.TraceCheck `json:"trace"`
+	}
+	data, _ := os.ReadFile(js)
+	if err := json.Unmarshal(data, &rep); err != nil || rep.SessionID != thread {
+		t.Errorf("JSON session_id %q, err %v", rep.SessionID, err)
+	}
+
+	gone := filepath.Join(dir, "gone.rollout.jsonl")
+	files := func(args ...string) int {
+		t.Helper()
+		js := filepath.Join(dir, "gone.json")
+		if code, _, errOut := verify(t, append([]string{"--agent", "codex", "--trajectory", gone, "--ground-truth", g, "--json", js}, args...)...); code != 2 || errOut != "" {
+			t.Fatalf("exit %d, stderr %q", code, errOut)
+		}
+		rep.Trace = nil
+		data, _ := os.ReadFile(js)
+		if err := json.Unmarshal(data, &rep); err != nil || rep.Trace == nil {
+			t.Fatalf("JSON trace %+v, err %v", rep.Trace, err)
+		}
+		return len(rep.Trace.Files)
+	}
+	if n := files(); n != 4 {
+		t.Errorf("without the id, %d rollouts declared and observed, want the session's and three others", n)
+	}
+	if n := files("--session-id", thread); n != 1 {
+		t.Errorf("with the id, %d rollouts declared and observed, want the session's only", n)
+	}
+
+	const other = "00000000-0000-0000-0000-000000000001"
+	_, out, _ = verify(t, "--agent", "codex", "--trajectory", codexBasic+"basic.rollout.jsonl", "--ground-truth", g, "--session-id", other)
+	if !strings.Contains(out, "limitation: the session's record states id "+thread+", the capture recorded "+other+": the capture's id decides the trace (I-110)") {
+		t.Errorf("a differing id is not reported:\n%s", out)
+	}
+	_, out, _ = verify(t, "--agent", "claude-code", "--trajectory", tools306+"tools.session.jsonl", "--ground-truth", tools306+"tools.ground_truth.json", "--session-id", thread)
+	if !strings.Contains(out, "session id:   "+thread+" (recorded by the capture; the claude-code adapter's trace does not depend on it)\n") {
+		t.Errorf("Claude Code's report lacks the line:\n%s", out)
+	}
+}

@@ -18,8 +18,8 @@ var homePattern = regexp.MustCompile(`^` + homeRE + `$`)
 // conversation database under ~/.gemini/antigravity-cli/conversations/ as a
 // main session file, the database Parse reads (I-102, V-75). SessionTrace
 // declares the session's own database and those of the subagents it names
-// only, and Parse gives their ids from the databases (I-105, V-80); Trace is what a database that does not state its id
-// gets, as the checked-in fixtures, which keep the steps only, do. The home
+// only, and Parse gives their ids from the databases (I-105, V-80); Trace is
+// what a database that states no id, and no --session-id, gets. The home
 // is the capture's, else any home I-30 declares. Covers adds each
 // database's write-ahead log and rollback journal, which hold steps not yet
 // in the database, and not its -shm, an index every reader rebuilds from the

@@ -79,7 +79,9 @@ opaque signatures; it is read from a copy of the database and of its
 write-ahead log, when there is one, so that nothing is written beside the
 capture and steps only the log holds are kept (I-51). The fixture is a new SQLite database with only the steps
 table's columns the adapter reads (idx, step_type, status, has_subtrajectory,
-step_payload), and each payload cut to the fields the adapter reads: the step
+step_payload) and, when the database states one conversation id, its
+trajectory_meta table cut to that cascade_id, which names the database and
+which the adapter takes as the session's (I-105, I-110), and each payload cut to the fields the adapter reads: the step
 type (1), field 4, and of field 5 the created (5.1), started (5.6) and
 completed (5.8) timestamps and the tool calls (5.4), each cut to its id (1),
 name (2) and JSON arguments (3), rewritten like every other path. A call
@@ -611,6 +613,10 @@ def reduce_conversation(src, dst):
             shutil.copyfile(src + "-wal", snap + "-wal")
         con = sqlite3.connect("file:%s?mode=ro" % snap, uri=True)
         rows = con.execute("select idx, step_type, status, has_subtrajectory, step_payload from steps order by idx").fetchall()
+        try:
+            meta = con.execute("select cascade_id from trajectory_meta").fetchall()
+        except sqlite3.OperationalError:
+            meta = []
         con.close()
     if os.path.exists(dst):
         os.remove(dst)
@@ -622,6 +628,12 @@ def reduce_conversation(src, dst):
     for idx, typ, status, sub, payload in rows:
         new.execute("insert into steps values (?,?,?,?,?)", (idx, typ, status, sub, reduce_payload(payload or b"")))
         ids += subagent_ids(payload or b"")
+    # The conversation id the database states, which names it and which the
+    # adapter takes as the session's (I-105, I-110): kept when it is one id
+    # of the form agy uses, the trajectory_meta table cut to that column.
+    if len(meta) == 1 and isinstance(meta[0][0], str) and CONVERSATION_ID.fullmatch(meta[0][0].encode()):
+        new.execute("create table trajectory_meta (cascade_id text)")
+        new.execute("insert into trajectory_meta values (?)", meta[0])
     new.commit()
     new.execute("vacuum")
     new.close()

@@ -503,12 +503,13 @@ type Report struct {
 	ModelRequestMethod string                      `json:"model_request_method,omitempty"`
 	// TraceSession is the id of the session the record states it is, when
 	// the adapter's trace declaration depends on it (SessionTraceDeclarer,
-	// I-105): agy's conversation id.
+	// I-105, I-109): agy's conversation id, Codex's thread id.
 	TraceSession string `json:"trace_session,omitempty"`
 	// TraceSubagents are the ids of the subagent sessions the record names
 	// as the session's own, sorted, when the adapter's trace declaration
 	// depends on them: the subagent conversations agy's conversation and its
-	// subagents name, whose databases belong to the session's trace (V-80).
+	// subagents name, whose databases belong to the session's trace (V-80),
+	// and the threads Codex's rollouts start (I-109).
 	TraceSubagents []string `json:"trace_subagents,omitempty"`
 }
 

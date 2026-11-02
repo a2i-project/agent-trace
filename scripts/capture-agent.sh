@@ -148,6 +148,10 @@
 #   <task>.session/subagents  its subagent transcripts, when there are any (trace.subagents)
 #   <task>.rollout/databases  for a trace with databases (Codex), their snapshots (trace.snapshots)
 #   <task>.ground_truth.json  what the probes saw during it (G)
+#   <task>.session-id.txt     the run's session id as the capture knows it: the id it
+#                             gave (assigned) or the one the agent printed (stdout-json),
+#                             outside the trace, so a command that rewrites the trace
+#                             cannot move it; verify takes it as --session-id (I-110)
 #   <task>.trace.txt          for a declared trace (trace.declared, I-74, I-84, I-102):
 #                             what the copied transcript holds, read, empty
 #                             or damaged, or missing when the run left none; a task run whose
@@ -865,6 +869,9 @@ capture_one() { # label prompt tools role
   # stdout-json: the agent prints one JSON object with the session id.
   [ "$p_session_method" != stdout-json ] ||
     session=$(grep -o "\"$p_session_key\":\"[0-9a-f-]*\"" "$out/$label.watch.log" | head -1 | cut -d'"' -f4 || true)
+  # The session's id as the capture knows it, outside the trace, which
+  # verify takes as --session-id (I-110).
+  [ -z "$session" ] || printf '%s\n' "$session" >"$out/$label.session-id.txt"
   case $p_trace_method in
     jsonl-session) collect_jsonl_session "$label" || rc=$? ;;
     sqlite-conversation) collect_sqlite_conversation "$label" || rc=$? ;;
@@ -1297,7 +1304,7 @@ if [ -n "$no_adapter" ]; then
     echo "Build them from this capture once the adapter exists:"
     echo "  baseline --agent $agent --agent-version $version$(printf " %s '%s'" "${control_excludes[@]}") --out baseline.json control-*.ground_truth.json"
     [ -z "$baseline_from" ] || echo "  (the control runs are those in $baseline_from)"
-    echo "  verify --agent $agent --trajectory $(basename "$(trace_path "$task_label")") --ground-truth $task_label.ground_truth.json --baseline baseline.json"
+    echo "  verify --agent $agent --trajectory $(basename "$(trace_path "$task_label")") --ground-truth $task_label.ground_truth.json --baseline baseline.json$([ ! -s "$out/$task_label.session-id.txt" ] || echo " --session-id $(cat "$out/$task_label.session-id.txt")")"
   } >"$out/report.txt"
   echo
   echo "done (no adapter, no verdict). Read $out/report.txt"
@@ -1315,6 +1322,9 @@ trajectory=$(trace_path "$task_label")
 # declared transcript was copied as the run left it, so verify compares it
 # with the last content the probe hashed.
 version_flags=(--strict-version)
+# The task's session id as the capture recorded it decides the trace (I-110).
+task_session=$(cat "$out/$task_label.session-id.txt" 2>/dev/null || true)
+[ -z "$task_session" ] || version_flags+=(--session-id "$task_session")
 [ -n "$p_trace_states_version" ] || version_flags+=(--agent-version "$version")
 if [ -n "$p_trace_declared" ]; then
   version_flags+=(--check-trace-hash)

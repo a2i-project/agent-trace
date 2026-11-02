@@ -217,18 +217,19 @@ func TestACommandDeletingASubagentsDatabaseIsTampering(t *testing.T) {
 }
 
 // Parse gives the conversation id the database states in its one
-// trajectory_meta row, and none when the database states none (the
-// fixtures keep the steps only), more than one, or one that is not a
-// conversation id (I-105).
+// trajectory_meta row, and none when the database states none, more than
+// one, or one that is not a conversation id (I-105). The fixtures keep the
+// row's cascade_id (I-110).
 func TestParseStatesTheConversationID(t *testing.T) {
 	const id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-	if _, rep, err := (Adapter{}).Parse(filepath.Join(pairedDir, "basic.conversation.db")); err != nil || rep.TraceSession != "" {
-		t.Fatalf("fixture: session %q, err %v, want none", rep.TraceSession, err)
+	if _, rep, err := (Adapter{}).Parse(filepath.Join(pairedDir, "basic.conversation.db")); err != nil || rep.TraceSession != "0b18d7d3-41b4-4dfe-b649-e8ba776c383a" {
+		t.Fatalf("fixture: session %q, err %v, want the conversation's id", rep.TraceSession, err)
 	}
 	for name, c := range map[string]struct {
 		rows []string
 		want string
 	}{
+		"no table":   {nil, ""},
 		"one id":     {[]string{id}, id},
 		"no row":     {nil, ""},
 		"two rows":   {[]string{id, "0b18d7d3-41b4-4dfe-b649-e8ba776c383a"}, ""},
@@ -248,8 +249,13 @@ func TestParseStatesTheConversationID(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := db.Exec(`create table trajectory_meta (trajectory_id text, cascade_id text, trajectory_type integer, source integer)`); err != nil {
+			if _, err := db.Exec(`drop table trajectory_meta`); err != nil {
 				t.Fatal(err)
+			}
+			if name != "no table" {
+				if _, err := db.Exec(`create table trajectory_meta (trajectory_id text, cascade_id text, trajectory_type integer, source integer)`); err != nil {
+					t.Fatal(err)
+				}
 			}
 			for i, r := range c.rows {
 				if _, err := db.Exec(`insert into trajectory_meta values (?, ?, 4, 17)`, fmt.Sprint(i), r); err != nil {
