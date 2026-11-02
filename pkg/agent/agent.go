@@ -559,6 +559,30 @@ func (r *Report) Count(tool string) {
 // steps named the raw temporaries of every atomic write and explained none of
 // them.
 func NormalizeGround(a Adapter, events models.GroundTruth) models.GroundTruth {
+	return normalize(a, events)
+}
+
+// NormalizeCapture is NormalizeGround for a whole capture: an adapter that
+// tells the agent's own program from others (AgentImageUser) is given the
+// capture's RootImage first (I-107). Prepare and the baseline's Capture use
+// it on the capture as Rooted returns it.
+func NormalizeCapture(a Adapter, g models.GroundTruthFile) models.GroundTruth {
+	if u, ok := a.(AgentImageUser); ok {
+		a = u.WithAgentImage(g.RootImage)
+	}
+	return normalize(a, g.Events)
+}
+
+// AgentImageUser is implemented by an adapter whose Normalize needs the
+// program the agent itself runs, as the capture recorded it (P-46): Claude
+// Code recognises its searches as runs of that program (I-107). Given the
+// image, nil when the capture has none, it returns the adapter to
+// normalize with.
+type AgentImageUser interface {
+	WithAgentImage(*models.ExecImage) Adapter
+}
+
+func normalize(a Adapter, events models.GroundTruth) models.GroundTruth {
 	ground := make(models.GroundTruth, 0, len(events))
 	for _, e := range events {
 		if n, keep := a.Normalize(e); keep {
@@ -626,7 +650,7 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 		}
 		claims = kept
 	}
-	ground := NormalizeGround(a, g.Events)
+	ground := NormalizeCapture(a, g)
 	baseline := func(e models.GroundTruthEvent) bool {
 		return a.IsHarnessNoise(e) || (measured != nil && measured(canonical(a, e)))
 	}

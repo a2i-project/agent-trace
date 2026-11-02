@@ -65,6 +65,18 @@ func TestRootedRootsTheCaptureAtTheHarness(t *testing.T) {
 	if raw := launched(); raw.RootPID != 10 || len(raw.Events) != 9 {
 		t.Error("Rooted changed its input")
 	}
+	// The harness's exec image becomes the capture's root_image (P-46),
+	// in place of the launcher's.
+	raw := launched()
+	raw.RootImage = &models.ExecImage{Filename: "/usr/bin/node", Program: "/usr/bin/node"}
+	raw.Events[3].Image = &models.ExecImage{Filename: "/opt/harness", Program: "/opt/harness"}
+	if img := Rooted(launching{}, raw).RootImage; img == nil || img.Program != "/opt/harness" {
+		t.Errorf("root image %+v, want the harness's", img)
+	}
+	raw.Events[3].Image = nil
+	if img := Rooted(launching{}, raw).RootImage; img != nil {
+		t.Errorf("root image %+v, want none: the launcher's is not the harness's", img)
+	}
 }
 
 // A root that does more than launch, a second child, or an adapter that

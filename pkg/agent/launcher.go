@@ -19,7 +19,8 @@ type Launcher interface {
 // The harness process becomes the agent process (level 0), and the records
 // of its launch, which a harness exec'd in place leaves out of the capture,
 // are dropped: the fork that created it, its execs before any other event
-// of it, and its exits. The launcher's own events stay, outside the tree.
+// of it, and its exits; the image of the last of those execs becomes the
+// capture's RootImage (P-46). The launcher's own events stay, outside the tree.
 // The capture is returned as it is when the adapter declares no launcher,
 // names no process, or the root does anything but launch: the process
 // named must be the root's only child, and the root's own events may only
@@ -38,6 +39,7 @@ func Rooted(a Adapter, g models.GroundTruthFile) models.GroundTruthFile {
 	}
 	out := g
 	out.RootPID = pid
+	out.RootImage = nil
 	out.Events = make(models.GroundTruth, 0, len(g.Events))
 	started := false
 	for _, e := range g.Events {
@@ -48,6 +50,11 @@ func Rooted(a Adapter, g models.GroundTruthFile) models.GroundTruthFile {
 			case e.ActionType == models.ProcessExit:
 				continue
 			case e.ActionType == models.ProcessExec && !started:
+				// The harness's own exec: its image is the agent's program
+				// (P-46), as root_image is for a harness exec'd in place.
+				if e.Image != nil {
+					out.RootImage = e.Image
+				}
 				continue
 			case e.ActionType != models.ProcessFork:
 				started = true

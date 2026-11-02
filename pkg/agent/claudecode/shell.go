@@ -1,8 +1,11 @@
 package claudecode
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
 // Claude Code runs every Bash call as
@@ -272,6 +275,27 @@ const (
 // threat model.
 var embeddedRipgrep = regexp.MustCompile(`^(?:/home/[^/\s]+|/root)/\.local/share/claude/versions/\d+\.\d+\.\d+ --no-config (.*)$`)
 
+// searchOf classifies an observed process event as a Grep or a Glob. With
+// the agent's program recorded (P-46, I-107), a search is a run of that
+// program, wherever it is installed: the command line begins with the
+// program's resolved path and --no-config, and an exec whose kernel record
+// names its program names the same one. Without the record (a capture made
+// before it), searchKind's install-directory check decides (I-27).
+func (a Adapter) searchOf(e models.GroundTruthEvent) (string, bool) {
+	prog := ""
+	if a.agent != nil && !a.agent.Truncated && filepath.IsAbs(a.agent.Program) {
+		prog = a.agent.Program
+	}
+	if prog == "" {
+		return searchKind(e.Target)
+	}
+	rest, ok := strings.CutPrefix(e.Target, prog+" --no-config ")
+	if !ok || (e.Image != nil && e.Image.Program != prog) {
+		return "", false
+	}
+	return searchArgs(rest)
+}
+
 // searchKind classifies an observed command line as a Grep or a Glob. ok is
 // false for anything else, including the harness's own listings and any
 // program outside the install directory.
@@ -280,7 +304,14 @@ func searchKind(line string) (target string, ok bool) {
 	if m == nil {
 		return "", false
 	}
-	args := " " + m[1] + " "
+	return searchArgs(m[1])
+}
+
+// searchArgs classifies the arguments after --no-config: with --files and
+// --null a Glob, without --files a Grep, and with --files alone one of the
+// harness's own listings, which is no search.
+func searchArgs(rest string) (target string, ok bool) {
+	args := " " + rest + " "
 	switch {
 	case strings.Contains(args, " --files ") && strings.Contains(args, " --null "):
 		return SearchGlob, true

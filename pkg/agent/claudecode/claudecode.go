@@ -25,7 +25,19 @@ const Name = "claude-code"
 func init() { agent.Register(Adapter{}) }
 
 // Adapter implements agent.Adapter for Claude Code.
-type Adapter struct{}
+type Adapter struct {
+	// agent is the program the capture's agent process ran (P-46), which
+	// WithAgentImage sets for normalizing one capture: a search is a run of
+	// it (I-107). Nil for a capture without the record.
+	agent *models.ExecImage
+}
+
+// WithAgentImage returns the adapter that normalizes a capture whose agent
+// ran img (agent.AgentImageUser, I-107).
+func (a Adapter) WithAgentImage(img *models.ExecImage) agent.Adapter {
+	a.agent = img
+	return a
+}
 
 func (Adapter) Name() string { return Name }
 
@@ -85,7 +97,7 @@ func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 // keeps its per-run ids, so a claim pairs with the one file it names; they
 // are replaced only where runs are compared (Canonical, I-41). Every other
 // event passes through.
-func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
+func (a Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 	switch {
 	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
 		if payload, ok := evalPayload(e.Target); ok {
@@ -95,7 +107,7 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 			// prefix of the claimed command, and the verifier pairs it as such
 			// (V-26). The flag stays on the event.
 			e.Target = prefix
-		} else if search, ok := searchKind(e.Target); ok {
+		} else if search, ok := a.searchOf(e); ok {
 			e.Target = search
 		} else {
 			e.Target = canonicalIDs(e.Target)
