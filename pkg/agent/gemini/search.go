@@ -1,15 +1,17 @@
 package gemini
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
-// SearchGrep is the claimed and the normalized target of a grep_search call
-// (I-54): the call claims that a search ran, not its pattern or path, as a
-// Claude Code Grep does (I-25).
+// SearchGrep is the kind of search a grep_search call claims (I-54). The
+// claimed and the normalized target is the kind followed by the folder
+// searched (I-108); the pattern is not claimed, as a Claude Code Grep's is
+// not (I-25).
 const SearchGrep = "agy search:grep"
 
 // What a grep_search call runs, measured on the paired capture of the search
@@ -31,7 +33,7 @@ const SearchGrep = "agy search:grep"
 // Only these two option shapes are recognised; another program, another
 // option shape or a ripgrep outside the harness's cache keeps its text.
 var (
-	embeddedRipgrep = regexp.MustCompile(`^(?:/home/[^/\s]+|/root)/\.cache/antigravity/bin/rg_embedded-[0-9a-f]{16} --no-heading --with-filename -l --fixed-strings --ignore-file=/(?:\S+/)?\.antigravityignore -- (.+)$`)
+	embeddedRipgrep = regexp.MustCompile(`^(?:/home/[^/\s]+|/root)/\.cache/antigravity/bin/rg_embedded-[0-9a-f]{16} --no-heading --with-filename -l --fixed-strings --ignore-file=(/(?:\S+/)?)\.antigravityignore -- (.+)$`)
 	fallbackGrep    = regexp.MustCompile(`^(?:/usr)?/bin/grep -l --binary-files=without-match -F -r -- (.+) \.$`)
 )
 
@@ -47,12 +49,49 @@ const (
 // grep_search call, with the query it names.
 func searchOf(target string) (searchForm, string) {
 	if m := embeddedRipgrep.FindStringSubmatch(target); m != nil {
-		return ripgrepSearch, m[1]
+		return ripgrepSearch, m[2]
 	}
 	if m := fallbackGrep.FindStringSubmatch(target); m != nil {
 		return grepSearch, m[1]
 	}
 	return notSearch, ""
+}
+
+// searchFolder is the normalized target of an observed search's exec
+// (I-108): the kind and the folder searched. The embedded ripgrep is given
+// the search path's ignore file, <folder>/.antigravityignore, which names
+// the folder (on the search capture of 1.3.4 it is the call's SearchPath);
+// the fallback grep searches "." in the working directory the probe
+// recorded. When the folder cannot be read (a fallback grep in a capture
+// made before P-36, or a command line the probe cut) the target is the kind
+// alone, marked truncated, and pairs by prefix, unverified (V-26).
+func searchFolder(e models.GroundTruthEvent, form searchForm) (string, bool) {
+	if !e.TargetTruncated {
+		switch form {
+		case ripgrepSearch:
+			m := embeddedRipgrep.FindStringSubmatch(e.Target)
+			return SearchGrep + " " + filepath.Clean(m[1]), false
+		case grepSearch:
+			if e.Cwd != "" && !e.CwdTruncated && filepath.IsAbs(e.Cwd) {
+				return SearchGrep + " " + filepath.Clean(e.Cwd), false
+			}
+		}
+	}
+	return SearchGrep, true
+}
+
+// searchClaim is the target of a grep_search call: the kind and its
+// SearchPath, cleaned when it is absolute. A relative or missing path is
+// kept as written, and a search observed with a folder then reads as a
+// mismatch.
+func searchClaim(path string) string {
+	switch {
+	case path == "":
+		return SearchGrep
+	case filepath.IsAbs(path):
+		return SearchGrep + " " + filepath.Clean(path)
+	}
+	return SearchGrep + " " + path
 }
 
 // program is the executed path of an observed command line: the probe
@@ -84,8 +123,12 @@ func program(target string) string {
 // shows as an unclaimed command. Events are in time order.
 func foldSearches(g models.GroundTruth) models.GroundTruth {
 	var out models.GroundTruth
-	rewritten := map[uint32]bool{}  // pids whose exit is rewritten
-	reparent := map[uint32]uint32{} // fallback pid -> the ripgrep's pid
+	type rewrite struct {
+		target    string
+		truncated bool
+	}
+	rewritten := map[uint32]rewrite{} // pids whose exit is rewritten
+	reparent := map[uint32]uint32{}   // fallback pid -> the ripgrep's pid
 	for i, e := range g {
 		if e.ActionType != models.ProcessExec || e.PID == 0 {
 			continue
@@ -100,8 +143,10 @@ func foldSearches(g models.GroundTruth) models.GroundTruth {
 		if out == nil {
 			out = append(models.GroundTruth(nil), g...)
 		}
-		out[i].Target = SearchGrep
-		rewritten[e.PID] = true
+		r := rewrite{}
+		r.target, r.truncated = searchFolder(e, form)
+		out[i].Target, out[i].TargetTruncated = r.target, r.truncated
+		rewritten[e.PID] = r
 		if form == ripgrepSearch {
 			if b, ok := fallbackAfter(g, i, query); ok {
 				reparent[b] = e.PID
@@ -119,8 +164,8 @@ func foldSearches(g models.GroundTruth) models.GroundTruth {
 				continue
 			}
 		}
-		if e.ActionType == models.ProcessExit && rewritten[e.PID] {
-			out[i].Target = SearchGrep
+		if r, ok := rewritten[e.PID]; ok && e.ActionType == models.ProcessExit {
+			out[i].Target, out[i].TargetTruncated = r.target, r.truncated
 			delete(rewritten, e.PID)
 		}
 	}

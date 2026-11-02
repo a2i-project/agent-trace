@@ -107,8 +107,8 @@ func (a Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, 
 			// prefix of the claimed command, and the verifier pairs it as such
 			// (V-26). The flag stays on the event.
 			e.Target = prefix
-		} else if search, ok := a.searchOf(e); ok {
-			e.Target = search
+		} else if kind, rest, ok := a.searchOf(e); ok {
+			e.Target, e.TargetTruncated = searchTarget(kind, rest, e)
 		} else {
 			e.Target = canonicalIDs(e.Target)
 		}
@@ -924,6 +924,8 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 		Notebook string `json:"notebook_path"`
 		Content  string `json:"content"`
 		URL      string `json:"url"`
+		// A Grep's or Glob's folder (I-108).
+		Path string `json:"path"`
 		// A Read's range; either one makes the read partial (I-40).
 		Offset   json.RawMessage `json:"offset"`
 		Limit    json.RawMessage `json:"limit"`
@@ -997,9 +999,9 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 	case toolNotebookEdit:
 		return notebookClaims(in.Notebook, res, mk)
 	case toolGrep:
-		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGrep)}, ""
+		return []models.TrajectoryEntry{mk(models.ProcessExec, searchClaim(SearchGrep, u.cwd, in.Path))}, ""
 	case toolGlob:
-		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGlob)}, ""
+		return []models.TrajectoryEntry{mk(models.ProcessExec, searchClaim(SearchGlob, u.cwd, in.Path))}, ""
 	case toolWebFetch:
 		host := hostOf(in.URL)
 		if host == "" {

@@ -3,6 +3,7 @@ package claudecode
 import (
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -58,7 +59,87 @@ func isFile(a models.ActionType) bool {
 // collapses runs of opens. Events are in time order, ties in the order the
 // probe emitted them.
 func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
-	return collapseOpens(foldCwdFileRead(foldInPlaceWrites(foldAtomicWrites(g))))
+	return collapseOpens(foldCwdFileRead(foldInPlaceWrites(foldAtomicWrites(resolveFDSearches(g)))))
+}
+
+// fdSearchWindow bounds how long before a single-file search's exec the
+// agent's process opened the file it hands over. The pilots of 2.1.306 show
+// about one millisecond (I-69).
+const fdSearchWindow = time.Second
+
+// resolveFDSearches names the file a single-file Grep searched (I-108). The
+// 2.1.296 and 2.1.306 Grep tool opens the file in the agent's own process
+// and starts ripgrep on /proc/self/fd/3 (I-69), so the search's command
+// line names no path; searchTarget leaves it as <kind> /proc/self/fd/N.
+// The file is the one both sides opened: the latest open, at most
+// fdSearchWindow before the exec, by the search's parent of a path the
+// search's own process opens after its exec, both named exactly. Every
+// process event of the search then names that file as its folder. With no
+// such file the target is the kind alone, marked truncated:
+// unverified, as a search whose folder is not recorded (searchTarget).
+func resolveFDSearches(g models.GroundTruth) models.GroundTruth {
+	type search struct {
+		at     time.Time
+		parent uint32
+	}
+	fd := map[uint32]search{}
+	for _, e := range g {
+		if _, ok := fdSearchKind(e.Target); ok && e.ActionType == models.ProcessExec && e.PID != 0 {
+			fd[e.PID] = search{e.Timestamp, e.PPID}
+		}
+	}
+	if len(fd) == 0 {
+		return g
+	}
+	// The paths each search's process opened after its exec.
+	childOpens := map[uint32]map[string]bool{}
+	for _, e := range g {
+		s, ok := fd[e.PID]
+		if !ok || e.ActionType != models.FileOpen || e.PathIsAmbiguous || e.TargetTruncated || e.Timestamp.Before(s.at) {
+			continue
+		}
+		if childOpens[e.PID] == nil {
+			childOpens[e.PID] = map[string]bool{}
+		}
+		childOpens[e.PID][e.Target] = true
+	}
+	file := map[uint32]string{}
+	for pid, s := range fd {
+		var best time.Time
+		for _, e := range g {
+			if e.PID != s.parent || e.ActionType != models.FileOpen || e.PathIsAmbiguous || e.TargetTruncated ||
+				e.Timestamp.After(s.at) || s.at.Sub(e.Timestamp) > fdSearchWindow || !childOpens[pid][e.Target] {
+				continue
+			}
+			if _, ok := file[pid]; !ok || !e.Timestamp.Before(best) {
+				file[pid], best = e.Target, e.Timestamp
+			}
+		}
+	}
+	out := append(models.GroundTruth(nil), g...)
+	for i, e := range out {
+		kind, isFD := fdSearchKind(e.Target)
+		if _, ok := fd[e.PID]; !ok || !isFD || (e.ActionType != models.ProcessExec && e.ActionType != models.ProcessExit) {
+			continue
+		}
+		if f, ok := file[e.PID]; ok {
+			out[i].Target = kind + " " + f
+		} else {
+			out[i].Target, out[i].TargetTruncated = kind, true
+		}
+	}
+	return out
+}
+
+// fdSearchKind returns the kind of a normalized search target whose folder
+// is a descriptor (searchTarget), and whether it is one.
+func fdSearchKind(target string) (string, bool) {
+	for _, kind := range []string{SearchGrep, SearchGlob} {
+		if rest, ok := strings.CutPrefix(target, kind+" "); ok && strings.HasPrefix(rest, searchFD) {
+			return kind, true
+		}
+	}
+	return "", false
 }
 
 // foldInPlaceWrites folds the harness's in-place rewrite of a file into one

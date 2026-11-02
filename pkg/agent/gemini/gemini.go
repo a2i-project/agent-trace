@@ -604,8 +604,9 @@ func claimsFor(c call, base models.TrajectoryEntry) ([]models.TrajectoryEntry, s
 		}
 		return fileClaims(p, nil), ""
 	case toolGrepSearch:
-		// One search, whichever program the harness ran for it (I-54).
-		return []models.TrajectoryEntry{mk(models.ProcessExec, SearchGrep)}, ""
+		// One search, whichever program the harness ran for it (I-54), in
+		// the folder it names (I-108).
+		return []models.TrajectoryEntry{mk(models.ProcessExec, searchClaim(str(c.args["SearchPath"])))}, ""
 	case toolReadURL:
 		u, err := url.Parse(str(c.args["Url"]))
 		if err != nil || u.Hostname() == "" {

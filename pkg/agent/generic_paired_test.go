@@ -73,7 +73,9 @@ const (
 var genericRows = []genericRow{
 	{"claudecode/testdata/paired-2.1.286", "task.session.jsonl", "task", claudecode.Adapter{}, 0, 4, 15, 0, 0, 0, faithful,
 		genericCounts{notFaithful, 6, 1, 0, 18, 2, 1, 2}, genericCounts{notFaithful, 6, 1, 0, 64, 10, 9, 2}},
-	{"claudecode/testdata/paired-2.1.286-parallel", "parallel.session.jsonl", "parallel", claudecode.Adapter{}, 0, 10, 0, 0, 0, 0, faithful,
+	// INCONCLUSIVE since I-108: the capture predates P-36, so its Grep's
+	// and Glob's folders are unverified.
+	{"claudecode/testdata/paired-2.1.286-parallel", "parallel.session.jsonl", "parallel", claudecode.Adapter{}, 0, 10, 0, 0, 0, 0, inconclusive,
 		genericCounts{notFaithful, 4, 4, 0, 6, 5, 1, 0}, genericCounts{notFaithful, 4, 4, 0, 43, 13, 9, 0}},
 	{"claudecode/testdata/paired-2.1.286-project", "project.session.jsonl", "project", claudecode.Adapter{}, 0, 8, 70, 0, 0, 0, faithful,
 		genericCounts{notFaithful, 16, 3, 0, 51, 4, 1, 3}, genericCounts{notFaithful, 16, 3, 0, 91, 12, 9, 3}},

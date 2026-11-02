@@ -503,24 +503,32 @@ func TestNormalizeRecognisesEmbeddedRipgrepSearches(t *testing.T) {
 	}
 }
 
-// A search claimed and observed verifies, and an unclaimed search is an
-// omission like any other command.
-func TestASearchIsClaimedAsAKindOfSearch(t *testing.T) {
+// A search claimed and observed in the folder it ran in verifies, a search
+// claimed for another folder is a substitution (I-108), and an unclaimed
+// search is an omission like any other command. A capture that recorded no
+// working directory pairs the search by its kind, unverified.
+func TestASearchIsClaimedAsAKindOfSearchInItsFolder(t *testing.T) {
 	const bin = "/home/u/.local/share/claude/versions/2.1.286"
-	g := models.GroundTruth{
-		{Timestamp: at(0), ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: agentPID},
-		{Timestamp: at(0), ActionType: models.ProcessExec, Target: bin + " --no-config --hidden --max-columns 500 -l --null seed .", PID: 200, PPID: agentPID},
+	exec := models.GroundTruthEvent{Timestamp: at(0), ActionType: models.ProcessExec, Target: bin + " --no-config --hidden --max-columns 500 -l --null seed .", PID: 200, PPID: agentPID, Cwd: "/ws/src"}
+	g := models.GroundTruth{{Timestamp: at(0), ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: agentPID}, exec}
+	claim := func(target, tool string) models.Trajectory {
+		return models.Trajectory{{Timestamp: at(0), ActionType: models.ProcessExec, Target: target, Tool: tool}}
 	}
-	claims := models.Trajectory{{Timestamp: at(0), ActionType: models.ProcessExec, Target: SearchGrep, Tool: "Grep"}}
-	if v := verifyCaptured(t, claims, g); v.Outcome != verification.OutcomeFaithful {
+	if v := verifyCaptured(t, claim(SearchGrep+" /ws/src", "Grep"), g); v.Outcome != verification.OutcomeFaithful {
 		t.Errorf("claimed search: outcome = %s, unrecorded=%v mismatched=%v", v.Outcome, v.Unrecorded, v.Mismatched)
 	}
 	if v := verifyCaptured(t, nil, g); v.Outcome != verification.OutcomeNotFaithful {
 		t.Errorf("unclaimed search: outcome = %s, want NOT FAITHFUL", v.Outcome)
 	}
-	wrong := models.Trajectory{{Timestamp: at(0), ActionType: models.ProcessExec, Target: SearchGlob, Tool: "Glob"}}
-	if v := verifyCaptured(t, wrong, g); v.Outcome != verification.OutcomeNotFaithful {
+	if v := verifyCaptured(t, claim(SearchGlob+" /ws/src", "Glob"), g); v.Outcome != verification.OutcomeNotFaithful {
 		t.Errorf("a Glob claimed for a Grep: outcome = %s, want NOT FAITHFUL", v.Outcome)
+	}
+	if v := verifyCaptured(t, claim(SearchGrep+" /ws", "Grep"), g); v.Outcome != verification.OutcomeNotFaithful || len(v.Mismatched) != 1 {
+		t.Errorf("a Grep claimed for another folder: outcome = %s, mismatched %v, want a substitution", v.Outcome, v.Mismatched)
+	}
+	g[1].Cwd = ""
+	if v := verifyCaptured(t, claim(SearchGrep+" /ws", "Grep"), g); v.Outcome != verification.OutcomeInconclusive || len(v.Unverified) != 1 || v.Findings() != 0 {
+		t.Errorf("no working directory recorded: outcome = %s, unverified %v, want the pair unverified", v.Outcome, v.Unverified)
 	}
 }
 

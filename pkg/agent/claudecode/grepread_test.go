@@ -49,25 +49,26 @@ func TestAGrepOfAPathImpliesTheHarnessOpenBeforeTheSearch(t *testing.T) {
 	for name, tc := range map[string]struct {
 		version, input, useCwd, resCwd string
 		noResult                       bool
-		want                           string
+		want, claim                    string
 	}{
-		"a relative path":               {"2.1.306", file, "/ws", "/ws", false, "/ws/textkit/strings.py"},
-		"a directory, also claimed":     {"2.1.306", `{"pattern":"x","path":"textkit"}`, "/ws", "/ws", false, "/ws/textkit"},
-		"an absolute path":              {"2.1.306", `{"pattern":"x","path":"/etc/./hosts"}`, "/ws", "/ws", false, "/etc/hosts"},
-		"on 2.1.296":                    {"2.1.296", file, "/ws", "/ws", false, "/ws/textkit/strings.py"},
-		"on 2.1.286, binary not read":   {"2.1.286", file, "/ws", "/ws", false, ""},
-		"on an unchecked version":       {"2.1.300", file, "/ws", "/ws", false, ""},
-		"no path":                       {"2.1.306", `{"pattern":"x"}`, "/ws", "/ws", false, ""},
-		"a path from home":              {"2.1.306", `{"pattern":"x","path":"~/notes.txt"}`, "/ws", "/ws", false, ""},
-		"no working directory":          {"2.1.306", file, "", "", false, ""},
-		"a relative working directory":  {"2.1.306", file, "ws", "ws", false, ""},
-		"the working directory changed": {"2.1.306", file, "/ws", "/ws/sub", false, ""},
-		"no result":                     {"2.1.306", file, "/ws", "/ws", true, ""},
+		"a relative path":               {"2.1.306", file, "/ws", "/ws", false, "/ws/textkit/strings.py", "claude-code search:grep /ws/textkit/strings.py"},
+		"a directory, also claimed":     {"2.1.306", `{"pattern":"x","path":"textkit"}`, "/ws", "/ws", false, "/ws/textkit", "claude-code search:grep /ws/textkit"},
+		"an absolute path":              {"2.1.306", `{"pattern":"x","path":"/etc/./hosts"}`, "/ws", "/ws", false, "/etc/hosts", "claude-code search:grep /etc/hosts"},
+		"on 2.1.296":                    {"2.1.296", file, "/ws", "/ws", false, "/ws/textkit/strings.py", "claude-code search:grep /ws/textkit/strings.py"},
+		"on 2.1.286, binary not read":   {"2.1.286", file, "/ws", "/ws", false, "", "claude-code search:grep /ws/textkit/strings.py"},
+		"on an unchecked version":       {"2.1.300", file, "/ws", "/ws", false, "", "claude-code search:grep /ws/textkit/strings.py"},
+		"no path":                       {"2.1.306", `{"pattern":"x"}`, "/ws", "/ws", false, "", "claude-code search:grep /ws"},
+		"a path from home":              {"2.1.306", `{"pattern":"x","path":"~/notes.txt"}`, "/ws", "/ws", false, "", "claude-code search:grep ~/notes.txt"},
+		"no working directory":          {"2.1.306", file, "", "", false, "", "claude-code search:grep textkit/strings.py"},
+		"a relative working directory":  {"2.1.306", file, "ws", "ws", false, "", "claude-code search:grep textkit/strings.py"},
+		"the working directory changed": {"2.1.306", file, "/ws", "/ws/sub", false, "", "claude-code search:grep /ws/textkit/strings.py"},
+		"no result":                     {"2.1.306", file, "/ws", "/ws", true, "", "claude-code search:grep /ws/textkit/strings.py"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr := grepSession(t, tc.version, tc.input, tc.useCwd, tc.resCwd, !tc.noResult)
-			if tr[0].ActionType != models.ProcessExec || tr[0].Target != SearchGrep || tr[0].ImpliedBy != "" {
-				t.Fatalf("first claim %+v, want the Grep's own", tr[0])
+			// The Grep's own claim names the folder (I-108).
+			if tr[0].ActionType != models.ProcessExec || tr[0].Target != tc.claim || tr[0].ImpliedBy != "" {
+				t.Fatalf("first claim %+v, want the Grep's own, %q", tr[0], tc.claim)
 			}
 			if tc.want == "" {
 				if len(tr) != 1 {
@@ -79,9 +80,9 @@ func TestAGrepOfAPathImpliesTheHarnessOpenBeforeTheSearch(t *testing.T) {
 				t.Fatalf("claims %+v, want the Grep claim and one implied open", tr)
 			}
 			e := tr[1]
-			if e.ActionType != models.FileOpen || e.Target != tc.want || e.ImpliedBy != SearchGrep || !e.ImpliedBefore || e.Tool != toolGrep ||
+			if e.ActionType != models.FileOpen || e.Target != tc.want || e.ImpliedBy != tc.claim || !e.ImpliedBefore || e.Tool != toolGrep ||
 				!e.Timestamp.Equal(tr[0].Timestamp) || e.End == nil || tr[0].End == nil || !e.End.Equal(*tr[0].End) || e.InputHash != nil {
-				t.Errorf("implied claim %+v, want an open of %s before %q over the call's interval", e, tc.want, SearchGrep)
+				t.Errorf("implied claim %+v, want an open of %s before %q over the call's interval", e, tc.want, tc.claim)
 			}
 		})
 	}
@@ -89,7 +90,8 @@ func TestAGrepOfAPathImpliesTheHarnessOpenBeforeTheSearch(t *testing.T) {
 
 // End to end, in the shape of a long task on 2.1.306: the agent's process
 // opens the file a Grep names, then starts its embedded ripgrep on
-// /proc/self/fd/3, which the probe sees opening the same file. The open is
+// /proc/self/fd/3, which the probe sees opening the same file, so the
+// search's folder is that file (I-108). The open is
 // explained as the harness's and the run is FAITHFUL; without the derived
 // claim it is an Unrecorded finding. A Grep over a directory adds nothing to
 // explain and its implied claim stays unpaired, at no cost.
@@ -103,8 +105,11 @@ func TestTheHarnessOpenBeforeAGrepIsExplainedEndToEnd(t *testing.T) {
 	rg := func(target string) string {
 		return "/home/u/.local/share/claude/versions/2.1.306 --no-config --hidden --glob !.git --max-columns 500 --json -n NotImplementedError " + target
 	}
+	// The directory search runs in the directory (P-36 records it, I-108).
+	dirExec := ev(11, models.ProcessExec, rg("."), 201, root)
+	dirExec.Cwd = "/ws/textkit"
 	g := models.GroundTruthFile{RootPID: root, Workspace: "/ws", Coverage: &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}}, Events: models.GroundTruth{
-		ev(10, models.ProcessFork, "x", 201, root), ev(11, models.ProcessExec, rg("."), 201, root),
+		ev(10, models.ProcessFork, "x", 201, root), dirExec,
 		ev(12, models.FileOpen, "/ws/textkit/a.py", 201, 0), ev(13, models.FileOpen, "/ws/textkit/b.py", 201, 0),
 		ev(14, models.ProcessExit, rg("."), 201, root),
 		ev(1010, models.FileOpen, "/ws/textkit/a.py", root, 0),

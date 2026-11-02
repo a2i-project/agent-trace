@@ -281,7 +281,7 @@ var embeddedRipgrep = regexp.MustCompile(`^(?:/home/[^/\s]+|/root)/\.local/share
 // program's resolved path and --no-config, and an exec whose kernel record
 // names its program names the same one. Without the record (a capture made
 // before it), searchKind's install-directory check decides (I-27).
-func (a Adapter) searchOf(e models.GroundTruthEvent) (string, bool) {
+func (a Adapter) searchOf(e models.GroundTruthEvent) (kind, rest string, ok bool) {
 	prog := ""
 	if a.agent != nil && !a.agent.Truncated && filepath.IsAbs(a.agent.Program) {
 		prog = a.agent.Program
@@ -289,22 +289,76 @@ func (a Adapter) searchOf(e models.GroundTruthEvent) (string, bool) {
 	if prog == "" {
 		return searchKind(e.Target)
 	}
-	rest, ok := strings.CutPrefix(e.Target, prog+" --no-config ")
+	rest, ok = strings.CutPrefix(e.Target, prog+" --no-config ")
 	if !ok || (e.Image != nil && e.Image.Program != prog) {
-		return "", false
+		return "", "", false
 	}
-	return searchArgs(rest)
+	kind, ok = searchArgs(rest)
+	return kind, rest, ok
+}
+
+// searchFD is the target the 2.1.296 and 2.1.306 Grep tool gives ripgrep
+// for a single file: the file it opened itself, as descriptor N (I-69).
+const searchFD = "/proc/self/fd/"
+
+// searchTarget is the normalized target of a search whose arguments after
+// --no-config are rest: its kind and the folder it searched (I-108). The
+// folder is the last argument: "." is the process's working directory as
+// the probe recorded it, an absolute path is itself, and a descriptor
+// /proc/self/fd/N is kept for NormalizeStream to resolve (resolveFDSearches).
+// When the folder cannot be read (no working directory recorded, as in a
+// capture made before P-36, a command line the probe cut, another last
+// argument) the target is the kind alone, marked truncated: it pairs by
+// prefix with a claim of that kind and any folder, unverified (V-26),
+// never as a mismatch.
+func searchTarget(kind, rest string, e models.GroundTruthEvent) (string, bool) {
+	if !e.TargetTruncated {
+		last := rest
+		if i := strings.LastIndexByte(rest, ' '); i >= 0 {
+			last = rest[i+1:]
+		}
+		switch {
+		case last == ".":
+			if e.Cwd != "" && !e.CwdTruncated && filepath.IsAbs(e.Cwd) {
+				return kind + " " + filepath.Clean(e.Cwd), false
+			}
+		case strings.HasPrefix(last, searchFD):
+			return kind + " " + last, false
+		case filepath.IsAbs(last):
+			return kind + " " + filepath.Clean(last), false
+		}
+	}
+	return kind, true
+}
+
+// searchClaim is the target of a Grep or Glob call (I-108): its kind and the
+// folder it names, its input path resolved against the working directory
+// the call's record states, or that directory when it names none. A path
+// starting with "~", or a relative one with no absolute working directory,
+// is kept as written: the folder it names is not known here, and a search
+// observed with a folder then reads as a mismatch.
+func searchClaim(kind, cwd, path string) string {
+	switch {
+	case path == "" && filepath.IsAbs(cwd):
+		return kind + " " + filepath.Clean(cwd)
+	case path == "":
+		return kind
+	case strings.HasPrefix(path, "~") || (!filepath.IsAbs(path) && !filepath.IsAbs(cwd)):
+		return kind + " " + path
+	}
+	return kind + " " + resolveRead(cwd, path)
 }
 
 // searchKind classifies an observed command line as a Grep or a Glob. ok is
 // false for anything else, including the harness's own listings and any
 // program outside the install directory.
-func searchKind(line string) (target string, ok bool) {
+func searchKind(line string) (kind, rest string, ok bool) {
 	m := embeddedRipgrep.FindStringSubmatch(line)
 	if m == nil {
-		return "", false
+		return "", "", false
 	}
-	return searchArgs(m[1])
+	kind, ok = searchArgs(m[1])
+	return kind, m[1], ok
 }
 
 // searchArgs classifies the arguments after --no-config: with --files and

@@ -43,7 +43,7 @@ func TestARealConversationParses(t *testing.T) {
 		"write_to_file:file_open:/ws/1/a.txt", "write_to_file:file_write:/ws/1/a.txt", "write_to_file:file_close:/ws/1/a.txt",
 		"replace_file_content:file_open:/ws/1/a.txt", "replace_file_content:file_write:/ws/1/a.txt", "replace_file_content:file_close:/ws/1/a.txt",
 		"run_command:process_exec:cat a.txt",
-		"grep_search:process_exec:" + SearchGrep,
+		"grep_search:process_exec:" + SearchGrep + " /ws/1",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("claims =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

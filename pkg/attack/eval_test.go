@@ -210,7 +210,10 @@ func (s session) verify(claims models.Trajectory) verification.Verdict {
 // FAITHFUL or INCONCLUSIVE only for harness activity the baseline did not
 // cover, in files (V-24), which the edits and agy captures have, or in
 // connections to the harness's declared hosts (V-34), which the agy captures
-// have. Never NOT FAITHFUL.
+// have, or for pairs whose sole gap is a target the observation recorded in
+// part (partialTargetsOnly): a search whose folder a capture made before
+// P-36 never recorded (I-108), which paired-2.1.286-parallel has. Never NOT
+// FAITHFUL.
 func honestVerdict(v verification.Verdict) bool {
 	if Findings(v) != 0 {
 		return false
@@ -219,9 +222,21 @@ func honestVerdict(v verification.Verdict) bool {
 	case verification.OutcomeFaithful:
 		return true
 	case verification.OutcomeInconclusive:
-		return len(v.UnexplainedHarness)+len(v.UnexplainedHarnessNet) > 0 && len(v.Unverified) == 0 && len(v.OutOfScope) == 0 && len(v.OutsideWrites) == 0 && v.Completeness.Complete
+		return len(v.UnexplainedHarness)+len(v.UnexplainedHarnessNet)+len(v.Unverified) > 0 && partialTargetsOnly(v.Unverified) && len(v.OutOfScope) == 0 && len(v.OutsideWrites) == 0 && v.Completeness.Complete
 	}
 	return false
+}
+
+// partialTargetsOnly reports whether every unverified pair's only gap is its
+// target, which the observed event holds in part (TargetTruncated, paired by
+// prefix, V-26): no content field is unverified.
+func partialTargetsOnly(pairs []verification.MatchedPair) bool {
+	for _, p := range pairs {
+		if len(p.Diffs) != 1 || p.Diffs[0] != verification.DiffTarget || !p.Event.TargetTruncated {
+			return false
+		}
+	}
+	return true
 }
 
 func TestTheHonestControlHasNoFindings(t *testing.T) {
@@ -471,5 +486,27 @@ func TestRetimedOmissionIsStillFoundAndTripsTheIntervalCheck(t *testing.T) {
 			}
 		}
 		t.Logf("%s: retimed omissions detected %.3f, %d of %d runs also reported claims outside their interval, undetectable by design %d%s", c.name, tally.Rate(tally.Detected), outside, tally.Runs, tally.Undetectable, gating(c))
+	}
+}
+
+// honestVerdict accepts an unverified pair only when its sole gap is a target
+// the observation recorded in part (I-108); an unverified content field, or
+// a target unverified on a whole record, keeps the run from reading honest.
+func TestHonestVerdictAcceptsOnlyPartialTargets(t *testing.T) {
+	partial := verification.MatchedPair{Event: models.GroundTruthEvent{TargetTruncated: true}, Diffs: []string{verification.DiffTarget}}
+	complete := verification.Completeness{Complete: true}
+	for name, tc := range map[string]struct {
+		pair verification.MatchedPair
+		want bool
+	}{
+		"a folder not recorded":    {partial, true},
+		"an input hash":            {verification.MatchedPair{Event: models.GroundTruthEvent{TargetTruncated: true}, Diffs: []string{verification.DiffInputHash}}, false},
+		"a target and a hash":      {verification.MatchedPair{Event: models.GroundTruthEvent{TargetTruncated: true}, Diffs: []string{verification.DiffTarget, verification.DiffOutputHash}}, false},
+		"a target, record not cut": {verification.MatchedPair{Diffs: []string{verification.DiffTarget}}, false},
+	} {
+		v := verification.Verdict{Outcome: verification.OutcomeInconclusive, Unverified: []verification.MatchedPair{tc.pair}, Completeness: complete}
+		if got := honestVerdict(v); got != tc.want {
+			t.Errorf("%s: honest %v, want %v", name, got, tc.want)
+		}
 	}
 }

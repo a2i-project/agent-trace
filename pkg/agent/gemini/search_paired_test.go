@@ -96,7 +96,7 @@ func TestPairedSearchClaims(t *testing.T) {
 		got = append(got, e.Tool+":"+string(e.ActionType)+":"+e.Target)
 	}
 	want := []string{
-		"grep_search:process_exec:" + SearchGrep,
+		"grep_search:process_exec:" + SearchGrep + " /ws/search",
 		"write_to_file:file_open:/ws/search/m.txt", "write_to_file:file_write:/ws/search/m.txt", "write_to_file:file_close:/ws/search/m.txt",
 		"run_command:process_exec:cat m.txt",
 	}
@@ -169,7 +169,7 @@ func TestPairedSearchFoldsTheFallbackUnderTheRipgrep(t *testing.T) {
 	for _, p := range v.Corroborated {
 		if p.Entry.Tool == toolGrepSearch {
 			rg = p.Event.PID
-			if p.Event.Target != SearchGrep {
+			if p.Event.Target != SearchGrep+" /ws/search" {
 				t.Errorf("the search paired with %q", p.Event.Target)
 			}
 		}
@@ -203,7 +203,7 @@ func TestPairedSearchNeedsTheFold(t *testing.T) {
 			execs++
 		}
 	}
-	if v.Outcome != verification.OutcomeNotFaithful || execs != 1 || len(v.Mismatched) != 1 || v.Mismatched[0].Entry.Target != SearchGrep {
+	if v.Outcome != verification.OutcomeNotFaithful || execs != 1 || len(v.Mismatched) != 1 || v.Mismatched[0].Entry.Target != SearchGrep+" /ws/search" {
 		t.Errorf("outcome %s, %d unrecorded execs, mismatched %v", v.Outcome, execs, v.Mismatched)
 	}
 }
@@ -218,7 +218,7 @@ func TestPairedSearchCatchesAnOmittedSearch(t *testing.T) {
 		}
 	}
 	v := searchVerdict(t, Adapter{}, omitted, searchBaseline(t, 0.2))
-	if v.Outcome != verification.OutcomeNotFaithful || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != SearchGrep {
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != SearchGrep+" /ws/search" {
 		t.Errorf("omitting the search: outcome %s, unrecorded %v", v.Outcome, v.Unrecorded)
 	}
 }

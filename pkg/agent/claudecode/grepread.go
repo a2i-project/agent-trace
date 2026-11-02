@@ -44,6 +44,6 @@ func grepOpenClaims(u toolUse, base models.TrajectoryEntry, res toolResult) []mo
 	}
 	e := base
 	e.ActionType, e.Target = models.FileOpen, resolveRead(u.cwd, in.Path)
-	e.ImpliedBy, e.ImpliedBefore = SearchGrep, true
+	e.ImpliedBy, e.ImpliedBefore = searchClaim(SearchGrep, u.cwd, in.Path), true
 	return []models.TrajectoryEntry{e}
 }

@@ -104,8 +104,8 @@ func TestFoldSearchesFoldsTheFallbackIntoTheFailedRipgrep(t *testing.T) {
 	want := strings.Join([]string{
 		"process_fork 300<100 300",
 		"process_fork 301<100 301",
-		"process_exec 301<100 " + SearchGrep,
-		"process_exit 301<100 " + SearchGrep,
+		"process_exec 301<100 " + SearchGrep + " " + ws,
+		"process_exit 301<100 " + SearchGrep + " " + ws,
 		"process_fork 302<301 302",
 		"process_exec 302<301 " + grepLine,
 		"process_exit 302<301 " + grepLine,
@@ -146,7 +146,7 @@ func TestFoldSearchesIsNarrow(t *testing.T) {
 		var execs, under int
 		for _, e := range foldSearches(g) {
 			if e.ActionType == models.ProcessExec {
-				if e.Target == SearchGrep {
+				if isSearchTarget(e.Target) {
 					execs++
 				}
 				if e.PPID != agentPID {
@@ -164,7 +164,7 @@ func TestFoldSearchesIsNarrow(t *testing.T) {
 	other := "/usr/bin/grep -r seed ."
 	g[7].Target, g[10].Target = other, other
 	out := foldSearches(g)
-	if out[7].Target != other || out[7].PPID != agentPID || out[3].Target != SearchGrep {
+	if out[7].Target != other || out[7].PPID != agentPID || out[3].Target != SearchGrep+" "+ws {
 		t.Errorf("another program after the ripgrep: %s", renderProcs(out))
 	}
 }
@@ -178,7 +178,7 @@ func TestFoldSearchesRewritesEitherFormAlone(t *testing.T) {
 	for name, s := range map[string]models.GroundTruth{"ripgrep": rg, "grep": gr} {
 		var n int
 		for _, e := range foldSearches(s) {
-			if (e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit) && e.Target == SearchGrep && e.PPID == agentPID {
+			if (e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit) && isSearchTarget(e.Target) && e.PPID == agentPID {
 				n++
 			}
 		}
@@ -194,7 +194,7 @@ func TestFoldSearchesRewritesEitherFormAlone(t *testing.T) {
 func TestASearchVerifiesEndToEnd(t *testing.T) {
 	ms := time.Millisecond
 	end := t0.Add(40 * ms)
-	tr := models.Trajectory{{Tool: toolGrepSearch, Timestamp: t0.Add(10 * ms), End: &end, ActionType: models.ProcessExec, Target: SearchGrep}}
+	tr := models.Trajectory{{Tool: toolGrepSearch, Timestamp: t0.Add(10 * ms), End: &end, ActionType: models.ProcessExec, Target: SearchGrep + " " + ws}}
 	harness := func(e models.GroundTruthEvent) bool { return harnessOwned.MatchString(e.Target) }
 	cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}}
 	run := func(a agent.Adapter) verification.Verdict {
@@ -219,13 +219,53 @@ func TestParseClaimsASearchAndNotAListing(t *testing.T) {
 		{typ: 132, status: 3, payload: payload(at(7), at(8), at(9), toolCall("c3", "find_by_name", map[string]any{"Pattern": "*.txt", "SearchDirectory": "/w"}))},
 	})
 	tr, rep := parse(t, path)
-	if len(tr) != 1 || tr[0].ActionType != models.ProcessExec || tr[0].Target != SearchGrep || tr[0].Tool != toolGrepSearch {
-		t.Errorf("claims %+v, want one process_exec of %q", tr, SearchGrep)
+	if len(tr) != 1 || tr[0].ActionType != models.ProcessExec || tr[0].Target != SearchGrep+" /w" || tr[0].Tool != toolGrepSearch {
+		t.Errorf("claims %+v, want one process_exec of %q", tr, SearchGrep+" /w")
 	}
 	if len(rep.UnknownTools) != 0 || rep.UnmappedByTool["list_dir"] != 1 || rep.UnmappedByTool["find_by_name"] != 1 {
 		t.Errorf("unknown %v, unmapped %v", rep.UnknownTools, rep.UnmappedByTool)
 	}
 	if strings.Contains(strings.Join(rep.Degradations, "|"), "no mapping") {
 		t.Errorf("degradations %v", rep.Degradations)
+	}
+}
+
+// isSearchTarget reports whether a normalized target is a search, with its
+// folder or, when the folder was not recorded, the kind alone (I-108).
+func isSearchTarget(target string) bool {
+	return target == SearchGrep || strings.HasPrefix(target, SearchGrep+" ")
+}
+
+// The folder of an observed search (I-108): the ripgrep's from its ignore
+// file, the fallback grep's from the working directory the probe recorded,
+// and, without one, the kind alone, truncated, which pairs with a claim of
+// any folder unverified. A claim names its SearchPath, cleaned.
+func TestASearchNamesItsFolder(t *testing.T) {
+	g := searchShape()
+	if got, cut := searchFolder(g[3], ripgrepSearch); got != SearchGrep+" "+ws || cut {
+		t.Errorf("ripgrep: %q %v", got, cut)
+	}
+	if got, cut := searchFolder(g[7], grepSearch); got != SearchGrep || !cut {
+		t.Errorf("grep, no working directory: %q %v", got, cut)
+	}
+	g[7].Cwd = "/w/sub"
+	if got, cut := searchFolder(g[7], grepSearch); got != SearchGrep+" /w/sub" || cut {
+		t.Errorf("grep: %q %v", got, cut)
+	}
+	for in, want := range map[string]string{"/w/./x": SearchGrep + " /w/x", "": SearchGrep, "rel": SearchGrep + " rel"} {
+		if got := searchClaim(in); got != want {
+			t.Errorf("searchClaim(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// End to end, a claim of another folder is a substitution.
+	ms := time.Millisecond
+	end := t0.Add(40 * ms)
+	tr := models.Trajectory{{Tool: toolGrepSearch, Timestamp: t0.Add(10 * ms), End: &end, ActionType: models.ProcessExec, Target: SearchGrep + " /elsewhere"}}
+	cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}}
+	harness := func(e models.GroundTruthEvent) bool { return harnessOwned.MatchString(e.Target) }
+	v := verification.Verify(agent.Prepare(Adapter{}, tr, models.GroundTruthFile{Events: searchShape(), RootPID: agentPID, Workspace: ws, Coverage: cov}, harness,
+		verification.Options{IntervalSlack: 500 * time.Millisecond}))
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Mismatched) != 1 {
+		t.Errorf("another folder: outcome %s, mismatched %v", v.Outcome, v.Mismatched)
 	}
 }

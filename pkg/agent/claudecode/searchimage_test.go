@@ -72,11 +72,11 @@ func TestASearchFromAnotherLayoutVerifiesWithTheRecordedImage(t *testing.T) {
 		Coverage:  &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}},
 		Events: models.GroundTruth{
 			{Timestamp: t0.Add(time.Second), ActionType: models.ProcessFork, Target: "101", PID: 101, PPID: 100},
-			{Timestamp: t0.Add(time.Second + 1), ActionType: models.ProcessExec, Target: line, PID: 101, PPID: 100, Image: &models.ExecImage{Filename: npm, Program: npm}},
+			{Timestamp: t0.Add(time.Second + 1), ActionType: models.ProcessExec, Target: line, PID: 101, PPID: 100, Image: &models.ExecImage{Filename: npm, Program: npm}, Cwd: "/ws"},
 			{Timestamp: t0.Add(time.Second + 2), ActionType: models.ProcessExit, Target: line, PID: 101, PPID: 100, ExitCode: new(int32)},
 		},
 	}
-	claims := models.Trajectory{{Timestamp: t0.Add(time.Second), ActionType: models.ProcessExec, Target: SearchGrep, Tool: toolGrep}}
+	claims := models.Trajectory{{Timestamp: t0.Add(time.Second), ActionType: models.ProcessExec, Target: SearchGrep + " /ws", Tool: toolGrep}}
 	v := verification.Verify(agent.Prepare(Adapter{}, claims, g, nil, verification.Options{}))
 	if v.Outcome != verification.OutcomeFaithful {
 		t.Fatalf("with root_image: %s %v", v.Outcome, v.Reasons)

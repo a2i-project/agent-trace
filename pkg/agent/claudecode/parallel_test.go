@@ -3,6 +3,7 @@ package claudecode
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -140,11 +141,23 @@ func TestParallelCaptureCarriesBlockAndThread(t *testing.T) {
 	}
 }
 
-func TestParallelTaskVerifiesFaithful(t *testing.T) {
+// Every claim is corroborated. The capture predates P-36, so it records no
+// working directory and the Grep's and the Glob's folders cannot be read:
+// both pair by the kind of search, unverified, and the run is INCONCLUSIVE
+// on them alone (I-108).
+func TestParallelTaskVerifiesAllButTheSearchFolders(t *testing.T) {
 	tr, _, g := parallelTask(t)
 	b := parallelBaseline(t)
 	v := verifyParallel(t, tr, g, &b)
-	if v.Outcome != verification.OutcomeFaithful {
+	if len(v.Unverified) != 2 || v.Findings() != 0 {
+		t.Errorf("unverified %v, findings %d, want the two searches' folders and no finding", v.Unverified, v.Findings())
+	}
+	for _, p := range v.Unverified {
+		if !slices.Equal(p.Diffs, []string{verification.DiffTarget}) || !p.Event.TargetTruncated {
+			t.Errorf("unverified pair %s %s: %v, want the target, by prefix", p.Entry.Target, p.Event.Target, p.Diffs)
+		}
+	}
+	if v.Outcome != verification.OutcomeInconclusive {
 		t.Fatalf("outcome = %s\nunwitnessed=%v\nunrecorded=%v\nmismatched=%v\nunexplained subtrees=%d reasons=%v",
 			v.Outcome, v.Unwitnessed, v.Unrecorded, v.Mismatched, len(v.Coverage.UnexplainedSubtrees), v.Reasons)
 	}

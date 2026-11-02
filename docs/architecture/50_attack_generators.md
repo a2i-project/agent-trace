@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit 510276e on 2026-11-01.
+Checked against commit 4329066 on 2026-11-02.
 
 ## Objective
 
@@ -82,7 +82,7 @@ The log line of each capture, generator and mutation count gives runs, mutations
 
 On the six captures gated before 2026-10-28:
 
-- On the honest control there are no findings; the outcome is FAITHFUL, or INCONCLUSIVE only for harness activity the baseline does not hold: file events under the harness's directories (V-24), which the edits capture has, or connections to the harness's declared hosts (V-34). Both agy captures are INCONCLUSIVE on both: the token refresh to `oauth2.googleapis.com` (I-52) and 12 (basic) and 6 (search) harness file events at full agreement.
+- On the honest control there are no findings; the outcome is FAITHFUL, or INCONCLUSIVE only for harness activity the baseline does not hold: file events under the harness's directories (V-24), which the edits capture has, or connections to the harness's declared hosts (V-34), or, since I-108, unverified pairs whose sole gap is a target the observation recorded in part (`partialTargetsOnly`): `paired-2.1.286-parallel` is INCONCLUSIVE on its Grep's and Glob's folders, which the capture never recorded. No other unverified field is accepted (`TestHonestVerdictAcceptsOnlyPartialTargets`). Both agy captures are INCONCLUSIVE on both: the token refresh to `oauth2.googleapis.com` (I-52) and 12 (basic) and 6 (search) harness file events at full agreement.
 - Every mutation is detected, classified and located, and no finding is unaccounted. Before V-31 an omission that left an ambiguous alignment could pair a truthful claim with an identical event outside its interval (2 of 100 runs of two omissions and 7 of 100 of three on the project capture); since V-31 ties are broken by the fewest interval violations and those runs have none.
 - Widening leaves the honest outcome unchanged, and an omission whose neighbours are widened over the omitted moment is found at every position that has a neighbour on both sides.
 - Distinct mutations per capture beyond omissions: 12 to 29 fabrications, 44 to 151 substitutions on the Claude Code captures; the agy counts are in the table below. The edits capture is the first on which the substitution of an Edit's content is exercised: 49 of the per-field check's 60 `output_hash` substitutions are of an Edit, the rest of its Write.
