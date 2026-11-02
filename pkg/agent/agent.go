@@ -88,6 +88,16 @@ type BackgroundOutputter interface {
 	IsBackgroundOutput(path string) bool
 }
 
+// HomeExpander is implemented by an adapter whose claims can name a path
+// as the harness's tool took it, starting with "~", which the harness
+// resolves against its home before it acts (I-111). Given the home the
+// capture resolved "~/" against, it returns the claim with that path
+// resolved, or the claim unchanged. Prepare applies it only when the capture
+// records the home.
+type HomeExpander interface {
+	ExpandHome(c models.TrajectoryEntry, home string) models.TrajectoryEntry
+}
+
 // StartupReader is implemented by an adapter that can name the files its
 // harness reads only while it starts and never sends to the model, such as
 // its stored credentials and settings (V-82). Given the harness version the
@@ -649,6 +659,13 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 			}
 		}
 		claims = kept
+	}
+	if he, ok := a.(HomeExpander); ok && g.Sensitive != nil && g.Sensitive.Home != "" {
+		expanded := make(models.Trajectory, len(claims))
+		for i, c := range claims {
+			expanded[i] = he.ExpandHome(c, g.Sensitive.Home)
+		}
+		claims = expanded
 	}
 	ground := NormalizeCapture(a, g)
 	baseline := func(e models.GroundTruthEvent) bool {

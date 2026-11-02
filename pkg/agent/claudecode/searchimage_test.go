@@ -87,3 +87,53 @@ func TestASearchFromAnotherLayoutVerifiesWithTheRecordedImage(t *testing.T) {
 		t.Errorf("without root_image: %s, want NOT FAITHFUL (the search is not recognised)", v.Outcome)
 	}
 }
+
+// I-111: a Grep whose path is written "~/..." searches under the home the
+// capture resolved "~/" against, so with the home recorded its claim
+// verifies on the observed folder; without it the folder stays unknown and
+// reads as a mismatch, the limit I-108 stated. A "~user" path and other
+// claims are left as written.
+func TestAGrepOfAHomePathVerifiesWithTheRecordedHome(t *testing.T) {
+	const bin = "/home/u/.local/share/claude/versions/2.1.306"
+	t0 := time.Unix(1000, 0)
+	line := bin + " --no-config --hidden -l --null seed ."
+	g := models.GroundTruthFile{
+		RootPID: 100, Workspace: "/ws",
+		Sensitive: &models.SensitiveSnapshot{Home: "/home/u"},
+		Coverage:  &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}},
+		Events: models.GroundTruth{
+			{Timestamp: t0.Add(time.Second), ActionType: models.ProcessFork, Target: "101", PID: 101, PPID: 100},
+			{Timestamp: t0.Add(time.Second + 1), ActionType: models.ProcessExec, Target: line, PID: 101, PPID: 100, Cwd: "/home/u/notes"},
+			{Timestamp: t0.Add(time.Second + 2), ActionType: models.ProcessExit, Target: line, PID: 101, PPID: 100, ExitCode: new(int32)},
+		},
+	}
+	claims := models.Trajectory{{Timestamp: t0.Add(time.Second), ActionType: models.ProcessExec, Target: SearchGrep + " ~/notes", Tool: toolGrep}}
+	v := verification.Verify(agent.Prepare(Adapter{}, claims, g, nil, verification.Options{}))
+	if v.Outcome != verification.OutcomeFaithful {
+		t.Fatalf("with the home recorded: %s %v", v.Outcome, v.Reasons)
+	}
+	if claims[0].Target != SearchGrep+" ~/notes" {
+		t.Errorf("Prepare changed the caller's claims: %q", claims[0].Target)
+	}
+	g.Sensitive = nil
+	v = verification.Verify(agent.Prepare(Adapter{}, claims, g, nil, verification.Options{}))
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Mismatched) != 1 {
+		t.Errorf("without the home: %s, mismatched %v, want the stated mismatch", v.Outcome, v.Mismatched)
+	}
+
+	for _, c := range []struct{ in, want string }{
+		{SearchGrep + " ~", SearchGrep + " /home/u"},
+		{SearchGlob + " ~/a/../b", SearchGlob + " /home/u/b"},
+		{SearchGrep + " ~other/x", SearchGrep + " ~other/x"},
+		{SearchGrep + " /ws", SearchGrep + " /ws"},
+		{"claude-code bash ~/x", "claude-code bash ~/x"},
+	} {
+		got := Adapter{}.ExpandHome(models.TrajectoryEntry{ActionType: models.ProcessExec, Target: c.in}, "/home/u")
+		if got.Target != c.want {
+			t.Errorf("ExpandHome(%q) = %q, want %q", c.in, got.Target, c.want)
+		}
+	}
+	if got := (Adapter{}).ExpandHome(models.TrajectoryEntry{ActionType: models.FileRead, Target: SearchGrep + " ~/x"}, "/home/u"); got.Target != SearchGrep+" ~/x" {
+		t.Errorf("a non-exec claim was expanded: %q", got.Target)
+	}
+}

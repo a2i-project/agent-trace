@@ -335,8 +335,10 @@ func searchTarget(kind, rest string, e models.GroundTruthEvent) (string, bool) {
 // folder it names, its input path resolved against the working directory
 // the call's record states, or that directory when it names none. A path
 // starting with "~", or a relative one with no absolute working directory,
-// is kept as written: the folder it names is not known here, and a search
-// observed with a folder then reads as a mismatch.
+// is kept as written: the folder it names is not known here. ExpandHome
+// resolves the "~" form against the capture's home (I-111); a search
+// observed with a folder reads as a mismatch only when the capture records
+// no home.
 func searchClaim(kind, cwd, path string) string {
 	switch {
 	case path == "" && filepath.IsAbs(cwd):
@@ -347,6 +349,27 @@ func searchClaim(kind, cwd, path string) string {
 		return kind + " " + path
 	}
 	return kind + " " + resolveRead(cwd, path)
+}
+
+// ExpandHome resolves a Grep's or Glob's folder written as "~" or "~/..."
+// against home, the directory the capture resolved "~/" against, as the
+// harness resolves it before it searches (I-111). Every other claim, and a
+// "~user" form, is returned unchanged.
+func (Adapter) ExpandHome(c models.TrajectoryEntry, home string) models.TrajectoryEntry {
+	if c.ActionType != models.ProcessExec || !filepath.IsAbs(home) {
+		return c
+	}
+	for _, kind := range []string{SearchGrep, SearchGlob} {
+		path, ok := strings.CutPrefix(c.Target, kind+" ")
+		if !ok {
+			continue
+		}
+		if path == "~" || strings.HasPrefix(path, "~/") {
+			c.Target = kind + " " + filepath.Join(home, path[1:])
+		}
+		return c
+	}
+	return c
 }
 
 // searchKind classifies an observed command line as a Grep or a Glob. ok is
