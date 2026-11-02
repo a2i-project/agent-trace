@@ -122,6 +122,10 @@ type Observer struct {
 	// and to check a claim's interval, which --interval-slack widens (V6,
 	// V-12); it never pairs by time.
 	bootOffsetNs int64
+
+	// rootImage is the image of the root process's last exec that took
+	// effect, as the kernel recorded it (P-46): the agent's own program.
+	rootImage atomic.Pointer[models.ExecImage]
 }
 
 // New loads the eBPF programs, attaches the tracepoints, and opens the ring
@@ -537,6 +541,14 @@ func (o *Observer) readLoop() {
 		// the ancestry filter. The root itself is the controller, not an agent
 		// action, so never expose its events as verification-grade events.
 		if o.cfg.PIDFilter > 0 && int32(hdr.Pid) == o.cfg.PIDFilter {
+			// What the root runs is kept apart, never as an event: the
+			// program of its last exec that took effect names the agent's
+			// own executable (P-46).
+			if hdr.Kind == kindExecOK {
+				if img := execImage(&hdr, record.RawSample[hdrSize:]); img != nil {
+					o.rootImage.Store(img)
+				}
+			}
 			continue
 		}
 
@@ -715,6 +727,12 @@ func cString(b []byte) string {
 	}
 	return string(buf)
 }
+
+// RootImage is the image of the root process's last exec that took effect
+// while the probe read (P-46), the program the agent itself runs; nil when
+// no root was set, or the root did not exec after SetRootPID (a process
+// attached with --root-pid). Read it after Stop.
+func (o *Observer) RootImage() *models.ExecImage { return o.rootImage.Load() }
 
 // SetRootPID configures the probe to only track this process and its descendants.
 // It also clears the CommandFilter if any, since ancestry tracking replaces it.

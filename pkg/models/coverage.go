@@ -357,6 +357,13 @@ type GroundTruthFile struct {
 	// the start and the stop of the capture (V-40). Nil means the capture
 	// took none: it predates the record, or no adapter declared a file.
 	Sensitive *SensitiveSnapshot `json:"sensitive,omitempty"`
+	// RootImage is what the kernel ran for the root process's last exec
+	// that took effect during the capture (P-46): the agent's own program,
+	// for every agent, its path resolved. The root's exec is never an event
+	// (it is the agent, not one of its actions), so this is the only record
+	// of it. Nil means not recorded: a capture made before the record, or
+	// a root that did not exec while the probe read (--root-pid).
+	RootImage *ExecImage `json:"root_image,omitempty"`
 }
 
 // FSScope rules.

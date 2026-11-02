@@ -84,6 +84,10 @@ func TestRunWatch_ExecWrapSuppressesRootSeesChild(t *testing.T) {
 	if !file.Coverage.Probes["proc"].Ran {
 		t.Errorf("proc probe not recorded as run: %+v", file.Coverage.Probes)
 	}
+	// The agent's own program is recorded apart from the events (P-46).
+	if sh, err := filepath.EvalSymlinks("/bin/sh"); err != nil || file.RootImage == nil || file.RootImage.Program != sh {
+		t.Errorf("root_image %+v, want the program of /bin/sh (%s, %v)", file.RootImage, sh, err)
+	}
 	ground := file.Events
 
 	var sawRoot, sawChild bool

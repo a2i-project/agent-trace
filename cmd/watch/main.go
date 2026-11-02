@@ -919,10 +919,16 @@ func runWatch(opts watchOptions) error {
 
 	sortGround(ground)
 
+	// The agent's own program, which the root's exec ran (P-46).
+	var rootImage *models.ExecImage
+	if procObs != nil && groundRoot != 0 {
+		rootImage = procObs.RootImage()
+	}
+
 	if ground == nil {
 		ground = models.GroundTruth{}
 	}
-	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot, Workspace: workspace, FSScope: scope, Sensitive: sensitiveRec}, "", "  ")
+	b, err := json.MarshalIndent(models.GroundTruthFile{Events: ground, Coverage: &cov, RootPID: groundRoot, Workspace: workspace, FSScope: scope, Sensitive: sensitiveRec, RootImage: rootImage}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal ground truth: %w", err)
 	}
