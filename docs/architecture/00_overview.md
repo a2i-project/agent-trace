@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Checked against commit d223e7d on 2026-10-28.
+Checked against commit 40a5022 on 2026-11-02.
 
 This page states what agent-trace is for, the threat model it assumes, the
 properties it claims, and how its components fit together. Each component has
@@ -31,9 +31,16 @@ detects target the trajectory, not the host:
 * **AS-1, observable boundary.** Every security-relevant action crosses a
   kernel boundary that a probe can observe: a file operation, a process
   creation, or a socket operation.
-* **AS-2, no evasion.** The agent misreports its trajectory but does not detect
-  or subvert the recorder. An evasion-aware agent is out of scope
-  ([`../decisions/network.md`](../decisions/network.md)).
+* **AS-2, no deep evasion.** The agent misreports its trajectory but does not
+  subvert the recorder. Deep evasion, which needs root, a kernel change or a
+  modified harness, is out of scope (AS-3). Cheap evasion, which an agent
+  performs with its normal tools by following instructions (timing its actions
+  to coincide with the harness's, imitating the harness's patterns), is not
+  defended by design: it is measured by an adaptive-attack evaluation whose
+  attackers know how agent-trace works.
+  That evaluation (V-79) is not yet implemented
+  ([`../decisions/verification.md`](../decisions/verification.md), amending
+  N-8 in [`../decisions/network.md`](../decisions/network.md)).
 * **AS-3, trusted host.** The host kernel and the probes form the trust
   boundary. An attacker with root on the host can defeat them.
 * **AS-4, local execution.** The agent runs on a host the operator controls.

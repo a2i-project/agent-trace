@@ -69,7 +69,7 @@ Consequences: N0 satisfies omission and fabrication for network events and subst
 Alternatives rejected: A proxy as the primary layer (N-17); a single technique for all targets.
 
 ### N-8: The evasion-aware agent is out of scope
-Status: Accepted (threat-model assumption).
+Status: Accepted (threat-model assumption). Amended 2026-11-02 by V-79: deep evasion (root, a kernel change, a modified harness) stays out of scope; cheap evasion with the agent's normal tools is measured by an adaptive-attack evaluation.
 Date: 2026-09-12.
 Context: The threat model is post-hoc misrepresentation of real actions in the trajectory (omission, fabrication, substitution). A different class detects the recorder and changes behaviour or interferes with it, so ground truth itself is wrong.
 Decision: Assume the agent misreports its trajectory but does not try to detect or subvert the recorder. State it explicitly wherever results are reported.
