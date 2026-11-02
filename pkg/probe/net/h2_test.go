@@ -2,6 +2,8 @@ package net
 
 import (
 	"encoding/binary"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -156,5 +158,65 @@ func TestValidStarts(t *testing.T) {
 	}
 	if validResponseStart(h2F(4, 1, 0, nil)) || validResponseStart(h2ClientPreface) {
 		t.Error("a SETTINGS ack or a preface accepted as a response start")
+	}
+}
+
+// A response whose read reaches the correlator before the write that
+// opened its stream (a Go writer descheduled between its write and the
+// return probe, as in the failed run of TestObserver_GoCryptoH2) is held
+// for its request and paired with it (N-50). A held response whose request
+// a later stream shows will not come, and one still held when the
+// connection closes, are emitted unpaired; a pushed stream (even) is not
+// held.
+func TestH2_ResponseBeforeItsRequestIsHeld(t *testing.T) {
+	o := newTestObserver()
+	o.events = make(chan models.GroundTruthEvent, 64)
+	key := sslKey{tgid: 5, ssl: 0x55}
+	t0 := time.Unix(5000, 0)
+	at := func(s int) time.Time { return t0.Add(time.Duration(s) * time.Second) }
+	resp := func(stream uint32, status string) []byte {
+		return h2F(1, h2EndHeaders|h2EndStream, stream, h2Fields(":status", status))
+	}
+	get := func(stream uint32, path string) []byte {
+		return h2F(1, h2EndHeaders|h2EndStream, stream, h2Fields(":method", "GET", ":scheme", "https", ":authority", modelHost, ":path", path))
+	}
+	o.handleSSLFrame(key, append(append([]byte{}, h2ClientPreface...), get(1, "/one")...), 0, at(0))
+	o.feedRead(key, append(settingsFrame(), resp(1, "200")...), 0, at(1))
+	// Stream 3's response, then its request.
+	o.feedRead(key, resp(3, "201"), 0, at(2))
+	o.handleSSLFrame(key, get(3, "/three"), 0, at(3))
+	// Stream 5's response, whose request never shows; stream 7's request
+	// shows that it will not.
+	o.feedRead(key, resp(5, "202"), 0, at(4))
+	o.feedRead(key, resp(2, "203"), 0, at(5))
+	o.handleSSLFrame(key, get(7, "/seven"), 0, at(6))
+	// Stream 9's response, held when the capture stops.
+	o.feedRead(key, resp(9, "204"), 0, at(7))
+	o.flushResponses()
+
+	var got []string
+	for _, e := range evsOf(o) {
+		s := string(e.ActionType) + " " + e.Target
+		if e.Response != nil {
+			s += fmt.Sprintf(" %d paired=%v", e.Response.Status, e.Response.Paired)
+		}
+		got = append(got, s)
+	}
+	host := "https://" + modelHost
+	want := []string{
+		"net_request GET " + host + "/one",
+		"net_response GET " + host + "/one 200 paired=true",
+		"net_request GET " + host + "/three",
+		"net_response GET " + host + "/three 201 paired=true",
+		"net_response " + host + " 203 paired=false",
+		"net_request GET " + host + "/seven",
+		"net_response " + host + " 202 paired=false",
+		"net_response " + host + " 204 paired=false",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("events:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if c := o.coverage; c.H2Requests != 3 || c.H2Responses != 5 || c.ResponsesUnpaired != 3 {
+		t.Errorf("coverage %+v", c)
 	}
 }

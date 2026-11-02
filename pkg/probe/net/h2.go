@@ -1,6 +1,7 @@
 package net
 
 import (
+	"slices"
 	"time"
 
 	"github.com/agent-trace/agent-trace/pkg/tlsparse"
@@ -24,7 +25,19 @@ type h2Conn struct {
 	// refused marks a connection whose request stream began with h2 frames
 	// and no preface: nothing of it is parsed.
 	refused bool
+	// early holds, by stream, responses that ended on a client stream the
+	// client direction has not shown yet (N-50): the read of the response
+	// reached the correlator before the write that opened its stream. Each
+	// is emitted when its request is, or unpaired when the connection's
+	// state closes or a later stream shows the request will not come.
+	early map[uint32]*tlsparse.Response
+	// opened is the highest client stream whose request head was read.
+	opened uint32
 }
+
+// h2MaxEarly bounds the responses held for their request per connection;
+// past it a response is emitted unpaired at once.
+const h2MaxEarly = 64
 
 // h2Start makes c an h2 connection whose client direction begins now. A
 // connection whose previous client direction ended (the key reused) starts
@@ -50,13 +63,15 @@ func (o *Observer) h2ClientBytes(tgid uint32, c *tlsConn, payload []byte, missin
 	if err != nil && !h.clientLost {
 		h.clientLost = true
 		o.coverage.H2Unparsed++
+		o.flushEarly(tgid, c, false)
 	}
 }
 
 // emitH2Request emits one request and keeps its target for the response on
-// its stream. A cut request (bytes of its body missed, or its stream ended
-// before END_STREAM) carries no hash (N-44). A request its client reset
-// ends the response in progress on its stream.
+// its stream, or emits the response held for it (N-50). A cut request
+// (bytes of its body missed, or its stream ended before END_STREAM)
+// carries no hash (N-44). A request its client reset ends the response in
+// progress on its stream.
 func (o *Observer) emitH2Request(tgid uint32, c *tlsConn, r *tlsparse.H2Request, ts time.Time) {
 	var hash *string
 	if r.BodyHash != "" && !r.Cut {
@@ -69,10 +84,20 @@ func (o *Observer) emitH2Request(tgid uint32, c *tlsConn, r *tlsparse.H2Request,
 		c.host, c.port = host, port
 		o.coverage.H2Requests++
 	}
-	c.h2.sent[r.Stream] = sent
-	if r.Reset && c.h2.server != nil {
-		c.h2.server.Reset(r.Stream, ts, func(id uint32, resp *tlsparse.Response) { o.emitH2Response(tgid, c, id, resp) })
+	h := c.h2
+	h.noteOpened(r.Stream)
+	if early := h.early[r.Stream]; early != nil {
+		delete(h.early, r.Stream)
+		if o.emitResponse(tgid, c, early, sent) {
+			o.coverage.H2Responses++
+		}
+	} else {
+		h.sent[r.Stream] = sent
+		if r.Reset && h.server != nil {
+			h.server.Reset(r.Stream, ts, func(id uint32, resp *tlsparse.Response) { o.emitH2Response(tgid, c, id, resp) })
+		}
 	}
+	o.flushEarly(tgid, c, false)
 }
 
 // h2ServerBytes feeds one read to the server direction, which starts with
@@ -104,27 +129,72 @@ func (o *Observer) h2ServerBytes(tgid uint32, c *tlsConn, payload []byte, missin
 
 // emitH2Response emits the response on stream as the answer to the
 // request emitted on it, or to the request whose head was read and whose
-// body is still streaming (a response may end first); with neither, it
-// names the connection's host.
+// body is still streaming (a response may end first). With neither, a
+// response on a stream the client direction may still open is held for
+// its request (N-50), and any other names the connection's host.
 func (o *Observer) emitH2Response(tgid uint32, c *tlsConn, stream uint32, r *tlsparse.Response) {
-	sent := c.h2.sent[stream]
-	delete(c.h2.sent, stream)
-	if sent == nil && c.h2.client != nil {
-		if head := c.h2.client.Head(stream); head != nil {
+	h := c.h2
+	sent := h.sent[stream]
+	delete(h.sent, stream)
+	if sent == nil && h.client != nil {
+		if head := h.client.Head(stream); head != nil {
+			h.noteOpened(stream)
 			sent = &sentRequest{method: head.Method}
 			if target, _, _, ok := o.requestTarget(tgid, head.HTTPRequest); ok {
 				sent.target = target
 			}
 		}
 	}
+	if sent == nil && h.mayOpen(stream) && len(h.early) < h2MaxEarly {
+		if h.early == nil {
+			h.early = map[uint32]*tlsparse.Response{}
+		}
+		h.early[stream] = r
+		return
+	}
 	if o.emitResponse(tgid, c, r, sent) {
 		o.coverage.H2Responses++
 	}
 }
 
+// noteOpened records that the client direction showed the head of stream.
+func (h *h2Conn) noteOpened(stream uint32) { h.opened = max(h.opened, stream) }
+
+// mayOpen reports whether the client direction may still show the request
+// on stream: a client stream (odd) above every stream it has shown, on a
+// client direction not ended. Client streams open in increasing order
+// (RFC 9113, 5.1.1), so a request on a lower stream will not come.
+func (h *h2Conn) mayOpen(stream uint32) bool {
+	if stream%2 == 0 || stream <= h.opened || h.clientLost {
+		return false
+	}
+	return h.client == nil || h.client.Err() == nil
+}
+
+// flushEarly emits unpaired the held responses whose request will not
+// come, all of them when the connection's state closes, in stream order.
+func (o *Observer) flushEarly(tgid uint32, c *tlsConn, all bool) {
+	h := c.h2
+	ids := make([]uint32, 0, len(h.early))
+	for id := range h.early {
+		if all || !h.mayOpen(id) {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		r := h.early[id]
+		delete(h.early, id)
+		if o.emitResponse(tgid, c, r, nil) {
+			o.coverage.H2Responses++
+		}
+	}
+}
+
 // h2Close ends the capture of an h2 connection: the requests in progress
-// are emitted cut, then the responses in progress incomplete, stamped at
-// the connection's last frame.
+// are emitted cut, then the responses held for a request that never came
+// unpaired, then the responses in progress incomplete, stamped at the
+// connection's last frame.
 func (o *Observer) h2Close(tgid uint32, c *tlsConn) {
 	h := c.h2
 	if h == nil {
@@ -133,6 +203,7 @@ func (o *Observer) h2Close(tgid uint32, c *tlsConn) {
 	if h.client != nil {
 		h.client.Close(func(r *tlsparse.H2Request) { o.emitH2Request(tgid, c, r, c.lastSeen) })
 	}
+	o.flushEarly(tgid, c, true)
 	if h.server != nil {
 		h.server.Close(c.lastSeen, func(id uint32, r *tlsparse.Response) { o.emitH2Response(tgid, c, id, r) })
 	}
