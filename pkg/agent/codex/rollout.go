@@ -205,6 +205,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	if len(found) > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d subagent rollout(s) followed; their claims are ordered with the main thread's by the start of the cell that made them", len(found)))
 	}
+	rep.TraceSession, rep.TraceSubagents = traceSession(main.meta.ID, started, found)
 	sort.SliceStable(claims, func(i, j int) bool { return claims[i].Timestamp.Before(claims[j].Timestamp) })
 	rep.Entries = len(claims)
 	if len(requests) > 0 {
@@ -224,6 +225,31 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d update(s) by apply_patch are recorded as a diff without the file's whole content before them, so their writes state no content hash", unclaimed))
 	}
 	return claims, rep, nil
+}
+
+// traceSession is the session whose rollouts are the trace (I-109): the
+// thread of the rollout read, and, sorted, the threads its rollouts started
+// and the subagent rollouts read, each only of the thread-id form, since an
+// id names a file.
+func traceSession(id string, started []string, found map[string]bool) (string, []string) {
+	if !threadID.MatchString(id) {
+		return "", nil
+	}
+	set := map[string]bool{}
+	for _, s := range started {
+		set[s] = true
+	}
+	for s := range found {
+		set[s] = true
+	}
+	var subs []string
+	for s := range set {
+		if s != id && threadID.MatchString(s) {
+			subs = append(subs, s)
+		}
+	}
+	sort.Strings(subs)
+	return id, subs
 }
 
 type rollout struct {

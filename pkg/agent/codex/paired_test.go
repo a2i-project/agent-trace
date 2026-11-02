@@ -409,3 +409,101 @@ func TestTools2SubagentAddSplitAcrossBatchesIsFolded(t *testing.T) {
 		}
 	}
 }
+
+// Parse gives the rollout's thread as the session and the threads it
+// started, whose rollouts it read, as its subagents (I-109).
+func TestParseStatesTheThreadAndItsSubagents(t *testing.T) {
+	for _, c := range []struct{ path, session, subs string }{
+		{filepath.Join(pairedDir, "basic.rollout.jsonl"), thread, ""},
+		{filepath.Join(toolsDir, "tools.rollout.jsonl"), "01a19888-f57b-7402-942d-8cd7e83cb167", "01a19889-25a8-7613-ba29-f89eafb565db"},
+	} {
+		_, rep, err := Adapter{}.Parse(c.path)
+		if err != nil || rep.TraceSession != c.session || strings.Join(rep.TraceSubagents, " ") != c.subs {
+			t.Errorf("%s: session %q, subagents %v, err %v; want %q and %q", c.path, rep.TraceSession, rep.TraceSubagents, err, c.session, c.subs)
+		}
+	}
+	if s, subs := traceSession("../x", []string{thread}, nil); s != "" || subs != nil {
+		t.Errorf("a thread that is not a thread id: %q %v", s, subs)
+	}
+	if _, subs := traceSession(thread, []string{"../x", thread, "01a19889-25a8-7613-ba29-f89eafb565db"}, map[string]bool{"01a19889-25a8-7613-ba29-f89eafb565db": true}); strings.Join(subs, " ") != "01a19889-25a8-7613-ba29-f89eafb565db" {
+		t.Errorf("subagents %v", subs)
+	}
+}
+
+// Given the session, the declaration names its rollout as the main session
+// file, covers its subagents' rollouts and the two thread databases, and
+// leaves every other rollout out (I-109).
+func TestSessionTraceDeclaresTheSessionsRollouts(t *testing.T) {
+	const (
+		sub   = "01a19889-25a8-7613-ba29-f89eafb565db"
+		other = "01a19456-09d2-7ff3-b5fc-527b71ccb518"
+		dir   = "/home/u/.codex/sessions/2026/11/01/rollout-2026-11-01T00-40-16-"
+	)
+	d := Adapter{}.SessionTrace("", "/home/u", agent.TraceSession{ID: thread, Subagents: []string{sub, "../x"}})
+	if d == nil {
+		t.Fatal("no declaration")
+	}
+	for p, want := range map[string][3]bool{ // covers, main, transient
+		dir + thread + ".jsonl":                      {true, true, false},
+		dir + sub + ".jsonl":                         {true, false, false},
+		dir + other + ".jsonl":                       {false, false, false},
+		"/home/u/.codex/state_5.sqlite":              {true, false, false},
+		"/home/u/.codex/thread_history_1.sqlite-wal": {true, false, true},
+		"/home/u/.codex/state_5.sqlite-shm":          {false, false, false},
+		"/home/v/.codex/sessions/2026/11/01/rollout-2026-11-01T00-40-16-" + thread + ".jsonl": {false, false, false},
+	} {
+		if got := [3]bool{d.Covers(p), d.Main(p), d.Transient(p)}; got != want {
+			t.Errorf("%s: covers, main, transient %v, want %v", p, got, want)
+		}
+	}
+	if (Adapter{}).SessionTrace("", "/home/u", agent.TraceSession{ID: "../x"}) != nil {
+		t.Error("an id that is not a thread id declares a trace")
+	}
+	g := models.GroundTruthFile{Sensitive: &models.SensitiveSnapshot{Home: "/home/u"}}
+	if d := agent.Trace(Adapter{}, g, agent.TraceSession{ID: thread}); d == nil || d.Covers(dir+other+".jsonl") {
+		t.Error("with the session's id, agent.Trace should leave other rollouts out")
+	}
+	if d := agent.Trace(Adapter{}, g, agent.TraceSession{}); d == nil || !d.Covers(dir+other+".jsonl") {
+		t.Error("without an id, agent.Trace should cover every rollout")
+	}
+}
+
+// On the tools capture, with the declaration the record gives, a command
+// that deletes the subagent's rollout is tampering, and one that deletes a
+// rollout of another session the harness opened at start-up is not trace
+// tampering (I-109).
+func TestPairedAnotherSessionsRolloutIsNotTheTrace(t *testing.T) {
+	tr, rep, err := Adapter{}.Parse(filepath.Join(toolsDir, "tools.rollout.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := runAt(t, toolsDir, "tools")
+	decl := agent.Trace(Adapter{}, g, agent.SessionOf(rep, ""))
+	var sub, other string
+	for _, e := range g.Events {
+		switch {
+		case strings.Contains(e.Target, "/.codex/sessions/2000/"):
+			other = e.Target
+		case strings.Contains(e.Target, "01a19889-25a8-7613-ba29-f89eafb565db.jsonl"):
+			sub = e.Target
+		}
+	}
+	if sub == "" || other == "" {
+		t.Fatalf("the capture lacks the rollouts: %q %q", sub, other)
+	}
+	harness := agent.Rooted(Adapter{}, g).RootPID
+	at := g.Events[len(g.Events)-1].Timestamp
+	for target, want := range map[string]int{sub: 1, other: 0} {
+		h := g
+		h.Events = append(append(models.GroundTruth(nil), g.Events...),
+			models.GroundTruthEvent{Timestamp: at, PID: 99999, PPID: harness, ActionType: models.ProcessFork, Target: "99999"},
+			models.GroundTruthEvent{Timestamp: at, PID: 99999, PPID: harness, ActionType: models.ProcessExec, Target: "rm " + target},
+			models.GroundTruthEvent{Timestamp: at, PID: 99999, ActionType: models.FileDelete, Target: target},
+		)
+		in := agent.Prepare(Adapter{}, tr, h, nil, verification.Options{IntervalSlack: 500 * time.Millisecond})
+		in.Trace.Decl = decl
+		if v := verification.Verify(in); len(v.TraceTampering) != want {
+			t.Errorf("rm %s: tampering %+v, want %d", target, v.TraceTampering, want)
+		}
+	}
+}

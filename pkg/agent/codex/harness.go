@@ -152,10 +152,11 @@ func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthE
 	}
 }
 
-// Trace declares the session's own trace (I-84), as the user chose it: every
-// rollout under ~/.codex/sessions (Main; the session's subagents keep
+// Trace declares the trace when the session's thread is not known (I-84):
+// every rollout under ~/.codex/sessions (Main; the session's subagents keep
 // rollouts of their own there, and a rollout's name does not hold the
-// workspace), and the two databases that keep the account's threads,
+// workspace); SessionTrace narrows it to the session's rollouts (I-109). Both
+// cover the two databases that keep the account's threads,
 // ~/.codex/thread_history_1.sqlite and ~/.codex/state_5.sqlite, with their
 // write-ahead log and rollback journal, which hold rows not yet in the
 // database. Not their -shm, an index every reader rebuilds from the log and
@@ -164,6 +165,32 @@ func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthE
 // other process holds open creates its -wal and deletes it at the close
 // (V-76). The home is the capture's, else any home I-30 declares.
 func (Adapter) Trace(_, home string) *verification.TraceDecl {
+	return declare(home, uuidRE, uuidRE)
+}
+
+// SessionTrace declares the session's own trace once its thread is known
+// (I-109): the session's rollout rollout-<time>-<id>.jsonl (Main), the
+// rollouts of the subagent threads its record names (Report.TraceSubagents),
+// and the two thread databases as Trace covers them. Another session's
+// rollout is an ordinary file. An id that is not a thread id declares
+// nothing, and a subagent id that is not one is left out.
+func (Adapter) SessionTrace(_, home string, s agent.TraceSession) *verification.TraceDecl {
+	if !threadID.MatchString(s.ID) {
+		return nil
+	}
+	ids := []string{s.ID}
+	for _, id := range s.Subagents {
+		if threadID.MatchString(id) && id != s.ID {
+			ids = append(ids, id)
+		}
+	}
+	return declare(home, s.ID, `(?:`+strings.Join(ids, "|")+`)`)
+}
+
+// declare covers the rollouts whose thread matches covered, of which those
+// whose thread matches main are main session files, and the two thread
+// databases, under home.
+func declare(home, main, covered string) *verification.TraceDecl {
 	h := homeRE
 	if home != "" {
 		if home != filepath.Clean(home) || !homePattern.MatchString(home) {
@@ -171,13 +198,15 @@ func (Adapter) Trace(_, home string) *verification.TraceDecl {
 		}
 		h = regexp.QuoteMeta(home)
 	}
-	main := regexp.MustCompile(`^` + h + `/\.codex/sessions/[0-9]{4}/[0-9]{2}/[0-9]{2}/rollout-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-` + uuidRE + `\.jsonl$`)
+	rollout := `^` + h + `/\.codex/sessions/[0-9]{4}/[0-9]{2}/[0-9]{2}/rollout-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-`
+	mainRE := regexp.MustCompile(rollout + main + `\.jsonl$`)
+	rollouts := regexp.MustCompile(rollout + covered + `\.jsonl$`)
 	db := `^` + h + `/\.codex/(?:thread_history_1|state_5)\.sqlite`
 	dbs := regexp.MustCompile(db + `(?:-wal|-journal)?$`)
 	transient := regexp.MustCompile(db + `(?:-wal|-journal)$`)
 	return &verification.TraceDecl{
-		Covers:    func(p string) bool { return main.MatchString(p) || dbs.MatchString(p) },
-		Main:      main.MatchString,
+		Covers:    func(p string) bool { return rollouts.MatchString(p) || dbs.MatchString(p) },
+		Main:      mainRE.MatchString,
 		Transient: transient.MatchString,
 	}
 }
@@ -199,6 +228,9 @@ func (Adapter) SensitiveFiles() []string {
 }
 
 const uuidRE = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
+
+// threadID is the form of a thread id, which names its rollout.
+var threadID = regexp.MustCompile(`^` + uuidRE + `$`)
 
 // The per-run ids in the harness's own paths and commands (I-83), each
 // replaced by a fixed token where runs are compared.
@@ -225,3 +257,5 @@ func canonicalTarget(t string) string {
 }
 
 var _ agent.Launcher = Adapter{}
+
+var _ agent.SessionTraceDeclarer = Adapter{}
