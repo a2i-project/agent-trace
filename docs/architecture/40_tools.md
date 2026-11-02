@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 5337a25 on 2026-11-02.
+Checked against commit 1992f8e on 2026-11-02.
 
 ## Objective
 
@@ -64,7 +64,7 @@ Reads a trajectory through an adapter and a capture, runs `verification.Verify`,
 | `--startup-window` | off | Switch on the start-up window (V-82): an open of a file the adapter declares its harness reads only at start-up, for the version the session states (`agent.StartupFiles`), by the harness's process after the start-up and not within 2 s of its own write of the file, is the agent's. Off by default until a long interactive capture shows no honest run changes |
 | `--json PATH` | none | Also write the whole verdict as JSON: the inputs, the parse report, every alignment list, the coverage, and each command with its exec, exit, every event beneath it and its capability evidence |
 | `--check-trace-hash` | off | Compare the session file read with the last content the probe hashed of the session's declared main file, and read a difference as a damaged trace (V-59). Only for a file the capture left unmodified, as the capture script's own verify runs read it: a fixture whose transcript was rewritten when it was made differs |
-| `--session-id ID` | none | The session's id as the capture recorded it (`<task>.session-id.txt`). For an adapter whose trace is one session's files (agy, Codex: `SessionTraceDeclarer`) it decides the trace in place of the id the record states, also when the session file is gone; the report names it (and the JSON report as `session_id`), and a record that states another id is a `limitation:` line. Claude Code's trace does not depend on it, and the report says so (I-110) |
+| `--session-id ID` | none | The session's id as the capture recorded it (`<task>.session-id.txt`). For an adapter whose trace is one session's files (agy, Codex, and Claude Code given the id: `SessionTraceDeclarer`) it decides the trace in place of the id the record states, also when the session file is gone; the report names it (and the JSON report as `session_id`), and a record that states another id is a `limitation:` line (I-110). Claude Code's record states no id, so without the flag its trace stays the project's sessions (I-74, V-81); an adapter whose trace does not depend on it says so |
 | `--strict-version` | off | Make the run INCONCLUSIVE when the session's agent version is not configured or not known (I-57) |
 | `--agent-version V` | none | The version of the agent that recorded the session, for a format that does not state it (agy's) |
 | `--config PATH` | located | The agent version config, `config/agents.json` ([30_agent_adapters.md](30_agent_adapters.md#configured-agent-versions)); located as `status` does |

@@ -51,7 +51,7 @@ func run(args []string, out, errOut io.Writer) int {
 	var jsonPath, sessionID string
 	var traceHash bool
 	fs.BoolVar(&traceHash, "check-trace-hash", false, "Compare the session file read with the last content the probe hashed of the session's declared main file, and read a difference as a damaged trace (V-59). Only for the file the capture left, unmodified: a fixture rewritten after the capture differs")
-	fs.StringVar(&sessionID, "session-id", "", "The session's id as the capture recorded it (what the agent printed, or the id it was given). For an adapter whose trace is one session's files (agy, Codex) it decides the trace in place of the id the session's record states (I-110); without it the record's id decides, as before")
+	fs.StringVar(&sessionID, "session-id", "", "The session's id as the capture recorded it (what the agent printed, or the id it was given). For an adapter whose trace is one session's files (agy, Codex, and Claude Code with it, V-81) it decides the trace in place of the id the session's record states (I-110); without it the record's id decides, as before")
 	fs.StringVar(&jsonPath, "json", "", "Also write the whole verdict as JSON to this file: every list, the coverage, and each command with the events beneath it")
 	vflags := addVersionFlags(fs)
 	if err := fs.Parse(args); err != nil {

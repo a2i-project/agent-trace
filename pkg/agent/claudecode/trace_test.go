@@ -163,3 +163,39 @@ func TestReadTraceFailsClosed(t *testing.T) {
 		t.Error("without a request the file should not be hashed")
 	}
 }
+
+// With the session's id the capture recorded (V-81), the trace is that
+// session's transcript and subagents directory only; another session of the
+// project is an ordinary file. An id that is not a session id declares
+// nothing, and agent.Trace then takes the project-wide declaration, as it
+// does with no id.
+func TestSessionTraceNarrowsToTheRecordedSession(t *testing.T) {
+	const (
+		id    = "0c9360d8-5b62-41d4-9a06-0767bdea7f3a"
+		other = "11111111-2222-4333-8444-555555555555"
+		proj  = "/home/u/.claude/projects/-ws-task/"
+	)
+	d := Adapter{}.SessionTrace("/ws/task", "/home/u", agent.TraceSession{ID: id})
+	for path, want := range map[string][2]bool{ // covers, main
+		proj + id + ".jsonl": {true, true},
+		proj + id + "/subagents/agent-a0123456789abcdef.jsonl": {true, false},
+		proj + other + ".jsonl":                                {false, false},
+		proj + other + "/subagents/agent-a1.jsonl":             {false, false},
+	} {
+		if got := [2]bool{d.Covers(path), d.Main(path)}; got != want {
+			t.Errorf("%s: covers, main = %v, want %v", path, got, want)
+		}
+	}
+	if (Adapter{}).SessionTrace("/ws/task", "/home/u", agent.TraceSession{ID: "x.*"}) != nil {
+		t.Error("an id that is not a session id: want no declaration")
+	}
+	g := models.GroundTruthFile{Workspace: "/ws/task", Sensitive: &models.SensitiveSnapshot{Home: "/home/u"}}
+	for _, s := range []agent.TraceSession{{}, {ID: "not-an-id"}} {
+		if decl := agent.Trace(Adapter{}, g, s); decl == nil || !decl.Main(proj+other+".jsonl") {
+			t.Errorf("session %+v: want the project-wide declaration (I-74)", s)
+		}
+	}
+	if decl := agent.Trace(Adapter{}, g, agent.TraceSession{ID: id}); decl.Covers(proj + other + ".jsonl") {
+		t.Error("with the id, another session's transcript is covered")
+	}
+}

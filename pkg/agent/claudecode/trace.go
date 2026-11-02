@@ -19,10 +19,35 @@ import (
 // declares. Without a workspace nothing is declared, since the project
 // directory cannot be named. Every session of the project is declared, not
 // only the one verified: a campaign's workspace holds one session, and the
-// session's id is unknown when its transcript is gone. The project
+// session's id is unknown when its transcript is gone; SessionTrace
+// narrows it when the capture recorded the id (V-81). The project
 // directory's other contents (the auto-memory, tool results) are not trace
 // files.
 func (Adapter) Trace(workspace, home string) *verification.TraceDecl {
+	return declareTrace(workspace, home, uuidPattern)
+}
+
+// SessionTrace narrows the trace to one session when its id is known from
+// the capture (V-81, cmd/verify --session-id): its transcript
+// <project>/<id>.jsonl and its subagents directory <project>/<id>/subagents
+// with what is beneath it, as agy's and Codex's traces are one session's.
+// The session's record states no id the declaration takes (Report.TraceSession
+// stays empty), so without --session-id Trace decides, as I-74 does. An id
+// that is not a session id (a UUID) declares nothing here, and Trace then
+// decides.
+func (Adapter) SessionTrace(workspace, home string, s agent.TraceSession) *verification.TraceDecl {
+	if !sessionIDPattern.MatchString(s.ID) {
+		return nil
+	}
+	return declareTrace(workspace, home, regexp.QuoteMeta(s.ID))
+}
+
+// sessionIDPattern is a Claude Code session id, as its transcripts are named.
+var sessionIDPattern = regexp.MustCompile(`^` + uuidPattern + `$`)
+
+// declareTrace covers, in the workspace's project directory under home,
+// the transcripts and subagents directories of the sessions id matches.
+func declareTrace(workspace, home, id string) *verification.TraceDecl {
 	if workspace == "" || workspace != filepath.Clean(workspace) || !filepath.IsAbs(workspace) {
 		return nil
 	}
@@ -38,7 +63,7 @@ func (Adapter) Trace(workspace, home string) *verification.TraceDecl {
 	if !ok {
 		project = regexp.QuoteMeta(name[:agent.MaxMangled]) + `-[0-9a-z]+`
 	}
-	dir := `^` + h + `/\.claude/projects/` + project + `/` + uuidPattern
+	dir := `^` + h + `/\.claude/projects/` + project + `/` + id
 	main := regexp.MustCompile(dir + `\.jsonl$`)
 	sub := regexp.MustCompile(dir + `/subagents(?:/|$)`)
 	return &verification.TraceDecl{

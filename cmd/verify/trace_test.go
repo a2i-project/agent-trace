@@ -106,7 +106,7 @@ const codexBasic = "../../pkg/agent/codex/testdata/paired-codex-0.166.0-basic/"
 // line naming it; for a rollout that is gone it narrows the declaration to
 // the session's rollout, where without it every rollout the capture
 // observed is declared; an id other than the record's decides and is
-// reported; an adapter whose trace does not depend on it says so.
+// reported; Claude Code's trace depends on it as well (V-81).
 func TestSessionIDFromTheCaptureDecidesTheTrace(t *testing.T) {
 	const thread = "01a19455-d74e-72a2-99d3-367c07be5a85"
 	g := codexBasic + "basic.ground_truth.json"
@@ -154,7 +154,8 @@ func TestSessionIDFromTheCaptureDecidesTheTrace(t *testing.T) {
 		t.Errorf("a differing id is not reported:\n%s", out)
 	}
 	_, out, _ = verify(t, "--agent", "claude-code", "--trajectory", tools306+"tools.session.jsonl", "--ground-truth", tools306+"tools.ground_truth.json", "--session-id", thread)
-	if !strings.Contains(out, "session id:   "+thread+" (recorded by the capture; the claude-code adapter's trace does not depend on it)\n") {
+	// Claude Code's trace narrows to the session too (V-81).
+	if !strings.Contains(out, "session id:   "+thread+" (recorded by the capture; it decides the trace, I-110)\n") {
 		t.Errorf("Claude Code's report lacks the line:\n%s", out)
 	}
 }
