@@ -1335,3 +1335,71 @@ func TestProcessContextIsReportOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestStartupWindowIsReportedOnlyWhenSwitchedOn(t *testing.T) {
+	dir := t.TempDir()
+	ts := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	ev := func(ms int, typ models.ActionType, target string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: ts.Add(time.Duration(ms) * time.Millisecond), ActionType: typ, Target: target, PID: 100}
+	}
+	const creds = "/home/u/.claude/.credentials.json"
+	g := models.GroundTruthFile{RootPID: 100, Workspace: "/ws/t", Coverage: completeCov(), Events: models.GroundTruth{
+		ev(10, models.FileOpen, creds),
+		ev(100, models.FileWrite, "/home/u/.claude/projects/-ws-t/11111111-2222-3333-4444-555555555555.jsonl"),
+		ev(5000, models.FileOpen, creds),
+	}}
+	gp := writeJSON(t, dir, "g.json", g)
+	session := func(version string) string {
+		p := filepath.Join(dir, version+".jsonl")
+		line := `{"type":"assistant","timestamp":"2026-11-02T10:00:06Z","sessionId":"s","version":"` + version + `","message":{"id":"m1","content":[{"type":"text","text":"done"}]}}` + "\n"
+		if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	var r struct {
+		Startup *struct {
+			Declared bool       `json:"declared"`
+			Boundary *time.Time `json:"boundary"`
+		} `json:"startup_window"`
+	}
+	read := func(p string) {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Startup = nil
+		if err := json.Unmarshal(data, &r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Off: no line, no key, and the late open of the credentials is the
+	// harness's own unexplained activity, as before.
+	jsonOut := filepath.Join(dir, "off.json")
+	code, out, errOut := verify(t, "--agent", "claude-code", "--trajectory", session("2.1.306"), "--ground-truth", gp, "--json", jsonOut)
+	if code != 2 || strings.Contains(out, "start-up:") || !strings.Contains(out, "Unrecorded:   0  (") {
+		t.Fatalf("off: exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	if read(jsonOut); r.Startup != nil {
+		t.Errorf("off: JSON has startup_window %+v", r.Startup)
+	}
+
+	// On: the boundary is a second after the first transcript write, and
+	// the open at 5 s is the agent's.
+	jsonOut = filepath.Join(dir, "on.json")
+	code, out, errOut = verify(t, "--agent", "claude-code", "--trajectory", session("2.1.306"), "--ground-truth", gp, "--json", jsonOut, "--startup-window")
+	if code != 1 || !strings.Contains(out, "start-up:     window on (V-82), ends 2026-11-02T10:00:01.1Z: ") || !strings.Contains(out, "Unrecorded:   1  (") {
+		t.Fatalf("on: exit %d, stderr %s\n%s", code, errOut, out)
+	}
+	if read(jsonOut); r.Startup == nil || !r.Startup.Declared || r.Startup.Boundary == nil || !r.Startup.Boundary.Equal(ts.Add(1100*time.Millisecond)) {
+		t.Errorf("on: JSON startup_window %+v", r.Startup)
+	}
+
+	// On, for a version that declares nothing: the line says so and nothing
+	// changes.
+	code, out, errOut = verify(t, "--agent", "claude-code", "--trajectory", session("2.1.305"), "--ground-truth", gp, "--startup-window")
+	if code != 2 || !strings.Contains(out, `start-up:     window on (V-82), but the claude-code adapter declares no start-up file for version "2.1.305": nothing is taken from the harness`) || !strings.Contains(out, "Unrecorded:   0  (") {
+		t.Fatalf("undeclared version: exit %d, stderr %s\n%s", code, errOut, out)
+	}
+}

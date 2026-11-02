@@ -39,7 +39,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.SetOutput(errOut)
 	var trajectoryPath, groundTruthPath, agentName, baselinePath string
 	var slack time.Duration
-	var ignoreExits, normalized bool
+	var ignoreExits, normalized, startupWindow bool
 	fs.StringVar(&trajectoryPath, "trajectory", "", "Path to the trajectory: the agent's own session file when an adapter reads it, or normalized trajectory JSON")
 	fs.StringVar(&groundTruthPath, "ground-truth", "", "Path to the observed ground truth JSON (written by watch)")
 	fs.StringVar(&agentName, "agent", "", "Adapter that reads the trajectory ("+strings.Join(agent.Names(), ", ")+"). Default: detect from the file, else generic")
@@ -47,6 +47,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.DurationVar(&slack, "interval-slack", 500*time.Millisecond, "Widen each claim's interval by this much on both sides before checking the observed action falls inside it: the probes and the agent do not share a clock")
 	fs.BoolVar(&normalized, "normalized", false, "Read --trajectory as normalized trajectory JSON (what cmd/attack writes) and use --agent only for the ground truth side")
 	fs.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits even if the adapter's format records them")
+	fs.BoolVar(&startupWindow, "startup-window", false, "Read an open of a file the adapter declares its harness reads only at start-up, made by the harness's process after the start-up and not within 2 s of its own write of the file, as the agent's (V-82). Off by default: untested on sessions over 6.5 minutes, interactive sessions and mid-session token renewal")
 	var jsonPath, sessionID string
 	var traceHash bool
 	fs.BoolVar(&traceHash, "check-trace-hash", false, "Compare the session file read with the last content the probe hashed of the session's declared main file, and read a difference as a damaged trace (V-59). Only for the file the capture left, unmodified: a fixture rewritten after the capture differs")
@@ -148,6 +149,10 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, rep.AgentVersion, gt)
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, rep.AgentVersion)
+	// Its start-up-only files, only when the rule is switched on (V-82).
+	if startupWindow {
+		in.Options.StartupOnly = agent.StartupFiles(adapter, rep.AgentVersion, gt)
+	}
 	// The session's own trace files, and what reading them found (V-59),
 	// named by the id the capture recorded when it is given (I-110).
 	if sessionID != "" && rep.TraceSession != "" && rep.TraceSession != sessionID {
@@ -157,12 +162,19 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Trace = trace
 	v := verification.Verify(in)
 	v = vcheck.applyStrict(v)
+	var startup *jsonStartup
+	if startupWindow {
+		startup = &jsonStartup{Declared: in.Options.StartupOnly != nil}
+		if b, ok := in.StartupBoundary(); ok {
+			startup.Boundary = &b
+		}
+	}
 
 	ri := reportInput{
 		trajectoryPath: trajectoryPath, groundTruthPath: groundTruthPath, adapter: adapter.Name(),
 		reader: readerNote(normalized, adapter.Name()),
 		parse:  rep, baseline: baseline, entries: len(tr), gt: gt, verdict: v,
-		version: vcheck, sessionID: sessionID,
+		version: vcheck, sessionID: sessionID, startup: startup,
 	}
 	_, ri.sessionScoped = adapter.(agent.SessionTraceDeclarer)
 	report(out, ri)
@@ -173,6 +185,21 @@ func run(args []string, out, errOut io.Writer) int {
 		}
 	}
 	return v.Outcome.ExitCode()
+}
+
+// printStartup prints the start-up window's line when --startup-window
+// switched it on (V-82), and nothing otherwise.
+func printStartup(w io.Writer, r reportInput) {
+	s := r.startup
+	switch {
+	case s == nil:
+	case !s.Declared:
+		_, _ = fmt.Fprintf(w, "start-up:     window on (V-82), but the %s adapter declares no start-up file for version %q: nothing is taken from the harness\n", r.adapter, r.parse.AgentVersion)
+	case s.Boundary == nil:
+		_, _ = fmt.Fprintf(w, "start-up:     window on (V-82), but neither a write of the session's transcript nor a claimed call marks the start-up's end: nothing is taken from the harness\n")
+	default:
+		_, _ = fmt.Fprintf(w, "start-up:     window on (V-82), ends %s: an open of a declared start-up file by the harness's process after it, not within 2 s of its own write of that file, is the agent's\n", s.Boundary.UTC().Format(time.RFC3339Nano))
+	}
 }
 
 func readerNote(normalized bool, adapter string) string {
@@ -217,6 +244,18 @@ type reportInput struct {
 	// adapter's trace depends on it (I-110).
 	sessionID     string
 	sessionScoped bool
+	// startup is the start-up window when --startup-window switched it on,
+	// else nil (V-82).
+	startup *jsonStartup
+}
+
+// jsonStartup is the start-up window of V-82 as --startup-window applied it:
+// whether the adapter declares start-up files for the session's version, and
+// the boundary after which their opens by the harness's process are the
+// agent's, absent when no anchor marks it.
+type jsonStartup struct {
+	Declared bool       `json:"declared"`
+	Boundary *time.Time `json:"boundary,omitempty"`
 }
 
 func report(w io.Writer, r reportInput) {
@@ -247,6 +286,7 @@ func report(w io.Writer, r reportInput) {
 	case r.gt.Workspace != "":
 		p("fs scope:     no record (capture predates it): paths under %s only\n", r.gt.Workspace)
 	}
+	printStartup(w, r)
 	if r.baseline != nil {
 		p("baseline:     %s %s, %d rule(s) from %d control run(s)\n", r.baseline.Agent, r.baseline.AgentVersion, len(r.baseline.Rules), r.baseline.Runs)
 		if n := restingReads(*r.baseline, r.gt.Workspace); n > 0 {
@@ -1053,6 +1093,10 @@ type jsonReport struct {
 	// TraceTampering only when it holds evidence (V-59).
 	Trace          *verification.TraceCheck   `json:"trace,omitempty"`
 	TraceTampering []verification.TraceTamper `json:"trace_tampering,omitempty"`
+
+	// StartupWindow is present only when --startup-window switched the
+	// start-up rule on (V-82).
+	StartupWindow *jsonStartup `json:"startup_window,omitempty"`
 }
 
 type jsonAlignment struct {
@@ -1181,6 +1225,7 @@ func writeJSONReport(path string, r reportInput) error {
 		rep.Trace = &t
 	}
 	rep.TraceTampering = v.TraceTampering
+	rep.StartupWindow = r.startup
 	if r.baseline != nil {
 		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)
 	}

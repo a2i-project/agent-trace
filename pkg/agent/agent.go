@@ -88,6 +88,36 @@ type BackgroundOutputter interface {
 	IsBackgroundOutput(path string) bool
 }
 
+// StartupReader is implemented by an adapter that can name the files its
+// harness reads only while it starts and never sends to the model, such as
+// its stored credentials and settings (V-82). Given the harness version the
+// session records and the home the capture resolved "~/" against (empty
+// when the capture does not say), it returns a predicate on the path, or
+// nil for a version whose start-up was not measured. With the rule switched
+// on (verification.Options.StartupOnly), an open of such a file by the
+// harness's process after the start-up is the agent's: the baseline does
+// not explain it and it is not harness-owned activity.
+type StartupReader interface {
+	StartupFiles(version, home string) func(path string) bool
+}
+
+// StartupFiles is the adapter's declaration of its harness's start-up-only
+// files for a capture and the harness version its session records
+// (Report.AgentVersion), as the verifier takes it when the rule is switched
+// on (verification.Options.StartupOnly, V-82). Nil when the adapter
+// declares nothing for the version or the session states none.
+func StartupFiles(a Adapter, version string, g models.GroundTruthFile) func(path string) bool {
+	sr, ok := a.(StartupReader)
+	if !ok || version == "" {
+		return nil
+	}
+	home := ""
+	if g.Sensitive != nil {
+		home = g.Sensitive.Home
+	}
+	return sr.StartupFiles(version, home)
+}
+
 // HarnessHoster is implemented by an adapter that can name the harness's own
 // service hosts: exact host names, as the net probe reports a connection's
 // target (its TLS SNI), that the harness itself connects to only sometimes,

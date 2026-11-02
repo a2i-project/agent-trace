@@ -198,6 +198,15 @@ type Options struct {
 	// does not explain it and it is not harness-owned activity, so an
 	// unclaimed one is Unrecorded (V-56). Nil declares nothing.
 	BackgroundOutput func(path string) bool
+	// StartupOnly declares the files the harness reads only while it starts
+	// and never sends to the model, such as Claude Code's stored credentials
+	// and settings, for the session's own harness version: true for such a
+	// path. An open of one by the agent's own process after the start-up
+	// (Input.StartupBoundary) and more than two seconds from every write of
+	// it by that process is not the harness's: the baseline does not explain
+	// it and it is not harness-owned activity, so an unclaimed one is
+	// Unrecorded (V-82). Nil, the default, switches the rule off.
+	StartupOnly func(path string) bool
 
 	// impliedWitness says whether the command a harness-implied claim names
 	// opened the claim's file no later than the event (V-33). Verify sets it
