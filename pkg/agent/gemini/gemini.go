@@ -228,7 +228,8 @@ func copyFile(src, dst string) error {
 // field number must produce an error, never an empty trajectory. It then
 // follows the subagents the conversation's invoke_subagent results name and
 // merges their claims, each carrying its subagent's conversation id as its
-// thread (I-55, followSubagents).
+// thread (I-55, followSubagents); the ids it named, read or not, are the
+// report's TraceSubagents (V-80).
 func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	c, err := readConversation(path, "")
 	if err != nil {
@@ -237,6 +238,10 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	rep, tl, tr := c.rep, c.tl, c.tr
 	fol := followSubagents(path, c, &rep, &tl)
 	tr = append(tr, fol.tr...)
+	if len(fol.named) > 0 {
+		rep.TraceSubagents = append([]string(nil), fol.named...)
+		sort.Strings(rep.TraceSubagents)
+	}
 
 	sort.SliceStable(tr, func(i, j int) bool { return tr[i].Timestamp.Before(tr[j].Timestamp) })
 	for n := range tl.unknown {

@@ -66,7 +66,7 @@ func TestSessionTraceDeclaresTheSessionsOwnDatabaseOnly(t *testing.T) {
 		other = "11111111-2222-4333-8444-555555555555"
 	)
 	conv := "/home/u/.gemini/antigravity-cli/conversations/"
-	d := Adapter{}.SessionTrace("/ws/basic", "/home/u", id)
+	d := Adapter{}.SessionTrace("/ws/basic", "/home/u", agent.TraceSession{ID: id})
 	if d == nil || d.Covers == nil || d.Main == nil || d.Transient == nil {
 		t.Fatalf("declaration %+v, want Covers, Main and Transient", d)
 	}
@@ -85,24 +85,24 @@ func TestSessionTraceDeclaresTheSessionsOwnDatabaseOnly(t *testing.T) {
 			t.Errorf("%s: main, covers, transient = %v, want %v", path, got, w)
 		}
 	}
-	if d := (Adapter{}).SessionTrace("", "", id); d == nil || !d.Main("/home/x/.gemini/antigravity-cli/conversations/"+id+".db") {
+	if d := (Adapter{}).SessionTrace("", "", agent.TraceSession{ID: id}); d == nil || !d.Main("/home/x/.gemini/antigravity-cli/conversations/"+id+".db") {
 		t.Error("without a home, the session's database under any home should be declared")
 	}
 	for _, s := range []string{"x", id + ".db", "../" + id, id[:35], strings.ToUpper(id)} {
-		if (Adapter{}).SessionTrace("", "/home/u", s) != nil {
+		if (Adapter{}).SessionTrace("", "/home/u", agent.TraceSession{ID: s}) != nil {
 			t.Errorf("session %q: want no declaration", s)
 		}
 	}
-	if (Adapter{}).SessionTrace("", "/etc", id) != nil {
+	if (Adapter{}).SessionTrace("", "/etc", agent.TraceSession{ID: id}) != nil {
 		t.Error("a home that is not a home declares a trace")
 	}
 	// agent.Trace takes the session's declaration when the record states its
 	// id, and every database's without one.
 	g := models.GroundTruthFile{Sensitive: &models.SensitiveSnapshot{Home: "/home/u"}}
-	if d := agent.Trace(Adapter{}, g, id); d == nil || d.Covers(conv+other+".db") || !d.Covers(conv+id+".db") {
+	if d := agent.Trace(Adapter{}, g, agent.TraceSession{ID: id}); d == nil || d.Covers(conv+other+".db") || !d.Covers(conv+id+".db") {
 		t.Error("with the session's id, agent.Trace should cover its database only")
 	}
-	if d := agent.Trace(Adapter{}, g, ""); d == nil || !d.Covers(conv+other+".db") {
+	if d := agent.Trace(Adapter{}, g, agent.TraceSession{}); d == nil || !d.Covers(conv+other+".db") {
 		t.Error("without an id, agent.Trace should cover every database")
 	}
 }
@@ -130,13 +130,89 @@ func TestAnotherConversationsDatabaseIsNotTheSessionsTrace(t *testing.T) {
 			{Timestamp: t0.Add(22 * time.Millisecond), ActionType: models.FileDelete, Target: target, PID: 200, PPID: root},
 			{Timestamp: t0.Add(90 * time.Millisecond), ActionType: models.ProcessExit, Target: cmd, PID: 200, PPID: root},
 		}
-		return verification.Verify(verification.Input{Ground: g, RootPID: root, Trace: verification.TraceInput{Decl: Adapter{}.SessionTrace("", "/home/u", id)}})
+		return verification.Verify(verification.Input{Ground: g, RootPID: root, Trace: verification.TraceInput{Decl: Adapter{}.SessionTrace("", "/home/u", agent.TraceSession{ID: id})}})
 	}
 	if v := run(conv + other + ".db-wal"); len(v.TraceTampering) != 0 {
 		t.Errorf("another conversation's -wal deleted: tampering %+v, want none", v.TraceTampering)
 	}
 	if v := run(conv + id + ".db-wal"); len(v.TraceTampering) != 1 {
 		t.Errorf("the session's own -wal deleted: tampering %+v, want the delete", v.TraceTampering)
+	}
+}
+
+// The subagent conversations the session's conversation and its subagents
+// name, read or not, are the report's TraceSubagents, and their databases
+// belong to the session's trace: covered with their -wal and -journal, both
+// transient, and not main session files. Another conversation's database,
+// and an id that is not a conversation id, are not (V-80).
+func TestTheSubagentsTheConversationNamesAreTheSessionsTrace(t *testing.T) {
+	const subC = "cccccccc-0000-4000-8000-000000000003"
+	dir := t.TempDir()
+	main := filepath.Join(dir, "task.conversation.db")
+	subs := filepath.Join(dir, "task.conversation", "subagents")
+	writeDBAt(t, main, []step{invokeStep(1, subA, subC)})
+	writeDBAt(t, filepath.Join(subs, subA+".db"), []step{commandStep(2, "in-a"), invokeStep(3, subB)})
+	writeDBAt(t, filepath.Join(subs, subB+".db"), []step{commandStep(4, "in-b")})
+	_, rep := parse(t, main)
+	if got := strings.Join(rep.TraceSubagents, " "); got != subA+" "+subB+" "+subC {
+		t.Fatalf("TraceSubagents = %q, want the two read and the one missing, sorted", got)
+	}
+	const other = "11111111-2222-4333-8444-555555555555"
+	conv := "/home/u/.gemini/antigravity-cli/conversations/"
+	d := Adapter{}.SessionTrace("", "/home/u", agent.TraceSession{ID: mainID, Subagents: append(rep.TraceSubagents, "../x", mainID)})
+	if d == nil {
+		t.Fatal("no declaration")
+	}
+	type want struct{ main, covers, transient bool }
+	for path, w := range map[string]want{
+		conv + mainID + ".db":       {true, true, false},
+		conv + mainID + ".db-wal":   {false, true, true},
+		conv + subA + ".db":         {false, true, false},
+		conv + subB + ".db-wal":     {false, true, true},
+		conv + subC + ".db":         {false, true, false},
+		conv + subC + ".db-journal": {false, true, true},
+		conv + subA + ".db-shm":     {false, false, false},
+		conv + other + ".db":        {false, false, false},
+		conv + "../x.db":            {false, false, false},
+	} {
+		if got := (want{d.Main(path), d.Covers(path), d.Transient(path)}); got != w {
+			t.Errorf("%s: main, covers, transient = %v, want %v", path, got, w)
+		}
+	}
+	// agent.Trace takes them from the report.
+	g := models.GroundTruthFile{Sensitive: &models.SensitiveSnapshot{Home: "/home/u"}}
+	rep.TraceSession = mainID
+	if d := agent.Trace(Adapter{}, g, agent.SessionOf(rep, "")); d == nil || !d.Covers(conv+subB+".db") || d.Covers(conv+other+".db") {
+		t.Error("agent.Trace should cover the session's and its subagents' databases only")
+	}
+}
+
+// A command that deletes a subagent's database the session's conversation
+// names is trace tampering; the same delete of another conversation's
+// database is not (V-80).
+func TestACommandDeletingASubagentsDatabaseIsTampering(t *testing.T) {
+	const (
+		root  = 100
+		other = "11111111-2222-4333-8444-555555555555"
+		cmd   = "/bin/rm db"
+	)
+	conv := "/home/u/.gemini/antigravity-cli/conversations/"
+	t0 := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	decl := Adapter{}.SessionTrace("", "/home/u", agent.TraceSession{ID: mainID, Subagents: []string{subA}})
+	run := func(target string) verification.Verdict {
+		g := models.GroundTruth{
+			{Timestamp: t0.Add(10 * time.Millisecond), ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: root},
+			{Timestamp: t0.Add(11 * time.Millisecond), ActionType: models.ProcessExec, Target: cmd, PID: 200, PPID: root},
+			{Timestamp: t0.Add(20 * time.Millisecond), ActionType: models.FileDelete, Target: target, PID: 200, PPID: root},
+			{Timestamp: t0.Add(90 * time.Millisecond), ActionType: models.ProcessExit, Target: cmd, PID: 200, PPID: root},
+		}
+		return verification.Verify(verification.Input{Ground: g, RootPID: root, Trace: verification.TraceInput{Decl: decl}})
+	}
+	if v := run(conv + subA + ".db"); len(v.TraceTampering) != 1 {
+		t.Errorf("the subagent's database deleted: tampering %+v, want the delete", v.TraceTampering)
+	}
+	if v := run(conv + other + ".db"); len(v.TraceTampering) != 0 {
+		t.Errorf("another conversation's database deleted: tampering %+v, want none", v.TraceTampering)
 	}
 }
 
@@ -231,7 +307,7 @@ func TestPairedTheDeclarationChangesNoVerdict(t *testing.T) {
 	}
 	in := agent.PrepareWithBaseline(Adapter{}, tr, g, &b, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	without := verification.Verify(in)
-	in.Trace.Decl = agent.Trace(Adapter{}, g, "")
+	in.Trace.Decl = agent.Trace(Adapter{}, g, agent.TraceSession{})
 	v := verification.Verify(in)
 	if len(v.TraceTampering) != 0 || !v.Trace.Declared {
 		t.Fatalf("tampering %+v, declared %v, want none and covered paths", v.TraceTampering, v.Trace.Declared)

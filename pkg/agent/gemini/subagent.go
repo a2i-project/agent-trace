@@ -81,6 +81,10 @@ type followed struct {
 	missing  []string // named, but no database found
 	unlinked int      // invoke_subagent steps whose result names no subagent
 	tooDeep  int      // named deeper than maxSubagentDepth
+	// named are the subagent conversations named, read or not, in the order
+	// they were reached: the session's subagents, whose databases belong to
+	// its trace (V-80).
+	named []string
 }
 
 // followSubagents reads, breadth first, every subagent conversation that main
@@ -112,6 +116,7 @@ func followSubagents(path string, main *conversation, rep *agent.Report, tl *tal
 			continue
 		}
 		seen[l.id] = true
+		f.named = append(f.named, l.id)
 		if l.depth > maxSubagentDepth {
 			f.tooDeep++
 			continue

@@ -30,18 +30,36 @@ type TraceDeclarer interface {
 // session, named by the session's id, which the session's own record states
 // (Report.TraceSession): agy names a conversation's database by the
 // conversation's id, and the account's other conversations are not the
-// session's trace (I-105). Given the id, SessionTrace declares that
-// session's files only; Trace declares what the adapter can name without
-// it.
+// session's trace (I-105). Given the session, SessionTrace declares that
+// session's files and its subagents' only (V-80); Trace declares what the
+// adapter can name without it.
 type SessionTraceDeclarer interface {
 	TraceDeclarer
-	SessionTrace(workspace, home, session string) *verification.TraceDecl
+	SessionTrace(workspace, home string, s TraceSession) *verification.TraceDecl
 }
 
-// Trace is the adapter's trace declaration for a capture, or nil. session
-// is the id the session's record states (Report.TraceSession), empty when it
-// states none.
-func Trace(a Adapter, g models.GroundTruthFile, session string) *verification.TraceDecl {
+// TraceSession names the session whose files are the trace: its id and the
+// ids of the subagent sessions its record names as its own
+// (Report.TraceSubagents, V-80). An empty ID names none.
+type TraceSession struct {
+	ID        string
+	Subagents []string
+}
+
+// SessionOf is the session a trace declaration takes for a record: the id
+// the record states, or id when it is not empty, with the subagents the
+// record names.
+func SessionOf(rep Report, id string) TraceSession {
+	if id == "" {
+		id = rep.TraceSession
+	}
+	return TraceSession{ID: id, Subagents: rep.TraceSubagents}
+}
+
+// Trace is the adapter's trace declaration for a capture, or nil. s is the
+// session (SessionOf); with no id, or one the adapter's SessionTrace cannot
+// name, the adapter's Trace decides.
+func Trace(a Adapter, g models.GroundTruthFile, s TraceSession) *verification.TraceDecl {
 	d, ok := a.(TraceDeclarer)
 	if !ok {
 		return nil
@@ -50,8 +68,10 @@ func Trace(a Adapter, g models.GroundTruthFile, session string) *verification.Tr
 	if g.Sensitive != nil {
 		home = g.Sensitive.Home
 	}
-	if s, ok := a.(SessionTraceDeclarer); ok && session != "" {
-		return s.SessionTrace(g.Workspace, home, session)
+	if sd, ok := a.(SessionTraceDeclarer); ok && s.ID != "" {
+		if decl := sd.SessionTrace(g.Workspace, home, s); decl != nil {
+			return decl
+		}
 	}
 	return d.Trace(g.Workspace, home)
 }
