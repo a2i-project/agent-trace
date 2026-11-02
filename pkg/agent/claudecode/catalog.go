@@ -25,27 +25,18 @@ var catalogVersions = map[string]bool{"2.1.306": true}
 
 // catalogSourceWindow bounds how long before a rename onto the entry the
 // rename of its temporary may come, in the shape NormalizeStream does not
-// fold. The capture shows both in the same microsecond.
+// fold. The capture shows both in the same microsecond. The credentials
+// write (V-78) takes the same bound.
 const catalogSourceWindow = time.Second
 
-// CaptureBookkeeping declares, for the versions in catalogVersions, the
-// harness's write of an account's model-catalog cache entry in exactly the
-// shape of its atomic write (V-58): on a temporary
-// ~/.claude/cache/model-catalog/<uuid>-<12 hex>-cc.json.tmp.<8 hex>, the
-// kinds of tempKinds; on the entry, the write the fold makes of the replace,
-// only when the raw capture holds the create of such a temporary of the
-// entry by the same process at the same time (the fold stamps the write at
-// the create), and a rename onto the entry, only when the raw capture holds
-// the rename of such a temporary by the same process at most
-// catalogSourceWindow before it. The file tools name their temporaries
-// <path>.tmp.<pid>.<12 hex>, so an agent's Write of the entry is never
-// recognised. An open, a delete, another surface, the mask and floor files
-// beside the entry, and every other file there stay unexplained harness
-// activity. The home is as for HarnessBookkeeping.
+// CaptureBookkeeping declares the harness's own atomic writes whose shape
+// only the raw capture shows: for the versions in catalogVersions, its write
+// of an account's model-catalog cache entry (V-58), and for the versions in
+// credentialVersions, its write of the stored login credentials when it
+// renews its token (V-78). Each is declared by atomicWriteOf, nil when
+// neither applies or the raw capture holds no temporary of either. The home
+// is as for HarnessBookkeeping.
 func (Adapter) CaptureBookkeeping(version, home string, raw models.GroundTruth) func(models.GroundTruthEvent) bool {
-	if !catalogVersions[version] {
-		return nil
-	}
 	h := `/(?:home/[^/]+|root)`
 	if home != "" {
 		if home != filepath.Clean(home) || !homePattern.MatchString(home) {
@@ -53,7 +44,40 @@ func (Adapter) CaptureBookkeeping(version, home string, raw models.GroundTruth) 
 		}
 		h = regexp.QuoteMeta(home)
 	}
-	entry := regexp.MustCompile(`^(` + h + `/\.claude/cache/model-catalog/` + uuidPattern + `-[0-9a-f]{12}-cc\.json)(\.tmp\.[0-9a-f]{8})?$`)
+	var preds []func(models.GroundTruthEvent) bool
+	if catalogVersions[version] {
+		entry := regexp.MustCompile(`^(` + h + `/\.claude/cache/model-catalog/` + uuidPattern + `-[0-9a-f]{12}-cc\.json)(\.tmp\.[0-9a-f]{8})?$`)
+		if p := atomicWriteOf(entry, raw); p != nil {
+			preds = append(preds, p)
+		}
+	}
+	if credentialVersions[version] {
+		if p := atomicWriteOf(credentialsFile(h), raw); p != nil {
+			preds = append(preds, p)
+		}
+	}
+	switch len(preds) {
+	case 0:
+		return nil
+	case 1:
+		return preds[0]
+	}
+	return func(e models.GroundTruthEvent) bool { return preds[0](e) || preds[1](e) }
+}
+
+// atomicWriteOf declares the harness's atomic write of the files entry
+// matches, whose first group is the file and whose second, when it
+// matched, the suffix .tmp.<8 hex> of the harness's temporary: on a
+// temporary, the kinds of tempKinds; on the file, the write the fold makes
+// of the replace, only when the raw capture holds the create of such a
+// temporary of that file by the same process at the same time (the fold
+// stamps the write at the create), and a rename onto the file, only when
+// the raw capture holds the rename of such a temporary by the same process
+// at most catalogSourceWindow before it. The file tools name their
+// temporaries <path>.tmp.<pid>.<12 hex>, so an agent's Write of the file is
+// never recognised. An open or a delete of the file stays unexplained
+// harness activity. Nil when the raw capture holds no such temporary.
+func atomicWriteOf(entry *regexp.Regexp, raw models.GroundTruth) func(models.GroundTruthEvent) bool {
 	type key struct {
 		pid    uint32
 		target string
