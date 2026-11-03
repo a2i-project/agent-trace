@@ -45,11 +45,6 @@ var nonEffectful = map[string]bool{
 	"plan_enter": true, "plan_exit": true, toolTask: true,
 }
 
-// unclaimedSearch are the search tools, which run ripgrep as a child of
-// the harness. How to recognise the harness's own ripgrep is undecided, so
-// they claim nothing and are listed as tools that may have acted.
-var unclaimedSearch = map[string]bool{toolGrep: true, toolGlob: true}
-
 // claimParts turns the session's tool parts, in execution order, into
 // claims, counting every call that claims nothing.
 func claimParts(parts []toolPart, root string, rep *agent.Report) models.Trajectory {
@@ -164,9 +159,17 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 			tr = append(tr, mk(models.NetConnect, host))
 		case nonEffectful[tool]:
 			rep.Count(tool)
-		case unclaimedSearch[tool]:
-			rep.Count(tool)
-			unknown[tool] = true
+		case tool == toolGrep || tool == toolGlob:
+			folder, ok := searchFolder(p)
+			if !ok {
+				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("part %s: a %s call without a pattern or a folder", p.id, tool))
+				continue
+			}
+			kind := SearchGrep
+			if tool == toolGlob {
+				kind = SearchGlob
+			}
+			tr = append(tr, mk(models.ProcessExec, kind+" "+folder))
 		default:
 			rep.Count(tool)
 			unknown[tool] = true
@@ -185,11 +188,6 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 	}
 	if httpFetches > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d webfetch(es) of a URL that is not https with a host name claim nothing", httpFetches))
-	}
-	for _, t := range rep.UnknownTools {
-		if unclaimedSearch[t] {
-			rep.Degradations = append(rep.Degradations, fmt.Sprintf("%s calls claim nothing: the harness's own ripgrep is not yet recognised", t))
-		}
 	}
 	return tr
 }
@@ -259,13 +257,14 @@ type interval struct {
 func newContents(d []interval) *contents { return &contents{files: map[string]known{}, disturb: d} }
 
 // disturbers are the calls that may write a file the record does not
-// name: a bash command, a call of a tool the adapter does not map, a
-// search, and a call that did not complete, over their recorded execution.
+// name: a bash command, a call of a tool the adapter does not map and a
+// call that did not complete, over their recorded execution. A search
+// only reads.
 func disturbers(parts []toolPart) []interval {
 	var out []interval
 	for _, p := range parts {
 		t, st := p.data.Tool, p.data.State
-		mapped := t == toolRead || t == toolWrite || t == toolEdit || t == toolWebFetch || nonEffectful[t]
+		mapped := t == toolRead || t == toolWrite || t == toolEdit || t == toolWebFetch || t == toolGrep || t == toolGlob || nonEffectful[t]
 		if st.Status == statusCompleted && mapped {
 			continue
 		}
@@ -341,4 +340,42 @@ func hunksOf(path, diff string) (string, bool) {
 	header := "Index: " + path + "\n" + strings.Repeat("=", 67) + "\n--- " + path + "\n+++ " + path + "\n"
 	rest, ok := strings.CutPrefix(diff, header)
 	return rest, ok && rest != ""
+}
+
+// searchFolder is the folder a grep or glob call searched (I-124), as the
+// strings of the 1.19.5 binary show the tools choosing ripgrep's working
+// directory: the call's path, absolute or joined to the session's
+// directory, or that directory when the call names none. A glob's path
+// must be a directory. A grep's may be a file, and ripgrep then searches
+// the file's whole directory; the record says which only through its
+// output, which names each matched file as "<path>:" on a line of its
+// own, so a grep whose output names the path itself searched its
+// directory. A grep of a file that matched nothing is claimed with the
+// file as its folder (a known limit).
+func searchFolder(p toolPart) (string, bool) {
+	var in struct {
+		Pattern string  `json:"pattern"`
+		Path    *string `json:"path"`
+	}
+	if json.Unmarshal(p.data.State.Input, &in) != nil || in.Pattern == "" || !filepath.IsAbs(p.dir) {
+		return "", false
+	}
+	f := p.dir
+	if in.Path != nil && *in.Path != "" {
+		f = *in.Path
+		if !filepath.IsAbs(f) {
+			f = filepath.Join(p.dir, f)
+		}
+	}
+	f = filepath.Clean(f)
+	if p.data.Tool == toolGrep && f != p.dir {
+		var out string
+		_ = json.Unmarshal(p.data.State.Output, &out)
+		for _, line := range strings.Split(out, "\n") {
+			if line == f+":" {
+				return filepath.Dir(f), true
+			}
+		}
+	}
+	return f, true
 }

@@ -183,13 +183,13 @@ func TestParseMapsEachTool(t *testing.T) {
 	for _, c := range tr {
 		got = append(got, string(c.ActionType)+" "+c.Target+" "+c.Tool)
 	}
-	want := "file_open /ws/sub/x.txt read;file_open /ws/sub/AGENTS.md read:loaded;net_connect example.com webfetch"
+	want := "file_open /ws/sub/x.txt read;file_open /ws/sub/AGENTS.md read:loaded;net_connect example.com webfetch;process_exec opencode search:grep /ws grep"
 	if strings.Join(got, ";") != want {
 		t.Errorf("claims %v", got)
 	}
 	if rep.ToolCalls != 9 || rep.UnmappedByTool["read:directory"] != 1 || rep.UnmappedByTool["webfetch (no https host)"] != 1 ||
 		rep.UnmappedByTool["bash (status error)"] != 1 || rep.UnmappedByTool["bash (status running)"] != 1 ||
-		strings.Join(rep.UnknownTools, ",") != "grep,skill" {
+		strings.Join(rep.UnknownTools, ",") != "skill" {
 		t.Errorf("report %+v", rep)
 	}
 }
@@ -424,5 +424,84 @@ func TestFetchHost(t *testing.T) {
 		if got != want || ok != (want != "") {
 			t.Errorf("%q: %q %v", in, got, ok)
 		}
+	}
+}
+
+// A search claims its kind and the folder ripgrep searched (I-124).
+func TestASearchIsClaimedWithItsFolder(t *testing.T) {
+	search := func(tool string, in map[string]any, out string) part {
+		p := done(sesMain, tool, 0, 5, in)
+		p.output = out
+		return p
+	}
+	for name, c := range map[string]struct {
+		p    part
+		want string
+	}{
+		"grep, no path":             {search(toolGrep, map[string]any{"pattern": "x"}, "No files found"), SearchGrep + " /ws"},
+		"grep of a directory":       {search(toolGrep, map[string]any{"pattern": "x", "path": "src"}, "Found 1 matches\n/ws/src/a.go:\n  Line 1: x"), SearchGrep + " /ws/src"},
+		"grep of a matched file":    {search(toolGrep, map[string]any{"pattern": "x", "path": "src/a.go"}, "Found 1 matches\n/ws/src/a.go:\n  Line 1: x"), SearchGrep + " /ws/src"},
+		"grep of an absolute path":  {search(toolGrep, map[string]any{"pattern": "x", "path": "/data/../data"}, ""), SearchGrep + " /data"},
+		"glob, no path":             {search(toolGlob, map[string]any{"pattern": "*.txt"}, ""), SearchGlob + " /ws"},
+		"glob of a relative folder": {search(toolGlob, map[string]any{"pattern": "*.txt", "path": "sub/"}, ""), SearchGlob + " /ws/sub"},
+	} {
+		tr, rep, err := Adapter{}.Parse(writeDB(t, map[string]string{sesMain: ""}, []part{c.p}))
+		if err != nil || len(tr) != 1 || tr[0].ActionType != models.ProcessExec || tr[0].Target != c.want || len(rep.UnknownTools) != 0 {
+			t.Errorf("%s: %v %+v %v", name, err, tr, rep.UnknownTools)
+		}
+	}
+	_, rep, _ := Adapter{}.Parse(writeDB(t, map[string]string{sesMain: ""}, []part{search(toolGrep, map[string]any{}, "")}))
+	if len(rep.ParseErrors) != 1 {
+		t.Errorf("a grep without a pattern: %v", rep.ParseErrors)
+	}
+}
+
+// Only the first exec of OpenCode's own ripgrep by the harness, in a
+// measured shape, is a search; its exit follows (I-124).
+func TestFoldSearchesRecognisesOnlyTheHarnesssOwnRipgrep(t *testing.T) {
+	const rg = "/home/u/.cache/opencode/bin/rg"
+	grep := rg + " --no-config --json --hidden --no-messages --glob=!**/.git/** -- seed ."
+	glob := rg + " --no-config --files --glob=*.txt --glob=!**/.git/** ."
+	ex := func(pid, ppid uint32, target, cwd string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{PID: pid, PPID: ppid, ActionType: models.ProcessExec, Target: target, Cwd: cwd}
+	}
+	type want struct {
+		target string
+		cut    bool
+	}
+	cases := map[string]struct {
+		g    models.GroundTruth
+		want want
+	}{
+		"grep":              {models.GroundTruth{ex(10, 1, grep, "/ws")}, want{SearchGrep + " /ws", false}},
+		"grep, include":     {models.GroundTruth{ex(10, 1, rg+" --no-config --json --hidden --no-messages --glob=*.go --glob=!**/.git/** -- a b .", "/ws/src")}, want{SearchGrep + " /ws/src", false}},
+		"glob":              {models.GroundTruth{ex(10, 1, glob, "/ws/sub/")}, want{SearchGlob + " /ws/sub", false}},
+		"glob, hidden":      {models.GroundTruth{ex(10, 1, rg+" --no-config --files --hidden --follow --glob=*.txt --glob=!**/.git/** .", "/ws")}, want{SearchGlob + " /ws", false}},
+		"no cwd":            {models.GroundTruth{ex(10, 1, grep, "")}, want{SearchGrep, true}},
+		"the listing":       {models.GroundTruth{ex(10, 1, rg+" --no-config --files --glob=!**/.git/** .", "/ws")}, want{rg + " --no-config --files --glob=!**/.git/** .", false}},
+		"rg from PATH":      {models.GroundTruth{ex(10, 1, "/usr/bin/rg --no-config --files --glob=*.txt --glob=!**/.git/** .", "/ws")}, want{"/usr/bin/rg --no-config --files --glob=*.txt --glob=!**/.git/** .", false}},
+		"another shape":     {models.GroundTruth{ex(10, 1, rg+" --files .", "/ws")}, want{rg + " --files .", false}},
+		"a cache rg in /ws": {models.GroundTruth{ex(10, 1, "/ws/.cache/opencode/bin/rg --no-config --files --glob=x --glob=!**/.git/** .", "/ws")}, want{"/ws/.cache/opencode/bin/rg --no-config --files --glob=x --glob=!**/.git/** .", false}},
+		"through bash": {models.GroundTruth{
+			{PID: 10, PPID: 1, ActionType: models.ProcessFork, Target: "10"},
+			ex(10, 1, "/bin/bash -c sh", "/ws"),
+			ex(11, 10, grep, "/ws")}, want{grep, false}},
+		"a second exec": {models.GroundTruth{ex(10, 1, "/bin/bash -c "+grep, "/ws"), ex(10, 1, grep, "/ws")}, want{grep, false}},
+	}
+	for name, c := range cases {
+		g := (Adapter{}).NormalizeStream(c.g)
+		last := g[len(g)-1]
+		if last.Target != c.want.target || last.TargetTruncated != c.want.cut {
+			t.Errorf("%s: %q truncated %v", name, last.Target, last.TargetTruncated)
+		}
+	}
+	exe := models.GroundTruthEvent{PID: 10, PPID: 1, ActionType: models.ProcessExec, Target: grep, Cwd: "/ws", Image: &models.ExecImage{Program: "/tmp/rg"}}
+	if g := (Adapter{}).NormalizeStream(models.GroundTruth{exe}); g[0].Target != grep {
+		t.Errorf("another program image: %q", g[0].Target)
+	}
+	cut := models.GroundTruthEvent{PID: 10, PPID: 1, ActionType: models.ProcessExec, Target: rg + " --no-config --js", TargetTruncated: true}
+	exit := models.GroundTruthEvent{PID: 10, PPID: 1, ActionType: models.ProcessExit, Target: rg + " --no-config --js", TargetTruncated: true}
+	if g := (Adapter{}).NormalizeStream(models.GroundTruth{cut, exit}); g[0].Target != SearchGrep || !g[0].TargetTruncated || g[1].Target != SearchGrep {
+		t.Errorf("a cut command line: %+v", g)
 	}
 }

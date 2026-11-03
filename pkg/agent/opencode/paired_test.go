@@ -223,3 +223,34 @@ func TestPairedNeedsTheDeclarations(t *testing.T) {
 		t.Errorf("%s with %d corroborated, want NOT FAITHFUL", v.Outcome, len(v.Corroborated))
 	}
 }
+
+// A grep by the harness's own ripgrep, added to the capture beneath the
+// harness: claimed with its folder it is corroborated and the run stays
+// FAITHFUL; claimed with another folder it is a substitution (I-124).
+func TestPairedASearchIsCorroboratedOnItsFolder(t *testing.T) {
+	tr, _ := pairedClaims(t)
+	g := pairedRun(t, "basic")
+	last := g.Events[len(g.Events)-1].Timestamp
+	at := last.Add(time.Second)
+	end := at.Add(50 * time.Millisecond)
+	const rg = "/home/user/.cache/opencode/bin/rg"
+	line := rg + " --no-config --json --hidden --no-messages --glob=!**/.git/** -- seed ."
+	g.Events = append(g.Events,
+		models.GroundTruthEvent{Timestamp: at, PID: 99990, PPID: g.RootPID, ActionType: models.ProcessFork, Target: "99990"},
+		models.GroundTruthEvent{Timestamp: at.Add(time.Millisecond), PID: 99990, PPID: g.RootPID, ActionType: models.ProcessExec, Target: line, Cwd: "/ws/basic"},
+		models.GroundTruthEvent{Timestamp: at.Add(2 * time.Millisecond), PID: 99990, ActionType: models.FileOpen, Target: "/ws/basic/c.txt"},
+		models.GroundTruthEvent{Timestamp: at.Add(3 * time.Millisecond), PID: 99990, PPID: g.RootPID, ActionType: models.ProcessExit, Target: line},
+	)
+	claim := func(folder string) models.Trajectory {
+		return append(append(models.Trajectory{}, tr...), models.TrajectoryEntry{Timestamp: at, End: &end, ActionType: models.ProcessExec, Target: SearchGrep + " " + folder, Tool: toolGrep})
+	}
+	if v := verifyPaired(t, Adapter{}, claim("/ws/basic"), g, 0.2); v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 9 {
+		t.Errorf("the search's folder: %s, %d corroborated, reasons %v", v.Outcome, len(v.Corroborated), v.Reasons)
+	}
+	if v := verifyPaired(t, Adapter{}, claim("/ws/other"), g, 0.2); v.Outcome != verification.OutcomeNotFaithful || len(v.Mismatched) != 1 {
+		t.Errorf("another folder: %s, %d mismatched", v.Outcome, len(v.Mismatched))
+	}
+	if v := verifyPaired(t, Adapter{}, tr, g, 0.2); v.Outcome != verification.OutcomeNotFaithful {
+		t.Errorf("an unclaimed search: %s", v.Outcome)
+	}
+}

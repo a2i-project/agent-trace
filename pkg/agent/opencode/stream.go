@@ -32,11 +32,13 @@ const rereadSpan = time.Second
 // and folds its in-place rewrites into one write carrying the close's hash
 // (foldInPlace), as the Codex adapter does (I-82, I-99): the same shapes,
 // measured on OpenCode's write and edit (I-120). Events are in time order,
-// ties in the order the probe emitted them. Before the opens are collapsed
+// ties in the order the probe emitted them. First it rewrites the exec of
+// the harness's own ripgrep to its search (foldSearches, I-124). Before the opens are collapsed
 // it drops the harness's read of a file it has just written (foldRereads),
 // which would otherwise start a run with the next call's open of the file.
 func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
 	started := commands(g)
+	g = foldSearches(g, started)
 	return foldInPlace(collapseOpens(foldRereads(foldCreates(g, started), started), started), started)
 }
 

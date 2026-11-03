@@ -755,6 +755,22 @@ Consequences:
 - `cmd/analyze` on a campaign of agy 1.4.7 now declares the renewal from the manifest's version.
 Alternatives rejected: Declaring agy's renewal for every version (it changes both 1.3.4 fixtures' reports, and guesses endpoints of versions whose binaries were not read); leaving it undeclared (every agy run that renews its token is NOT FAITHFUL); reading the version from the conversation (it holds none).
 
+### V-86: OpenCode's log is explained by the baseline alone; it is neither trace nor declared bookkeeping
+Status: Accepted, implemented (nothing to build: `HarnessBookkeeping` and `Trace` in `pkg/agent/opencode/harness.go` leave the log out; `TestHarnessDeclarations`). The user's decision of 2026-11-03, the recommended option.
+Date: 2026-11-03.
+Context: OpenCode 1.19.5 writes `~/.local/share/opencode/log/opencode.log` (paths and session ids at INFO, no prompt and no key, as the survey found it) and closes it at its exit; on the first capture all six runs wrote and closed it, by the harness's own process (**Verified**, local only). Its name is fixed in 1.19.5. The options were: the baseline alone, a declared bookkeeping file (V-50), or a file of the trace (V-59).
+Decision: The log is left to the baseline: no bookkeeping declaration names it and the trace does not cover it (I-116 already keeps it out of the trace).
+Consequences: A run whose harness does not write its log the way the controls did shows the write as unexplained harness activity (`IsHarnessOwned`), not a finding. A command that writes or deletes the log is an unclaimed write of an ordinary file, not trace tampering. Since the baseline names the log, an unclaimed in-process write of it is explained (V-37).
+Alternatives rejected: Declared bookkeeping (it would explain a write the controls never made, and every control makes it); a trace file (the session does not live there, I-116).
+
+### V-87: The -shm of OpenCode's session database is outside the trace, as Codex's
+Status: Accepted, implemented (`Trace` in `pkg/agent/opencode/harness.go`; `TestHarnessDeclarations`, `TestPairedACommandChangingTheDatabaseIsTampering`; built by I-122). The user's decision of 2026-11-03. Amends I-116.
+Date: 2026-11-03.
+Context: I-116 names the database "with its `-wal`, `-shm` and `-journal` files, as Codex's thread databases (I-84, I-106)", and says that reading them is not tampering. Every reader of a database in write-ahead-log mode writes its `-shm`, which is why I-106 and V-75 leave the `-shm` of Codex's and agy's databases uncovered; covering OpenCode's would read a `sqlite3` reader run by a command as tampering.
+Decision: OpenCode's trace is `opencode.db` with its `-wal` and `-journal`, both transient (V-76); the `-shm` is not covered, as I-106 decides for Codex.
+Consequences: A change to the `-shm` is never seen, on any of the three databases. A command that reads the session database with SQLite is not tampering; one that writes or deletes the database or its `-wal` is.
+Alternatives rejected: Covering the `-shm` (an honest reader would be accused).
+
 ### F0.2-F0.3: Timestamp-window matcher
 Status: Superseded by V4, V6 and V-18.
 Date: 2026-09 (Tier 0), removed 2026-10-06.

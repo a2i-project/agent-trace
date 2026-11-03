@@ -135,7 +135,8 @@ parent chain leads to it (its subagents), in a new SQLite database with
 two tables: session (id, parent_id, directory, version) and part (id,
 message_id, session_id, data), the tool parts only, each cut to the fields
 the adapter reads: type, tool and of the state its status, input, the
-start and end of its time, a read's output cut to its <type> tag, and of
+start and end of its time, a read's output cut to its <type> tag, a
+grep's output cut to the lines naming a matched file, and of
 the metadata a read's loaded files, a write's exists, an edit's diff and
 a task's sessionId. Every other table, message text, model output and
 every other session is left out. A write's content and an edit's diff
@@ -835,6 +836,11 @@ def reduce_opencode_part(data):
             out_text = m.group(0)
         if isinstance(md.get("loaded"), list):
             keep_md["loaded"] = md["loaded"]
+    elif tool == "grep":
+        # The lines naming a matched file, from which the adapter tells a
+        # grep of a file from one of a directory (I-124); never the matches.
+        out = st.get("output") if isinstance(st.get("output"), str) else ""
+        out_text = "\n".join(l for l in out.split("\n") if l.startswith("/") and l.endswith(":"))
     elif tool == "write" and "exists" in md:
         keep_md["exists"] = md["exists"]
     elif tool == "task" and "sessionId" in md:
