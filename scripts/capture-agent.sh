@@ -1060,21 +1060,28 @@ PY
 
 # sqlite-sessions: one database of every session of the account
 # (trace.database in trace.dir; OpenCode ~/.local/share/opencode/opencode.db,
-# I-114), copied with SQLite's online backup, so the copy holds what its
-# write-ahead log held and is consistent although the agent may still hold
-# it open. The run's session is the row of the id the agent printed; its
-# subagents are the sessions whose parent chain leads to it, in the same
-# copy. A database that is gone, or a copy without the session, is a trace
-# that is gone.
+# I-114). Right after the run it is copied byte for byte, with its
+# write-ahead log when there is one (<file>-wal), to trace_path: the file
+# verify reads and whose hash --check-trace-hash compares with the last
+# content the probe hashed (I-125). It is then also copied with SQLite's
+# online backup to <file>.backup, which holds what the log held and is
+# consistent although another process may hold the database open. The
+# run's session is the row of the id the agent printed; its subagents are
+# the sessions whose parent chain leads to it, in the same copy. A database
+# that is gone, or a backup without the session, is a trace that is gone.
 collect_sqlite_sessions() { # label
-  local label=$1 db=$trace_dir/$p_trace_database n
+  local label=$1 db=$trace_dir/$p_trace_database n dest
+  dest=$(trace_path "$label")
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
   if [ -z "$session" ] || [ ! -f "$db" ]; then
     trace_gone="no session database $db, or no session id ('$session'), after the run"
     trace_missing="no session database or session id for $label (session '$session'), see $out/$label.watch.log"
     return 3
   fi
-  n=$(python3 - "$db" "$(trace_path "$label")" "$session" <<'PY'
+  # The byte copy first, before any reader of the database runs.
+  cp "$db" "$dest" || return 1
+  if [ -f "$db-wal" ]; then cp "$db-wal" "$dest-wal" || return 1; fi
+  n=$(python3 - "$db" "$dest.backup" "$session" <<'PY'
 import os, sqlite3, sys
 db, dest, session = sys.argv[1:]
 try:
@@ -1193,6 +1200,8 @@ def sessions(p):
     with tempfile.TemporaryDirectory() as d:
         try:
             shutil.copy(p, d + "/c.db")
+            if os.path.exists(p + "-wal"):
+                shutil.copy(p + "-wal", d + "/c.db-wal")
             c = sqlite3.connect(d + "/c.db")
             ids, todo = [], [sid]
             while todo:
@@ -1279,6 +1288,8 @@ if method == "sqlite-sessions":
     with tempfile.TemporaryDirectory() as d:
         try:
             shutil.copy(trace, d + "/c.db")
+            if os.path.exists(trace + "-wal"):
+                shutil.copy(trace + "-wal", d + "/c.db-wal")
             c = sqlite3.connect(d + "/c.db")
             todo = [sid]
             while todo:
@@ -1364,6 +1375,8 @@ if method == "sqlite-sessions":
     with tempfile.TemporaryDirectory() as d:
         try:
             shutil.copy(p, d + "/c.db")
+            if os.path.exists(p + "-wal"):
+                shutil.copy(p + "-wal", d + "/c.db-wal")
             c = sqlite3.connect(d + "/c.db")
             if c.execute("pragma quick_check").fetchone()[0] == "ok":
                 if not c.execute("select 1 from session where id = ?", (sid,)).fetchone():

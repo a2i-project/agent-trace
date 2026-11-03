@@ -164,7 +164,8 @@ print(json.dumps({"conversation_id": cid, "response": "ok"}, separators=(",", ":
 // isolation variables; it writes a session with one assistant message of
 // the -m provider/model into ~/.local/share/opencode/opencode.db, and, when
 // the prompt names the task tool, a subagent session whose parent_id names
-// it, with one tool part. It prints the session id as --format json does.
+// it, with one tool part, and records the database's hash as the run left
+// it. It prints the session id as --format json does.
 // For the task run with FAKE_TASK=delete it deletes the database again.
 const fakeOpencode = `#!/usr/bin/env python3
 import hashlib, json, os, sqlite3, stat, sys, uuid
@@ -208,6 +209,8 @@ if "task tool" in prompt:
     message(sub)
     c.execute("insert into part values (?, ?, ?)", ("prt_" + uuid.uuid4().hex, sub, json.dumps({"type": "tool", "tool": "bash"})))
 c.commit(); c.close()
+with open(os.path.join(fake, "opencode.dbhash"), "a") as f:
+    f.write(hashlib.sha256(open(path, "rb").read()).hexdigest() + "\n")
 if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") == "delete":
     os.remove(path)
 json.dump([], open(os.path.join(fake, "events.json"), "w"))
@@ -890,6 +893,17 @@ func TestCaptureOfOpencodePassesTheKeyOnStdinOnly(t *testing.T) {
 	}
 	if st, _ := os.ReadFile(filepath.Join(out, "parallel.trace.txt")); strings.TrimSpace(string(st)) != "read" {
 		t.Errorf("parallel.trace.txt = %q", st)
+	}
+	// The trace is the database's bytes as the run left them, which
+	// --check-trace-hash compares; the online backup lies beside it (I-125).
+	hashes, _ := os.ReadFile(filepath.Join(tmp, "fake", "opencode.dbhash"))
+	copied, _ := os.ReadFile(filepath.Join(out, "parallel.opencode.db"))
+	copySum := sha256.Sum256(copied)
+	if first, _, _ := strings.Cut(string(hashes), "\n"); first != hex.EncodeToString(copySum[:]) {
+		t.Errorf("parallel.opencode.db is not the database as the run left it: %s, the run's %s", hex.EncodeToString(copySum[:]), first)
+	}
+	if _, err := os.Stat(filepath.Join(out, "parallel.opencode.db.backup")); err != nil {
+		t.Errorf("no backup copy: %v", err)
 	}
 	meta, _ := os.ReadFile(filepath.Join(out, "task-meta.txt"))
 	for _, want := range []string{"config_file=~/.config/agent-trace/opencode-1.19.5.json sha256=", "secret_env=SCILIFELAB_API_KEY passed on the runs' stdin, values not recorded\n", "instruction_file=~/.opencode absent\n"} {
