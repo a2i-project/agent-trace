@@ -45,6 +45,11 @@ type Session struct {
 	// StartupWindow applies the start-up window (V-82), as verify
 	// --startup-window does.
 	StartupWindow bool
+	// SessionID is the run's session id as the capture recorded it
+	// (<label>.session-id.txt, I-110), "" when it recorded none: it decides
+	// the trace in place of the id the session's record states, as the
+	// capture script's verify runs pass it as --session-id (I-127).
+	SessionID string
 }
 
 // controlFile matches control-N.ground_truth.json.
@@ -131,6 +136,29 @@ func trajectoryName(c *Campaign, r RunRecord) (string, error) {
 	return name, nil
 }
 
+// sessionIDPath is the file holding the session id the capture recorded:
+// the one the manifest names, else <label>.session-id.txt in the run
+// directory, where the capture script writes it (I-110).
+func sessionIDPath(dir string, r RunRecord) string {
+	if p := r.Paths["session_id"]; p != nil && *p != "" {
+		return filepath.Join(dir, filepath.Base(*p))
+	}
+	return filepath.Join(dir, strings.ReplaceAll(r.Task, ":", "-")+".session-id.txt")
+}
+
+// recordedSessionID reads the session id the capture recorded, "" when
+// there is no file (a capture made before I-110) or it holds nothing.
+func recordedSessionID(dir string, r RunRecord) (string, error) {
+	b, err := os.ReadFile(sessionIDPath(dir, r))
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read the recorded session id: %w", err)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
 func groundTruthName(r RunRecord) string {
 	if p := r.Paths["ground_truth"]; p != nil && *p != "" {
 		return filepath.Base(*p)
@@ -163,6 +191,9 @@ func LoadSession(c *Campaign, r RunRecord) (*Session, error) {
 		return s, fmt.Errorf("the session has %d record(s) that did not parse: %s", len(rep.ParseErrors), rep.ParseErrors[0])
 	}
 	s.Claims, s.Report, s.Trace = claims, rep, trace
+	if s.SessionID, err = recordedSessionID(s.Dir, r); err != nil {
+		return s, err
+	}
 	if s.G, err = readGroundTruth(filepath.Join(s.Dir, groundTruthName(r))); err != nil {
 		return s, fmt.Errorf("read the capture: %w", err)
 	}
@@ -268,7 +299,8 @@ func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verificatio
 		in.Options.StartupOnly = agent.StartupFiles(s.Adapter, v, s.G) // V-82
 	}
 	in.Trace = s.Trace
-	in.Trace.Decl = agent.Trace(s.Adapter, s.G, agent.SessionOf(s.Report, "")) // V-59, I-105, V-80
+	// The id the capture recorded decides the trace when there is one (I-110, I-127).
+	in.Trace.Decl = agent.Trace(s.Adapter, s.G, agent.SessionOf(s.Report, s.SessionID)) // V-59, I-105, V-80
 	return in
 }
 
