@@ -19,6 +19,14 @@ jobs:
       with:
         go-version-file: 'go.mod'
 
+    - name: Kernel diagnostic for the kernel hash (temporary)
+      run: |
+        echo "kernel: $(uname -r)"
+        echo "lsm: $(cat /sys/kernel/security/lsm)"
+        for f in __fput bpf_lsm_file_release bpf_dynptr_from_file bpf_dynptr_file_discard bpf_dynptr_copy security_file_open security_path_truncate; do
+          if grep -a -q -F -x "$f" <(tr '\0' '\n' < /sys/kernel/btf/vmlinux); then echo "btf $f: present"; else echo "btf $f: absent"; fi
+        done
+
     - name: Download dependencies
       run: go mod download
 
