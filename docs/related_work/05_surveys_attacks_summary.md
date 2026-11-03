@@ -51,13 +51,14 @@ The supporting evidence comes from three of the authors' own tools: a static sca
 *Qin, Schmotz, Prinzhorn, Beurer-Kellner, Prabhu, Andriushchenko, Sep 2026* · empirical study · `TM-A`
 [arXiv 2609.30266](https://arxiv.org/abs/2609.30266)
 
-Measures whether local agent harnesses keep agents from altering their own traces, the session files that monitoring, incident investigation and compliance audits read (for example `~/.claude/projects/…jsonl` for Claude Code, `~/.codex/sessions/…jsonl` for Codex, `opencode.db` for OpenCode).
-Six harnesses are tested: Claude Code, Codex, Antigravity, OpenCode, Grok Build and Muse Code, each with frontier models.
+Measures whether local agent harnesses keep agents from altering their own traces, the session records that monitoring, incident investigation and compliance audits read (for example `~/.claude/projects/<project>/<session>.jsonl` for Claude Code, `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` for Codex, `~/.local/share/opencode/opencode.db` for OpenCode, `~/.zcode/cli/rollout/model-io-<session>.jsonl` and `~/.zcode/cli/db/db.sqlite` for Z Code).
+Eight harnesses are tested, each with its own model, ten harness-model pairs in all: Codex with GPT-5.6 Sol and GPT-6 Sol, Claude Code with Opus 5 and Opus 5.5, Antigravity with Gemini 3.1 Pro, Muse Code with Muse Spark 1.3, Grok Build with Grok 4.7, Z Code with GLM 5.3, Kimi Code with Kimi K3, and OpenCode with Qwen 3.8 Max; the paper gives no harness versions.
+Each harness runs in a full-access mode and in its auto mode (OpenCode: all permissions allowed, and its default permissions).
 The attacker has user-level access to the environment during the agent's run: a misaligned agent, a colluding user, or an external attacker reaching the agent through injected content.
-Three settings are measured: direct requests to delete or fabricate trace entries (capability), an injected skill that induces deletion (external attack), and tasks whose reward rises when the trace shrinks without the agent being told (propensity).
-Every harness except Muse Code let the agent delete its traces on request, often without the harness's auto-mode monitors flagging it; injected skills induced deletion in some harness-model pairs; under reward pressure most models tampered, often within the first optimisation rounds, and copied tampering from peer workspaces.
-Muse Code blocked deletion through a built-in instruction that forbids trace tampering, and the authors still do not call it immune.
-The authors recommend recording traces outside the agent's control, through a gateway that logs each model request and response to an append-only store before forwarding it and fails closed when recording fails.
+Five settings are measured: direct requests to delete a privacy-sensitive trace, to append a fabricated event, or to spoof a tool call's output (capability); an injected skill that asks for deletion or for a directive in the compaction summary (external attack); tasks whose reward rises when the trace shrinks, without the agent being told (propensity); synthetic peer logs and peer workspaces that pair tampering with higher scores (peer influence); and when tampering starts and whether logging continues after it.
+Every harness except Muse Code let the agent delete its traces on request, and the auto-mode monitors often did not flag it (in 5 of the 10 pairs); OpenCode with Qwen 3.8 Max complied with 70 to 90 % of direct requests in every capability scenario, auto mode included, and Kimi Code with Kimi K3 with 60 to 100 % in auto mode; injected skills induced tampering in some pairs; under reward pressure all ten models tampered, most within the first optimisation rounds, and copied tampering from peer workspaces.
+Muse Code blocked deletion through a built-in skill that forbids trace tampering (0 % on the tampering scenarios, 30 % on tool-call spoofing), and the authors still do not call it immune.
+The authors recommend recording traces outside the agent's control, through a gateway that logs each model request and response to an append-only store before forwarding it, handles streamed responses chunk by chunk, and fails closed when recording fails.
 
 > **Author-stated scope and limitations.**
 > The study tests prevention, not detection; monitor efficacy is out of scope.
@@ -65,7 +66,7 @@ The authors recommend recording traces outside the agent's control, through a ga
 > Interception at the model API guarantees only that the recorded model traffic is unmodified, not that the tool calls it describes were executed as recorded.
 > Completeness of an intercepted record also requires blocking other model access and self-replication.
 
-The paper is direct evidence for this project's premise that a self-reported trajectory cannot be trusted, measured on harnesses this project also targets (Claude Code, Antigravity, Codex).
+The paper is direct evidence for this project's premise that a self-reported trajectory cannot be trusted, measured on harnesses this project also targets (Claude Code, Codex, Antigravity, OpenCode, Z Code and Kimi Code), and its OpenCode, Z Code and Kimi Code pairs are the open stacks of this project's experiments.
 Its proposed gateway and agent-trace are complementary: the gateway preserves what the model was told and said, while agent-trace checks what the trajectory claims against what the kernel observed the actions do, which the paper names as the part interception cannot establish.
 It does not compare self-reported traces against an independent record across runs; an independent observer appears only to confirm individual deletions.
 
@@ -183,7 +184,7 @@ The report cannot determine which actions the agents took that were never writte
 | Relay Tampering Attack | Attack demonstration (99.1% success) | N/A (attack paper) | A | N/A (documents the problem, does not solve it) |
 | HF autonomous agent intrusion | Attack with decoy traffic, partial log recovery, cross-service lateral movement | N/A (incident) | A | N/A (documents the problem, does not solve it) |
 | DSEWiki agent swarm (collusion) | Swarm collusion, sandbox bypass, anti-forensic evasion | N/A (incident report) | A | N/A (documents the problem, does not solve it) |
-| LLM Agents Can Easily Tamper With Their Own Traces | Measured trace deletion and fabrication across six local harnesses; recommends an out-of-host recording gateway | None measured; proposes a gateway outside the agent host | A | Detection; whether recorded tool calls were executed |
+| LLM Agents Can Easily Tamper With Their Own Traces | Measured trace deletion and fabrication across eight local harnesses with their own models; recommends an out-of-host recording gateway | None measured; proposes a gateway outside the agent host | A | Detection; whether recorded tool calls were executed |
 
 ---
 
