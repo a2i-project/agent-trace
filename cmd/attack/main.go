@@ -28,6 +28,7 @@ import (
 	_ "github.com/agent-trace/agent-trace/pkg/agent/claudecode"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/codex"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/gemini"
+	_ "github.com/agent-trace/agent-trace/pkg/agent/opencode"
 	"github.com/agent-trace/agent-trace/pkg/attack"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"

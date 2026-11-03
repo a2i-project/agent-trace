@@ -437,7 +437,15 @@
         ],
         "field": "first"
       },
-      "versions": [],
+      "versions": [
+        {
+          "version": "1.19.5",
+          "verified": "2026-11-03",
+          "fixtures": [
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-basic"
+          ]
+        }
+      ],
       "version_lock": {
         "note": "OpenCode 1.19.5 is frozen for the project. opencode run checks for updates only when the configuration's autoupdate is not false; the configuration file sets it false and OPENCODE_DISABLE_AUTOUPDATE=1 disables the check too. OPENCODE_DISABLE_MODELS_FETCH=1 keeps OpenCode from fetching its model catalog from https://models.opencode.ai at every start; it then uses the catalog built into the binary, which the version fixes (I-112).",
         "env": {

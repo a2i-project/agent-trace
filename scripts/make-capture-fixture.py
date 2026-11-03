@@ -126,6 +126,26 @@ placeholders; and the 40-digit cache key of the harness's app caches
 becomes zeros. The private-string check also looks for the account ids,
 the other threads' ids and the skill directories' ids.
 
+An OpenCode capture is recognised by its <TASK_LABEL>.opencode.db (I-114,
+I-120). Each copy is the account's one session database: every session of
+the account, the user's own included, its messages, parts, accounts and
+credentials. The fixture keeps, of the task run's copy only, the session
+the capture recorded in <TASK_LABEL>.session-id.txt and the sessions whose
+parent chain leads to it (its subagents), in a new SQLite database with
+two tables: session (id, parent_id, directory, version) and part (id,
+message_id, session_id, data), the tool parts only, each cut to the fields
+the adapter reads: type, tool and of the state its status, input, the
+start and end of its time, a read's output cut to its <type> tag, and of
+the metadata a read's loaded files, a write's exists, an edit's diff and
+a task's sessionId. Every other table, message text, model output and
+every other session is left out. A write's content and an edit's diff
+hunks are kept unrewritten, since the adapter claims a hash from them, and
+refused when the rewriting would change them; the diff's four header
+lines name the file and are rewritten like every path. The controls'
+databases are left out. The private-string check also looks for the
+other sessions' ids and for the name of the provider's key variable
+followed by a value.
+
 In every fixture, last, each model server id becomes a placeholder: a
 response id (`resp_`; a content capture's model requests name the response
 they continue) and an item id (`rs_` a reasoning item, `msg_` a message,
@@ -784,6 +804,114 @@ def reduce_rollout(src, dst):
     return len(kept)
 
 
+# --- OpenCode: the session database (see the docstring) ---
+
+opencode_db = os.path.join(capture, task + ".opencode.db")
+opencode_private = set()
+OPENCODE_SESSION = re.compile(r"ses_[0-9A-Za-z]{26}")
+# The header of an edit's diff, as OpenCode 1.19.5 writes it: four lines
+# naming the file, then the hunks (I-121).
+OPENCODE_DIFF_HEADER = re.compile(r"\AIndex: ([^\n]*)\n={67}\n--- \1\n\+\+\+ \1\n")
+
+
+def reduce_opencode_part(data):
+    """A tool part cut to what the adapter reads, rewritten; None for any
+    other part."""
+    d = json.loads(data)
+    if d.get("type") != "tool":
+        return None
+    st = d.get("state") or {}
+    tool = d.get("tool")
+    keep_state = {k: st[k] for k in ("status", "input") if k in st}
+    t = st.get("time") or {}
+    keep_state["time"] = {k: t[k] for k in ("start", "end") if k in t}
+    md = st.get("metadata") if isinstance(st.get("metadata"), dict) else {}
+    keep_md = {}
+    out_text = None
+    if tool == "read":
+        out = st.get("output") if isinstance(st.get("output"), str) else ""
+        m = re.search(r"<type>[a-z]+</type>", out)
+        if m:
+            out_text = m.group(0)
+        if isinstance(md.get("loaded"), list):
+            keep_md["loaded"] = md["loaded"]
+    elif tool == "write" and "exists" in md:
+        keep_md["exists"] = md["exists"]
+    elif tool == "task" and "sessionId" in md:
+        keep_md["sessionId"] = md["sessionId"]
+    content = None
+    if tool == "write" and isinstance((st.get("input") or {}).get("content"), str):
+        content = kept_text(st["input"]["content"], "a write's content")
+    hunks = header = None
+    if tool == "edit" and isinstance(md.get("diff"), str):
+        m = OPENCODE_DIFF_HEADER.match(md["diff"])
+        if m:
+            header, hunks = m.group(0), kept_text(md["diff"][m.end():], "an edit's diff")
+    keep = {"type": "tool", "tool": tool, "state": keep_state}
+    if keep_md:
+        keep_state["metadata"] = keep_md
+    if out_text is not None:
+        keep_state["output"] = out_text
+    keep = json.loads(rewrite(json.dumps(keep), task))
+    # Kept content goes in after the rewriting, which must not touch it.
+    if content is not None:
+        keep["state"]["input"]["content"] = content
+    if hunks is not None:
+        keep["state"].setdefault("metadata", {})["diff"] = rewrite(header, task) + hunks
+    return json.dumps(keep, sort_keys=True)
+
+
+def reduce_opencode(src, dst, sid):
+    if not OPENCODE_SESSION.fullmatch(sid):
+        sys.exit("%s: %r is not an OpenCode session id" % (task + ".session-id.txt", sid))
+    with tempfile.TemporaryDirectory() as tmp:
+        snap = os.path.join(tmp, "opencode.db")
+        shutil.copyfile(src, snap)
+        if os.path.exists(src + "-wal"):
+            shutil.copyfile(src + "-wal", snap + "-wal")
+        con = sqlite3.connect("file:%s?mode=ro" % snap, uri=True)
+        sessions = {r[0]: r for r in con.execute("select id, parent_id, directory, version from session")}
+        if sid not in sessions:
+            sys.exit("%s holds no session %s" % (src, sid))
+        # The run's session and every session whose parent chain leads to it.
+        own, frontier = [sid], [sid]
+        while frontier:
+            kids = sorted(i for i, r in sessions.items() if r[1] in frontier and i not in own)
+            own += kids
+            frontier = kids
+        opencode_private.update(i for i in sessions if i not in own)
+        parts = []
+        for i in own:
+            parts += con.execute("select id, message_id, session_id, data from part where session_id = ? order by id", (i,)).fetchall()
+        con.close()
+    # Every other session id any copy of the capture names is private too.
+    for f in os.listdir(capture):
+        if f.endswith(".opencode.db") and f != os.path.basename(src):
+            c = sqlite3.connect("file:%s?mode=ro&immutable=1" % os.path.join(capture, f), uri=True)
+            opencode_private.update(r[0] for r in c.execute("select id from session") if r[0] not in own)
+            c.close()
+    if os.path.exists(dst):
+        os.remove(dst)
+    os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+    new = sqlite3.connect(dst)
+    new.execute("create table session (id text primary key, parent_id text, directory text not null, version text not null)")
+    new.execute("create table part (id text primary key, message_id text not null, session_id text not null, data text not null)")
+    for i in own:
+        _, parent, directory, version = sessions[i]
+        new.execute("insert into session values (?,?,?,?)", (i, parent, rewrite(directory or "", task), version))
+    n = 0
+    for pid, mid, ses, data in parts:
+        slim = reduce_opencode_part(data)
+        if slim is not None:
+            new.execute("insert into part values (?,?,?,?)", (pid, mid, ses, slim))
+            n += 1
+    new.commit()
+    new.execute("vacuum")
+    new.close()
+    print("opencode: %d session(s) kept, %d other session(s) left out" % (len(own), len(opencode_private)))
+    return n
+
+
 if os.path.exists(codex_rollout):
     n = reduce_rollout(codex_rollout, os.path.join(out, task + ".rollout.jsonl"))
     sub_dir = os.path.join(capture, task + ".rollout", "subagents")
@@ -792,6 +920,10 @@ if os.path.exists(codex_rollout):
             if name.endswith(".jsonl"):
                 n += reduce_rollout(os.path.join(sub_dir, name), os.path.join(out, task + ".rollout", "subagents", name))
     record_kind = "rollout records"
+elif os.path.exists(opencode_db):
+    with open(os.path.join(capture, task + ".session-id.txt")) as f:
+        n = reduce_opencode(opencode_db, os.path.join(out, task + ".opencode.db"), f.read().strip())
+    record_kind = "tool parts"
 elif os.path.exists(gemini_db):
     n, ids = reduce_conversation(gemini_db, os.path.join(out, task + ".conversation.db"))
     n += reduce_subagents(ids)
@@ -837,7 +969,7 @@ if server_ids:
     print("server ids rewritten: " + ", ".join("%d %s_" % (n, k) for k, n in sorted(per_prefix.items())))
 # Nothing private may be left in what was written.
 user = os.environ.get("USER", "")
-forbidden = {home} | org_ids | emails | codex_private | avatar_ids | ({user} if len(user) > 2 else set())
+forbidden = {home} | org_ids | emails | codex_private | avatar_ids | opencode_private | ({user} if len(user) > 2 else set())
 # Every form of the recorded and the current capture directory must be gone.
 forbidden |= set(roots) | {mangle(r) for r in roots}
 leaks = []
@@ -853,6 +985,10 @@ for root, _, files in os.walk(out):
             leaks.append((path, "session key name"))
         if SERVER_ID.search(text):
             leaks.append((path, "server id"))
+        # The provider's key reaches OpenCode only as this variable (I-113);
+        # its name followed by a value would be the key.
+        if re.search(r"SCILIFELAB_API_KEY\s*[=:]\s*[^\s{\"]", text):
+            leaks.append((path, "a value of the key's variable"))
 if leaks:
     for path, word in leaks:
         print("private string left in", path, file=sys.stderr)

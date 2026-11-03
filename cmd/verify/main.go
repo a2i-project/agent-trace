@@ -23,6 +23,7 @@ import (
 	_ "github.com/agent-trace/agent-trace/pkg/agent/claudecode"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/codex"
 	_ "github.com/agent-trace/agent-trace/pkg/agent/gemini"
+	_ "github.com/agent-trace/agent-trace/pkg/agent/opencode"
 	"github.com/agent-trace/agent-trace/pkg/agent/sensitive"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
@@ -93,7 +94,7 @@ func run(args []string, out, errOut io.Writer) int {
 		}
 		// A session file that is gone, empty or does not parse is a trace
 		// that cannot be verified, never a usage error (V-59).
-		if tr, rep, trace, err = agent.ReadTrace(adapter, trajectoryPath, traceHash); err != nil {
+		if tr, rep, trace, err = agent.ReadSessionTrace(adapter, trajectoryPath, sessionID, traceHash); err != nil {
 			_, _ = fmt.Fprintf(errOut, "verify: read trajectory %s with the %s adapter: %v\n", trajectoryPath, adapter.Name(), err)
 			return exitError
 		}

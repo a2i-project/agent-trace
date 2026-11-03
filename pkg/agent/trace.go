@@ -100,9 +100,35 @@ const MaxMangled = maxMangled
 // parse errors stay in the report, since nothing says the file is the
 // harness's own trace.
 func ReadTrace(a Adapter, path string, hash bool) (models.Trajectory, Report, verification.TraceInput, error) {
+	return ReadSessionTrace(a, path, "", hash)
+}
+
+// SessionParser is implemented by an adapter whose session file can hold
+// several sessions, such as OpenCode's one database of every session of
+// the account (I-120): given the id the capture recorded (I-110),
+// ParseSession reads that session and its subagents. Parse reads the file
+// when it names its session without an id, and fails otherwise.
+type SessionParser interface {
+	ParseSession(path, id string) (models.Trajectory, Report, error)
+}
+
+// parse reads path through the adapter: the session id names the session
+// for a SessionParser, and an empty id, or another adapter, takes Parse.
+func parse(a Adapter, path, id string) (models.Trajectory, Report, error) {
+	if sp, ok := a.(SessionParser); ok && id != "" {
+		return sp.ParseSession(path, id)
+	}
+	return a.Parse(path)
+}
+
+// ReadSessionTrace is ReadTrace with the session id the capture recorded,
+// which names the session to read in a file of several (SessionParser,
+// I-120); an empty id, or an adapter whose file holds one session, reads
+// as ReadTrace does.
+func ReadSessionTrace(a Adapter, path, id string, hash bool) (models.Trajectory, Report, verification.TraceInput, error) {
 	in := verification.TraceInput{}
 	if _, ok := a.(TraceDeclarer); !ok {
-		tr, rep, err := a.Parse(path)
+		tr, rep, err := parse(a, path, id)
 		return tr, rep, in, err
 	}
 	st, err := os.Stat(path)
@@ -116,7 +142,7 @@ func ReadTrace(a Adapter, path string, hash bool) (models.Trajectory, Report, ve
 		in.State, in.Detail = verification.TraceEmpty, path+" holds no byte"
 		return nil, Report{}, in, nil
 	}
-	tr, rep, err := a.Parse(path)
+	tr, rep, err := parse(a, path, id)
 	if err != nil {
 		in.State, in.Detail = verification.TraceUnparsable, fmt.Sprintf("the %s adapter cannot read %s: %v", a.Name(), path, err)
 		return nil, rep, in, nil
