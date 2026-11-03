@@ -58,8 +58,114 @@ func isFile(a models.ActionType) bool {
 // names the harness's read of its cwd file where the probe lost the name, and
 // collapses runs of opens. Events are in time order, ties in the order the
 // probe emitted them.
-func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
-	return collapseOpens(foldCwdFileRead(foldInPlaceWrites(foldAtomicWrites(resolveFDSearches(g)))))
+func (a Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
+	return collapseOpens(foldCwdFileRead(foldInPlaceWrites(foldAtomicWrites(resolveFDSearches(pathSearches(g, a.root))))))
+}
+
+// pathSearchProgram is the file name of the search program a Claude Code
+// build that does not search with its own executable runs from PATH (I-107,
+// I-128).
+const pathSearchProgram = "rg"
+
+// pathSearches recognises the searches of a Claude Code build that runs its
+// Grep and Glob through rg found on PATH, without --no-config (Reported,
+// from the strings of the 2.1.306 binary, I-107), which searchOf does not
+// know. A process is such a search only when it is the harness's own: a
+// child the agent's process (root) forked, whose first exec that took
+// effect runs a program the kernel resolved to a file named rg, from an
+// absolute path naming rg, with the arguments of a Grep or a Glob
+// (searchArgs), and no exec before it but failed attempts of rg in other
+// directories with the same arguments (the PATH lookup). Those attempts,
+// the exec and the process's exit then take the search's target
+// (searchTarget), so the command the forest reads from the first exec is
+// the search. An rg run through Bash is a child of the shell, or an exec
+// after the shell's own, and keeps its command line; an rg reached through
+// a link to another program, a script, a cut record or an exec the probe
+// did not see take effect is not recognised. Without a root nothing is.
+func pathSearches(g models.GroundTruth, root uint32) models.GroundTruth {
+	if root == 0 {
+		return g
+	}
+	type incarnation struct {
+		pid uint32
+		gen int
+	}
+	type search struct {
+		kind, rest, line string
+		// attempts are the stream indexes of the exec events up to and
+		// including the one that took effect.
+		attempts []int
+		bad      bool
+		done     bool
+	}
+	gen := map[uint32]int{}
+	at := make([]incarnation, len(g))
+	found := map[incarnation]*search{}
+	for i, e := range g {
+		if e.ActionType == models.ProcessFork && e.PID != 0 {
+			gen[e.PID]++
+		}
+		inc := incarnation{e.PID, gen[e.PID]}
+		at[i] = inc
+		if e.ActionType != models.ProcessExec || e.PID == 0 || e.PID == root {
+			continue
+		}
+		s := found[inc]
+		if s == nil {
+			s = &search{}
+			found[inc] = s
+		}
+		if s.done || s.bad {
+			continue
+		}
+		s.attempts = append(s.attempts, i)
+		if e.Image == nil {
+			continue // a failed attempt; checked once the exec that took effect is known
+		}
+		s.done = true
+		prog, rest, ok := strings.Cut(e.Target, " ")
+		im := e.Image
+		if !ok || e.PPID != root || im.Truncated || im.FilenameChanged || im.Interpreter != "" ||
+			!filepath.IsAbs(prog) || filepath.Base(prog) != pathSearchProgram || im.Filename != prog ||
+			!filepath.IsAbs(im.Program) || filepath.Base(im.Program) != pathSearchProgram {
+			s.bad = true
+			continue
+		}
+		if s.kind, ok = searchArgs(rest); !ok {
+			s.bad = true
+			continue
+		}
+		s.rest, s.line = rest, e.Target
+		for _, j := range s.attempts[:len(s.attempts)-1] {
+			a := g[j]
+			p, r, ok := strings.Cut(a.Target, " ")
+			if !ok || a.PPID != root || !filepath.IsAbs(p) || filepath.Base(p) != pathSearchProgram || r != rest {
+				s.bad = true
+				break
+			}
+		}
+	}
+	var out models.GroundTruth
+	for i, e := range g {
+		s := found[at[i]]
+		if s == nil || !s.done || s.bad {
+			continue
+		}
+		switch {
+		case e.ActionType == models.ProcessExec && i <= s.attempts[len(s.attempts)-1]:
+		case e.ActionType == models.ProcessExit && i > s.attempts[len(s.attempts)-1] && e.Target == s.line:
+		default:
+			continue
+		}
+		if out == nil {
+			out = append(models.GroundTruth(nil), g...)
+		}
+		out[i].Target, out[i].TargetTruncated = searchTarget(s.kind, s.rest, e)
+	}
+	if out == nil {
+		return g
+	}
+	return out
 }
 
 // fdSearchWindow bounds how long before a single-file search's exec the

@@ -585,13 +585,26 @@ func NormalizeGround(a Adapter, events models.GroundTruth) models.GroundTruth {
 
 // NormalizeCapture is NormalizeGround for a whole capture: an adapter that
 // tells the agent's own program from others (AgentImageUser) is given the
-// capture's RootImage first (I-107). Prepare and the baseline's Capture use
-// it on the capture as Rooted returns it.
+// capture's RootImage first (I-107), and one that tells the agent's own
+// process from others (AgentProcessUser) its RootPID (I-128). Prepare and
+// the baseline's Capture use it on the capture as Rooted returns it.
 func NormalizeCapture(a Adapter, g models.GroundTruthFile) models.GroundTruth {
 	if u, ok := a.(AgentImageUser); ok {
 		a = u.WithAgentImage(g.RootImage)
 	}
+	if u, ok := a.(AgentProcessUser); ok {
+		a = u.WithAgentProcess(g.RootPID)
+	}
 	return normalize(a, g.Events)
+}
+
+// AgentProcessUser is implemented by an adapter whose normalization needs
+// the pid of the agent's own process, the capture's root: Claude Code
+// recognises a search its harness runs with a program from PATH by the
+// process that started it (I-128). Given the pid, 0 when the capture has no
+// root, it returns the adapter to normalize with.
+type AgentProcessUser interface {
+	WithAgentProcess(pid uint32) Adapter
 }
 
 // AgentImageUser is implemented by an adapter whose Normalize needs the

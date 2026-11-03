@@ -30,6 +30,17 @@ type Adapter struct {
 	// WithAgentImage sets for normalizing one capture: a search is a run of
 	// it (I-107). Nil for a capture without the record.
 	agent *models.ExecImage
+	// root is the pid of the agent's own process, which WithAgentProcess
+	// sets for normalizing one capture: a search the harness runs with rg
+	// from PATH is a child of it (I-128). Zero when the capture has no root.
+	root uint32
+}
+
+// WithAgentProcess returns the adapter that normalizes a capture whose
+// agent process is pid (agent.AgentProcessUser, I-128).
+func (a Adapter) WithAgentProcess(pid uint32) agent.Adapter {
+	a.root = pid
+	return a
 }
 
 // WithAgentImage returns the adapter that normalizes a capture whose agent
