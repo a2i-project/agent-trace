@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"path/filepath"
+	"regexp"
 
 	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -117,14 +118,27 @@ func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTru
 // collapseOpens keeps the first of a run of opens of one file by the agent's
 // process: an open whose process's previous event is an open of the same
 // file, neither ambiguous, is dropped. Any other event of the process, on any
-// path, the harness's own files included, ends the run. The harness writes
-// its transcripts between two tool calls, so the opens of two calls on one
-// file stay two; the claims are not collapsed.
+// path, the harness's own files included, ends the run, except that a run
+// of opens of a file outside ~/.gemini passes over an open of the harness's
+// project configuration (projectConfig, I-118), which is kept. The
+// harness's start-up reads of its configuration keep their shape, and opens
+// of the project configuration itself collapse as any file's. The harness
+// writes its transcripts between two tool calls, so the opens of two calls
+// on one file stay two; the claims are not collapsed.
 func collapseOpens(g models.GroundTruth, started map[uint32]bool) models.GroundTruth {
+	// last is each process's previous event; other its previous event that
+	// is not an open of the project configuration.
 	last := map[uint32]models.GroundTruthEvent{}
+	other := map[uint32]models.GroundTruthEvent{}
 	out := make(models.GroundTruth, 0, len(g))
 	for _, e := range g {
 		prev, seen := last[e.PID]
+		if config := e.ActionType == models.FileOpen && !e.PathIsAmbiguous && projectConfig.MatchString(e.Target); !config {
+			if !geminiHome.MatchString(e.Target) {
+				prev, seen = other[e.PID]
+			}
+			other[e.PID] = e
+		}
 		last[e.PID] = e
 		if seen && e.ActionType == models.FileOpen && prev.ActionType == models.FileOpen && prev.Target == e.Target &&
 			!e.PathIsAmbiguous && !prev.PathIsAmbiguous && agentFile(e, started) {
@@ -134,3 +148,16 @@ func collapseOpens(g models.GroundTruth, started map[uint32]bool) models.GroundT
 	}
 	return out
 }
+
+// projectConfig is the harness's project configuration, which agy's process
+// opens, and only opens, before each file tool call. On the content capture
+// of the basic task with agy 1.4.7 (I-118) its open fell between the first
+// and the second of view_file's three opens of the file, 31 microseconds
+// after the first, so it would have split their run; the probe records the
+// process, not the thread. Only its open is passed over, and only in a run
+// of opens of a file outside ~/.gemini (geminiHome): a write or a close of
+// it, any other file and any other event still end a run.
+var (
+	projectConfig = regexp.MustCompile(`^/(?:home/[^/]+|root)/\.gemini/config/projects/[^/]+\.json$`)
+	geminiHome    = regexp.MustCompile(`^/(?:home/[^/]+|root)/\.gemini/`)
+)

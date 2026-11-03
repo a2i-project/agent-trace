@@ -115,6 +115,34 @@ func TestCollapseKeepsTheFirstOpen(t *testing.T) {
 	}
 }
 
+// The open of the harness's project configuration that agy 1.4.7 makes
+// before a file tool call can fall inside view_file's run of opens, from
+// another thread of the same process (I-118): it is kept and passed over,
+// so the run still keeps its first open only.
+func TestCollapsePassesOverTheProjectConfigOpen(t *testing.T) {
+	b := ws + "/b.txt"
+	us := time.Microsecond
+	g := models.GroundTruth{
+		withIn(ev(0, agentPID, models.FileOpen, b), "sha256:b0"),
+		ev(31*us, agentPID, models.FileOpen, projectConfigPath),
+		withIn(ev(170*us, agentPID, models.FileOpen, b), "sha256:b0"),
+		withIn(ev(403*us, agentPID, models.FileOpen, b), "sha256:b0"),
+		ev(690*us, agentPID, models.FileWrite, brain+"/logs/transcript.jsonl"),
+	}
+	want := render(models.GroundTruth{g[0], g[1], g[4]})
+	if got := render((Adapter{}).NormalizeStream(g)); got != want {
+		t.Errorf("NormalizeStream =\n%s\nwant\n%s", got, want)
+	}
+	// A run of opens of the configuration itself collapses as before.
+	cfg := models.GroundTruth{ev(0, agentPID, models.FileOpen, projectConfigPath), ev(us, agentPID, models.FileOpen, projectConfigPath)}
+	if got := render((Adapter{}).NormalizeStream(cfg)); got != render(cfg[:1]) {
+		t.Errorf("NormalizeStream =\n%s\nwant the first open of the configuration only", got)
+	}
+}
+
+// projectConfigPath is the project configuration agy 1.4.7 opened.
+const projectConfigPath = "/home/u/.gemini/config/projects/default-cli-project.json"
+
 // What the folds leave alone: each case is one change to a shape they take.
 func TestNormalizeStreamIsNarrow(t *testing.T) {
 	a, b := ws+"/a.txt", ws+"/b.txt"
@@ -137,6 +165,11 @@ func TestNormalizeStreamIsNarrow(t *testing.T) {
 		{"a create of the harness's file", models.GroundTruth{amb(ev(0, agentPID, models.FileWrite, brain+"/steps/4")), withIn(ev(1, agentPID, models.FileOpen, brain+"/steps/4/output.txt"), emptyHash)}},
 		{"a write of the directory that is not ambiguous", models.GroundTruth{ev(0, agentPID, models.FileWrite, ws), withIn(ev(1, agentPID, models.FileOpen, a), emptyHash)}},
 		{"a create with nothing after it", models.GroundTruth{amb(ev(0, agentPID, models.FileWrite, ws))}},
+		{"a write of the project configuration between", models.GroundTruth{ev(0, agentPID, models.FileOpen, a), ev(1, agentPID, models.FileWrite, projectConfigPath), ev(2, agentPID, models.FileOpen, a)}},
+		{"a close of the project configuration between", models.GroundTruth{ev(0, agentPID, models.FileOpen, a), ev(1, agentPID, models.FileClose, projectConfigPath), ev(2, agentPID, models.FileOpen, a)}},
+		{"an open of another configuration file between", models.GroundTruth{ev(0, agentPID, models.FileOpen, a), ev(1, agentPID, models.FileOpen, "/home/u/.gemini/config/config.json"), ev(2, agentPID, models.FileOpen, a)}},
+		{"the harness's configuration read around it", models.GroundTruth{ev(0, agentPID, models.FileOpen, "/home/u/.gemini/config/config.json"), ev(1, agentPID, models.FileOpen, projectConfigPath), ev(2, agentPID, models.FileOpen, "/home/u/.gemini/config/config.json")}},
+		{"an open of a project configuration in a subfolder between", models.GroundTruth{ev(0, agentPID, models.FileOpen, a), ev(1, agentPID, models.FileOpen, "/home/u/.gemini/config/projects/x/p.json"), ev(2, agentPID, models.FileOpen, a)}},
 	} {
 		if got := (Adapter{}).NormalizeStream(c.g); render(got) != render(c.g) {
 			t.Errorf("%s: NormalizeStream =\n%s\nwant it unchanged:\n%s", c.name, render(got), render(c.g))
