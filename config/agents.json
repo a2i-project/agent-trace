@@ -548,7 +548,7 @@
         "file": "{label}.opencode.db",
         "declared": true,
         "states_version": true,
-        "note": "Every session of the account is in one database, with a write-ahead log; a subagent is a session whose parent_id names its caller, in the same database. Which files the adapter declares as the trace (the database with its -wal, -shm and -journal; the snapshot repositories under snapshot/, which a git workspace gets; the tool-output files) is the user's decision, open (I-114)."
+        "note": "Every session of the account is in one database, with a write-ahead log; a subagent is a session whose parent_id names its caller, in the same database. The trace is the database with its -wal, -shm and -journal files; the snapshot repositories under snapshot/, which a git workspace gets, are housekeeping (I-116)."
       },
       "content": [
         {

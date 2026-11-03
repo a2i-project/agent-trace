@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 0dc0cf7 on 2026-10-31.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60), O-37 (V-75, V-76).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60), O-37 (V-75, V-76), O-38 (I-116).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29), O-20 (N-31), O-21 (P-39) and O-23 (P-36) are closed; the others are undecided.
 
@@ -110,7 +110,7 @@ Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, ne
 Blocked by: An agent that emits `git_commit` claims. No current adapter does.
 
 ### O-38: Which files are OpenCode's trace, and whether its first-run fetches are settled before a capture
-Status: Open. Raised 2026-11-03 by the OpenCode survey (I-112, I-114).
+Status: Closed by I-116 (the user's ruling of 2026-11-03). Raised 2026-11-03 by the OpenCode survey (I-112, I-114).
 Date: 2026-11-03.
 Question: (a) Which files does the OpenCode adapter declare as its trace for the fail-closed rule (V-59)? (b) Is the snapshot repository OpenCode keeps for a git workspace trace or housekeeping? (c) Are the one-time `@opencode-ai/plugin` install from the npm registry and the ripgrep download from GitHub settled before a capture, or recorded where they happen?
 Options: (a1) `~/.local/share/opencode/opencode.db` with its `-wal`, `-shm` and `-journal`, as Codex's thread databases (I-84, I-106); (a2) the same plus `~/.local/share/opencode/tool-output/` and the log; (a3) only the session's rows, a change elsewhere in the database not counted. (b1) housekeeping: it records file contents for undo, no claim; (b2) trace: a change to it changes what the session's patch parts point at. (c1) a warm-up `opencode run` outside the capture, in the same home, once per machine; (c2) install ripgrep system-wide so OpenCode finds `rg` on `PATH`, and warm up for the plugin only; (c3) record them where they happen.
