@@ -42,6 +42,9 @@ type Session struct {
 	// Trace is what reading the session found (V-59): a session that is
 	// missing, empty or damaged is a result, never a load error.
 	Trace verification.TraceInput
+	// StartupWindow applies the start-up window (V-82), as verify
+	// --startup-window does.
+	StartupWindow bool
 }
 
 // controlFile matches control-N.ground_truth.json.
@@ -142,7 +145,7 @@ func groundTruthName(r RunRecord) string {
 // the capture, a file that is missing or does not parse is an error the
 // caller records as X4.
 func LoadSession(c *Campaign, r RunRecord) (*Session, error) {
-	s := &Session{Rec: r, ID: c.ID(r), Dir: c.RunDir(r), ControlsDir: c.ControlsDir(r)}
+	s := &Session{Rec: r, ID: c.ID(r), Dir: c.RunDir(r), ControlsDir: c.ControlsDir(r), StartupWindow: c.StartupWindow}
 	a, ok := agent.Lookup(r.Agent)
 	if !ok {
 		return s, fmt.Errorf("no adapter %q is registered", r.Agent)
@@ -261,6 +264,9 @@ func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verificatio
 	v := agent.DeclarationVersion(s.Report.AgentVersion, s.Rec.Version)
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, v, s.G)
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.Adapter, v) // V-54
+	if s.StartupWindow {
+		in.Options.StartupOnly = agent.StartupFiles(s.Adapter, v, s.G) // V-82
+	}
 	in.Trace = s.Trace
 	in.Trace.Decl = agent.Trace(s.Adapter, s.G, agent.SessionOf(s.Report, "")) // V-59, I-105, V-80
 	return in

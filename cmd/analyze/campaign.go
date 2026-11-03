@@ -140,6 +140,8 @@ type Campaign struct {
 	// Config holds the agent profiles, for a run whose trajectory the
 	// manifest does not name; nil means the default config.
 	Config *config.Config
+	// StartupWindow applies the start-up window (V-82) to every session.
+	StartupWindow bool
 }
 
 // LoadCampaign reads manifest.json and, when present, annotations.json.

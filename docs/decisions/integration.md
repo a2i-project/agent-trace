@@ -1087,3 +1087,13 @@ Context: I-116 makes the snapshot repository housekeeping, to be declared like o
 Decision: Option (a). A git-workspace capture's controls, which create `agent-trace-control.txt` with `write` (I-88, I-115) and so make the harness record a snapshot, measure the commands and what they do beneath them (V-38); the adapter's `Canonical` replaces the per-run hashes and directories it shows, and nothing is declared.
 Consequences: Until that capture exists and `Canonical` is built from it, a run in a git workspace shows the snapshot repository's commands as unclaimed commands. Every built-in task's workspace is not a git repository, so no planned capture is affected.
 Alternatives rejected: A pattern declaration (a pattern explains whatever an attacker makes it match, which every exact declaration avoids); declaring from the survey's `strace` (not a `watch` capture, and the shapes carry hashes).
+
+### I-126: cmd/analyze applies the start-up window only when asked, as verify does
+Status: Accepted, implemented (`--startup-window` in `cmd/analyze/main.go`; `Options.StartupWindow`, `Campaign.StartupWindow`, `Session.StartupWindow` and `Session.input` in `cmd/analyze`; `inputs.startup_window` in `results.json` and its line in `report.md`; `TestStartupWindowAppliesTheRuleAsVerifyDoes`, `TestStartupWindowIsRecordedInTheResults`). Builds on V-82 and V-85.
+Date: 2026-11-03.
+Context: `cmd/verify --startup-window` reads an open of a declared start-up-only harness file after the start-up as the agent's (V-82), off by default. `cmd/analyze` verifies every run of a campaign in process and had no such switch, so a campaign analysis could not apply the rule a single verify applies.
+Decision: `cmd/analyze` takes `--startup-window`, off by default. When given, every verification of the analysis (the honest runs, the sensitivity settings and the attack sweep, all through `Session.input`) sets `StartupOnly` from `agent.StartupFiles` for the version that keys the other declarations: the session's, else the manifest's (`agent.DeclarationVersion`, V-85). `results.json` records `"startup_window": true` under `inputs` and `report.md` adds a line saying the window is on; off, neither names it.
+Consequences:
+- Without the flag `results.json` and `report.md` are byte-identical to the parent's on the same inputs.
+- With it, the analysis and a `verify --startup-window` of each run apply the same rule with the same version; the baselines are built as before, since `verify` builds none with the rule either.
+Alternatives rejected: On by default (V-82 keeps it off until a long interactive capture shows no honest run changes); reading the switch from the manifest (the capture does not decide how a run is verified).

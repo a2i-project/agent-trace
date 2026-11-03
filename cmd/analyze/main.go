@@ -9,7 +9,7 @@
 //
 //	analyze --campaign OUTPUT_DIR [--out DIR] [--protocol FILE]
 //	        [--comparison SWEEP_DIR] [--overhead LABEL=results.json]...
-//	        [--seeds N] [--jobs N]
+//	        [--seeds N] [--jobs N] [--startup-window]
 //
 // The thresholds, seeds and strata common to all agents are constants in
 // protocol.go; the per-agent targets are read from the protocol file
@@ -64,6 +64,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.BoolVar(&o.NoSensitivity, "no-sensitivity", false, "Skip the H3 sensitivity analyses (agreement grid and leave-one-out)")
 	fs.BoolVar(&o.NoLOO, "no-loo", false, "Skip only the leave-one-out pooled baseline, the costliest sensitivity setting")
 	fs.StringVar(&o.Diagnostics, "diagnostics", "", "Also write the E-5 Diagnose records of the sweep to this JSON file")
+	fs.BoolVar(&o.StartupWindow, "startup-window", false, "Apply the start-up window of V-82 to every verification, as verify --startup-window does: an open of a file the adapter declares its harness reads only at start-up, after the start-up, is the agent's. Off by default, as in verify")
 	fs.StringVar(&o.MeasureCost, "measure-cost", "", "Also time baseline building and verification of every run, sequentially, and write the timings to this JSON file. Timings vary between runs, so they stay out of results.json")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintln(errOut, "Usage: analyze --campaign DIR [flags]")

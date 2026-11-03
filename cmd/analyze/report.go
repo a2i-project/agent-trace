@@ -95,6 +95,9 @@ func Report(res *Results) string {
 	m.line("- protocol file `%s`, sha256 `%s`", res.Inputs.ProtocolFile, res.Inputs.ProtocolSHA256)
 	m.line("- bootstrap: %d resamples, seed %d; Wilson 95%%; exact one-sided 95%% Clopper-Pearson at 0 or n", res.Constants.BootstrapResamples, res.Constants.BootstrapSeed)
 	m.line("- primary baseline agreement %.2f of the controls; interval slack %d ms", res.Constants.PrimaryAgreement, res.Constants.IntervalSlackMS)
+	if res.Inputs.StartupWindow {
+		m.line("- start-up window on (V-82, `--startup-window`): an open of a declared start-up-only harness file after the start-up is the agent's")
+	}
 	m.line("- every rate carries three counts: considered (in scope), evaluated (the denominator), succeeded (the numerator, the runs or mutations with the property the rate names)")
 	m.blank()
 

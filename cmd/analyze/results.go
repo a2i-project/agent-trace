@@ -37,6 +37,9 @@ type Options struct {
 	NoLOO         bool
 	Diagnostics   string
 	MeasureCost   string
+	// StartupWindow applies the start-up window (V-82) to every
+	// verification, as verify --startup-window does.
+	StartupWindow bool
 }
 
 // Inputs records what the numbers were computed from.
@@ -55,6 +58,9 @@ type Inputs struct {
 	ProtocolSHA256    string   `json:"protocol_sha256"`
 	Comparison        string   `json:"comparison_directory,omitempty"`
 	Overhead          []string `json:"overhead_runs,omitempty"`
+	// StartupWindow is present, true, only when --startup-window applied
+	// the start-up window (V-82) to every verification.
+	StartupWindow bool `json:"startup_window,omitempty"`
 }
 
 // Constants snapshots the registered values the run used, so the results
@@ -208,6 +214,7 @@ func Analyze(o Options) (*Results, error) {
 		return nil, fmt.Errorf("the agent version config is needed for the strict version check (I-57): %w", err)
 	}
 	c.Config = cfg
+	c.StartupWindow = o.StartupWindow
 	proto, err := LoadProtocol(ProtocolPath(o.Protocol, cfg.Path))
 	if err != nil {
 		return nil, err
@@ -227,7 +234,7 @@ func Analyze(o Options) (*Results, error) {
 	res.Inputs = Inputs{
 		Campaign: filepath.Base(filepath.Clean(o.Campaign)), ManifestSHA256: c.ManifestSHA256, ManifestCommit: c.Manifest.Commit, ManifestStamp: c.Manifest.Generated,
 		Annotations: len(c.Annotations.Runs) > 0, AgentConfig: filepath.Base(cfg.Path), AgentConfigSHA256: fileSHA256(cfg.Path),
-		ProtocolFile: filepath.Base(proto.path), ProtocolSHA256: proto.sha256,
+		ProtocolFile: filepath.Base(proto.path), ProtocolSHA256: proto.sha256, StartupWindow: o.StartupWindow,
 	}
 	if o.Comparison != "" {
 		res.Inputs.Comparison = filepath.Base(filepath.Clean(o.Comparison))
