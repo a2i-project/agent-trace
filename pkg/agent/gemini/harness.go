@@ -3,6 +3,9 @@ package gemini
 import (
 	"regexp"
 	"strings"
+
+	"github.com/agent-trace/agent-trace/pkg/agent"
+	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
 // What the harness does around the agent's calls, measured on agy 1.3.4 with
@@ -67,6 +70,40 @@ func (Adapter) IsHarnessOwned(path string) bool { return harnessOwned.MatchStrin
 // lh3.googleusercontent.com) was in all six runs, so the baseline explains
 // it and it is not declared.
 func (Adapter) HarnessHosts() []string { return []string{"oauth2.googleapis.com"} }
+
+// housekeepingVersions are the versions whose token renewal is declared:
+// 1.4.7, whose content capture shows the renewal's request and whose binary
+// holds its URL. 1.3.4 renewed on both of its paired captures, but without
+// request content, so only its connection is measured; it declares nothing
+// and the connection stays unexplained harness network activity (V-34).
+var housekeepingVersions = map[string]bool{"1.4.7": true}
+
+// tokenRenewal is agy's renewal of its access token (V-85): on the content
+// capture of the basic task with agy 1.4.7 (2026-11-03) the agent's own
+// process, at the start of the task run and in none of the five controls,
+// connected to oauth2.googleapis.com and POSTed a body to its token
+// endpoint, https://oauth2.googleapis.com/token, with no query, which the
+// strings of the binary hold (**Reported**). Its GET of the account's
+// userinfo on www.googleapis.com, which every run makes, the baseline
+// explains, so it is not declared.
+var tokenRenewal = []agent.Housekeeping{
+	{ActionType: models.NetConnect, Target: "oauth2.googleapis.com"},
+	{ActionType: models.NetRequest, Target: "POST https://oauth2.googleapis.com/token", Body: true},
+}
+
+// HarnessHousekeeping declares the token renewal of the versions in
+// housekeepingVersions as the harness's own network housekeeping (V-54,
+// V-85). An agy session states no version, so the version is the one the
+// capture recorded (agent.DeclarationVersion). The exact host and path
+// only: another path, a query, another method or a POST without a body on
+// that host stays checked, and a claim naming the host keeps its events in
+// the alignment (V-54).
+func (Adapter) HarnessHousekeeping(version string) []agent.Housekeeping {
+	if !housekeepingVersions[version] {
+		return nil
+	}
+	return append([]agent.Housekeeping(nil), tokenRenewal...)
+}
 
 // SensitiveFiles are agy's security-sensitive files (V-40, I-59), the three
 // configuration files its process opened at start-up in every run of the

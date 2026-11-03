@@ -52,7 +52,15 @@ func paired147Claims(t *testing.T) models.Trajectory {
 	return tr
 }
 
+// paired147Verdict verifies as cmd/verify does with --agent-version 1.4.7:
+// the session states no version, so the declarations take the capture's
+// (V-85).
 func paired147Verdict(t *testing.T, tr models.Trajectory, agreement float64) (verification.Verdict, int) {
+	t.Helper()
+	return paired147VerdictAs(t, Adapter{}, "1.4.7", tr, agreement)
+}
+
+func paired147VerdictAs(t *testing.T, a agent.Adapter, version string, tr models.Trajectory, agreement float64) (verification.Verdict, int) {
 	t.Helper()
 	g := paired147Run(t, "basic")
 	var measured verification.Baseline
@@ -64,7 +72,9 @@ func paired147Verdict(t *testing.T, tr models.Trajectory, agreement float64) (ve
 		}
 		measured, rules = b.Predicate(g.Workspace), len(b.Rules)
 	}
-	return verification.Verify(agent.Prepare(Adapter{}, tr, g, measured, verification.Options{IntervalSlack: 500 * time.Millisecond})), rules
+	in := agent.Prepare(a, tr, g, measured, verification.Options{IntervalSlack: 500 * time.Millisecond})
+	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(a, agent.DeclarationVersion("", version))
+	return verification.Verify(in), rules
 }
 
 func TestPaired147HasFiveControlsAndNoEventLoss(t *testing.T) {
@@ -81,13 +91,11 @@ func TestPaired147HasFiveControlsAndNoEventLoss(t *testing.T) {
 
 // At every agreement the five controls give the same 279 rules, all eleven
 // claims are corroborated and the harness's own file events are explained.
-// What is left is agy's renewal of its access token at the start of the
-// task run, which no control made: the connection to oauth2.googleapis.com,
-// reported apart as unexplained harness network activity (V-34), and, read
-// with content, its POST of the token endpoint, which is Unrecorded, so the
-// run is NOT FAITHFUL. No declaration explains the renewal of 1.4.7: an
-// agy session states no version (I-57), and V-54 takes a declaration's
-// version from the session only. This pins the counts, so a change is seen.
+// agy's renewal of its access token at the start of the task run, which no
+// control made, is the connection to oauth2.googleapis.com and, read with
+// content, its POST of the token endpoint with a body; with the capture's
+// version the adapter declares both as housekeeping (V-85), and the run is
+// FAITHFUL. This pins the counts, so a change is seen.
 func TestPaired147AtEachAgreement(t *testing.T) {
 	tr := paired147Claims(t)
 	if len(tr) != 11 {
@@ -102,15 +110,63 @@ func TestPaired147AtEachAgreement(t *testing.T) {
 			t.Errorf("agreement %v: corroborated %d mismatched %v unwitnessed %v unverified %v outside %v",
 				a, len(v.Corroborated), v.Mismatched, v.Unwitnessed, v.Unverified, v.OutsideInterval)
 		}
-		if len(v.Unrecorded) != 1 || v.Unrecorded[0].ActionType != models.NetRequest || v.Unrecorded[0].Target != "POST https://oauth2.googleapis.com/token" || v.Unrecorded[0].RequestHash == nil {
-			t.Errorf("agreement %v: unrecorded %v, want only the token renewal's POST with its body", a, v.Unrecorded)
+		if got := renderNet(v.HarnessHousekeeping); got != "net_connect oauth2.googleapis.com|net_request POST https://oauth2.googleapis.com/token" {
+			t.Errorf("agreement %v: declared housekeeping %q, want the renewal's connection and POST", a, got)
 		}
-		if len(v.UnexplainedHarnessNet) != 1 || v.UnexplainedHarnessNet[0].ActionType != models.NetConnect || v.UnexplainedHarnessNet[0].Target != "oauth2.googleapis.com" {
-			t.Errorf("agreement %v: unexplained harness network activity %v, want only the connection to oauth2.googleapis.com", a, v.UnexplainedHarnessNet)
+		if v.Findings() != 0 || len(v.Unrecorded) != 0 || len(v.UnexplainedHarnessNet) != 0 || len(v.UnexplainedHarness) != 0 || v.Outcome != verification.OutcomeFaithful {
+			t.Errorf("agreement %v: %d findings, unrecorded %v, harness network %v, %d harness events, outcome %s; want FAITHFUL",
+				a, v.Findings(), v.Unrecorded, v.UnexplainedHarnessNet, len(v.UnexplainedHarness), v.Outcome)
 		}
-		if len(v.UnexplainedHarness) != 0 || v.Outcome != verification.OutcomeNotFaithful {
-			t.Errorf("agreement %v: %d unexplained harness events, outcome %s; want none and NOT FAITHFUL", a, len(v.UnexplainedHarness), v.Outcome)
+	}
+}
+
+func renderNet(g models.GroundTruth) string {
+	var s []string
+	for _, e := range g {
+		s = append(s, string(e.ActionType)+" "+e.Target)
+	}
+	return strings.Join(s, "|")
+}
+
+// Without a version, as before V-85, nothing is declared: the POST is
+// Unrecorded and the connection unexplained harness network activity, so
+// the run is NOT FAITHFUL. The declaration, not the baseline, explains the
+// renewal; 1.3.4 declares nothing.
+func TestPaired147RenewalIsAFindingWithoutTheVersion(t *testing.T) {
+	for _, version := range []string{"", "1.3.4"} {
+		v, _ := paired147VerdictAs(t, Adapter{}, version, paired147Claims(t), 0.2)
+		if len(v.Unrecorded) != 1 || v.Unrecorded[0].Target != "POST https://oauth2.googleapis.com/token" || len(v.UnexplainedHarnessNet) != 1 ||
+			len(v.HarnessHousekeeping) != 0 || v.Outcome != verification.OutcomeNotFaithful {
+			t.Errorf("version %q: unrecorded %v, harness network %v, housekeeping %v, outcome %s; want the renewal as the finding",
+				version, v.Unrecorded, v.UnexplainedHarnessNet, v.HarnessHousekeeping, v.Outcome)
 		}
+	}
+}
+
+// A claim naming the host keeps the renewal's connection in the alignment
+// (V-54): read_url_content of a page on oauth2.googleapis.com claims the
+// connection, which then pairs with the renewal's, and the POST, a target
+// no claim names, stays declared housekeeping.
+func TestPaired147AClaimOfTheHostKeepsItsConnectionChecked(t *testing.T) {
+	tr := paired147Claims(t)
+	fetch := tr[0]
+	fetch.Tool, fetch.ActionType, fetch.Target, fetch.OutputHash = toolReadURL, models.NetConnect, "oauth2.googleapis.com", nil
+	g := paired147Run(t, "basic")
+	for _, e := range g.Events {
+		if e.ActionType == models.NetConnect && e.Target == "oauth2.googleapis.com" {
+			fetch.Timestamp, fetch.End = e.Timestamp.Add(-time.Millisecond), nil
+		}
+	}
+	v, _ := paired147Verdict(t, append(models.Trajectory{fetch}, tr...), 0.2)
+	if got := renderNet(v.HarnessHousekeeping); got != "net_request POST https://oauth2.googleapis.com/token" {
+		t.Errorf("declared housekeeping %q, want the POST only", got)
+	}
+	var paired bool
+	for _, p := range v.Corroborated {
+		paired = paired || p.Entry.Tool == toolReadURL && p.Event.Target == "oauth2.googleapis.com"
+	}
+	if !paired || len(v.Corroborated) != 12 {
+		t.Errorf("the fetch's connection is not paired with the observed one: corroborated %d, unwitnessed %v", len(v.Corroborated), v.Unwitnessed)
 	}
 }
 

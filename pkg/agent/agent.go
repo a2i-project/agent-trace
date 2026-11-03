@@ -112,10 +112,10 @@ type StartupReader interface {
 }
 
 // StartupFiles is the adapter's declaration of its harness's start-up-only
-// files for a capture and the harness version its session records
-// (Report.AgentVersion), as the verifier takes it when the rule is switched
-// on (verification.Options.StartupOnly, V-82). Nil when the adapter
-// declares nothing for the version or the session states none.
+// files for a capture and the harness version DeclarationVersion gives, as
+// the verifier takes it when the rule is switched on
+// (verification.Options.StartupOnly, V-82). Nil when the adapter declares
+// nothing for the version or the version is empty.
 func StartupFiles(a Adapter, version string, g models.GroundTruthFile) func(path string) bool {
 	sr, ok := a.(StartupReader)
 	if !ok || version == "" {
@@ -183,13 +183,11 @@ type CaptureBookkeeper interface {
 }
 
 // HarnessBookkeeping is the adapter's bookkeeping declaration for a capture
-// and the harness version its session records (Report.AgentVersion), as
-// the verifier takes it (verification.Options.HarnessBookkeeping, V-50):
-// what HarnessBookkeeper declares and what CaptureBookkeeper declares for
-// the capture's raw events (V-58). Nil when the adapter declares nothing or
-// the session states no version: a declaration is keyed by the version,
-// and a version from anywhere else (a configuration, a flag) is not the one
-// the harness ran.
+// and the harness version DeclarationVersion gives, as the verifier takes
+// it (verification.Options.HarnessBookkeeping, V-50): what
+// HarnessBookkeeper declares and what CaptureBookkeeper declares for the
+// capture's raw events (V-58). Nil when the adapter declares nothing or the
+// version is empty: a declaration is keyed by the version.
 func HarnessBookkeeping(a Adapter, version string, g models.GroundTruthFile) func(models.GroundTruthEvent) bool {
 	if version == "" {
 		return nil
@@ -260,14 +258,27 @@ type HarnessHousekeeper interface {
 	HarnessHousekeeping(version string) []Housekeeping
 }
 
+// DeclarationVersion is the harness version the version-gated declarations
+// (HarnessBookkeeping, HarnessHousekeeping, StartupFiles) are keyed by
+// (V-85): the version the session states (Report.AgentVersion) when it
+// states one, else the version the capture recorded, which the caller
+// passes (verify --agent-version, a campaign manifest's version). A session
+// that states its version decides alone; a recorded version that differs
+// from it is the caller's error to report, never used here.
+func DeclarationVersion(session, recorded string) string {
+	if session != "" {
+		return session
+	}
+	return recorded
+}
+
 // HarnessHousekeeping is the adapter's housekeeping declaration for the
-// harness version its session records (Report.AgentVersion), as the
-// verifier takes it (verification.Options.HarnessHousekeeping, V-54): a
+// harness version DeclarationVersion gives, as the verifier takes it (verification.Options.HarnessHousekeeping, V-54): a
 // predicate that recognises a net_connect or net_request equal to a
 // declared action, with an untruncated target and, for a request, a body
 // exactly when the declaration says so, or a body-less request of a
 // declared origin outside its excepted paths (V-57). Nil when the adapter
-// declares nothing for the version or the session states none.
+// declares nothing for the version or the version is empty.
 func HarnessHousekeeping(a Adapter, version string) func(models.GroundTruthEvent) bool {
 	hk, ok := a.(HarnessHousekeeper)
 	if !ok || version == "" {

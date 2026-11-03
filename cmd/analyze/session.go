@@ -257,9 +257,10 @@ func BuildBaseline(a agent.Adapter, version string, controls []models.GroundTrut
 // input prepares verification input for claims against this session's capture.
 func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verification.Input {
 	in := agent.PrepareWithBaseline(s.Adapter, claims, s.G, b, verification.Options{IntervalSlack: IntervalSlack})
-	// The session's own version, as cmd/verify takes it (V-50).
-	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, s.Report.AgentVersion, s.G)
-	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.Adapter, s.Report.AgentVersion) // V-54
+	// The session's version, or the manifest's when it states none (V-85).
+	v := agent.DeclarationVersion(s.Report.AgentVersion, s.Rec.Version)
+	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, v, s.G)
+	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.Adapter, v) // V-54
 	in.Trace = s.Trace
 	in.Trace.Decl = agent.Trace(s.Adapter, s.G, agent.SessionOf(s.Report, "")) // V-59, I-105, V-80
 	return in

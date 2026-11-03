@@ -145,13 +145,17 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Options.IgnoreExits = in.Options.IgnoreExits || ignoreExits
 	in.ServerCalls = rep.ServerCalls                                                    // V-45
 	in.ModelRequests, in.ModelRequestMethod = rep.ModelRequests, rep.ModelRequestMethod // P-43
-	// The harness's bookkeeping files of the version the session records (V-50).
-	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, rep.AgentVersion, gt)
+	// The version-gated declarations take the session's version, or the
+	// one the capture recorded when the session states none (V-85); the
+	// check above refused a flag that disagrees with the session.
+	declVersion := agent.DeclarationVersion(rep.AgentVersion, vflags.version)
+	// The harness's bookkeeping files of that version (V-50).
+	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, declVersion, gt)
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
-	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, rep.AgentVersion)
+	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, declVersion)
 	// Its start-up-only files, only when the rule is switched on (V-82).
 	if startupWindow {
-		in.Options.StartupOnly = agent.StartupFiles(adapter, rep.AgentVersion, gt)
+		in.Options.StartupOnly = agent.StartupFiles(adapter, declVersion, gt)
 	}
 	// The session's own trace files, and what reading them found (V-59),
 	// named by the id the capture recorded when it is given (I-110).
@@ -194,7 +198,7 @@ func printStartup(w io.Writer, r reportInput) {
 	switch {
 	case s == nil:
 	case !s.Declared:
-		_, _ = fmt.Fprintf(w, "start-up:     window on (V-82), but the %s adapter declares no start-up file for version %q: nothing is taken from the harness\n", r.adapter, r.parse.AgentVersion)
+		_, _ = fmt.Fprintf(w, "start-up:     window on (V-82), but the %s adapter declares no start-up file for version %q: nothing is taken from the harness\n", r.adapter, r.version.version)
 	case s.Boundary == nil:
 		_, _ = fmt.Fprintf(w, "start-up:     window on (V-82), but neither a write of the session's transcript nor a claimed call marks the start-up's end: nothing is taken from the harness\n")
 	default:
