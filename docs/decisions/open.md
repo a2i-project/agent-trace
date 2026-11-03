@@ -109,6 +109,14 @@ Options: (a) keep V-47; (b) pair a `git_commit` claim with the close of the ref 
 Current behaviour: V-47: a `git_commit` claim is set aside as out of capture, never aligned and never a finding, and the run is at best INCONCLUSIVE. The fs probe already records the ref and object writes inside the workspace with their closed-file hashes, so no new kernel probe is needed. A packed ref (`.git/packed-refs`), a commit made by a `git` outside the tracked tree, or a repository outside the fs scope would need their own rules.
 Blocked by: An agent that emits `git_commit` claims. No current adapter does.
 
+### O-38: Which files are OpenCode's trace, and whether its first-run fetches are settled before a capture
+Status: Open. Raised 2026-11-03 by the OpenCode survey (I-112, I-114).
+Date: 2026-11-03.
+Question: (a) Which files does the OpenCode adapter declare as its trace for the fail-closed rule (V-59)? (b) Is the snapshot repository OpenCode keeps for a git workspace trace or housekeeping? (c) Are the one-time `@opencode-ai/plugin` install from the npm registry and the ripgrep download from GitHub settled before a capture, or recorded where they happen?
+Options: (a1) `~/.local/share/opencode/opencode.db` with its `-wal`, `-shm` and `-journal`, as Codex's thread databases (I-84, I-106); (a2) the same plus `~/.local/share/opencode/tool-output/` and the log; (a3) only the session's rows, a change elsewhere in the database not counted. (b1) housekeeping: it records file contents for undo, no claim; (b2) trace: a change to it changes what the session's patch parts point at. (c1) a warm-up `opencode run` outside the capture, in the same home, once per machine; (c2) install ripgrep system-wide so OpenCode finds `rg` on `PATH`, and warm up for the plugin only; (c3) record them where they happen.
+Current behaviour: The profile declares the trace (I-114): the capture copies the database and treats a database or session that is gone as a trace that is gone. No adapter exists, so nothing is declared to `verify`. The fetches happen in the first run that meets them.
+Recommendation: (a1), (b1), (c1): the database is the only place the session lives and it changes as a whole file; the snapshot repository holds no claim; a warm-up keeps the harness's one-time actions out of every recorded run without installing anything.
+
 ## Proposals (not decided)
 
 ### O-18: Move net hooks to the kernel socket layer (fentry or LSM)

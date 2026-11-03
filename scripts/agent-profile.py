@@ -29,16 +29,17 @@ SCHEMA = 2
 # The methods the capture scripts implement.
 TOOL_SETS = {"list", "agent-md", "none"}
 SESSIONS = {"assigned", "stdout-json"}
-TRACES = {"jsonl-session", "sqlite-conversation", "jsonl-rollout"}
+TRACES = {"jsonl-session", "sqlite-conversation", "jsonl-rollout", "sqlite-sessions"}
 # A declared trace is checked after the run (missing, empty, damaged or
 # read); only these trace methods have that check.
-STATE_CHECKED = {"jsonl-session", "jsonl-rollout", "sqlite-conversation"}
+STATE_CHECKED = {"jsonl-session", "jsonl-rollout", "sqlite-conversation", "sqlite-sessions"}
 # Placeholders of an invocation besides the profile's params: each stands for
 # a whole word.
 PLACEHOLDERS = {"{isolation}", "{model}", "{tool_set}", "{session}", "{prompt}"}
 # Placeholders filled inside a word, from the profile's model record.
 INLINE = {"{effort}": "effort", "{catalog}": "catalog"}
 STDIN = {"inherit", "null"}
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def fail(msg, code=1):
@@ -121,6 +122,18 @@ def shell(path, agent, task):
     pe = p.get("pass_env") or {}
     put("p_pass_env", pe.get("names") or [])
     put("p_pass_env_why", pe.get("why", ""))
+    # Secret environment (a model provider's key): the names only; the
+    # values reach the agent through its stdin, never a command line, so
+    # the agent's stdin must otherwise be /dev/null.
+    se = p.get("secret_env") or {}
+    names = se.get("names") or []
+    for n in names:
+        if not isinstance(n, str) or not ENV_NAME.match(n):
+            fail(f"{where}: secret_env name {n!r} is not an environment variable name")
+    if names and p.get("stdin", "inherit") != "null":
+        fail(f"{where}: secret_env passes its values on the agent's stdin, so the profile's stdin must be null")
+    put("p_secret_env", names)
+    put("p_secret_env_why", se.get("why", ""))
 
     model = p.get("model") or {}
     put("p_model_default", model.get("default") or fail(f"{where}: no model.default"))
@@ -133,6 +146,18 @@ def shell(path, agent, task):
     iso = p.get("isolation") or {}
     put("p_isolation", iso.get("flags") or [])
     put("p_isolation_env", iso.get("override_env", ""))
+    put("p_isolation_setenv", [f"{k}={v}" for k, v in (iso.get("env") or {}).items()])
+    # The agent's own configuration file, agent-trace's and outside the
+    # repository: its content is the profile's, its path is passed in an
+    # environment variable.
+    cf = p.get("config_file") or {}
+    if cf and not (cf.get("path") and cf.get("env") and isinstance(cf.get("content"), dict)):
+        fail(f"{where}: config_file needs a path, an env and a content object")
+    if cf and not ENV_NAME.match(cf["env"]):
+        fail(f"{where}: config_file.env {cf['env']!r} is not an environment variable name")
+    put("p_config_file_path", cf.get("path", ""))
+    put("p_config_file_env", cf.get("env", ""))
+    put("p_config_file_content", json.dumps(cf["content"], indent=2) + "\n" if cf else "")
     put("p_instruction_files", (p.get("instruction_files") or {}).get("paths") or [])
 
     ts = p.get("tool_set") or {}
@@ -179,7 +204,9 @@ def shell(path, agent, task):
         fail(f"{where}: trace method {tr.get('method')!r} is not implemented ({either(sorted(TRACES))})")
     if tr.get("declared") and tr["method"] not in STATE_CHECKED:
         fail(f"{where}: a declared trace needs a trace method with a state check ({either(sorted(STATE_CHECKED))})")
-    for k in ("method", "dir", "file", "subagents", "snapshots"):
+    if tr.get("method") == "sqlite-sessions" and not tr.get("database"):
+        fail(f"{where}: trace method sqlite-sessions needs trace.database, the database file in trace.dir")
+    for k in ("method", "dir", "file", "subagents", "snapshots", "database"):
         put("p_trace_" + k, tr.get(k, ""))
     if tr.get("databases") and "{label}" not in tr.get("snapshots", ""):
         fail(f"{where}: trace.databases needs trace.snapshots, the directory of their copies with {{label}}")

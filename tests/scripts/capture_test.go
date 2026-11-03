@@ -4,6 +4,8 @@
 package scripts
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -155,6 +157,63 @@ with open(os.path.join(os.environ["FAKE_DIR"], "events.json"), "w") as f:
 print(json.dumps({"conversation_id": cid, "response": "ok"}, separators=(",", ":")))
 `
 
+// fakeOpencode stands in for OpenCode 1.19.5: it prints its version, and
+// for opencode run it records its arguments, whether its stdin is
+// /dev/null, the hash of SCILIFELAB_API_KEY in its environment, whether
+// any command line from it up to the capture script holds the key, OPENCODE_CONFIG and the
+// isolation variables; it writes a session with one assistant message of
+// the -m provider/model into ~/.local/share/opencode/opencode.db, and, when
+// the prompt names the task tool, a subagent session whose parent_id names
+// it, with one tool part. It prints the session id as --format json does.
+// For the task run with FAKE_TASK=delete it deletes the database again.
+const fakeOpencode = `#!/usr/bin/env python3
+import hashlib, json, os, sqlite3, stat, sys, uuid
+args = sys.argv[1:]
+if args[:1] == ["--version"]:
+    print("1.19.5"); sys.exit()
+fake = os.environ["FAKE_DIR"]
+key = os.environ.get("SCILIFELAB_API_KEY", "")
+st = os.fstat(0)
+null = stat.S_ISCHR(st.st_mode) and os.path.samestat(st, os.stat("/dev/null"))
+# Up to the capture script: the test's own ancestors are not the capture's.
+leak, pid = False, os.getpid()
+while pid > 1:
+    argv = open("/proc/%d/cmdline" % pid, "rb").read()
+    if key and key.encode() in argv:
+        leak = True
+    if b"/capture-agent.sh\0" in argv:
+        break
+    pid = int(open("/proc/%d/stat" % pid).read().rsplit(")", 1)[1].split()[1])
+with open(os.path.join(fake, "opencode.calls"), "a") as f:
+    f.write(json.dumps({"args": args, "stdin_null": null, "key_sha256": hashlib.sha256(key.encode()).hexdigest(), "key_on_argv": leak,
+        "config": os.environ.get("OPENCODE_CONFIG", ""), "project_config": os.environ.get("OPENCODE_DISABLE_PROJECT_CONFIG", ""),
+        "models_fetch": os.environ.get("OPENCODE_DISABLE_MODELS_FETCH", "")}) + "\n")
+provider, model = args[args.index("-m") + 1].split("/", 1)
+prompt = args[-1]
+d = os.path.join(os.environ["HOME"], ".local", "share", "opencode")
+os.makedirs(d, exist_ok=True)
+path = os.path.join(d, "opencode.db")
+c = sqlite3.connect(path)
+c.execute("create table if not exists session (id text primary key, parent_id text, version text)")
+c.execute("create table if not exists message (id text primary key, session_id text, data text)")
+c.execute("create table if not exists part (id text primary key, session_id text, data text)")
+sid = "ses_" + uuid.uuid4().hex[:26]
+def message(s):
+    c.execute("insert into message values (?, ?, ?)", ("msg_" + uuid.uuid4().hex, s, json.dumps({"role": "assistant", "providerID": provider, "modelID": model})))
+c.execute("insert into session values (?, null, '1.19.5')", (sid,))
+message(sid)
+if "task tool" in prompt:
+    sub = "ses_" + uuid.uuid4().hex[:26]
+    c.execute("insert into session values (?, ?, '1.19.5')", (sub, sid))
+    message(sub)
+    c.execute("insert into part values (?, ?, ?)", ("prt_" + uuid.uuid4().hex, sub, json.dumps({"type": "tool", "tool": "bash"})))
+c.commit(); c.close()
+if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") == "delete":
+    os.remove(path)
+json.dump([], open(os.path.join(fake, "events.json"), "w"))
+print(json.dumps({"type": "step_start", "timestamp": 1, "sessionID": sid}, separators=(",", ":")))
+`
+
 const fakeWatch = `#!/usr/bin/env bash
 set -e
 out= ws=
@@ -228,6 +287,7 @@ func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	write(t, filepath.Join(bin, "claude"), fakeClaude, 0o755)
 	write(t, filepath.Join(bin, "codex"), fakeCodex, 0o755)
 	write(t, filepath.Join(bin, "agy"), fakeAgy, 0o755)
+	write(t, filepath.Join(bin, "opencode"), fakeOpencode, 0o755)
 	write(t, filepath.Join(bin, "sudo"), fakeSudo, 0o755)
 	write(t, filepath.Join(bin, "setpriv"), fakeSetpriv, 0o755)
 	home := filepath.Join(tmp, "home")
@@ -752,5 +812,144 @@ func TestCaptureOfAgyKeepsARunWhoseDatabaseIsGoneOrDamaged(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(out, "control-1.session-id.txt")); err != nil {
 			t.Errorf("%q: the control's session id is not recorded: %v", mode, err)
 		}
+	}
+}
+
+// testKey stands in for a model provider's key in the OpenCode tests.
+const testKey = "test-key-0123456789abcdef"
+
+// runOpencode runs a capture of the opencode profile with CONTROLS=1 and
+// the key in the environment, unless key is empty.
+func runOpencode(t *testing.T, mode, task, key string, extra ...string) (root, tmp, out, log string, err error) {
+	t.Helper()
+	root, tmp, env := layout(t, mode)
+	out = filepath.Join(tmp, "out")
+	args := append([]string{filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "opencode",
+		"--task", task, "--allow-unconfigured-version"}, extra...)
+	cmd := exec.Command("bash", append(args, out)...)
+	cmd.Env = env
+	if key != "" {
+		cmd.Env = append(cmd.Env, "SCILIFELAB_API_KEY="+key)
+	}
+	b, err := cmd.CombinedOutput()
+	return root, tmp, out, string(b), err
+}
+
+// OpenCode's key is a secret environment variable (I-113): every run gets
+// it on its stdin through the reader shell, with its stdin /dev/null when
+// the agent starts, and no command line of the run's ancestors holds it;
+// the configuration file is written from the profile and named in
+// OPENCODE_CONFIG; the isolation and version-lock variables reach the run;
+// the session database is copied with the session and its subagent
+// (I-114), and the model check reads provider/model from it.
+func TestCaptureOfOpencodePassesTheKeyOnStdinOnly(t *testing.T) {
+	_, tmp, out, log, err := runOpencode(t, "", "parallel", testKey)
+	if err != nil {
+		t.Fatalf("capture: %v\n%s", err, log)
+	}
+	if strings.Contains(log, testKey) {
+		t.Errorf("the log holds the key:\n%s", log)
+	}
+	calls, err := os.ReadFile(filepath.Join(tmp, "fake", "opencode.calls"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(tmp, "home", ".config", "agent-trace", "opencode-1.19.5.json")
+	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
+	if len(lines) != 2 { // the task and CONTROLS=1
+		t.Fatalf("opencode ran %d times:\n%s", len(lines), calls)
+	}
+	sum := sha256.Sum256([]byte(testKey))
+	for _, l := range lines {
+		var c struct {
+			Args          []string `json:"args"`
+			StdinNull     bool     `json:"stdin_null"`
+			KeySHA256     string   `json:"key_sha256"`
+			KeyOnArgv     bool     `json:"key_on_argv"`
+			Config        string   `json:"config"`
+			ProjectConfig string   `json:"project_config"`
+			ModelsFetch   string   `json:"models_fetch"`
+		}
+		if err := json.Unmarshal([]byte(l), &c); err != nil {
+			t.Fatal(err)
+		}
+		if !c.StdinNull || c.KeySHA256 != hex.EncodeToString(sum[:]) || c.KeyOnArgv || c.Config != config ||
+			c.ProjectConfig != "1" || c.ModelsFetch != "1" || strings.Join(c.Args[:5], " ") != "run --format json -m scilifelab/Qwen3-235B-A22B" {
+			t.Errorf("opencode call: %s", l)
+		}
+	}
+	b, err := os.ReadFile(config)
+	if err != nil || !strings.Contains(string(b), `"apiKey": "{env:SCILIFELAB_API_KEY}"`) || strings.Contains(string(b), testKey) {
+		t.Errorf("configuration file: %v\n%s", err, b)
+	}
+	order, _ := os.ReadFile(filepath.Join(out, "order.tsv"))
+	for _, want := range []string{"model_check=0;observed=scilifelab/Qwen3-235B-A22B;subagents=scilifelab/Qwen3-235B-A22B\t", "subagents=1;subagent_tool_calls=1"} {
+		if !strings.Contains(string(order), want) {
+			t.Errorf("order.tsv lacks %q:\n%s", want, order)
+		}
+	}
+	if st, _ := os.ReadFile(filepath.Join(out, "parallel.trace.txt")); strings.TrimSpace(string(st)) != "read" {
+		t.Errorf("parallel.trace.txt = %q", st)
+	}
+	meta, _ := os.ReadFile(filepath.Join(out, "task-meta.txt"))
+	for _, want := range []string{"config_file=~/.config/agent-trace/opencode-1.19.5.json sha256=", "secret_env=SCILIFELAB_API_KEY passed on the runs' stdin, values not recorded\n", "instruction_file=~/.opencode absent\n"} {
+		if !strings.Contains(string(meta), want) {
+			t.Errorf("task-meta.txt lacks %q:\n%s", want, meta)
+		}
+	}
+	err = filepath.Walk(out, func(p string, info os.FileInfo, err error) error {
+		if err == nil && info.Mode().IsRegular() {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), testKey) {
+				t.Errorf("%s holds the key", p)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A missing key is refused before anything runs, and so is a configuration
+// file that differs from the profile's, which is never overwritten.
+func TestCaptureOfOpencodeRefusesNoKeyOrAnotherConfig(t *testing.T) {
+	_, tmp, _, log, err := runOpencode(t, "", "basic", "", "--check")
+	if err == nil || !strings.Contains(log, "SCILIFELAB_API_KEY must be set in the environment") {
+		t.Errorf("no key: %v\n%s", err, log)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "fake", "opencode.calls")); err == nil {
+		t.Error("opencode ran without the key")
+	}
+	root, tmp, env := layout(t, "")
+	config := filepath.Join(tmp, "home", ".config", "agent-trace", "opencode-1.19.5.json")
+	write(t, config, "{}\n", 0o644)
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--check", "--agent", "opencode", "--task", "basic",
+		"--allow-unconfigured-version", filepath.Join(tmp, "out"))
+	cmd.Env = append(env, "SCILIFELAB_API_KEY="+testKey)
+	b, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(b), "differs from the content of opencode's profile") {
+		t.Errorf("another config: %v\n%s", err, b)
+	}
+	if got, _ := os.ReadFile(config); string(got) != "{}\n" {
+		t.Errorf("the configuration file was overwritten: %q", got)
+	}
+}
+
+// OpenCode's session database is a declared trace: a task run whose
+// database is gone is kept as a result, its model is not checked, and the
+// capture says so (V-59, I-75).
+func TestCaptureOfOpencodeKeepsARunWhoseDatabaseIsGone(t *testing.T) {
+	_, _, out, log, err := runOpencode(t, "delete", "basic", testKey)
+	if err != nil {
+		t.Fatalf("capture: %v\n%s", err, log)
+	}
+	if !strings.Contains(log, "TRACE DELETED OR DAMAGED") || strings.Contains(log, "MODEL MISMATCH") {
+		t.Errorf("log:\n%s", log)
+	}
+	if st, _ := os.ReadFile(filepath.Join(out, "basic.trace.txt")); strings.TrimSpace(string(st)) != "missing" {
+		t.Errorf("basic.trace.txt = %q", st)
+	}
+	if id, _ := os.ReadFile(filepath.Join(out, "basic.session-id.txt")); !strings.HasPrefix(string(id), "ses_") {
+		t.Errorf("basic.session-id.txt = %q", id)
 	}
 }

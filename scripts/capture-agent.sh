@@ -4,8 +4,9 @@
 # control runs a baseline is built from, and the verdict with and without it.
 # The agent is any adapter config/agents.json profiles (schema 2), the
 # profile's default_agent unless --agent names another; today claude-code
-# (Claude Code), gemini (Gemini through Antigravity's CLI, agy) and codex
-# (OpenAI's Codex CLI, profiled before its adapter exists, I-79). The
+# (Claude Code), gemini (Gemini through Antigravity's CLI, agy), codex
+# (OpenAI's Codex CLI, I-79) and opencode (OpenCode with an open model on an
+# OpenAI-compatible provider, profiled before its adapter exists, I-112). The
 # profile says how the agent is found, version-checked, locked, pinned,
 # isolated, invoked and recorded, and which tasks it has; this script never
 # names an agent. scripts/capture-claude-code.sh is kept as a wrapper that
@@ -21,7 +22,7 @@
 #
 # The tasks are the profile's: Claude Code has basic, parallel, project,
 # edits, tools, shapes, long and websearch; Gemini has basic, search and long;
-# Codex has Claude Code's eight with its own tools. Every agent also runs a
+# Codex and OpenCode have Claude Code's eight with their own tools. Every agent also runs a
 # held-out task, --task heldout:NAME with --heldout-dir DIR (below).
 #
 # --model ID pins the model of every run, controls included (D7), passed where
@@ -30,7 +31,9 @@
 # gemini-3.8-flash-high for agy, the id the existing captures recorded). After
 # each run the script reads the model the transcript records, by the
 # profile's trace method (jsonl-session: the model of every assistant record;
-# sqlite-conversation: the executor model of the conversation database), and stops
+# sqlite-conversation: the executor model of the conversation database;
+# sqlite-sessions: provider/model of every assistant message of the run's
+# session), and stops
 # with MODEL MISMATCH, exit 1, when it is not the pinned one, so a default the
 # agent does not accept as that id fails the first run, not silently. The
 # result of each check is in order.tsv.
@@ -236,6 +239,23 @@
 #     and refused unless its SHA-256 is catalog.sha256; its absolute path is
 #     passed (-c model_catalog_json=), and both join the model pin
 #     control-model.txt holds and --baseline-from compares;
+# OpenCode (I-112 to I-114) adds:
+#   * secret_env: variables whose values (the provider's key) must appear on
+#     no command line, in no file and no log: the script stops exporting
+#     them, writes them to each run's stdin with printf, a builtin, and a
+#     reader shell after env exports them and execs the agent with stdin
+#     /dev/null (the profile's stdin must be null); missing ones are refused;
+#   * isolation.env: variables every run gets beside version_lock.env (the
+#     flags that keep OpenCode's project, Claude Code and skill layers out);
+#   * config_file: the agent's configuration, agent-trace's file outside the
+#     repository, written from the profile where it is missing, refused
+#     where it differs, passed by path in config_file.env (OPENCODE_CONFIG);
+#     its hash joins the model pin and task-meta.txt;
+#   * trace sqlite-sessions: one database of all sessions (trace.database
+#     under trace.dir), copied with SQLite's online backup to trace.file;
+#     the session is the id the agent printed (stdout-json, sessionID), its
+#     subagents the sessions whose parent chain leads to it, its model the
+#     provider/model of its assistant messages.
 # Every agent (I-79): the profile's instruction_files, the user's personal
 # instructions (Claude Code ~/.claude/CLAUDE.md, agy ~/.gemini/AGENTS.md,
 # Codex ~/.codex/AGENTS.md), are moved aside to FILE.agent-trace-aside just
@@ -484,7 +504,57 @@ if [ "${#missing_env[@]}" -gt 0 ]; then
   echo "$names must be set: $p_pass_env_why" >&2
   exit 1
 fi
-run_env+=("${p_lock_env[@]}")
+# The environment that must reach the agent and nothing else (the profile's
+# secret_env; OpenCode: the model provider's key, I-113): a value may appear
+# on no command line, in no file and in no log, so it is not passed like the
+# rest. It is taken from this script's environment and no longer exported to
+# the script's own children; each run's stdin is a pipe that the shell's
+# printf builtin fills with the values, one per line, and a reader shell in
+# the run's exec chain, after setpriv and env, exports them under their
+# names, replaces its stdin with /dev/null and execs the agent in place.
+# A value with a newline cannot be passed and is refused.
+secret_vals=()
+missing_env=()
+for v in "${p_secret_env[@]}"; do
+  if [ -z "${!v:-}" ]; then missing_env+=("$v"); continue; fi
+  case ${!v} in *$'\n'*) echo "$v holds a newline, which the run's stdin cannot carry" >&2; exit 1 ;; esac
+  secret_vals+=("${!v}")
+  export -n "$v"
+done
+if [ "${#missing_env[@]}" -gt 0 ]; then
+  echo "${missing_env[*]} must be set in the environment: $p_secret_env_why" >&2
+  exit 1
+fi
+secret_reader=()
+if [ "${#p_secret_env[@]}" -gt 0 ]; then
+  # shellcheck disable=SC2016
+  secret_reader=(/bin/sh -c 'n=$1; shift; while [ "$n" -gt 0 ]; do IFS= read -r v || exit 125; export "$1=$v"; shift; n=$((n - 1)); done; unset v n; exec </dev/null; exec "$@"' agent-trace-secret-env "${#p_secret_env[@]}" "${p_secret_env[@]}")
+fi
+run_env+=("${p_lock_env[@]}" "${p_isolation_setenv[@]}")
+# The agent's own configuration (the profile's config_file; OpenCode, I-113):
+# agent-trace's file, outside the repository, whose content is the
+# profile's. The capture writes it where it is missing and refuses one that
+# differs, which it never overwrites; its absolute path is passed to every
+# run in the profile's variable, and its hash joins the model pin, since it
+# names the model's provider and the agent's permissions.
+config_file=
+if [ -n "$p_config_file_path" ]; then
+  config_file=${p_config_file_path/#\~/$HOME}
+  case $config_file in /*) ;; *) echo "config_file.path of $agent's profile must be absolute or start with ~/" >&2; exit 1 ;; esac
+  case $config_file/ in "$root"/*) echo "the configuration file $config_file is inside the repository" >&2; exit 1 ;; esac
+  if [ ! -e "$config_file" ] && [ -z "$check_only" ]; then
+    mkdir -p "$(dirname "$config_file")"
+    printf '%s' "$p_config_file_content" >"$config_file"
+    echo "wrote $agent's configuration file $config_file from its profile"
+  fi
+  if [ -e "$config_file" ] && [ "$(cat "$config_file"; printf x)" != "${p_config_file_content}x" ]; then
+    echo "the configuration file $config_file differs from the content of $agent's profile (config_file); it is never overwritten:" >&2
+    echo "compare the two, then remove the file and the capture writes the profile's" >&2
+    exit 1
+  fi
+  run_env+=("$p_config_file_env=$config_file")
+  model_pin="$model_pin config_sha256=$(printf '%s' "$p_config_file_content" | sha256sum | cut -d' ' -f1)"
+fi
 trace_dir=${p_trace_dir/#\~/$HOME}
 # What watch records besides the probes' defaults. Content capture hooks the
 # file each method's library parameter names ({binary} is the file the
@@ -855,10 +925,12 @@ capture_one() { # label prompt tools role
     # stdin null: an agent that reads a piped stdin into its prompt gets
     # none (I-79); sudo asks for a password on the terminal, not on stdin.
     [ "$p_stdin" != null ] || exec </dev/null
+    # secret_env: the values on the run's stdin, for the reader shell.
+    [ "${#secret_vals[@]}" -eq 0 ] || exec < <(printf '%s\n' "${secret_vals[@]}")
     measured "$label" sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
-      env "${run_env[@]}" \
+      env "${run_env[@]}" "${secret_reader[@]}" \
       "$agent_bin" "${argv[@]}" >"$out/$label.watch.log" 2>&1
   ) || wrc=$?
   restore_instruction_files
@@ -868,7 +940,7 @@ capture_one() { # label prompt tools role
   [ -z "$locked" ] || chmod u+w "$ws/$locked"
   # stdout-json: the agent prints one JSON object with the session id.
   [ "$p_session_method" != stdout-json ] ||
-    session=$(grep -o "\"$p_session_key\":\"[0-9a-f-]*\"" "$out/$label.watch.log" | head -1 | cut -d'"' -f4 || true)
+    session=$(grep -o "\"$p_session_key\":\"[0-9A-Za-z_-]*\"" "$out/$label.watch.log" | head -1 | cut -d'"' -f4 || true)
   # The session's id as the capture knows it, outside the trace, which
   # verify takes as --session-id (I-110).
   [ -z "$session" ] || printf '%s\n' "$session" >"$out/$label.session-id.txt"
@@ -876,6 +948,7 @@ capture_one() { # label prompt tools role
     jsonl-session) collect_jsonl_session "$label" || rc=$? ;;
     sqlite-conversation) collect_sqlite_conversation "$label" || rc=$? ;;
     jsonl-rollout) collect_jsonl_rollout "$label" || rc=$? ;;
+    sqlite-sessions) collect_sqlite_sessions "$label" || rc=$? ;;
   esac
   # The databases a trace keeps beside its transcript, as consistent
   # snapshots, even when the transcript is gone (I-79).
@@ -985,6 +1058,57 @@ PY
   [ "$n" -eq 0 ] || echo "   $n subagent rollout(s) copied"
 }
 
+# sqlite-sessions: one database of every session of the account
+# (trace.database in trace.dir; OpenCode ~/.local/share/opencode/opencode.db,
+# I-114), copied with SQLite's online backup, so the copy holds what its
+# write-ahead log held and is consistent although the agent may still hold
+# it open. The run's session is the row of the id the agent printed; its
+# subagents are the sessions whose parent chain leads to it, in the same
+# copy. A database that is gone, or a copy without the session, is a trace
+# that is gone.
+collect_sqlite_sessions() { # label
+  local label=$1 db=$trace_dir/$p_trace_database n
+  sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
+  if [ -z "$session" ] || [ ! -f "$db" ]; then
+    trace_gone="no session database $db, or no session id ('$session'), after the run"
+    trace_missing="no session database or session id for $label (session '$session'), see $out/$label.watch.log"
+    return 3
+  fi
+  n=$(python3 - "$db" "$(trace_path "$label")" "$session" <<'PY'
+import os, sqlite3, sys
+db, dest, session = sys.argv[1:]
+try:
+    src = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+    dst = sqlite3.connect(dest)
+    with dst:
+        src.backup(dst)
+    src.close()
+    ids, todo = {session}, [session]
+    if not dst.execute("select 1 from session where id = ?", (session,)).fetchone():
+        print("none"); sys.exit()
+    while todo:
+        for (i,) in dst.execute("select id from session where parent_id = ?", (todo.pop(),)):
+            if i not in ids:
+                ids.add(i); todo.append(i)
+    dst.close()
+    print(len(ids) - 1)
+except sqlite3.Error as e:
+    print("error %s" % e)
+PY
+  ) || return 1
+  case $n in
+    none)
+      trace_gone="no session $session in the database after the run"
+      trace_missing="no session $session in $db for $label, see $out/$label.watch.log"
+      return 3 ;;
+    error*)
+      trace_gone="the session database could not be read after the run (${n#error })"
+      trace_missing="could not copy the session database $db for $label: ${n#error }"
+      return 3 ;;
+  esac
+  echo "   session $session copied with the database, $n subagent session(s)"
+}
+
 # The trace's databases (trace.databases), each copied with SQLite's online
 # backup into trace.snapshots, so a copy is consistent although the agent
 # may still hold the database open. A database that does not exist is noted
@@ -1017,9 +1141,9 @@ PY
 # records none. A profile that pins an effort (jsonl-rollout records it) adds
 # ;effort=<efforts of the main transcript>, and another effort is exit 1.
 model_seen() { # label
-  python3 - "$p_trace_method" "$(trace_path "$1")" "$(subagents_path "$1")" "$model" "$p_model_effort" <<'PY'
+  python3 - "$p_trace_method" "$(trace_path "$1")" "$(subagents_path "$1")" "$model" "$p_model_effort" "${session:-}" <<'PY'
 import json, os, re, shutil, sqlite3, sys, tempfile
-method, path, subdir, want, want_effort = sys.argv[1:]
+method, path, subdir, want, want_effort, sid = sys.argv[1:]
 efforts = set()
 
 def jsonl(p):
@@ -1061,6 +1185,30 @@ def sqlite(p):
             pass
     return seen
 
+def sessions(p):
+    # sqlite-sessions: the provider and model each assistant message of
+    # the run's session records, as provider/model, and those of its
+    # subagents' sessions, read from a copy so the capture is not touched.
+    main, subs = set(), set()
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            shutil.copy(p, d + "/c.db")
+            c = sqlite3.connect(d + "/c.db")
+            ids, todo = [], [sid]
+            while todo:
+                for (i,) in c.execute("select id from session where parent_id = ?", (todo.pop(),)):
+                    ids.append(i); todo.append(i)
+            for target, which in ((main, [sid]), (subs, ids)):
+                for s in which:
+                    for (data,) in c.execute("select data from message where session_id = ?", (s,)):
+                        m = json.loads(data)
+                        if m.get("role") == "assistant" and m.get("modelID"):
+                            target.add("%s/%s" % (m.get("providerID", ""), m["modelID"]))
+            c.close()
+        except (OSError, ValueError, sqlite3.Error):
+            pass
+    return main, subs
+
 def rollout(p, efforts=None):
     # Each turn's context names the model and effort it ran with. A
     # subagent's rollout starts with its parent's history, up to the ordinal
@@ -1090,6 +1238,8 @@ def rollout(p, efforts=None):
 
 if method == "sqlite-conversation":
     main, subs = sqlite(path), set()
+elif method == "sqlite-sessions":
+    main, subs = sessions(path)
 elif method == "jsonl-rollout":
     main, subs = rollout(path, efforts), set()
     if os.path.isdir(subdir):
@@ -1115,12 +1265,32 @@ PY
 # tool calls their assistant records make; for sqlite-conversation the
 # subagent databases copied, whose calls are not counted (-); for
 # jsonl-rollout the subagent rollouts copied and the tool calls their
-# response items make (function and custom tool calls). Prints
+# response items make (function and custom tool calls); for sqlite-sessions
+# the sessions whose parent chain leads to the run's and their tool parts. Prints
 # subagents=N;subagent_tool_calls=M.
 subagents_seen() { # label
-  python3 - "$p_trace_method" "$(subagents_path "$1")" <<'PY'
-import glob, json, os, sys
-method, subdir = sys.argv[1:]
+  python3 - "$p_trace_method" "$(subagents_path "$1")" "$(trace_path "$1")" "${session:-}" <<'PY'
+import glob, json, os, shutil, sqlite3, sys, tempfile
+method, subdir, trace, sid = sys.argv[1:]
+if method == "sqlite-sessions":
+    # The sessions whose parent chain leads to the run's, and the tool parts
+    # they hold, read from a copy.
+    n = calls = 0
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            shutil.copy(trace, d + "/c.db")
+            c = sqlite3.connect(d + "/c.db")
+            todo = [sid]
+            while todo:
+                for (i,) in c.execute("select id from session where parent_id = ?", (todo.pop(),)):
+                    n += 1; todo.append(i)
+                    for (data,) in c.execute("select data from part where session_id = ?", (i,)):
+                        calls += json.loads(data).get("type") == "tool"
+            c.close()
+        except (OSError, ValueError, sqlite3.Error):
+            print("subagents=-"); sys.exit(0)
+    print("subagents=%d;subagent_tool_calls=%d" % (n, calls))
+    sys.exit(0)
 if method == "sqlite-conversation":
     print("subagents=%d;subagent_tool_calls=-" % len(glob.glob(subdir + "/*.db")))
     sys.exit(0)
@@ -1172,17 +1342,40 @@ PY
 # read. A JSON-lines transcript (jsonl-session, jsonl-rollout) is damaged
 # when no line is a JSON object or a line is not JSON; a conversation
 # database (sqlite-conversation) when a copy of it with its write-ahead log
-# does not open, fails SQLite's quick check or has no step. verify decides
+# does not open, fails SQLite's quick check or has no step; a session
+# database (sqlite-sessions) when its copy does not open or fails the quick
+# check, missing when it lacks the run's session and empty when the session
+# holds no message. verify decides
 # the verdict; this only keeps a run whose trace is gone or garbled from
 # reading as a model mismatch.
 trace_state() { # file
-  python3 - "$p_trace_method" "$1" <<'PY'
+  python3 - "$p_trace_method" "$1" "${session:-}" <<'PY'
 import json, os, shutil, sqlite3, sys, tempfile
-method, p = sys.argv[1:]
+method, p, sid = sys.argv[1:]
 if not os.path.exists(p):
     print("missing"); sys.exit()
 if os.path.getsize(p) == 0:
     print("empty"); sys.exit()
+if method == "sqlite-sessions":
+    # The run's session in the copied database: damaged when the copy does
+    # not open or fails SQLite's quick check, empty when the session holds
+    # no message.
+    state = "damaged"
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            shutil.copy(p, d + "/c.db")
+            c = sqlite3.connect(d + "/c.db")
+            if c.execute("pragma quick_check").fetchone()[0] == "ok":
+                if not c.execute("select 1 from session where id = ?", (sid,)).fetchone():
+                    state = "missing"
+                elif not c.execute("select count(*) from message where session_id = ?", (sid,)).fetchone()[0]:
+                    state = "empty"
+                else:
+                    state = "read"
+            c.close()
+        except (OSError, sqlite3.Error):
+            pass
+    print(state); sys.exit()
 if method == "sqlite-conversation":
     # A copy, so the capture's file and directory are not written (I-51).
     ok = False
@@ -1262,6 +1455,8 @@ capture() {
   echo "version=$version"
   [ -z "$p_model_effort" ] || echo "effort=$p_model_effort"
   [ -z "$catalog_path" ] || echo "model_catalog=${catalog_path/#"$HOME"/\~} sha256=$(sha256sum "$catalog_path" | cut -d' ' -f1)"
+  [ -z "$config_file" ] || echo "config_file=${config_file/#"$HOME"/\~} sha256=$(sha256sum "$config_file" | cut -d' ' -f1) as $p_config_file_env"
+  [ "${#p_secret_env[@]}" -eq 0 ] || echo "secret_env=${p_secret_env[*]} passed on the runs' stdin, values not recorded"
   # The instruction files every run has moved aside (I-79), named with the
   # home directory as ~, with their hash, or absent.
   for f in "${instruction_files[@]}"; do

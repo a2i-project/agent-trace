@@ -428,6 +428,181 @@
           "tools": "exec_command apply_patch spawn_agent wait_agent"
         }
       }
+    },
+    "opencode": {
+      "binary": "opencode",
+      "version_command": {
+        "args": [
+          "--version"
+        ],
+        "field": "first"
+      },
+      "versions": [],
+      "version_lock": {
+        "note": "OpenCode 1.19.5 is frozen for the project. opencode run checks for updates only when the configuration's autoupdate is not false; the configuration file sets it false and OPENCODE_DISABLE_AUTOUPDATE=1 disables the check too. OPENCODE_DISABLE_MODELS_FETCH=1 keeps OpenCode from fetching its model catalog from https://models.opencode.ai at every start; it then uses the catalog built into the binary, which the version fixes (I-112).",
+        "env": {
+          "OPENCODE_DISABLE_AUTOUPDATE": "1",
+          "OPENCODE_DISABLE_MODELS_FETCH": "1"
+        }
+      },
+      "secret_env": {
+        "names": [
+          "SCILIFELAB_API_KEY"
+        ],
+        "why": "the SciLifeLab OpenLLM key, which the configuration file names only as {env:SCILIFELAB_API_KEY}; run the capture through integration-tools/with-scilifelab-key.sh, which sets it from the keyring for that command only (I-113)"
+      },
+      "model": {
+        "default": "scilifelab/Qwen3-235B-A22B",
+        "note": "provider/model, passed as -m. The provider scilifelab is the SciLifeLab OpenLLM server (OpenAI-compatible, https://openllm.scilifelab.se/api), declared in the configuration file with OpenCode's built-in @ai-sdk/openai-compatible provider; its small_model, used for the session title, is the same model. The session records providerID and modelID on every assistant message (I-112)."
+      },
+      "config_file": {
+        "path": "~/.config/agent-trace/opencode-1.19.5.json",
+        "env": "OPENCODE_CONFIG",
+        "note": "OpenCode reads it after the global configuration layer, which instruction_files keeps out. It declares the provider and its model, names the key only as {env:SCILIFELAB_API_KEY}, allows every permission (no prompt in opencode run), disables sharing, update checks, language servers and formatters, and holds $schema, without which OpenCode rewrites the file to add it (I-113).",
+        "content": {
+          "$schema": "https://opencode.ai/config.json",
+          "autoupdate": false,
+          "share": "disabled",
+          "lsp": false,
+          "formatter": false,
+          "small_model": "scilifelab/Qwen3-235B-A22B",
+          "enabled_providers": [
+            "scilifelab"
+          ],
+          "provider": {
+            "scilifelab": {
+              "npm": "@ai-sdk/openai-compatible",
+              "name": "SciLifeLab OpenLLM",
+              "options": {
+                "baseURL": "https://openllm.scilifelab.se/api",
+                "apiKey": "{env:SCILIFELAB_API_KEY}"
+              },
+              "models": {
+                "Qwen3-235B-A22B": {
+                  "name": "Qwen3-235B-A22B",
+                  "tool_call": true
+                }
+              }
+            }
+          },
+          "permission": {
+            "*": "allow"
+          }
+        }
+      },
+      "isolation": {
+        "note": "OPENCODE_DISABLE_PROJECT_CONFIG skips opencode.json, .opencode directories and AGENTS.md, CLAUDE.md and CONTEXT.md found from the workspace up to its worktree (in a workspace that is not a git repository, up to /, where the user's ~/AGENTS.md lies); OPENCODE_DISABLE_CLAUDE_CODE skips ~/.claude/CLAUDE.md and the Claude Code skills; OPENCODE_DISABLE_EXTERNAL_SKILLS skips ~/.claude/skills and ~/.agents/skills and those found up from the workspace; OPENCODE_PURE loads no external plugin; OPENCODE_DISABLE_LSP_DOWNLOAD keeps a language server from being downloaded. No flag skips the global layer, ~/.config/opencode and ~/.opencode, so instruction_files moves it aside (measured on 1.19.5, I-113).",
+        "flags": [],
+        "env": {
+          "OPENCODE_DISABLE_PROJECT_CONFIG": "1",
+          "OPENCODE_DISABLE_CLAUDE_CODE": "1",
+          "OPENCODE_DISABLE_EXTERNAL_SKILLS": "1",
+          "OPENCODE_PURE": "1",
+          "OPENCODE_DISABLE_LSP_DOWNLOAD": "1"
+        }
+      },
+      "instruction_files": {
+        "note": "~/.config/opencode/AGENTS.md goes into every prompt whatever the flags; the rest is OpenCode's global configuration layer, which it reads whatever OPENCODE_CONFIG says: the configuration files, the agent, command, mode, plugin, skill and tool directories, and ~/.opencode, read as a .opencode directory. Each is moved aside for each run and restored after it (I-79, I-113). OpenCode's own files there (node_modules, package.json, package-lock.json, .gitignore) stay.",
+        "paths": [
+          "~/.config/opencode/AGENTS.md",
+          "~/.config/opencode/opencode.json",
+          "~/.config/opencode/opencode.jsonc",
+          "~/.config/opencode/config.json",
+          "~/.config/opencode/config",
+          "~/.config/opencode/agent",
+          "~/.config/opencode/agents",
+          "~/.config/opencode/command",
+          "~/.config/opencode/commands",
+          "~/.config/opencode/mode",
+          "~/.config/opencode/modes",
+          "~/.config/opencode/plugin",
+          "~/.config/opencode/plugins",
+          "~/.config/opencode/skill",
+          "~/.config/opencode/skills",
+          "~/.config/opencode/tool",
+          "~/.config/opencode/tools",
+          "~/.opencode"
+        ]
+      },
+      "tool_set": {
+        "method": "none",
+        "note": "opencode run takes no tool list. The tools OpenCode 1.19.5 offers this model are bash, read, glob, grep, edit, write, task, webfetch, todowrite and skill (apply_patch only to GPT models, websearch only to OpenCode's own provider or with Exa enabled); a permission rule of deny could narrow them, which no method implements yet. The prompts name the tools, and the task's tools decide the controls (I-112)."
+      },
+      "session": {
+        "method": "stdout-json",
+        "key": "sessionID"
+      },
+      "stdin": "null",
+      "invocation": [
+        "run",
+        "--format",
+        "json",
+        "-m",
+        "{model}",
+        "{prompt}"
+      ],
+      "trace": {
+        "method": "sqlite-sessions",
+        "dir": "~/.local/share/opencode",
+        "database": "opencode.db",
+        "file": "{label}.opencode.db",
+        "declared": true,
+        "states_version": true,
+        "note": "Every session of the account is in one database, with a write-ahead log; a subagent is a session whose parent_id names its caller, in the same database. Which files the adapter declares as the trace (the database with its -wal, -shm and -journal; the snapshot repositories under snapshot/, which a git workspace gets; the tool-output files) is the user's decision, open (I-114)."
+      },
+      "content": [
+        {
+          "method": "none",
+          "reason": "OpenCode's content capture is not profiled yet: its model traffic goes through the TLS of its Bun executable, which no content method hooks yet (I-112)"
+        }
+      ],
+      "controls": {
+        "command_tool": "bash",
+        "subagent_tool": "task",
+        "edit_tool": "write",
+        "note": "The controls also create a scratch file with write (I-88): in a git workspace OpenCode records a patch of its snapshot repository after a step that changed a file. The command is asked for character by character: with the wording of the other profiles, Qwen3-235B-A22B ran : alone, which the baseline's exclusion of the marker command does not match (measured 2026-11-03).",
+        "prompt": "Do exactly these two things in order, and nothing else. 1) Use the bash tool with this exact command string, copied character for character (it does nothing): {command} 2) Use the write tool to create the file {file} containing the single word ok. Then reply with the single word ok. Do not use any other tool.",
+        "prompt_subagent": "Do exactly these three things in order, and nothing else. 1) Use the bash tool with this exact command string, copied character for character (it does nothing): {command} 2) Use the write tool to create the file {file} containing the single word ok. 3) Use the task tool to start one subagent of type general, giving it exactly this instruction: Reply with the single word ok. Do not use any tool. Then reply with the single word ok. Do not use any other tool."
+      },
+      "tasks": {
+        "basic": {
+          "prompt": "Do exactly these five things in order, using the named tool for each, and nothing else. 1) Use the read tool on b.txt. 2) Use the write tool to create a.txt containing the single word hello. 3) Use the edit tool to replace hello with world in a.txt. 4) Use the write tool to overwrite b.txt with the single word again. 5) Use the bash tool to run exactly: echo hi. Then reply with the single word done.",
+          "tools": "read write edit bash"
+        },
+        "websearch": {
+          "note": "OpenCode offers this provider no web search tool (websearch needs OpenCode's own provider or OPENCODE_ENABLE_EXA, which sends the query to Exa), so the task fetches the page only. Not a campaign task.",
+          "prompt": "Do exactly these two things in order, and nothing else. 1) Use the webfetch tool on https://man7.org/linux/man-pages/man7/fanotify.7.html and find what fanotify does, in one sentence. 2) Use the write tool to create notes.txt containing that one sentence. Then reply with the single word done.",
+          "tools": "webfetch write bash",
+          "campaign": false
+        },
+        "parallel": {
+          "prompt": "Do exactly these six things in order, and nothing else. 1) In a single message, make three read tool calls at the same time, for b.txt, c.txt and d.txt. 2) Use the task tool to start one subagent of type general with exactly this instruction: Use the bash tool to run exactly: echo from-subagent . Then reply with the single word done. 3) Use the grep tool to search the current directory for the word seed. 4) Use the glob tool to list the files matching *.txt. 5) Use the webfetch tool on https://example.com and find its title. 6) Use the bash tool to run exactly: echo one | tr a-z A-Z . Then reply with the single word done.",
+          "tools": "read write edit bash task grep glob webfetch"
+        },
+        "edits": {
+          "prompt": "Do exactly these seven things in order, using the named tool for each, and nothing else. 1) Use the write tool to create notes.txt with exactly this content (four lines): alpha beta alpha / gamma delta / say \"hi\" to C:\\\\temp / end. Write each item separated by slash as its own line, without the slashes. 2) Use the edit tool to replace the first occurrence of alpha with ALPHA. 3) Use the edit tool with replaceAll set to true to replace every a with 4. 4) Use the edit tool to replace the two lines g4mm4 delt4 and s4y \"hi\" to C:\\\\temp together with the single line merged. 5) Use the edit tool to replace the line end with the two lines end and really the end. 6) Use the edit tool to replace ALPHA with alpha. 7) Use the bash tool to run exactly: cat notes.txt. Then reply with the single word done.",
+          "tools": "read write edit bash"
+        },
+        "project": {
+          "prompt": "You are working in a small Python package, wordstats, in the current directory. Do these steps in order and nothing else, and do not use the network. 1) Run the unit tests with: python3 -m unittest discover . Some of them fail. 2) Read the code, find the cause of the failures and fix it. 3) Add a function top_n(text, n) to wordstats/core.py that returns the n most frequent (word, count) pairs, most frequent first and ties in alphabetical order, export it from the package, and add unit tests for it in tests/test_core.py. 4) Add a --top N option to the command line tool in wordstats/cli.py that prints only the top N words, with a test in tests/test_cli.py. 5) Update README.md to describe top_n and the --top option. 6) Run the unit tests again and make sure they all pass. Then reply with the single word done.",
+          "tools": "read write edit bash grep glob"
+        },
+        "tools": {
+          "note": "Claude Code's tools task with OpenCode's tools: its bash has no background mode, so the background command is the shell's own (a subshell detached with &, which outlives the call); it has no MultiEdit and no notebook tool, so the two line changes are two edits and the notebook cell is changed with edit.",
+          "prompt": "Do exactly these nine things in order, using the named tool for each, and nothing else. 1) Use the bash tool to run exactly: (sleep 3; echo background-done > bg.txt) > /dev/null 2>&1 & . Do not wait for it and do not check on it until step 8. 2) In a single message, make three read tool calls at the same time, for notes.txt, numbers.txt and analysis.ipynb. 3) Use the edit tool twice on notes.txt, once to replace colour: red with colour: blue and once to replace size: small with size: large. 4) Use the edit tool on analysis.ipynb to replace print(1 + 1) with print(sum([3, 5, 7])) . 5) Use the write tool to create report.txt containing the single word draft. 6) Use the write tool to overwrite report.txt with the single word final. 7) Use the task tool to start one subagent of type general, giving it exactly this instruction: Use the write tool to create subagent.txt containing the single word from-subagent. Then reply with the single word done. 8) Use the read tool on bg.txt. 9) Use the bash tool to run exactly: cat bg.txt notes.txt report.txt subagent.txt . Then reply with the single word done.",
+          "tools": "read write edit bash task"
+        },
+        "shapes": {
+          "note": "OpenCode 1.19.5 runs the calls of one message concurrently, writes included, and its write and edit write the file in place (measured in a directory without write permission).",
+          "prompt": "Do exactly these six things in order, and nothing else. If a step fails, do not retry it or work around it; go on to the next step. 1) In a single message, make these three tool calls at the same time, in this order: the bash tool to run exactly: sleep 2; cat slow.txt , then the bash tool to run exactly: cat fast.txt , then the read tool on read.txt. 2) In a single message, make these two bash tool calls at the same time, in this order: one to run exactly: sleep 2; echo one > one.txt , then one to run exactly: echo two > two.txt . 3) Use the read tool on locked/data.txt. 4) Use the write tool to overwrite locked/data.txt with the single word direct-one. 5) Use the edit tool to replace direct-one with direct-two in locked/data.txt. 6) Use the bash tool to run exactly: cat one.txt two.txt locked/data.txt . Then reply with the single word done.",
+          "tools": "read write edit bash"
+        },
+        "long": {
+          "note": "Claude Code's long task with OpenCode's tools: Agent becomes task with a subagent of type general.",
+          "prompt": "You are working in a small Python package, textkit, in the current directory. Do not use the network. PLAN.md lists 20 functions, numbered 1 to 20, each with a specification file under docs/spec/. The work is finished only when all 20 functions are implemented and tested, CHANGELOG.md has one line per function and make check passes: do not stop before that, and do not skip, merge or reorder steps. Make one tool call per message. Do these steps in order. 1) Use the glob tool to list docs/spec/*.md, and the grep tool to search textkit for NotImplementedError. 2) Use the bash tool to run: make check . It fails, since nothing is implemented yet. 3) For each function in PLAN.md, in order from 1 to 20, one function at a time, do these five steps: a) use the read tool on its specification file; b) use the edit tool to replace the raise NotImplementedError line of that function in its module with an implementation that meets the specification; c) use the edit tool to add at least two unit test methods for it to the test class in the module test file under tests/; d) use the bash tool to run only that module tests, for example: python3 -m unittest tests.test_strings , and if they fail, fix the code and run them again; e) use the edit tool to add one line naming the function at the end of CHANGELOG.md. 4) After functions 5, 10, 15 and 20, that is at the end of each module, use the bash tool to run make check-MODULE for that module (make check-strings, make check-numbers, make check-lists, make check-codec), and use the grep tool to search that module file for NotImplementedError. 5) Use the task tool to start one subagent of type general with exactly this instruction: Use the glob tool to list tests/test_*.py, use the bash tool to run: python3 -m unittest discover -s tests -t . , then use the write tool to create REPORT.md stating how many tests ran. Then reply with the single word done. 6) Use the bash tool to run: make dist , then python3 dist/textkit.pyz slugify \"Hello, World\" , then python3 dist/textkit.pyz roman 1987 . 7) Use the read tool on REPORT.md, then use the edit tool to add a section named Status at the end of README.md saying how many tests pass. 8) Use the bash tool to run make check a last time. Then reply with the single word done.",
+          "tools": "read write edit bash grep glob task"
+        }
+      }
     }
   }
 }
