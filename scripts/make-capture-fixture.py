@@ -54,6 +54,10 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
   * the account's organisation id, which the harness uses in cache paths such as
     ~/.claude/cache/model-catalog/<id>-0, becomes the zero UUID wherever it
     appears. The ids are read from the capture's own transcripts;
+  * the path of the account's profile picture that agy fetches,
+    https://lh3.googleusercontent.com/a/<id>, which a content capture names
+    in its requests, becomes https://lh3.googleusercontent.com/a/account-picture
+    in every run (I-119);
   * the 64-digit hex in a session key file's name,
     ~/.claude/sessions/<pid>.<hex>.key, becomes zeros. The key itself is the
     file's content, which no capture holds, but the name is per session.
@@ -61,8 +65,8 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
 Before it finishes, the script checks every file it wrote, kept Read content
 included, for the home directory, the user name, the organisation ids, every
 e-mail address found in the raw transcripts, the recorded and the current
-capture directory in either form, and any session key name left unrewritten,
-and deletes its output and fails if one is left.
+capture directory in either form, the profile picture's ids, and any session
+key name left unrewritten, and deletes its output and fails if one is left.
 
 Ground truth events, pids, timestamps and coverage are kept as captured,
 except the probes' diagnostics, which are left out.
@@ -182,6 +186,18 @@ for root, _, files in os.walk(capture):
 # Addresses that are part of the harness's own text, not the account.
 emails = {e for e in emails if not e.endswith("@anthropic.com") and not e.endswith("@example.com")}
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+# The account's profile picture, which agy fetches by a URL whose path is
+# the account's own id (I-119); a content capture's ground truth names it in
+# its requests. The id becomes a placeholder, the same in every run, and is
+# checked for in what was written.
+AVATAR = re.compile(r"(https://lh3\.googleusercontent\.com/a/)([^\s\"?#]+)")
+AVATAR_ID = "account-picture"
+avatar_ids = set()
+for f in os.listdir(capture):
+    if f.endswith(".ground_truth.json"):
+        with open(os.path.join(capture, f), errors="replace") as fh:
+            avatar_ids.update(m.group(2) for m in AVATAR.finditer(fh.read()))
+avatar_ids.discard(AVATAR_ID)
 
 
 def mangle(path):
@@ -229,6 +245,7 @@ def rewrite(s, label):
     for org in org_ids:
         s = s.replace(org, ZERO_UUID)
     s = SESSION_KEY.sub(lambda m: m.group(1) + ZERO_KEY, s)
+    s = AVATAR.sub(lambda m: m.group(1) + AVATAR_ID, s)
     return s.replace(os.environ.get("USER", "\0"), "user")
 
 
@@ -820,7 +837,7 @@ if server_ids:
     print("server ids rewritten: " + ", ".join("%d %s_" % (n, k) for k, n in sorted(per_prefix.items())))
 # Nothing private may be left in what was written.
 user = os.environ.get("USER", "")
-forbidden = {home} | org_ids | emails | codex_private | ({user} if len(user) > 2 else set())
+forbidden = {home} | org_ids | emails | codex_private | avatar_ids | ({user} if len(user) > 2 else set())
 # Every form of the recorded and the current capture directory must be gone.
 forbidden |= set(roots) | {mangle(r) for r in roots}
 leaks = []

@@ -1,0 +1,6217 @@
+{
+ "events": [
+  {
+   "timestamp": "2026-11-03T00:56:30.427460335+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/d.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 544749
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.427460336+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/c.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 544749
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.427460337+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 544749
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.63416817+01:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/dash",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.634418647+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.634583633+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.634583634+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.634899451+01:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/setpriv",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635023937+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635180313+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635180314+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libcap-ng.so.0.0.0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.63520158+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635402456+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/locale/locale-archive",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.63549576+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635515601+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635539223+01:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635564086+01:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635582165+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635598504+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_systemd.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635643058+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635806013+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635818157+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_sss.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635924996+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635943598+01:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635959204+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.635967941+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.63598484+01:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636004194+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636104225+01:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636137525+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/org.gnome.DisplayManager",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636208637+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/io.systemd.DynamicUser",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636446557+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636477806+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/env",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636544357+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636731521+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636746484+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libsystemd.so.0.42.0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636785807+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636823236+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636855498+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636883069+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.636923832+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.6381234+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/coreutils/locales/uucore/en-US.ftl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.638466754+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/bin/agy",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.638555997+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.638875687+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.638895043+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libresolv.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.638933381+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.638965086+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.638994362+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.639036756+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.639060492+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.65710789+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/bin/agy",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.682953823+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.68298787+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.683121505+01:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.683121506+01:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.71100757+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/mime/globs2",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.713335624+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/zoneinfo/Europe/Stockholm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.713347547+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/log/cli-20261103_005630.log",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.713347548+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/log/cli-20261103_005630.log",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.713370542+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cli.log.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.713370543+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cli.log.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.713370543+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cli.log",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714100393+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/log/cli-20261103_005630.log",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714100394+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/settings.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714330372+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/crashes/crash_544981_f16f4069-802f-4b41-9fdc-e8f120ceb51d.log",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714330373+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/crashes/crash_544981_f16f4069-802f-4b41-9fdc-e8f120ceb51d.log",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714330374+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/installation_id",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714530918+01:00",
+   "action_type": "file_open",
+   "target": "/run/systemd/resolve/stub-resolv.conf",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714530919+01:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.71453092+01:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714572713+01:00",
+   "action_type": "net_bind",
+   "target": "[::1]:0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.71458432+01:00",
+   "action_type": "net_bind",
+   "target": "127.0.0.1:0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.71465054+01:00",
+   "action_type": "net_bind",
+   "target": "127.0.0.1:0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714653483+01:00",
+   "action_type": "net_listen",
+   "target": "127.0.0.1:0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714686351+01:00",
+   "action_type": "net_bind",
+   "target": "127.0.0.1:0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714688043+01:00",
+   "action_type": "net_listen",
+   "target": "127.0.0.1:0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.714734616+01:00",
+   "action_type": "file_open",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.718718208+01:00",
+   "action_type": "net_dns",
+   "target": "antigravity-unleash.goog/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.718782982+01:00",
+   "action_type": "net_dns",
+   "target": "antigravity-unleash.goog/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.763824691+01:00",
+   "action_type": "net_connect",
+   "target": "antigravity-unleash.goog",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.763887368+01:00",
+   "action_type": "net_connect",
+   "target": "antigravity-unleash.goog",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.788794517+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ca-certificates.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791552809+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ACCVRAIZ1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79158597+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791595039+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM_SERVIDORES_SEGUROS.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791680368+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ANF_Secure_Server_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791680369+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Actalis_Authentication_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791719729+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791732583+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791755081+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791776388+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_4.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791801581+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_ECC_TLS_2021.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791833411+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_RSA_TLS_2021.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791872665+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Autoridad_de_Certificacion_Firmaprofesional_CIF_A62634068.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791895319+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791927073+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791949667+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_2_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.791974106+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_3_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792003607+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CA_Disig_Root_R2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792036223+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CFCA_EV_ROOT.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792064426+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_ECC_Certification_Authority.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792097458+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_RSA_Certification_Authority.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79213107+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_E1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.7921604+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_R1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792187476+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certigna_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792217317+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_EC-384_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792248701+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792278994+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA_2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792314274+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792345283+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_1_2020.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792372519+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_2_2023.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792408593+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_1_2020.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792430047+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_2_2023.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792460401+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_2009.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.7924915+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_EV_2009.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792520854+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792548564+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792575103+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79260463+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79262374+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_ECC_P384_Root_G5.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79265441+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_RSA4096_Root_G5.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792685151+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Trusted_Root_G4.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792713072+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GDCA_TrustAUTH_R5_ROOT.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792742159+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792768484+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79279005+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R4.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792821006+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R4.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792846915+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R5.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792874292+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792892789+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R6.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792925261+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_E46.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792953268+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_R46.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.792981892+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Go_Daddy_Root_Certificate_Authority_-_G2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793019189+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_ECC_Root_CA_2021.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79304852+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_RSA_Root_CA_2021.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793079921+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_ECC_RootCA_2015.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793111514+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_RootCA_2015.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793150201+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HiPKI_Root_CA_-_G1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793179889+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hongkong_Post_Root_CA_3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79321152+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793240577+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793268117+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Commercial_Root_CA_1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793300278+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Public_Sector_Root_CA_1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793328606+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Izenpe.com.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793362705+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsec_e-Szigno_Root_CA_2009.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793406631+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_ECC_Root_Certificate_Authority_2017.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793425913+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_RSA_Root_Certificate_Authority_2017.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79345464+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NAVER_Global_Root_Certification_Authority.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793485086+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NetLock_Arany_=Class_Gold=_F\u0151tan\u00fas\u00edtv\u00e1ny.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.7935126+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_ECC_G1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793530978+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_RSA_G1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793564977+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GB_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793592478+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GC_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793621526+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_1_G3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793653528+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_2_G3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793674538+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_3_G3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793715583+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SECOM_TLS_ECC_Root_CA_2024.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79373841+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SECOM_TLS_RSA_Root_CA_2024.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793801074+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_ECC.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793801075+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_RSA_R2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793830805+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_ECC.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79385737+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_RSA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793882407+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_ECC_Root_CA_2022.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793919364+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_RSA_Root_CA_2022.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793936093+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SZAFIR_ROOT_CA2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793957503+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_E46.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.793984005+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_R46.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79401639+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA14.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794091777+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA15.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794091778+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_ECC_RootCA1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794114184+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_RootCA2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794132649+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Root_Certificate_Authority_-_G2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794164047+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Services_Root_Certificate_Authority_-_G2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794193778+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SwissSign_RSA_TLS_Root_CA_2022_-_1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794223311+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794250642+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794278275+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TUBITAK_Kamu_SM_SSL_Kok_Sertifikasi_-_Surum_1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794300444+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_CYBER_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794332067+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Global_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794354386+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Root_Certification_Authority.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794380238+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_ECC_Root_2020.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794410097+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_RSA_Root_2023.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794449965+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_EC_TLS_Root_CA_v3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794473199+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_RSA_TLS_Root_CA_v3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79450839+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_Root_CA_v2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794539256+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79456618+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G4.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794585515+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_ECC_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794612805+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_RSA_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794640175+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TunTrust_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794670786+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Extended_Validation_Root.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79470054+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Global_G2_Root.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794726272+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_ECC_Certification_Authority.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.794756881+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_RSA_Certification_Authority.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79479045+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ca-certificates.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796688996+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/certSIGN_Root_CA_G2.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796688997+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_Root_CA_2017.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796720186+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_TLS_Root_CA_2023.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796744914+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_C3.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796772159+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_C1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796804989+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_G1.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796836807+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ssl-cert-snakeoil.pem",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796860893+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_ECC_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.796887314+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_Root_CA.crt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.79991346+01:00",
+   "action_type": "net_request",
+   "target": "GET https://antigravity-unleash.goog/api/client/features",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:30.799956604+01:00",
+   "action_type": "net_request",
+   "target": "POST https://antigravity-unleash.goog/api/client/register",
+   "pid": 544981,
+   "request_hash": "sha256:6339468eb73cdbf484a0318cffc5f82afbd95892cfdda7aa8f20b9518f3d01e9"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.029205612+01:00",
+   "action_type": "net_response",
+   "target": "POST https://antigravity-unleash.goog/api/client/register",
+   "pid": 544981,
+   "response": {
+    "status": 202,
+    "body_bytes": 0,
+    "body_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "end": "2026-11-03T00:56:31.029205612+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.029637058+01:00",
+   "action_type": "net_response",
+   "target": "GET https://antigravity-unleash.goog/api/client/features",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 72862,
+    "body_hash": "sha256:4a8e4fe8c2b3bfefc89bfb241f7d23d76040aeb181ed1e0a54d8dfeb6bdba1e8",
+    "end": "2026-11-03T00:56:31.075198691+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.029878997+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.033009761+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.03324155+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.033241551+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.033265929+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.03326593+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-shm",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.033280383+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.033565179+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.033682544+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.03414559+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.035861724+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.035952606+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.036663068+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.036716461+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.036748325+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.03678057+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.036808497+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.036847236+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.037167532+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/mcp_config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.037185266+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/04586373-3fc3-4dd9-87f2-5405f7ab50df.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.037308906+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/074ca009-05d1-4d6b-8534-cc6c52eb7f33.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.037344762+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/0a74c0a5-3d7f-4e11-9b67-9b14ab061afc.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.037362084+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/0d63dca4-f191-4787-8578-0bee97e27675.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.037380374+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/16a53d55-d244-44d4-b5fd-9d1effd0f959.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.039833638+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/.checksum",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.039833639+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.03983364+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.039913161+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.040067709+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.040185118+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.040243914+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.040304314+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.040347762+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.041627177+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/1cad0a2d-d681-47fd-87df-563ef68bd5c1.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042276969+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/1f3dc762-2efd-4f19-8301-b57d408817f6.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.04227697+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/261631e2-16d2-49b1-a181-e2b0686687b6.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042276971+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/26f2db3c-8650-4c53-9748-9d69871da65c.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042276972+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/27a8db27-f530-4463-8aeb-c10547fb6384.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042276973+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/39f4d9f5-3208-4b96-92cb-c587faa5b6a8.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042276974+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/3a5a4ab8-2495-483a-94a2-7df0d3e9463f.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042305833+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/3eb7e9c5-3163-4da6-ba49-8d527e56a003.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042305834+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/458a03fb-4653-4a4c-8507-994673eed0b9.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042311071+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/4f8a6e1a-f354-441e-9fe9-939972721a6a.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042333799+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/564a9114-2f2e-48a7-8744-b9c7e1800859.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042343111+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/573093b5-4cb5-43f4-b9d2-a6b8975ddd30.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488168+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/5e60043f-9b44-46db-b179-9edfe6137075.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488169+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/6301dddb-493c-43af-9466-098f3c802736.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.04248817+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/63fc302c-e9b9-4d18-b6d0-8acf524df196.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488171+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/66caf2bf-7991-4c01-9f51-2e7ee5234e11.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488173+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/678cb179-9a86-4256-86e4-a50ad47005f3.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488174+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/67f6a30f-6169-4f61-a500-4a98e9bf1d3d.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488175+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/6a691a17-12ac-4b0e-be37-52c5772db645.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488176+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/6bdd9fa2-d06c-4b08-ba1e-7bbb0ac261bf.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042488177+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/76a678a9-d665-4c0c-8cb6-64187ffd17df.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042522694+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/77b1ba5a-ece6-4dc1-858b-b8890799a4cd.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042522695+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/7a937b77-af3c-4857-abe3-4d3f3ac1a513.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.04254037+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/7bbd39bd-ad93-433d-a7e2-8f0187efe882.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042554216+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/7d18027a-4293-4738-b363-14e93f8a81fa.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042567467+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/8629c852-d533-49e4-9e6e-07cda2977529.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042577097+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/89a09e7d-5f34-4771-90b0-e1d49440aea2.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042619346+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/8d3fe448-30fe-41ac-8c31-61145e4c4daf.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042656445+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/8eb261fc-f160-434c-92ce-5d47fd4fb936.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042656446+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/928aa759-8571-4e0e-bced-d34c9cc0e0a3.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042668017+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/adff658d-4a56-4bd3-9439-345e2836ad1f.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042678163+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/bccd5b88-2236-4a1d-b4ab-16e9d4aea4c6.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042692509+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/c051eb10-40c7-417f-9c14-d1415a30a4de.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042712688+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/c268e636-545c-42ed-81dc-e87f5f64c0b2.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042727738+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/c7e7cff8-30a0-4c9d-8540-0c1db63fc7ac.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042745367+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/d72035a8-783f-4325-9a75-f900b7d6bc65.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042755431+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/ef3031f6-6e36-4761-8f1e-2760b397e06b.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042771199+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/ef3e6599-2d9c-485f-be14-3e278c6f6d1e.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042784731+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/ef85d54d-4b2e-4210-8c8f-d34fda969684.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.042798935+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/f85ed68b-4713-4288-aa6a-fa17606737dc.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.067412615+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.067427896+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068153632+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068153633+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068153634+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068226905+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068385855+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068428777+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068612916+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/default_project_id.txt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.06864382+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068877708+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068901426+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/settings.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.068993117+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.069224584+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.069402424+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.070641349+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/203434e4-1774-46e3-b061-c6ce9a60b2ca.34691f6f-6d29-4952-b5bb-d166fe9e0654.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.07064135+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/203434e4-1774-46e3-b061-c6ce9a60b2ca.34691f6f-6d29-4952-b5bb-d166fe9e0654.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.070667056+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/203434e4-1774-46e3-b061-c6ce9a60b2ca.34691f6f-6d29-4952-b5bb-d166fe9e0654.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.070667056+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/203434e4-1774-46e3-b061-c6ce9a60b2ca.34691f6f-6d29-4952-b5bb-d166fe9e0654.tmp",
+   "output_hash": "sha256:41355c2e0978fc1d578b28a6328120176dfcb14be06d1694788816718cb7b341",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.07069392+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/203434e4-1774-46e3-b061-c6ce9a60b2ca.34691f6f-6d29-4952-b5bb-d166fe9e0654.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.070693921+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/implicit/203434e4-1774-46e3-b061-c6ce9a60b2ca.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.070954407+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071009443+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071289573+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/bin/webm_encoder",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071354009+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.07135401+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/migrate-workflows/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071354012+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071399145+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071399146+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/automation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071606129+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/run-workflow/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.071890558+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/permissioned-github/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.07205201+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/generative_ui/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.075699351+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/ui-plugin-navigation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.077780209+01:00",
+   "action_type": "file_open",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.077795596+01:00",
+   "action_type": "file_write",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.080326614+01:00",
+   "action_type": "file_close",
+   "target": "/tmp/unleash-repo-schema-v1-codeium-language-server.json",
+   "output_hash": "sha256:cfd1125d0825876a54bab94b55cccde1ccf635454cc8150c49069ed4f338a0ca",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.084516315+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/.agents/agents/agent-trace/agent.md",
+   "input_hash": "sha256:4bf9d2785c61e0571e36ae192fcc547d8ee85e626c7539322428b7de025b07de",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.085048673+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.085438786+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/user/1000/bus",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089041869+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089156941+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.7baff8a4-0eec-4149-ac57-28b9fc5b863b.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089156942+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.7baff8a4-0eec-4149-ac57-28b9fc5b863b.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089165158+01:00",
+   "action_type": "net_dns",
+   "target": "www.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089187483+01:00",
+   "action_type": "net_dns",
+   "target": "www.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089192144+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.7baff8a4-0eec-4149-ac57-28b9fc5b863b.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089192144+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.7baff8a4-0eec-4149-ac57-28b9fc5b863b.tmp",
+   "output_hash": "sha256:1aa3e7b17067c259f56b1c7feb17094172729c977d4a7fcbea030f9247c0bbe4",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089253148+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json.7baff8a4-0eec-4149-ac57-28b9fc5b863b.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089253149+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache/onboarding.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089391777+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089393293+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089459649+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089468411+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.08947401+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089479219+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089484702+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089491091+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089495999+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089501369+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089513424+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089520548+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089527517+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089534458+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089540525+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089546718+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.08955289+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.089559672+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.100303223+01:00",
+   "action_type": "net_connect",
+   "target": "www.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109534571+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109546768+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109556113+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109564664+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109573061+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109581608+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109589638+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109597852+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109617329+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109633579+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109646539+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109658271+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109669095+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109681175+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109692313+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.109705994+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.122874208+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.135568844+01:00",
+   "action_type": "net_request",
+   "target": "GET https://www.googleapis.com/oauth2/v2/userinfo",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.155852736+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "request_hash": "sha256:bf16e6ba74b0d54c56d6008c376e6804325547204eb7855e0eff014402951d29"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.182900214+01:00",
+   "action_type": "net_response",
+   "target": "GET https://www.googleapis.com/oauth2/v2/userinfo",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 234,
+    "body_hash": "sha256:3a49727bd2bbdb464a31b95702cf5781c1f68879be1aa95607e48966f3527c78",
+    "end": "2026-11-03T00:56:31.182996432+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.18320307+01:00",
+   "action_type": "net_dns",
+   "target": "lh3.googleusercontent.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.183217113+01:00",
+   "action_type": "net_dns",
+   "target": "lh3.googleusercontent.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.183550729+01:00",
+   "action_type": "net_dial",
+   "target": "[2a00:1450:400f:807::2001]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.183575629+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.19.225:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.20119588+01:00",
+   "action_type": "net_connect",
+   "target": "lh3.googleusercontent.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.233597087+01:00",
+   "action_type": "net_request",
+   "target": "GET https://lh3.googleusercontent.com/a/account-picture",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.255880134+01:00",
+   "action_type": "net_response",
+   "target": "GET https://lh3.googleusercontent.com/a/account-picture",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "image/png",
+    "body_bytes": 1354,
+    "body_hash": "sha256:ff9914ba47c7ad0530a6d17daed4ecd270b289b8c50e8e72720238868e79e363",
+    "end": "2026-11-03T00:56:31.255938114+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.644343602+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 1211,
+    "body_hash": "sha256:ae83fa088693a39096f1cc90ac29ec8e3f1f7e3bd74d2d7d7978c70d2144f8af",
+    "end": "2026-11-03T00:56:31.644894051+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645385817+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAdminControls",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645435134+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.64543514+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645877341+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645892673+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645908013+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645921671+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645933013+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645944303+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645960941+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645972466+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.645993801+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.646009553+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.646023721+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.646033003+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.646046154+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.646056392+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.646065451+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.646074476+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.662905462+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.663220594+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.663321538+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.684423898+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAdminControls",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 23,
+    "body_hash": "sha256:8b0b8749aba12de93f3cf5d86f9fac9d6de7cac400a17473718f182a34ebb7e9",
+    "end": "2026-11-03T00:56:31.684549651+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.684724171+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.69357165+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.695390622+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchUserInfo",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.732695436+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchUserInfo",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 63,
+    "body_hash": "sha256:6cd79df57bb0920758d543a9bc17d96048ff9834cbaff9458c7f484fa311fa33",
+    "end": "2026-11-03T00:56:31.732823997+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.951314167+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 23910,
+    "body_hash": "sha256:456bee62e615f2f8c4baf9a6d768642b05e8641a7fee5ebfc4ecf7f21ba6ce5e",
+    "end": "2026-11-03T00:56:31.952420563+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.954344589+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "request_hash": "sha256:bf16e6ba74b0d54c56d6008c376e6804325547204eb7855e0eff014402951d29"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:31.954404627+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:listExperiments",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.02478469+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:listExperiments",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 8669,
+    "body_hash": "sha256:c4053e5d273e28341647784b87b70f37b01f01683dafd4de6a39cd94e13136c8",
+    "end": "2026-11-03T00:56:32.025179048+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026453595+01:00",
+   "action_type": "net_dns",
+   "target": "aicode.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.0264536+01:00",
+   "action_type": "net_dns",
+   "target": "aicode.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026833361+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026849641+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026863156+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026879517+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026894025+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026907358+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026920407+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026932856+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026945242+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026955665+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026968308+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026979524+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.02698959+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.026999384+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027010394+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027016117+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027026511+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027037418+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027215332+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.02757818+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/ui-plugin-navigation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.02759903+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/permissioned-github/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027599031+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/generative_ui/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027599032+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027623946+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/migrate-workflows/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027623947+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/run-workflow/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.02765317+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027658309+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.027694806+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/automation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.031862169+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.031922075+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.032083174+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.032113778+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.03262587+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.032839355+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.032885033+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.041148601+01:00",
+   "action_type": "net_connect",
+   "target": "aicode.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.069987444+01:00",
+   "action_type": "net_request",
+   "target": "GET https://aicode.googleapis.com/v1alpha:fetchConfig",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.097786938+01:00",
+   "action_type": "net_response",
+   "target": "GET https://aicode.googleapis.com/v1alpha:fetchConfig",
+   "pid": 544981,
+   "response": {
+    "status": 403,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 296,
+    "body_hash": "sha256:da701b5b883b69d346793942cc693f1af1142f4a0cb8f726f298c2cb5a09b06a",
+    "end": "2026-11-03T00:56:32.097877573+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.360823131+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 485,
+    "body_hash": "sha256:456d9e321960f96a0c828695a087ed76b557b272830cfe1d593ee59ce22eb4ab",
+    "end": "2026-11-03T00:56:32.361054192+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.379904951+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 1211,
+    "body_hash": "sha256:ae83fa088693a39096f1cc90ac29ec8e3f1f7e3bd74d2d7d7978c70d2144f8af",
+    "end": "2026-11-03T00:56:32.38006443+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.380356553+01:00",
+   "action_type": "net_request",
+   "target": "GET https://www.googleapis.com/oauth2/v2/userinfo",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.380362222+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "request_hash": "sha256:bf16e6ba74b0d54c56d6008c376e6804325547204eb7855e0eff014402951d29"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.430979382+01:00",
+   "action_type": "net_response",
+   "target": "GET https://www.googleapis.com/oauth2/v2/userinfo",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 234,
+    "body_hash": "sha256:3a49727bd2bbdb464a31b95702cf5781c1f68879be1aa95607e48966f3527c78",
+    "end": "2026-11-03T00:56:32.431042299+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.431118299+01:00",
+   "action_type": "net_request",
+   "target": "GET https://lh3.googleusercontent.com/a/account-picture",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.448775082+01:00",
+   "action_type": "net_response",
+   "target": "GET https://lh3.googleusercontent.com/a/account-picture",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "image/png",
+    "body_bytes": 1354,
+    "body_hash": "sha256:ff9914ba47c7ad0530a6d17daed4ecd270b289b8c50e8e72720238868e79e363",
+    "end": "2026-11-03T00:56:32.448840997+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.872842762+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 1211,
+    "body_hash": "sha256:ae83fa088693a39096f1cc90ac29ec8e3f1f7e3bd74d2d7d7978c70d2144f8af",
+    "end": "2026-11-03T00:56:32.873107784+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.873306915+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchUserInfo",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.933195713+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchUserInfo",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 63,
+    "body_hash": "sha256:6cd79df57bb0920758d543a9bc17d96048ff9834cbaff9458c7f484fa311fa33",
+    "end": "2026-11-03T00:56:32.933275586+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.933739513+01:00",
+   "action_type": "net_request",
+   "target": "GET https://aicode.googleapis.com/v1alpha:fetchConfig",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.933745134+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.933758367+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "request_hash": "sha256:bf16e6ba74b0d54c56d6008c376e6804325547204eb7855e0eff014402951d29"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.954766743+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.954766744+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.954766744+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.954846878+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.955199584+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-journal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.955199585+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-journal",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.955215565+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-journal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.959209144+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.960205465+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-journal",
+   "output_hash": "sha256:75de11f7bfeaee0e9e850c7a02c673205417ae42685080ae2602afbd40e6be65",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.960219532+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-journal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.960345717+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.960345718+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-wal",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.960345719+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.96034572+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-shm",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.96034572+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.961770013+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966177923+01:00",
+   "action_type": "net_response",
+   "target": "GET https://aicode.googleapis.com/v1alpha:fetchConfig",
+   "pid": 544981,
+   "response": {
+    "status": 403,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 295,
+    "body_hash": "sha256:ac6b87975a2b1b96901dbb52ff15f82164ea2e9963adcb4be6b1f3faa318e972",
+    "end": "2026-11-03T00:56:32.966258501+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966469582+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966469587+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966886426+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966899767+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966910255+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966919738+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966929544+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966940023+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.96694965+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966959079+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966980488+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.966995912+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.96700835+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.967026357+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.967051654+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.967067745+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.967080298+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.967091529+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.96792716+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.967927188+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968282935+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968297396+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968309078+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968319679+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968330361+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968340331+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968354082+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968364536+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968383947+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968397774+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968410722+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968423327+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968435482+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968448255+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968463756+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.968475852+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.969645633+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/.agents/agents/agent-trace/agent.md",
+   "input_hash": "sha256:4bf9d2785c61e0571e36ae192fcc547d8ee85e626c7539322428b7de025b07de",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.969767647+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.970669267+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.971299655+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/presence/f487f832-d21c-4dc2-ba13-18c162201a07.lock",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.971299656+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/presence/f487f832-d21c-4dc2-ba13-18c162201a07.lock",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97364402+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.973708609+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.973880854+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.973912469+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974145447+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974196833+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974334983+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974369722+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974385971+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974643815+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974684116+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.974770466+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975019996+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975039525+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975057355+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975431925+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/ui-plugin-navigation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975479105+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/generative_ui/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97548812+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/permissioned-github/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975488121+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975493967+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97550502+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975519891+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/migrate-workflows/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975526461+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/run-workflow/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.975575432+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/automation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.976745888+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.976898362+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.60fbf500-2ab0-48f8-a4bb-882b8749fea1.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.976898363+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.60fbf500-2ab0-48f8-a4bb-882b8749fea1.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97692482+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.60fbf500-2ab0-48f8-a4bb-882b8749fea1.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97692482+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.60fbf500-2ab0-48f8-a4bb-882b8749fea1.tmp",
+   "output_hash": "sha256:c7532c5c11b3d0dfa74c7f94d7dbf5c930eb81d41667a2df67660ba1edd166e0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.976986743+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.60fbf500-2ab0-48f8-a4bb-882b8749fea1.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.976986744+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978279488+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978288832+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978319044+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978376138+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978376959+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978419481+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97843554+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978467656+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978790163+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978808524+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978823445+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978838062+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978854616+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978870923+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978886138+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978898949+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978921839+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978935749+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978946943+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978958242+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.978969113+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97897951+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.97899108+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.979001974+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.979795348+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.984286967+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.984333694+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986432214+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986432215+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986468953+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986667849+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986673288+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986676654+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986721516+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986721517+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986721517+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986744157+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986744159+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.98674416+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.98674416+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986897691+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986903376+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986903376+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986927308+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986927309+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986950997+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.986950997+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989290834+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989299048+01:00",
+   "action_type": "net_dns",
+   "target": "daily-cloudcode-pa.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989705302+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989719941+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989730996+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989741612+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989751962+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989771879+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989782906+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989793027+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989813558+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989829183+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989843522+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989859213+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989873793+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989887241+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989900893+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.989914281+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:32.996641779+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.005147531+01:00",
+   "action_type": "net_connect",
+   "target": "daily-cloudcode-pa.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.008088507+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:writeTrajectoryAcls",
+   "pid": 544981,
+   "request_hash": "sha256:89b7454d04b4913cc33b155e65e3da0b083978516463b29872e112cd2853e3fa"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.01592822+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:listExperiments",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.024551976+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+   "pid": 544981,
+   "request_hash": "sha256:b8b7259bd1e56c67875130371d0b3744826a379937d5272a4a15c423b0aa7da0"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.033914185+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+   "pid": 544981,
+   "request_hash": "sha256:f3a09124bf24e1c39d1744b1aba3c1612433de4ba336e10f4a753c59afc17b25"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.035603345+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.337965b7-6a2d-43bb-8076-ffaefb88ce5f.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.035603346+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.337965b7-6a2d-43bb-8076-ffaefb88ce5f.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.035630438+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.337965b7-6a2d-43bb-8076-ffaefb88ce5f.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.035630438+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.337965b7-6a2d-43bb-8076-ffaefb88ce5f.tmp",
+   "output_hash": "sha256:0c0cb691849301e65dbf67719e0f4edd142bedca182a39f09481f91ff88d394c",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.035679277+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.337965b7-6a2d-43bb-8076-ffaefb88ce5f.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.035679279+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.035961547+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.120486227+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 485,
+    "body_hash": "sha256:2cf9c37a7745ec7808b44c299f1ad4acb837b5aedd4bc52cbbb477330298718c",
+    "end": "2026-11-03T00:56:33.120583297+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.120789804+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.385825457+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:listExperiments",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 8676,
+    "body_hash": "sha256:440049c033d39c58cecb8c51c161270555e7ecd4f6927ba0fcc4d9bc50c00502",
+    "end": "2026-11-03T00:56:33.387358391+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.385938959+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 485,
+    "body_hash": "sha256:2cf9c37a7745ec7808b44c299f1ad4acb837b5aedd4bc52cbbb477330298718c",
+    "end": "2026-11-03T00:56:33.38602827+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.387459101+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:writeTrajectoryAcls",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 23,
+    "body_hash": "sha256:8b0b8749aba12de93f3cf5d86f9fac9d6de7cac400a17473718f182a34ebb7e9",
+    "end": "2026-11-03T00:56:33.387512832+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.387478148+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 1211,
+    "body_hash": "sha256:ae83fa088693a39096f1cc90ac29ec8e3f1f7e3bd74d2d7d7978c70d2144f8af",
+    "end": "2026-11-03T00:56:33.387616418+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.388926047+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.388941173+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389210511+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389258083+01:00",
+   "action_type": "net_request",
+   "target": "GET https://aicode.googleapis.com/v1alpha:fetchConfig",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389606477+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/ui-plugin-navigation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389606478+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/generative_ui/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.38966332+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/migrate-workflows/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389663321+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389663322+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/automation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389673273+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389723879+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/run-workflow/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389723881+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.389738884+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/permissioned-github/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.39166046+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.391710777+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.391855441+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.391885522+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.392386469+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.392540622+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.392568905+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.421848976+01:00",
+   "action_type": "net_response",
+   "target": "GET https://aicode.googleapis.com/v1alpha:fetchConfig",
+   "pid": 544981,
+   "response": {
+    "status": 403,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 295,
+    "body_hash": "sha256:ac6b87975a2b1b96901dbb52ff15f82164ea2e9963adcb4be6b1f3faa318e972",
+    "end": "2026-11-03T00:56:33.421938542+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.422113989+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:listExperiments",
+   "pid": 544981,
+   "request_hash": "sha256:2f45ae366c6d6c90a4469e90de805bfe9d6813c74fa78b4cfb033f3ec1336d04"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.492521007+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:listExperiments",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "application/json",
+    "content_encoding": "gzip",
+    "body_bytes": 8710,
+    "body_hash": "sha256:8591b5e7b61d36a58d5befdc77ae1a1d1ca5c20903a8d35c39203b1e0c68b6a5",
+    "end": "2026-11-03T00:56:33.492917086+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.494433468+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.494542125+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.49470058+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495106319+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/ui-plugin-navigation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495149104+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/generative_ui/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495218339+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/migrate-workflows/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495224323+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495241212+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495250489+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/automation/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495336325+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/permissioned-github/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495348585+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.495357131+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/run-workflow/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.497047841+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.497084538+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.497168879+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetski_state.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.497186419+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.497507781+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/config.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.49769771+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.497709167+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.503510904+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "body_bytes": 1450,
+    "body_hash": "sha256:acd1791ad3f2607100879e1b398353a13fad21c2e4962fd052296d1ab5baec5b",
+    "end": "2026-11-03T00:56:33.546739403+01:00",
+    "complete": true,
+    "paired": true,
+    "sse": {
+     "events": 4,
+     "types": {
+      "message": 4
+     }
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.546961243+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt.94a3285b-bd65-4a07-9080-9a1c8255ef4d.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.546961245+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt.94a3285b-bd65-4a07-9080-9a1c8255ef4d.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.547023895+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt.94a3285b-bd65-4a07-9080-9a1c8255ef4d.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.547023895+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt.94a3285b-bd65-4a07-9080-9a1c8255ef4d.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.547023896+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt.94a3285b-bd65-4a07-9080-9a1c8255ef4d.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.547023897+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:33.547229576+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:34.035405453+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.30b15886-761a-4c3e-8357-6e4a97171398.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:34.035405454+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.30b15886-761a-4c3e-8357-6e4a97171398.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:34.035405454+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.30b15886-761a-4c3e-8357-6e4a97171398.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:34.035405454+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.30b15886-761a-4c3e-8357-6e4a97171398.tmp",
+   "output_hash": "sha256:d3dea8990308ebd2f193a1fc113277969118ab7b7e980ec9b8dac7e9f5e99716",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:34.035518203+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.30b15886-761a-4c3e-8357-6e4a97171398.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.876392384+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "body_bytes": 1645,
+    "body_hash": "sha256:ce7f74d0f3e7de52a5d9bee08957b3e3cdce05de3c18b788c65a239cdbc1ec7a",
+    "end": "2026-11-03T00:56:35.877356404+01:00",
+    "complete": true,
+    "paired": true,
+    "sse": {
+     "events": 2,
+     "types": {
+      "message": 2
+     }
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879564948+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879564948+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879564948+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879587701+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879593142+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879593142+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879809529+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879816057+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879816057+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.879845771+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.87985146+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.87985146+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.88158868+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.881884316+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/bin/agentapi",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.881913267+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/bin/agentapi",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.881930391+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/bin/agentapi",
+   "output_hash": "sha256:98ac22179cb6efd5aaf930e491ed8d8d620ec76de56bac8bac80979c0cd2573d",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.882531545+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/config/projects/default-cli-project.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.883594015+01:00",
+   "action_type": "process_fork",
+   "target": "545006",
+   "pid": 545006,
+   "ppid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.883716019+01:00",
+   "action_type": "process_fork",
+   "target": "545007",
+   "pid": 545007,
+   "ppid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.883762801+01:00",
+   "action_type": "process_exec",
+   "target": "/usr/bin/bash -c : agent-trace-control-marker",
+   "pid": 545007,
+   "ppid": 544981,
+   "cwd": "/ws/control-4",
+   "image": {
+    "filename": "/usr/bin/bash",
+    "program": "/usr/bin/bash"
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.883776513+01:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/bash",
+   "pid": 545007
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.883955467+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 545007
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.884165074+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 545007
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.884177199+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.6",
+   "pid": 545007
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.88421966+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 545007
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.884749001+01:00",
+   "action_type": "process_exit",
+   "target": "/usr/bin/bash -c : agent-trace-control-marker",
+   "exit_code": 0,
+   "pid": 545007,
+   "ppid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885174621+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/steps/2/output.txt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885174622+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/steps/2/output.txt",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885215386+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/steps/2/output.txt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885215386+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/steps/2/output.txt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885215386+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/steps/2/output.txt",
+   "output_hash": "sha256:c1d0c71af5bdfbc7e67e8be53f469b4cf3ed4d381a886ac1ee514d8bfecd8941",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885940752+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885950235+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885953793+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:3418a487103ef839779cfd6cea854bce819a401776b9afa829b5dec53549af5a",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.885997346+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886003026+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886003026+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:3418a487103ef839779cfd6cea854bce819a401776b9afa829b5dec53549af5a",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886038746+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886047005+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886047005+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:84c048d7e74acfa6c07f1d0299f79d4676f06154e724557e0634ba2e2b8963cc",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886090887+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:899f295b2371987251165d8cd8658470dfa5e5a8ae96934b73e72782ee9f202e",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886097468+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.886097468+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:84c048d7e74acfa6c07f1d0299f79d4676f06154e724557e0634ba2e2b8963cc",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:35.888439517+01:00",
+   "action_type": "net_request",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+   "pid": 544981,
+   "request_hash": "sha256:f3a3e41b053a4350715c2f54ba6de56eca02b062c40d454e2eaa4a3deafa7567"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032084429+01:00",
+   "action_type": "net_dns",
+   "target": "play.googleapis.com/AAAA@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032096617+01:00",
+   "action_type": "net_dns",
+   "target": "play.googleapis.com/A@127.0.0.53:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032521692+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4847:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032533116+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4845:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032541294+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4844:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032550136+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4840:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032560327+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4843:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032576728+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4846:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032585394+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4842:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032593349+01:00",
+   "action_type": "net_dial",
+   "target": "[2001:4860:4841:400::]:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032611754+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.113.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032628292+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.118.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032639142+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.114.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032650753+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.117.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032662491+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.112.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032675764+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.116.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032688595+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.119.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.032702635+01:00",
+   "action_type": "net_dial",
+   "target": "172.217.115.4:53",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.049049938+01:00",
+   "action_type": "net_connect",
+   "target": "play.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.049443736+01:00",
+   "action_type": "net_connect",
+   "target": "play.googleapis.com",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.078182986+01:00",
+   "action_type": "net_request",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "request_hash": "sha256:45f3de82e29eb1534d026a72ebf3b259bb289230b71e88b0c0100dfdd407977d"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.092504225+01:00",
+   "action_type": "net_request",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "request_hash": "sha256:9b663622429ead8abcb05d311f64283d73f047e7df9abe50276ad8af1593561b"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.125322534+01:00",
+   "action_type": "net_response",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "text/plain",
+    "content_encoding": "gzip",
+    "body_bytes": 100,
+    "body_hash": "sha256:0acca613b4c6c21ee9d4eb30022cb58208652bb7a611cab89c58feb7fe804370",
+    "end": "2026-11-03T00:56:36.125384287+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:36.162599986+01:00",
+   "action_type": "net_response",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "text/plain",
+    "content_encoding": "gzip",
+    "body_bytes": 100,
+    "body_hash": "sha256:0acca613b4c6c21ee9d4eb30022cb58208652bb7a611cab89c58feb7fe804370",
+    "end": "2026-11-03T00:56:36.162650974+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.622880916+01:00",
+   "action_type": "net_response",
+   "target": "POST https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "body_bytes": 1106,
+    "body_hash": "sha256:60e3829bb686bfd3aaae6634e7e1c805656b37c7bcc558b54256cb27666b9fc1",
+    "end": "2026-11-03T00:56:37.634513707+01:00",
+    "complete": true,
+    "paired": true,
+    "sse": {
+     "events": 2,
+     "types": {
+      "message": 2
+     }
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635260059+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "input_hash": "sha256:3418a487103ef839779cfd6cea854bce819a401776b9afa829b5dec53549af5a",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635272446+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635272446+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript.jsonl",
+   "output_hash": "sha256:817032878cc07480ffc942f34710829a0086a943897ea3aaad5e5eaf097b1548",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635329185+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "input_hash": "sha256:3418a487103ef839779cfd6cea854bce819a401776b9afa829b5dec53549af5a",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635329185+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635329186+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript/00000000.jsonl",
+   "output_hash": "sha256:817032878cc07480ffc942f34710829a0086a943897ea3aaad5e5eaf097b1548",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635554302+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "input_hash": "sha256:84c048d7e74acfa6c07f1d0299f79d4676f06154e724557e0634ba2e2b8963cc",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635554302+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635554302+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/transcript_full.jsonl",
+   "output_hash": "sha256:39dc88e1bcb6b8164ab3540816306cd55b82ce53f46b8ed03d3615816aec6546",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635586234+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "input_hash": "sha256:84c048d7e74acfa6c07f1d0299f79d4676f06154e724557e0634ba2e2b8963cc",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635592434+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.635592434+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/brain/f487f832-d21c-4dc2-ba13-18c162201a07/.system_generated/logs/chunks/transcript_full/00000000.jsonl",
+   "output_hash": "sha256:39dc88e1bcb6b8164ab3540816306cd55b82ce53f46b8ed03d3615816aec6546",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.638206477+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/annotations/f487f832-d21c-4dc2-ba13-18c162201a07.pbtxt",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.656984837+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/presence/f487f832-d21c-4dc2-ba13-18c162201a07.lock",
+   "output_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657004219+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "input_hash": "sha256:c7532c5c11b3d0dfa74c7f94d7dbf5c930eb81d41667a2df67660ba1edd166e0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657163543+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.b677e287-12e5-4e07-b1e7-b5bd07b88793.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657163544+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.b677e287-12e5-4e07-b1e7-b5bd07b88793.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657191065+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.b677e287-12e5-4e07-b1e7-b5bd07b88793.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657191065+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.b677e287-12e5-4e07-b1e7-b5bd07b88793.tmp",
+   "output_hash": "sha256:c7532c5c11b3d0dfa74c7f94d7dbf5c930eb81d41667a2df67660ba1edd166e0",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657254866+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json.b677e287-12e5-4e07-b1e7-b5bd07b88793.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657254867+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/cache/last_conversations.json",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657334253+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.657373149+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.662863527+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.662884038+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.662904632+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.662911562+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.662923757+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversations/f487f832-d21c-4dc2-ba13-18c162201a07.db",
+   "output_hash": "sha256:80b65c5d828b54d9e7c6c20ea4c4c22ac91cc251e43a45cb9e51f1ea4706d996",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.663566786+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.7f0be889-019f-4546-b791-8afac6d29eed.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.663566787+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.7f0be889-019f-4546-b791-8afac6d29eed.tmp",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.663566788+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.7f0be889-019f-4546-b791-8afac6d29eed.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.663566789+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.7f0be889-019f-4546-b791-8afac6d29eed.tmp",
+   "output_hash": "sha256:0a04488177fc4cb2947be26a84428061c66920d63dc171579a9985d29550a725",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.663613768+01:00",
+   "action_type": "file_rename",
+   "target": "/home/user/.gemini/antigravity-cli/jetbox_summaries_proto.pb.7f0be889-019f-4546-b791-8afac6d29eed.tmp",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.663903096+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.664050304+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.665170255+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.665648764+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.66566886+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-shm",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.665691024+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "output_hash": "sha256:d2c1201b73451677ec7b5b8b400c3a28685bb09ed59bfd99bcd3ff0e4966c55b",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.665698688+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db-wal",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.665704787+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.66571083+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.665710831+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/conversation_summaries.db",
+   "output_hash": "sha256:043edce4196ce8deee3a511392fea73df815694355a7033f4d442a1b185266a3",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.666342006+01:00",
+   "action_type": "net_request",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "request_hash": "sha256:de83d1797e1d0a203aefa8991283bb77ebd1fcd2f664f274cf0638b2d11accb7"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.717577406+01:00",
+   "action_type": "net_response",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "text/plain",
+    "content_encoding": "gzip",
+    "body_bytes": 100,
+    "body_hash": "sha256:0acca613b4c6c21ee9d4eb30022cb58208652bb7a611cab89c58feb7fe804370",
+    "end": "2026-11-03T00:56:37.717645924+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.718005335+01:00",
+   "action_type": "net_request",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "request_hash": "sha256:a363b21764af9a77ae899df8c99065aaf527943d3066648ac903904fd5e652a7"
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.751021015+01:00",
+   "action_type": "net_response",
+   "target": "POST https://play.googleapis.com/log",
+   "pid": 544981,
+   "response": {
+    "status": 200,
+    "content_type": "text/plain",
+    "content_encoding": "gzip",
+    "body_bytes": 100,
+    "body_hash": "sha256:0acca613b4c6c21ee9d4eb30022cb58208652bb7a611cab89c58feb7fe804370",
+    "end": "2026-11-03T00:56:37.751060115+01:00",
+    "complete": true,
+    "paired": true
+   }
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.751171168+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/crashes/crash_544981_f16f4069-802f-4b41-9fdc-e8f120ceb51d.log",
+   "output_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.751208983+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.gemini/antigravity-cli/crashes/crash_544981_f16f4069-802f-4b41-9fdc-e8f120ceb51d.log",
+   "pid": 544981
+  },
+  {
+   "timestamp": "2026-11-03T00:56:37.770290835+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.gemini/antigravity-cli/log/cli-20261103_005630.log",
+   "output_hash": "sha256:8c054fbc661046d77d157b54210cb1191147c33bad11700cb46756f2bcf98e95",
+   "pid": 544981
+  }
+ ],
+ "coverage": {
+  "schema": 2,
+  "probes": {
+   "fs": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "hashless_closes": 16
+   },
+   "net": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "content": "active",
+    "responses": "active"
+   },
+   "proc": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0
+   }
+  }
+ },
+ "root_pid": 544981,
+ "workspace": "/ws/control-4",
+ "fs_scope": {
+  "rule": "tree-or-workspace",
+  "mounts": [
+   "/",
+   "/boot/efi",
+   "/dev/shm",
+   "/run",
+   "/run/credentials/systemd-journald.service",
+   "/run/credentials/systemd-resolved.service",
+   "/run/media/user/OS",
+   "/run/user/1000",
+   "/tmp"
+  ],
+  "unmarked": {
+   "/var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged": "fanotify_mark on /var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged: operation not supported"
+  },
+  "dropped_outside": 79,
+  "filesystems": [
+   {
+    "device": "0:29",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 34,
+      "parent": 44,
+      "root": "/",
+      "point": "/run",
+      "names": true
+     },
+     {
+      "id": 634,
+      "parent": 34,
+      "root": "/snapd/ns",
+      "point": "/run/snapd/ns"
+     }
+    ]
+   },
+   {
+    "device": "259:7",
+    "fstype": "ext4",
+    "mounts": [
+     {
+      "id": 44,
+      "parent": 1,
+      "root": "/",
+      "point": "/",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:7",
+    "fstype": "devtmpfs",
+    "mounts": [
+     {
+      "id": 41,
+      "parent": 44,
+      "root": "/",
+      "point": "/dev"
+     }
+    ]
+   },
+   {
+    "device": "0:27",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 43,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/shm",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:28",
+    "fstype": "devpts",
+    "mounts": [
+     {
+      "id": 45,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/pts"
+     }
+    ]
+   },
+   {
+    "device": "0:26",
+    "fstype": "sysfs",
+    "mounts": [
+     {
+      "id": 46,
+      "parent": 44,
+      "root": "/",
+      "point": "/sys"
+     }
+    ]
+   },
+   {
+    "device": "0:8",
+    "fstype": "securityfs",
+    "mounts": [
+     {
+      "id": 47,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/security"
+     }
+    ]
+   },
+   {
+    "device": "0:30",
+    "fstype": "cgroup2",
+    "mounts": [
+     {
+      "id": 48,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/cgroup"
+     }
+    ]
+   },
+   {
+    "device": "0:31",
+    "fstype": "pstore",
+    "mounts": [
+     {
+      "id": 49,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/pstore"
+     }
+    ]
+   },
+   {
+    "device": "0:32",
+    "fstype": "efivarfs",
+    "mounts": [
+     {
+      "id": 50,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/firmware/efi/efivars"
+     }
+    ]
+   },
+   {
+    "device": "0:33",
+    "fstype": "bpf",
+    "mounts": [
+     {
+      "id": 51,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/bpf"
+     }
+    ]
+   },
+   {
+    "device": "0:21",
+    "fstype": "configfs",
+    "mounts": [
+     {
+      "id": 52,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/config"
+     }
+    ]
+   },
+   {
+    "device": "0:25",
+    "fstype": "proc",
+    "mounts": [
+     {
+      "id": 53,
+      "parent": 44,
+      "root": "/",
+      "point": "/proc"
+     }
+    ]
+   },
+   {
+    "device": "0:34",
+    "fstype": "autofs",
+    "mounts": [
+     {
+      "id": 28,
+      "parent": 53,
+      "root": "/",
+      "point": "/proc/sys/fs/binfmt_misc"
+     }
+    ]
+   },
+   {
+    "device": "0:35",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 29,
+      "parent": 34,
+      "root": "/",
+      "point": "/run/credentials/systemd-journald.service",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:14",
+    "fstype": "tracefs",
+    "mounts": [
+     {
+      "id": 31,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/tracing"
+     }
+    ]
+   },
+   {
+    "device": "0:23",
+    "fstype": "mqueue",
+    "mounts": [
+     {
+      "id": 32,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/mqueue"
+     }
+    ]
+   },
+   {
+    "device": "0:9",
+    "fstype": "debugfs",
+    "mounts": [
+     {
+      "id": 35,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/debug"
+     }
+    ]
+   },
+   {
+    "device": "0:36",
+    "fstype": "hugetlbfs",
+    "mounts": [
+     {
+      "id": 36,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/hugepages"
+     }
+    ]
+   },
+   {
+    "device": "0:37",
+    "fstype": "fusectl",
+    "mounts": [
+     {
+      "id": 37,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/fuse/connections"
+     }
+    ]
+   },
+   {
+    "device": "0:39",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 40,
+      "parent": 34,
+      "root": "/",
+      "point": "/run/credentials/systemd-resolved.service",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "7:0",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 55,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/bare/5"
+     }
+    ]
+   },
+   {
+    "device": "7:2",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 63,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/code/274"
+     }
+    ]
+   },
+   {
+    "device": "7:5",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 105,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core18/3084"
+     }
+    ]
+   },
+   {
+    "device": "7:6",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 109,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core20/2922"
+     }
+    ]
+   },
+   {
+    "device": "7:8",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 117,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core24/2124"
+     }
+    ]
+   },
+   {
+    "device": "7:10",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 118,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core22/2987"
+     }
+    ]
+   },
+   {
+    "device": "7:12",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 183,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/desktop-security-center/206"
+     }
+    ]
+   },
+   {
+    "device": "7:14",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 191,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/firefox/9137"
+     }
+    ]
+   },
+   {
+    "device": "7:16",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 221,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/firmware-updater/262"
+     }
+    ]
+   },
+   {
+    "device": "7:17",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 225,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gnome-3-28-1804/198"
+     }
+    ]
+   },
+   {
+    "device": "7:19",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 229,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gnome-42-2204/263"
+     }
+    ]
+   },
+   {
+    "device": "7:21",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 241,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gnome-46-2404/177"
+     }
+    ]
+   },
+   {
+    "device": "7:22",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 245,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gtk-common-themes/1535"
+     }
+    ]
+   },
+   {
+    "device": "7:23",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 249,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/kf6-core22/43"
+     }
+    ]
+   },
+   {
+    "device": "7:24",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 253,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/kf6-core24/69"
+     }
+    ]
+   },
+   {
+    "device": "7:28",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 269,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/mesa-2404/1839"
+     }
+    ]
+   },
+   {
+    "device": "7:29",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 273,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/prompting-client/228"
+     }
+    ]
+   },
+   {
+    "device": "7:31",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 281,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/scc/27"
+     }
+    ]
+   },
+   {
+    "device": "7:32",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 285,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/snap-store/1468"
+     }
+    ]
+   },
+   {
+    "device": "7:34",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 293,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/snapd/28254"
+     }
+    ]
+   },
+   {
+    "device": "7:37",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 305,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/snapd-desktop-integration/391"
+     }
+    ]
+   },
+   {
+    "device": "7:39",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 313,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/thunderbird/1312"
+     }
+    ]
+   },
+   {
+    "device": "7:41",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 321,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/transmission/120"
+     }
+    ]
+   },
+   {
+    "device": "7:42",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 325,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/vlc/4472"
+     }
+    ]
+   },
+   {
+    "device": "0:47",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 329,
+      "parent": 44,
+      "root": "/",
+      "point": "/tmp",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "259:1",
+    "fstype": "vfat",
+    "mounts": [
+     {
+      "id": 333,
+      "parent": 44,
+      "root": "/",
+      "point": "/boot/efi",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:49",
+    "fstype": "binfmt_misc",
+    "mounts": [
+     {
+      "id": 338,
+      "parent": 28,
+      "root": "/",
+      "point": "/proc/sys/fs/binfmt_misc"
+     }
+    ]
+   },
+   {
+    "device": "0:62",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 1060,
+      "parent": 34,
+      "root": "/",
+      "point": "/run/user/1000",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:83",
+    "fstype": "fuse.portal",
+    "mounts": [
+     {
+      "id": 1473,
+      "parent": 1060,
+      "root": "/",
+      "point": "/run/user/1000/doc"
+     }
+    ]
+   },
+   {
+    "device": "0:5",
+    "fstype": "nsfs",
+    "mounts": [
+     {
+      "id": 4677,
+      "parent": 634,
+      "root": "mnt:[4026533013]",
+      "point": "/run/snapd/ns/snapd-desktop-integration.mnt"
+     },
+     {
+      "id": 6057,
+      "parent": 634,
+      "root": "mnt:[4026533019]",
+      "point": "/run/snapd/ns/prompting-client.mnt"
+     },
+     {
+      "id": 6086,
+      "parent": 34,
+      "root": "net:[4026533031]",
+      "point": "/run/docker/netns/6afc795a546f"
+     },
+     {
+      "id": 6656,
+      "parent": 634,
+      "root": "mnt:[4026533070]",
+      "point": "/run/snapd/ns/thunderbird.mnt"
+     },
+     {
+      "id": 7675,
+      "parent": 634,
+      "root": "mnt:[4026532731]",
+      "point": "/run/snapd/ns/canonical-livepatch.mnt"
+     },
+     {
+      "id": 8322,
+      "parent": 634,
+      "root": "mnt:[4026532727]",
+      "point": "/run/snapd/ns/firmware-updater.mnt"
+     }
+    ]
+   },
+   {
+    "device": "0:97",
+    "fstype": "overlay",
+    "mounts": [
+     {
+      "id": 6061,
+      "parent": 44,
+      "root": "/",
+      "point": "/var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged"
+     }
+    ]
+   },
+   {
+    "device": "0:73",
+    "fstype": "fuse.gvfsd-fuse",
+    "mounts": [
+     {
+      "id": 403,
+      "parent": 1060,
+      "root": "/",
+      "point": "/run/user/1000/gvfs"
+     }
+    ]
+   },
+   {
+    "device": "7:43",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 1615,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/canonical-livepatch/418"
+     }
+    ]
+   },
+   {
+    "device": "259:3",
+    "fstype": "ntfs3",
+    "mounts": [
+     {
+      "id": 1619,
+      "parent": 34,
+      "root": "/",
+      "point": "/run/media/user/OS",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:136",
+    "fstype": "fuse.onedriver",
+    "mounts": [
+     {
+      "id": 1238,
+      "parent": 44,
+      "root": "/",
+      "point": "/home/user/onedrive"
+     }
+    ]
+   }
+  ],
+  "mount_table_changed": false
+ },
+ "sensitive": {
+  "home": "/home/user",
+  "files": [
+   {
+    "declared": "~/.claude.json",
+    "path": "/home/user/.claude.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "b11784cd7f7c18304c1ce3b35b4ff877218ee713e3c56f3efb7e35d4adc059a0"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "b11784cd7f7c18304c1ce3b35b4ff877218ee713e3c56f3efb7e35d4adc059a0"
+    }
+   },
+   {
+    "declared": "~/.claude/settings.json",
+    "path": "/home/user/.claude/settings.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "d3492a224c33841f3535ef4c08845c2f59424042e2fe826b3563ea31989341f0"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "d3492a224c33841f3535ef4c08845c2f59424042e2fe826b3563ea31989341f0"
+    }
+   },
+   {
+    "declared": "~/.claude/remote-settings.json",
+    "path": "/home/user/.claude/remote-settings.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "2e48ecee1a4070864893fbc0bd142ee8abd812757331ba7c9838afe938dbfd63"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "2e48ecee1a4070864893fbc0bd142ee8abd812757331ba7c9838afe938dbfd63"
+    }
+   },
+   {
+    "declared": "{workspace}/.claude/settings.json",
+    "path": "/ws/control-4/.claude/settings.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/.claude/settings.local.json",
+    "path": "/ws/control-4/.claude/settings.local.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.codex/config.toml",
+    "path": "/home/user/.codex/config.toml",
+    "start": {
+     "state": "present",
+     "format": "other",
+     "digest": "7d94363723cd2fec90cfa456fa39e5387ac673a0dcca806e46f2432e7d5e9025"
+    },
+    "stop": {
+     "state": "present",
+     "format": "other",
+     "digest": "7d94363723cd2fec90cfa456fa39e5387ac673a0dcca806e46f2432e7d5e9025"
+    }
+   },
+   {
+    "declared": "~/.codex/managed_config.toml",
+    "path": "/home/user/.codex/managed_config.toml",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.codex/requirements.toml",
+    "path": "/home/user/.codex/requirements.toml",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.codex/hooks.json",
+    "path": "/home/user/.codex/hooks.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/.codex/config.toml",
+    "path": "/ws/control-4/.codex/config.toml",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.gemini/antigravity-cli/settings.json",
+    "path": "/home/user/.gemini/antigravity-cli/settings.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "13534fb21c1f5f6876932ad9016fdfbfa0d4024e8b979e04ed9e2573727f46a0"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "13534fb21c1f5f6876932ad9016fdfbfa0d4024e8b979e04ed9e2573727f46a0"
+    }
+   },
+   {
+    "declared": "~/.gemini/config/config.json",
+    "path": "/home/user/.gemini/config/config.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "22652d25d3ce7646bf22062f52146798c35f7eba9cfc94c2f37063ef9f15dbad"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "22652d25d3ce7646bf22062f52146798c35f7eba9cfc94c2f37063ef9f15dbad"
+    }
+   },
+   {
+    "declared": "~/.gemini/config/mcp_config.json",
+    "path": "/home/user/.gemini/config/mcp_config.json",
+    "start": {
+     "state": "present",
+     "format": "other",
+     "digest": "4524794878cb9de8dd465f2186f7266b63a3298941e5e7b41961facd96af40d4"
+    },
+    "stop": {
+     "state": "present",
+     "format": "other",
+     "digest": "4524794878cb9de8dd465f2186f7266b63a3298941e5e7b41961facd96af40d4"
+    }
+   }
+  ]
+ },
+ "root_image": {
+  "filename": "/home/user/.local/bin/agy",
+  "program": "/home/user/.local/bin/agy"
+ }
+}
