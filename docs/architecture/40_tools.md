@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 98783ef on 2026-11-03.
+Checked against commit ce26a3c on 2026-11-05.
 
 ## Objective
 
@@ -31,7 +31,7 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 | `--buf N` | 4096 | Per-probe event channel size |
 | `--root-pid N` | 0 | Attach the ancestry root to a running process instead of launching one; needs the proc probe; exclusive with `-- <command>` |
 | `--net-exe-path PATH` | empty | TLS library (for example `libssl.so.3`) for the `SSL_write` uprobe, the content method `tls-symbols`; empty means identity only |
-| `--net-content METHOD=PATH` | none | a content method and the file it hooks, repeatable (N-39): `tls-symbols` (as `--net-exe-path`), `tls-openssl-ex`, `tls-rustls-aead`, `tls-go-crypto` (N-48); at most one of the first two; an unknown method, or a file whose anchors are not found, fails the start |
+| `--net-content METHOD=PATH` | none | a content method and the file it hooks, repeatable (N-39): `tls-symbols` (as `--net-exe-path`), `tls-openssl-ex`, `tls-bun-boringssl` (N-51), `tls-rustls-aead`, `tls-go-crypto` (N-48); at most one of the first three; an unknown method, or a file whose anchors are not found, fails the start |
 | `--net-cache-path PATH` | `$TMPDIR/agent-trace-tlsoffset-cache.json` | Cache of computed TLS offsets |
 | `--agent NAME` | every adapter | Adapter whose security-sensitive harness files are snapshotted (I-59); an unknown name is an error. Without it, the files every registered adapter declares |
 | `--agent-home DIR` | home of `$SUDO_UID`, else root's | Home of the user the agent runs as, which a declared `~/` file resolves against; every snapshotted file must belong to its owner |
