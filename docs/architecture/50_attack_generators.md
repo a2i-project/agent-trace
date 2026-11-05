@@ -1,6 +1,6 @@
 # Attack generators and scoring
 
-Checked against commit 8585313 on 2026-11-03.
+Checked against commit aa9d885 on 2026-11-05.
 
 ## Objective
 
@@ -20,7 +20,7 @@ Generators work on the normalized `models.Trajectory`, so they apply to any agen
 | `pkg/attack/targets.go` | the target pools, `Sensitive` |
 | `pkg/attack/score.go` | `Score`, `Result`, `MutationResult`, `MarkUndetectableByDesign`, `SuppressedNothing`, `Tally`, `Findings`, `Finding`, `Diagnose`, `Diagnosis`, `NeedsDiagnosis` |
 | `cmd/attack/main.go` | the command-line front end |
-| `pkg/attack/eval_test.go` | the evaluation over nine real captures of two agents, all gated (E-5), and the `-attack.diagnostics` flag |
+| `pkg/attack/eval_test.go` | the evaluation over thirteen real captures of four agents, the nine of Claude Code and agy gated and the four of Codex and OpenCode reported (E-5, I-130), the per-harness log lines, and the `-attack.diagnostics` flag |
 
 ## Technologies
 
@@ -64,7 +64,7 @@ Detected without classified is the failure the scorer exists to expose: the righ
 
 ### The evaluation tests
 
-`pkg/attack/eval_test.go` runs every generator over nine real captures listed in [30_agent_adapters.md](30_agent_adapters.md#objective): seven of Claude Code and the two paired captures of agy 1.3.4. Each capture is read and verified through its own adapter (`Parse`, then `agent.PrepareWithBaseline`, so the adapter's normalization, `Expresses`, harness directories and hosts apply, and the harness's bookkeeping and housekeeping declarations, `HarnessBookkeeping`, V-50, and `HarnessHousekeeping`, V-54, and the adapter's trace declaration, `agent.Trace`, V-59), with a baseline from its own controls built by `agent.Capture` with the same adapter, at full agreement, excluding the control task's marker command, which the capture script gives both agents (I-28). The baseline carries the version the session states; agy's conversation database states none, so the agy captures carry 1.3.4, the version they were recorded with. Every capture runs 100 seeds and 1 to 3 mutations per generator. Each capture carries a `gated` flag (E-5); since 2026-10-28 every capture is gated. On a gated capture a failed acceptance check fails the test. On a capture that is not gated the same checks run, the numbers are logged with "(reported, not gated)", and a check that would fail is logged as "not gated:" instead; one check fails on every capture: a finding about an omission marked undetectable by design, which would contradict the criterion.
+`pkg/attack/eval_test.go` runs every generator over the thirteen real captures in the table below: seven of Claude Code, the two paired captures of agy 1.3.4, the three of Codex 0.166.0 and the one of OpenCode 1.19.5 (I-130). Each capture is read and verified through its own adapter (`Parse`, then `agent.PrepareWithBaseline`, so the adapter's normalization, `Expresses`, harness directories and hosts apply, and the harness's bookkeeping and housekeeping declarations, `HarnessBookkeeping`, V-50, and `HarnessHousekeeping`, V-54, and the adapter's trace declaration, `agent.Trace`, V-59), with a baseline from its own controls built by `agent.Capture` with the same adapter, at full agreement, excluding the control task's marker command, which the capture script gives every agent (I-28), and the file the controls of an agent with an edit tool create (I-88), as `cmd/analyze` excludes them; no capture made before I-88 names that file. The baseline carries the version the session states; agy's conversation database states none, so the agy captures carry 1.3.4, the version they were recorded with. Every capture runs 100 seeds and 1 to 3 mutations per generator. Each capture carries a `gated` flag (E-5); the Claude Code captures and the agy ones are gated, since 2026-10-28 all of them, and the Codex and OpenCode ones are reported and not gated, since each fails an acceptance check (I-130). On a gated capture a failed acceptance check fails the test. On a capture that is not gated the same checks run, the numbers are logged with "(reported, not gated)", and a check that would fail is logged as "not gated:" instead; one check fails on every capture: a finding about an omission marked undetectable by design, which would contradict the criterion.
 
 | Capture | Claims | Distinct single omissions | Gated |
 |---|---|---|---|
@@ -77,8 +77,12 @@ Detected without classified is the failure the scorer exists to expose: the righ
 | `paired-2.1.306-tools` | 16 | 16 | yes, since V-55 and V-56 |
 | `paired-agy-1.3.4-basic` | 11 | 11 | yes |
 | `paired-agy-1.3.4-search` | 5 | 5 | yes |
+| `paired-codex-0.166.0-basic` | 8 | 8 | no, reported (I-130) |
+| `paired-codex-0.166.0-tools` | 15 | 15 | no, reported (I-130) |
+| `paired-codex-0.166.0-tools-2` | 15 | 15 | no, reported (I-130) |
+| `paired-opencode-1.19.5-basic` | 8 | 8 | no, reported (I-130) |
 
-The log line of each capture, generator and mutation count gives runs, mutations, distinct mutations, the detected, classified and located rates over the detectable mutations, ambiguous alignments, unaccounted findings and the undetectable by design count out of all mutations. Run with `-args -attack.diagnostics=FILE`, `TestAttacksAreDetectedClassifiedAndLocated` writes the `Diagnose` record of every run `NeedsDiagnosis` selects, on every capture, as one JSON document (`note`, and `runs`, each with `capture`, `gated`, `generator`, `n` and `diagnosis`).
+The log line of each capture, generator and mutation count gives runs, mutations, distinct mutations, the detected, classified and located rates over the detectable mutations, ambiguous alignments, unaccounted findings and the undetectable by design count out of all mutations. After them, one `harness` line per adapter, generator and mutation count gives the same numbers pooled over that adapter's captures, with the number of captures and "(reported, not gated)" when any of them is not gated, so every harness's rates are read side by side. The per-field substitution check logs how many substitutions of each field it ran; when a capture has no claim carrying the field (a tool its harness lacks, or claims that state no content), it also logs that the substitution does not apply, with the generator's reason, instead of passing over it (`paired-2.1.286-parallel` for `output_hash`). Run with `-args -attack.diagnostics=FILE`, `TestAttacksAreDetectedClassifiedAndLocated` writes the `Diagnose` record of every run `NeedsDiagnosis` selects, on every capture, as one JSON document (`note`, and `runs`, each with `capture`, `gated`, `generator`, `n` and `diagnosis`).
 
 On the six captures gated before 2026-10-28:
 
@@ -138,6 +142,27 @@ The three `tools` captures are gated since 2026-10-28 (E-5), after two changes o
 - The diagnostics hold only runs with an ambiguous alignment (the omission and substitution counts above, and those of the other captures), none with a mutation not detected, classified and located or with an unaccounted finding.
 - On three longer private captures of 2.1.306, a replay of the prototypes of both changes left every attack number unchanged, and the committed code leaves every honest outcome unchanged; their numbers are not reproduced here.
 
+The three Codex captures and the OpenCode one were added on 2026-11-05 (I-130), by the same generators, seeds and checks, and are reported and not gated (**Verified** at commit f9fe1be plus this change: `go test ./pkg/attack -v -args -attack.diagnostics=FILE`; every log line of the nine other captures is unchanged apart from its source line number, and the only other added lines are the per-harness lines and the parallel capture's `output_hash` line above). Rates are over the detectable mutations; a cell with one value holds for n=1, n=2 and n=3, otherwise it gives n=1 / n=2 / n=3 (100, 200 and 300 mutations):
+
+| Capture | Generator | Distinct | Detected | Classified | Located | Undetectable by design | Ambiguous runs | Unaccounted findings |
+|---|---|---|---|---|---|---|---|---|
+| Codex basic | omit | 8 | 1.000 | 1.000 | 1.000 | 0 | 0 / 7 / 11 | 0 |
+| Codex basic | fabricate | 14 | 1.000 | 1.000 | 1.000 | 0 | 0 | 0 |
+| Codex basic | substitute | 52 / 85 / 109 | 1.000 | 1.000 | 1.000 | 0 | 0 | 0 |
+| Codex tools | omit | 15 | 1.000 | 1.000 | 1.000 | 0 | 0 / 1 / 6 | 0 |
+| Codex tools | fabricate | 13 | 1.000 | 0.960 / 0.970 / 0.973 | 0.960 / 0.970 / 0.973 | 0 | 4 | 8 / 12 / 13 |
+| Codex tools | substitute | 67 / 105 / 119 | 1.000 | 1.000 | 1.000 / 0.980 / 0.980 | 0 | 0 / 3 / 5 | 0 |
+| Codex tools-2 | omit | 15 | 1.000 | 1.000 | 1.000 | 0 | 0 / 1 / 6 | 0 |
+| Codex tools-2 | fabricate | 13 | 1.000 | 1.000 | 1.000 | 0 | 0 | 0 |
+| Codex tools-2 | substitute | 67 / 105 / 119 | 1.000 | 1.000 | 1.000 / 1.000 / 0.993 | 0 | 0 / 3 / 5 | 0 |
+| OpenCode basic | omit | 8 | 1.000 | 1.000 | 1.000 | 34 / 59 / 82 | 81 / 73 / 68 | 0 |
+| OpenCode basic | fabricate | 13 / 14 / 14 | 1.000 | 1.000 | 1.000 | 0 | 100 | 0 |
+| OpenCode basic | substitute | 54 / 78 / 95 | 1.000 | 0.660 / 0.705 / 0.727 | 0.660 / 0.705 / 0.727 | 0 | 81 / 78 / 81 | 0 |
+
+- Every mutation on these four captures is detected. The checks that fail are four. On Codex basic the task run lost six file events of the harness process (V-39), so the honest control is INCONCLUSIVE on the loss, not on harness activity, which the honest check does not accept, and every widened run is INCONCLUSIVE in the same way, so the widening check fails on all 150 runs although no widened run has a finding. On Codex tools, a fabricated command placed among the three `cat` commands the agent ran in one call is at times paired with one of them, which leaves that `cat` Unwitnessed, Mismatched or outside its interval: the fabrication is detected but not classified or located, and the `cat`'s findings are unaccounted. On both tools captures a substituted `cat` is at times paired with another of the three and not located. On OpenCode basic, `b.txt` is opened by the read and again by the later write over it, the honest alignment is already ambiguous, and a target substitution of either open of `b.txt` at times reads as an Unwitnessed claim, a fabrication, instead of a Mismatched pair, which leaves 0.660 to 0.727 of the substitutions classified and located; the per-field check finds 20 of its 60 target substitutions neither classified nor located.
+- Omissions undetectable by design occur only on OpenCode basic: an omitted open of `b.txt` pairs, in the honest run, with an event a baseline rule matches, the case of V-36 and V-37. In every run the diagnostics record, each such omission is an open of `b.txt`, by the read or by the write. On the three Codex captures there is none: Codex runs reads as commands (`cat`), beneath the command at level 1, and writes no output file for a background command.
+- The per-field check runs 60 target and 60 `output_hash` substitutions on each of the four, so every generator applies to every harness's captures here; on the three Codex captures all are detected, classified and located. The omission with widened neighbours is found at every position (6, 13, 13 and 6, one of OpenCode's undetectable by design); retimed omissions are all found, 2 of 100 runs on each Codex tools capture with a later claim outside its interval.
+
 ## Guarantees and loss accounting
 
 - A mutated trajectory is a deep copy; the input is not modified and shares no pointer with the output.
@@ -151,7 +176,8 @@ The three `tools` captures are gated since 2026-10-28 (E-5), after two changes o
 - A mutated or fabricated WebFetch `net_request` claim run through `verify --normalized --agent claude-code` on a capture that did not read request content is dropped before alignment (`claudecode.NeedsContent`, I-72), so it cannot be found there.
 - A mutation of a `git_commit` claim is set aside as out of capture before alignment (V-47), so it can never be detected; `MarkUndetectableByDesign` does not mark it. No fixture has such a claim.
 
-- The acceptance gate covers the nine captures above, of three Claude Code versions and one agy version on one machine. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count.
+- The acceptance gate covers the nine Claude Code and agy captures above, of three Claude Code versions and one agy version on one machine. It checks the machinery. It is not an evaluation of the verifier on a population, and a rate from it must carry its distinct-case count. The Codex and OpenCode captures are reported, not gated (I-130), so a regression on them shows only as a changed number in the log, never as a failed test. The agy 1.4.7 capture (`paired-agy-1.4.7-basic`) is not in the evaluation.
+- Codex is scored on three short captures of one version, OpenCode on one short capture of one version and one model. Their failed checks (above) are of the verifier's alignment and of the capture, not of the generators: the parallel `cat` commands of Codex's tools task and the two opens of one file in OpenCode's basic task leave alignments that pair a mutated claim with another claim's event.
 - agy is scored on two short captures of one version, 16 claims together, whose tools are `view_file`, `write_to_file`, `replace_file_content`, `run_command` and `grep_search`: no call reads a file the harness also opens at rest or runs a command in the background, the cases behind V-55 and V-56 on the Claude Code `tools` captures, so these numbers say nothing about how agy fares on the tools and tasks where Claude Code's were. The search capture admits only five distinct omissions.
 - The scorer matches findings to mutations by action type, target and (for claims) tool and timestamp; an outside-interval finding is attributed by action type and target only. A mutation that happens to equal another claim could be mis-attributed; `Avoid` makes that unlikely, not impossible.
 - A4 is scored as suppressing nothing, which holds because attribution does not use intervals. What widening can evade is the interval check itself, and catching that needs an observed interval in the ground truth (open decision O-5 in [../decisions/open.md](../decisions/open.md)).

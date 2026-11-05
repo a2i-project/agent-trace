@@ -12,25 +12,33 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/agent"
 	"github.com/agent-trace/agent-trace/pkg/agent/claudecode"
+	"github.com/agent-trace/agent-trace/pkg/agent/codex"
 	"github.com/agent-trace/agent-trace/pkg/agent/gemini"
+	"github.com/agent-trace/agent-trace/pkg/agent/opencode"
 	"github.com/agent-trace/agent-trace/pkg/models"
 	"github.com/agent-trace/agent-trace/pkg/verification"
 )
 
 // The evaluation tests run every generator over the real paired captures
 // checked in under pkg/agent/claudecode/testdata (three of Claude Code 2.1.286,
-// the edits task of 2.1.296 and the tools task of 2.1.296 and 2.1.306) and
-// pkg/agent/gemini/testdata (the basic and search tasks of agy 1.3.4), each
-// read and verified through its own adapter, and score the verifier's
-// verdicts against each mutation's record. They are
+// the edits task of 2.1.296 and the tools task of 2.1.296 and 2.1.306),
+// pkg/agent/gemini/testdata (the basic and search tasks of agy 1.3.4),
+// pkg/agent/codex/testdata (the basic task and two tools tasks of Codex
+// 0.166.0) and pkg/agent/opencode/testdata (the basic task of OpenCode
+// 1.19.5), each read and verified through its own adapter, and score the
+// verifier's verdicts against each mutation's record. They are
 // the Tier 8 acceptance: detection, classification and localization against the
 // record, no false findings on the honest control, and A4 suppressing nothing.
-// They are a check of the machinery on nine short real sessions, not an
-// evaluation of the verifier on a population: the claim count is small, two
-// agents, four agent versions and one machine. See
-// docs/methodology/being_data_driven.md before quoting a rate.
+// They are a check of the machinery on thirteen short real sessions, not an
+// evaluation of the verifier on a population: the claim count is small, four
+// agents, six agent versions and one machine. See
+// docs/methodology/being_data_driven.md before quoting a rate. Each
+// generator's rates are also logged per harness, over that harness's
+// captures.
 //
-// Every capture is gated. The three tools captures, two of 2.1.296 and one of
+// The Claude Code and agy captures are gated. The Codex and OpenCode ones
+// are reported and not gated (E-5): each fails an acceptance check, as
+// 50_attack_generators.md states. The three tools captures, two of 2.1.296 and one of
 // 2.1.306, were reported and not gated until V-55 and V-56 explained their
 // mislocated fabrications and substitutions and their hidden Read of the
 // background output (E-5). On the 2.1.306 one the harness's package-manager
@@ -97,6 +105,19 @@ var captures = existing([]capture{
 	// than Claude Code, gated since they met every acceptance check.
 	gem("agy-basic", "paired-agy-1.3.4-basic", "basic", true),
 	gem("agy-search", "paired-agy-1.3.4-search", "search", true),
+	// The paired captures of Codex 0.166.0 and OpenCode 1.19.5, scored by the
+	// same generators and reported, not gated (E-5). The basic one of Codex
+	// lost six file events (V-39), so its honest control and every widened
+	// run are INCONCLUSIVE. On the two tools ones, a fabricated or
+	// substituted command placed among the three cat commands the agent ran
+	// at once is at times paired with one of them, and mislocated. On
+	// OpenCode's, b.txt is opened by a read and again by a later write, the
+	// honest alignment is already ambiguous, and a substituted read of b.txt
+	// at times reads as Unwitnessed, a fabrication, not as a Mismatched pair.
+	cdx("codex-basic", "paired-codex-0.166.0-basic", "basic", false),
+	cdx("codex-tools", "paired-codex-0.166.0-tools", "tools", false),
+	cdx("codex-tools-2", "paired-codex-0.166.0-tools-2", "tools", false),
+	ocode("opencode-basic", "paired-opencode-1.19.5-basic", "basic", false),
 })
 
 func claude(name, fixture, label string, gated bool) capture {
@@ -108,6 +129,18 @@ func claude(name, fixture, label string, gated bool) capture {
 func gem(name, fixture, label string, gated bool) capture {
 	return capture{name: name, dir: filepath.Join("../agent/gemini/testdata", fixture), label: label,
 		session: label + ".conversation.db", adapter: gemini.Adapter{}, version: "1.3.4", gated: gated}
+}
+
+// cdx is a paired capture of Codex.
+func cdx(name, fixture, label string, gated bool) capture {
+	return capture{name: name, dir: filepath.Join("../agent/codex/testdata", fixture), label: label,
+		session: label + ".rollout.jsonl", adapter: codex.Adapter{}, gated: gated}
+}
+
+// ocode is a paired capture of OpenCode.
+func ocode(name, fixture, label string, gated bool) capture {
+	return capture{name: name, dir: filepath.Join("../agent/opencode/testdata", fixture), label: label,
+		session: label + ".opencode.db", adapter: opencode.Adapter{}, gated: gated}
 }
 
 func existing(cs []capture) []capture {
@@ -156,9 +189,11 @@ type session struct {
 	traceSession agent.TraceSession
 }
 
-// controlCommand is the control task's own command, which never becomes a rule
-// (I-28). scripts/capture-claude-code.sh gives the same one to both agents.
-const controlCommand = claudecode.ControlCommand
+// controlTargets are the control task's own command, which never becomes a
+// rule (I-28), and the file the controls of an agent with an edit tool create
+// (I-88), excluded as cmd/analyze excludes them. The captures made before
+// I-88 hold no such file, so the second changes nothing for them.
+var controlTargets = []string{agent.ControlCommand, agent.ControlFileTarget}
 
 func loadSession(t *testing.T, c capture) session {
 	t.Helper()
@@ -177,7 +212,7 @@ func loadSession(t *testing.T, c capture) session {
 	for _, p := range paths {
 		controls = append(controls, loadRun(t, c, strings.TrimSuffix(filepath.Base(p), ".ground_truth.json")))
 	}
-	base, err := agent.Capture(c.adapter, version, controls, time.Now(), agent.CaptureOptions{Exclude: []string{controlCommand}})
+	base, err := agent.Capture(c.adapter, version, controls, time.Now(), agent.CaptureOptions{Exclude: controlTargets})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,6 +309,8 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 	if *diagnostics != "" {
 		defer func() { writeDiagnostics(t, *diagnostics, diag) }()
 	}
+	perHarness := newHarnessTallies()
+	defer perHarness.log(t)
 	for _, c := range captures {
 		s := loadSession(t, c)
 		for _, g := range generators {
@@ -329,9 +366,66 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 						c.name, g.name, n, tally.Runs, tally.Mutations, tally.Distinct,
 						tally.Rate(tally.Detected), tally.Rate(tally.Classified), tally.Rate(tally.Located), tally.Ambiguous, tally.Unaccounted,
 						tally.Undetectable, tally.Mutations, gating(c))
+					perHarness.add(c, g.name, n, tally)
 				})
 			}
 		}
+	}
+}
+
+// harnessTallies pools each generator's tallies over the captures of one
+// harness, so the rates are reported per harness as well as per capture.
+type harnessTallies struct {
+	order    []string
+	captures map[string]map[string]bool
+	gated    map[string]bool
+	tallies  map[string]*Tally
+}
+
+func newHarnessTallies() *harnessTallies {
+	return &harnessTallies{captures: map[string]map[string]bool{}, gated: map[string]bool{}, tallies: map[string]*Tally{}}
+}
+
+func (h *harnessTallies) add(c capture, gen string, n int, t Tally) {
+	harness := c.adapter.Name()
+	if h.captures[harness] == nil {
+		h.captures[harness] = map[string]bool{}
+		h.gated[harness] = true
+	}
+	h.captures[harness][c.name] = true
+	h.gated[harness] = h.gated[harness] && c.gated
+	key := fmt.Sprintf("%s %s n=%d", harness, gen, n)
+	p := h.tallies[key]
+	if p == nil {
+		p = &Tally{}
+		h.tallies[key] = p
+		h.order = append(h.order, key)
+	}
+	p.Runs += t.Runs
+	p.Mutations += t.Mutations
+	p.Distinct += t.Distinct
+	p.Undetectable += t.Undetectable
+	p.UndetectableFound += t.UndetectableFound
+	p.Detected += t.Detected
+	p.Classified += t.Classified
+	p.Located += t.Located
+	p.Ambiguous += t.Ambiguous
+	p.Unaccounted += t.Unaccounted
+	p.Inconclusive += t.Inconclusive
+}
+
+func (h *harnessTallies) log(t *testing.T) {
+	for _, key := range h.order {
+		p := h.tallies[key]
+		harness := strings.Fields(key)[0]
+		note := ""
+		if !h.gated[harness] {
+			note = " (reported, not gated)"
+		}
+		t.Logf("harness %s: %d captures, %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f, ambiguous alignments %d, unaccounted findings %d, undetectable by design %d of %d%s",
+			key, len(h.captures[harness]), p.Runs, p.Mutations, p.Distinct,
+			p.Rate(p.Detected), p.Rate(p.Classified), p.Rate(p.Located), p.Ambiguous, p.Unaccounted,
+			p.Undetectable, p.Mutations, note)
 	}
 }
 
@@ -388,9 +482,11 @@ func TestSubstitutionIsClassifiedByTheFieldThatChanged(t *testing.T) {
 		s := loadSession(t, c)
 		for _, field := range []string{FieldTarget, FieldOutputHash} {
 			var ran int
+			var reason error
 			for seed := uint64(0); seed < 60; seed++ {
 				mut, rec, err := Substitute(s.claims, SubstituteOptions{Options: Options{N: 1, Seed: seed, Avoid: s.observed}, Field: field})
 				if err != nil {
+					reason = err
 					break // the capture has no entry with that field
 				}
 				ran++
@@ -401,6 +497,12 @@ func TestSubstitutionIsClassifiedByTheFieldThatChanged(t *testing.T) {
 				}
 			}
 			t.Logf("%s: %d substitutions of %s checked", c.name, ran, field)
+			if ran == 0 {
+				// Said, not skipped: the harness's claims of this capture
+				// carry no such field (a tool the harness lacks, or one
+				// whose claims state no content).
+				t.Logf("%s: substitution of %s does not apply: %v", c.name, field, reason)
+			}
 		}
 	}
 }
