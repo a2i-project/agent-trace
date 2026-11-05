@@ -171,6 +171,17 @@ type Options struct {
 	// harness bookkeeping, neither a finding nor a reason for INCONCLUSIVE.
 	// Nil declares nothing.
 	HarnessBookkeeping func(models.GroundTruthEvent) bool
+	// HarnessClaimedWrites names, among the files HarnessBookkeeping
+	// declares, those the harness keeps writing while the agent may read
+	// them with a claimed call, such as agy's background-task logs (V-94):
+	// true for such a path. On a path it names that every claim naming it
+	// claims only to open, the harness's own writes stay explained: each
+	// level-0 file_write and file_close of the agent's process (RootPID)
+	// that HarnessBookkeeping recognises, and for each write the one open of
+	// that process that began it. Every other open stays in the sequence,
+	// where the claim pairs with it. Nil declares nothing, so every event on
+	// a claimed path stays (V-50).
+	HarnessClaimedWrites func(path string) bool
 	// HarnessHousekeeping recognises a connection or a request that equals
 	// one of the exact network actions the adapter declares as the
 	// harness's own housekeeping, such as Claude Code's renewal of its login

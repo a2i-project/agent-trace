@@ -223,6 +223,41 @@ func HarnessBookkeeping(a Adapter, version string, g models.GroundTruthFile) fun
 	}
 }
 
+// HarnessClaimedWriter is implemented by an adapter that can name, among
+// the files it declares as bookkeeping (HarnessBookkeeper), those the
+// harness keeps writing while the agent may read them with a call it
+// claims, such as agy's background-task logs (V-94). Given the version and
+// the home as for HarnessBookkeeper, it returns a predicate over paths, or
+// nil to declare nothing. On such a path that claims name only as opened,
+// the verifier explains the harness's own writes (each level-0 write and
+// close of the agent's process that the bookkeeping declaration
+// recognises, and the open that began it) and keeps every other open, so
+// the agent's claimed read stays checked. A write by any other process, a
+// command's included, is never covered, and a path that a write, rename or
+// delete claim names keeps all its events (V-50).
+type HarnessClaimedWriter interface {
+	HarnessClaimedWrites(version, home string) func(path string) bool
+}
+
+// HarnessClaimedWrites is the adapter's declaration of HarnessClaimedWriter
+// for a capture and the harness version DeclarationVersion gives, as the
+// verifier takes it (verification.Options.HarnessClaimedWrites, V-94). Nil
+// when the adapter declares nothing or the version is empty.
+func HarnessClaimedWrites(a Adapter, version string, g models.GroundTruthFile) func(string) bool {
+	if version == "" {
+		return nil
+	}
+	cw, ok := a.(HarnessClaimedWriter)
+	if !ok {
+		return nil
+	}
+	home := ""
+	if g.Sensitive != nil {
+		home = g.Sensitive.Home
+	}
+	return cw.HarnessClaimedWrites(version, home)
+}
+
 // Housekeeping is one network action the harness itself performs as
 // housekeeping (V-54): a net_connect to Target, a host as the net probe
 // writes a connection's target, or a net_request whose target is exactly

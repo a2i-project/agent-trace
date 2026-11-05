@@ -258,3 +258,31 @@ func TestCreateFoldTakesTheCreatingOpenInALaterBatch(t *testing.T) {
 		}
 	}
 }
+
+// I-135: view_file's three opens of a background task's log, with the
+// project configuration's open between them, collapse to one, as for any
+// file; the harness's open that begins its next append to the log is never
+// folded into that run, so the verifier still finds the append's open.
+func TestCollapseFoldsAReadOfATaskLogOnly(t *testing.T) {
+	log := brain + "/tasks/task-441.log"
+	us := time.Microsecond
+	g := models.GroundTruth{
+		ev(0, agentPID, models.FileOpen, log),
+		ev(150*us, agentPID, models.FileOpen, projectConfigPath),
+		ev(645*us, agentPID, models.FileOpen, log),
+		ev(1076*us, agentPID, models.FileOpen, log),
+		ev(1200*us, agentPID, models.FileOpen, log),
+		ev(1200*us, agentPID, models.FileWrite, log),
+		ev(1300*us, agentPID, models.FileClose, log),
+	}
+	want := render(models.GroundTruth{g[0], g[1], g[4], g[5], g[6]})
+	if got := render((Adapter{}).NormalizeStream(g)); got != want {
+		t.Errorf("NormalizeStream =\n%s\nwant\n%s", got, want)
+	}
+	// Another file under the brain directory keeps every open.
+	other := brain + "/logs/transcript.jsonl"
+	h := models.GroundTruth{ev(0, agentPID, models.FileOpen, other), ev(us, agentPID, models.FileOpen, other)}
+	if got := render((Adapter{}).NormalizeStream(h)); got != render(h) {
+		t.Errorf("NormalizeStream =\n%s\nwant both opens", got)
+	}
+}

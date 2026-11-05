@@ -857,11 +857,39 @@ subagents_path() { printf '%s/%s' "$out" "${p_trace_subagents//\{label\}/"$1"}";
 
 # agent_md TOOLS: the custom agent of the agent-md tool set method (I-24):
 # the task's tools only, none of the user's MCP servers or customizations.
+# When the tools hold the profile's subagent tool, the agent also lists, in
+# its agents frontmatter key, the one subagent sub_agent_md defines, in a
+# file beside it (I-136): an agent that inherits no customizations has no
+# other subagent, so every invoke_subagent of agy 1.4.7 failed without it.
 agent_md() { # tools
   printf -- '---\nname: %s\ndescription: Runs the exact steps it is given for a trajectory capture.\n' "$p_tool_set_name"
   printf -- 'mainAgent: true\nsubagent: false\ninheritMcp: false\ninheritCustomizations: false\ntools:\n'
   for t in $1; do printf -- '  - %s\n' "$t"; done
+  if has_subagent_tool "$1"; then
+    printf -- 'agents:\n  - %s.md\n' "$(sub_agent_name)"
+  fi
   printf -- '---\n# %s\nDo exactly what the user asks, using the named tools, and nothing else.\n' "$p_tool_set_name"
+}
+
+# has_subagent_tool TOOLS: whether the tools hold the profile's subagent tool.
+has_subagent_tool() { # tools
+  [ -n "$p_subagent_tool" ] && case " $1 " in *" $p_subagent_tool "*) true ;; *) false ;; esac
+}
+
+# sub_agent_name: the name of the subagent agent_md lists, and of its file.
+sub_agent_name() { printf '%s-subagent' "$p_tool_set_name"; }
+
+# sub_agent_md TOOLS: the subagent agent_md lists (I-136), defined as the
+# agent is, with the task's tools but the subagent tool, so it cannot start
+# subagents of its own; it may be started as a subagent and never as the
+# main agent. Every run of a task, its controls included, writes the same
+# file, so the controls measure the bookkeeping of the subagent the task's
+# run starts.
+sub_agent_md() { # tools
+  printf -- '---\nname: %s\ndescription: Runs the exact steps its caller gives it for a trajectory capture.\n' "$(sub_agent_name)"
+  printf -- 'mainAgent: false\nsubagent: true\ninheritMcp: false\ninheritCustomizations: false\ntools:\n'
+  for t in $1; do [ "$t" = "$p_subagent_tool" ] || printf -- '  - %s\n' "$t"; done
+  printf -- '---\n# %s\nDo exactly what your caller asks, using the named tools, and nothing else.\n' "$(sub_agent_name)"
 }
 
 # invocation PROMPT TOOL_SET: the profile's invocation with its placeholders
@@ -905,6 +933,9 @@ capture_one() { # label prompt tools role
     agent-md)
       mkdir -p "$ws/$p_tool_set_dir/$p_tool_set_name" || return 1
       agent_md "$tools" >"$ws/$p_tool_set_dir/$p_tool_set_name/agent.md" || return 1
+      if has_subagent_tool "$tools"; then
+        sub_agent_md "$tools" >"$ws/$p_tool_set_dir/$p_tool_set_name/$(sub_agent_name).md" || return 1
+      fi
       tool_set=$p_tool_set_name
       ;;
     # none: the agent takes no tool set; the prompt names the tools (I-79).

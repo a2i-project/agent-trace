@@ -119,8 +119,9 @@ func foldCreates(g models.GroundTruth, started map[uint32]bool) models.GroundTru
 // process: an open whose process's previous event is an open of the same
 // file, neither ambiguous, is dropped. Any other event of the process, on any
 // path, the harness's own files included, ends the run, except that a run
-// of opens of a file outside ~/.gemini passes over an open of the harness's
-// project configuration (projectConfig, I-118), which is kept. The
+// of opens of a file outside ~/.gemini, or of a task log (I-135), passes
+// over an open of the harness's project configuration (projectConfig,
+// I-118), which is kept. The
 // harness's start-up reads of its configuration keep their shape, and opens
 // of the project configuration itself collapse as any file's. The harness
 // writes its transcripts between two tool calls, so the opens of two calls
@@ -131,23 +132,46 @@ func collapseOpens(g models.GroundTruth, started map[uint32]bool) models.GroundT
 	last := map[uint32]models.GroundTruthEvent{}
 	other := map[uint32]models.GroundTruthEvent{}
 	out := make(models.GroundTruth, 0, len(g))
-	for _, e := range g {
+	for i, e := range g {
 		prev, seen := last[e.PID]
 		if config := e.ActionType == models.FileOpen && !e.PathIsAmbiguous && projectConfig.MatchString(e.Target); !config {
-			if !geminiHome.MatchString(e.Target) {
+			if !geminiHome.MatchString(e.Target) || taskLog.MatchString(e.Target) {
 				prev, seen = other[e.PID]
 			}
 			other[e.PID] = e
 		}
 		last[e.PID] = e
 		if seen && e.ActionType == models.FileOpen && prev.ActionType == models.FileOpen && prev.Target == e.Target &&
-			!e.PathIsAmbiguous && !prev.PathIsAmbiguous && agentFile(e, started) {
+			!e.PathIsAmbiguous && !prev.PathIsAmbiguous && (agentFile(e, started) || taskLogRead(g, i, started)) {
 			continue
 		}
 		out = append(out, e)
 	}
 	return out
 }
+
+// taskLogRead reports whether g[i] is an open by the agent's own process of
+// a background task's log (V-92) that only reads it: view_file reads the log
+// in the three opens of I-50 while the harness keeps writing it (I-135). An
+// open whose process's next event is a write of the log is the harness's,
+// beginning that write, and is never collapsed, so a run of the agent's
+// opens never takes the open of the harness's next write.
+func taskLogRead(g models.GroundTruth, i int, started map[uint32]bool) bool {
+	e := g[i]
+	if e.ActionType != models.FileOpen || e.PID == 0 || started[e.PID] || !taskLog.MatchString(e.Target) {
+		return false
+	}
+	for _, n := range g[i+1:] {
+		if n.PID == e.PID {
+			return n.ActionType != models.FileWrite || n.Target != e.Target
+		}
+	}
+	return true
+}
+
+// taskLog is a background task's log under any home's conversation brain
+// directory, the shape HarnessBookkeeping declares for 1.4.7.
+var taskLog = regexp.MustCompile(`^` + homeRE + `/\.gemini/antigravity-cli/brain/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/\.system_generated/` + taskLogTail)
 
 // projectConfig is the harness's project configuration, which agy's process
 // opens, and only opens, before each file tool call. On the content capture

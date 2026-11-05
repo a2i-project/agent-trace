@@ -152,6 +152,8 @@ func run(args []string, out, errOut io.Writer) int {
 	declVersion := agent.DeclarationVersion(rep.AgentVersion, vflags.version)
 	// The harness's bookkeeping files of that version (V-50).
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(adapter, declVersion, gt)
+	// Its writes of those files on a path the agent reads (V-94).
+	in.Options.HarnessClaimedWrites = agent.HarnessClaimedWrites(adapter, declVersion, gt)
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, declVersion)
 	// Its start-up-only files, only when the rule is switched on (V-82).

@@ -534,7 +534,10 @@ func Verify(in Input) Verdict {
 	// A level-0 event on a file the adapter declares as the harness's own
 	// bookkeeping, that no rule explains and no claim names, is explained by
 	// the declaration and leaves the sequence (V-50).
-	part, v.HarnessBookkeeping = part.setAsideBookkeeping(in.Options.HarnessBookkeeping, owned, claimed)
+	// On a declared file the agent only claims to read, the harness's own
+	// writes are explained the same way and its reads stay (V-94).
+	part, v.HarnessBookkeeping = part.setAsideBookkeeping(in.Options.HarnessBookkeeping, owned, claimed,
+		part.claimedPathWrites(in.Options.HarnessBookkeeping, in.Options.HarnessClaimedWrites, owned, readOnlyClaimed(claims, mounts), in.RootPID))
 	// A level-0 connection or request equal to an action the adapter
 	// declares as the harness's own network housekeeping, that no rule
 	// explains and whose target no claim names, is explained the same way
@@ -830,9 +833,11 @@ func (p Partition) setAsideHarnessOwned(owned ownedFunc, claimed map[string]bool
 // setAsideBookkeeping removes from the aligned sequence every level-0 file
 // event the adapter's bookkeeping declaration recognises, whose exact path
 // lies under the harness's own directories and no claim names, and returns
-// them (V-50). An event with an ambiguous or truncated path is never taken:
-// it does not name the declared file.
-func (p Partition) setAsideBookkeeping(bookkeeping func(models.GroundTruthEvent) bool, owned ownedFunc, claimed map[string]bool) (Partition, []models.GroundTruthEvent) {
+// them (V-50), with the events at the indices in writes, the harness's own
+// writes on a claimed path (claimedPathWrites, V-94). An event with an
+// ambiguous or truncated path is never taken: it does not name the declared
+// file.
+func (p Partition) setAsideBookkeeping(bookkeeping func(models.GroundTruthEvent) bool, owned ownedFunc, claimed map[string]bool, writes map[int]bool) (Partition, []models.GroundTruthEvent) {
 	if bookkeeping == nil || owned == nil {
 		return p, nil
 	}
@@ -840,7 +845,7 @@ func (p Partition) setAsideBookkeeping(bookkeeping func(models.GroundTruthEvent)
 	out.Observed, out.Owner = nil, nil
 	var aside []models.GroundTruthEvent
 	for i, e := range p.Observed {
-		if p.Owner[i] == nil && isHarnessOwned(e, owned) && !e.PathIsAmbiguous && !e.TargetTruncated && !claimed[e.Target] && bookkeeping(e) {
+		if writes[i] || p.Owner[i] == nil && isHarnessOwned(e, owned) && !e.PathIsAmbiguous && !e.TargetTruncated && !claimed[e.Target] && bookkeeping(e) {
 			aside = append(aside, e)
 			continue
 		}
@@ -851,6 +856,116 @@ func (p Partition) setAsideBookkeeping(bookkeeping func(models.GroundTruthEvent)
 		return p, nil
 	}
 	return out, aside
+}
+
+// readOnlyClaimed is the set of paths some in-scope file claim names and
+// that every such claim claims only to open, with their aliases as
+// claimedTargets gives them (V-94).
+func readOnlyClaimed(claims models.Trajectory, mounts *matching.Mounts) map[string]bool {
+	read, other := map[string]bool{}, map[string]bool{}
+	for _, c := range claims {
+		if LaneOf(c.ActionType) != LaneFS || implied(c) {
+			continue
+		}
+		names := []string{c.Target}
+		if n, ok := mounts.Canonical(c.Target); ok {
+			names = append(names, n)
+		}
+		for _, n := range names {
+			if c.ActionType == models.FileOpen {
+				read[n] = true
+			} else {
+				other[n] = true
+			}
+		}
+	}
+	for n := range other {
+		delete(read, n)
+	}
+	return read
+}
+
+// claimedPathWrites returns the indices in the aligned sequence of the
+// harness's own writes on a path the adapter declares it writes while the
+// agent reads it (Options.HarnessClaimedWrites, V-94) and that claims name
+// only as opened (readOnly). An event qualifies when it is level 0, of the
+// agent's own process (root), on an exact path under the harness's own
+// directories that the declaration names, and the bookkeeping declaration
+// recognises it. Its process's events on that path, in order, are cut into
+// writes, each ending at a file_close (which the fs probe reports only for a
+// close after a write, P-25): of a write that holds a file_write, its writes
+// and its close are taken, and the one open that began it, the last open
+// before its first write or, when the probe reported none before it, the
+// first after. Every other open stays, so the agent's claimed read pairs
+// with an open that no write explains, or with none.
+func (p Partition) claimedPathWrites(bookkeeping func(models.GroundTruthEvent) bool, declared func(string) bool, owned ownedFunc, readOnly map[string]bool, root uint32) map[int]bool {
+	if bookkeeping == nil || declared == nil || owned == nil || root == 0 || len(readOnly) == 0 {
+		return nil
+	}
+	byPath := map[string][]int{}
+	var paths []string
+	for i, e := range p.Observed {
+		switch e.ActionType {
+		case models.FileOpen, models.FileWrite, models.FileClose:
+		default:
+			continue
+		}
+		if p.Owner[i] != nil || e.PID != root || e.PathIsAmbiguous || e.TargetTruncated || !readOnly[e.Target] ||
+			!isHarnessOwned(e, owned) || !declared(e.Target) || !bookkeeping(e) {
+			continue
+		}
+		if byPath[e.Target] == nil {
+			paths = append(paths, e.Target)
+		}
+		byPath[e.Target] = append(byPath[e.Target], i)
+	}
+	taken := map[int]bool{}
+	take := func(write []int) {
+		first := -1
+		for k, i := range write {
+			if p.Observed[i].ActionType == models.FileWrite {
+				first = k
+				break
+			}
+		}
+		if first < 0 {
+			return
+		}
+		open := -1
+		for k := first - 1; k >= 0 && open < 0; k-- {
+			if p.Observed[write[k]].ActionType == models.FileOpen {
+				open = write[k]
+			}
+		}
+		for k := first + 1; k < len(write) && open < 0; k++ {
+			if p.Observed[write[k]].ActionType == models.FileOpen {
+				open = write[k]
+			}
+		}
+		if open >= 0 {
+			taken[open] = true
+		}
+		for _, i := range write {
+			if t := p.Observed[i].ActionType; t == models.FileWrite || t == models.FileClose {
+				taken[i] = true
+			}
+		}
+	}
+	for _, path := range paths {
+		var write []int
+		for _, i := range byPath[path] {
+			write = append(write, i)
+			if p.Observed[i].ActionType == models.FileClose {
+				take(write)
+				write = nil
+			}
+		}
+		take(write)
+	}
+	if len(taken) == 0 {
+		return nil
+	}
+	return taken
 }
 
 // claimedNetTargets is the set of targets the connection and request claims

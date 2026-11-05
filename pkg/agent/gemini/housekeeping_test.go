@@ -132,3 +132,34 @@ func TestHarnessBookkeepingDeclaresTheBackgroundTaskFilesOnly(t *testing.T) {
 		t.Error("another home's task log is declared")
 	}
 }
+
+// V-94: of the background-task files, 1.4.7 names only the task logs as
+// files the harness writes while the agent reads them; another version, a
+// message file and another home's log are not named.
+func TestHarnessClaimedWritesNamesTheTaskLogsOnly(t *testing.T) {
+	const id = "0b18d7d3-41b4-4dfe-b649-e8ba776c383a"
+	sys := "/home/u/.gemini/antigravity-cli/brain/" + id + "/.system_generated/"
+	is := agent.HarnessClaimedWrites(Adapter{}, "1.4.7", models.GroundTruthFile{})
+	if is == nil {
+		t.Fatal("1.4.7 declares nothing")
+	}
+	for p, want := range map[string]bool{
+		sys + "tasks/task-441.log":     true,
+		sys + "tasks/task-441.log.bak": false,
+		sys + "messages/read.json":     false,
+		sys + "logs/transcript.jsonl":  false,
+		"/ws/tasks/task-441.log":       false,
+	} {
+		if got := is(p); got != want {
+			t.Errorf("%s: %v, want %v", p, got, want)
+		}
+	}
+	for _, v := range []string{"", "1.3.4", "1.4.8"} {
+		if agent.HarnessClaimedWrites(Adapter{}, v, models.GroundTruthFile{}) != nil {
+			t.Errorf("version %q declares claimed-path writes", v)
+		}
+	}
+	if (Adapter{}).HarnessClaimedWrites("1.4.7", "/home/v")(sys + "tasks/task-1.log") {
+		t.Error("another home's task log is declared")
+	}
+}

@@ -122,38 +122,73 @@ var bookkeepingVersions = map[string]bool{"1.4.7": true}
 // control starts a background task, so no baseline holds them. Not a
 // create, another file under the directory, or another version.
 func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthEvent) bool {
-	if !bookkeepingVersions[version] {
+	f, ok := taskFiles(version, home)
+	if !ok {
 		return nil
+	}
+	return func(e models.GroundTruthEvent) bool {
+		t := e.Target
+		switch e.ActionType {
+		case models.FileOpen:
+			return f.log.MatchString(t) || f.temp.MatchString(t) || f.notice.MatchString(t) || f.read.MatchString(t) || f.marker.MatchString(t)
+		case models.FileWrite, models.FileClose:
+			return f.log.MatchString(t) || f.temp.MatchString(t) || f.read.MatchString(t) || f.marker.MatchString(t)
+		case models.FileRename:
+			return f.temp.MatchString(t) || f.notice.MatchString(t)
+		case models.FileDelete:
+			return f.marker.MatchString(t)
+		}
+		return false
+	}
+}
+
+// HarnessClaimedWrites names the task logs of HarnessBookkeeping, the one
+// file of V-92 the agent reads while the harness writes it (V-94): on the
+// long parity run of 1.4.7 the agent read a running task's log with
+// view_file, and the agent's own process kept appending the command's
+// output to it, an open, a write and a close about once a second, 32 times.
+// On a log that claims name only as opened, those writes and their opens
+// stay explained and the agent's read stays checked. No other file of V-92
+// is declared: no call of the agent names one.
+func (Adapter) HarnessClaimedWrites(version, home string) func(string) bool {
+	f, ok := taskFiles(version, home)
+	if !ok {
+		return nil
+	}
+	return f.log.MatchString
+}
+
+// backgroundFiles are the patterns of the files of V-92.
+type backgroundFiles struct{ log, temp, notice, read, marker *regexp.Regexp }
+
+// taskFiles builds backgroundFiles for a version in bookkeepingVersions and
+// the capture's home (any home I-30 declares when it is empty); ok is false
+// for another version or a home that is not a clean /home/<user> or /root.
+func taskFiles(version, home string) (backgroundFiles, bool) {
+	if !bookkeepingVersions[version] {
+		return backgroundFiles{}, false
 	}
 	h := homeRE
 	if home != "" {
 		if home != filepath.Clean(home) || !homePattern.MatchString(home) {
-			return nil
+			return backgroundFiles{}, false
 		}
 		h = regexp.QuoteMeta(home)
 	}
 	const id = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
 	dir := `^` + h + `/\.gemini/antigravity-cli/brain/` + id + `/\.system_generated/`
-	taskLog := regexp.MustCompile(dir + `tasks/task-\d+\.log$`)
-	temp := regexp.MustCompile(dir + `messages/\.` + id + `\.` + id + `\.tmp$`)
-	notice := regexp.MustCompile(dir + `messages/` + id + `\.json$`)
-	read := regexp.MustCompile(dir + `messages/read\.json$`)
-	marker := regexp.MustCompile(dir + `messages/undelivered/` + id + `$`)
-	return func(e models.GroundTruthEvent) bool {
-		t := e.Target
-		switch e.ActionType {
-		case models.FileOpen:
-			return taskLog.MatchString(t) || temp.MatchString(t) || notice.MatchString(t) || read.MatchString(t) || marker.MatchString(t)
-		case models.FileWrite, models.FileClose:
-			return taskLog.MatchString(t) || temp.MatchString(t) || read.MatchString(t) || marker.MatchString(t)
-		case models.FileRename:
-			return temp.MatchString(t) || notice.MatchString(t)
-		case models.FileDelete:
-			return marker.MatchString(t)
-		}
-		return false
-	}
+	return backgroundFiles{
+		log:    regexp.MustCompile(dir + taskLogTail),
+		temp:   regexp.MustCompile(dir + `messages/\.` + id + `\.` + id + `\.tmp$`),
+		notice: regexp.MustCompile(dir + `messages/` + id + `\.json$`),
+		read:   regexp.MustCompile(dir + `messages/read\.json$`),
+		marker: regexp.MustCompile(dir + `messages/undelivered/` + id + `$`),
+	}, true
 }
+
+// taskLogTail is a background task's log below a conversation's
+// .system_generated directory.
+const taskLogTail = `tasks/task-\d+\.log$`
 
 // HarnessHousekeeping declares the token renewal of the versions in
 // housekeepingVersions and the flag metrics of those in metricsVersions as
