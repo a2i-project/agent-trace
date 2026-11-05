@@ -147,6 +147,33 @@ type ProbeDiagnostics struct {
 	// GoTLS holds the Go probes' call counts (tls-go-crypto, N-47). Nil
 	// without the method. Net probe only.
 	GoTLS *GoTLSCounts `json:"go_tls,omitempty"`
+	// FileHashes says where the fs probe's close hashes came from when the
+	// kernel content copy was asked for (P-50). Nil when it was not, and in
+	// a capture written before the field. Filesystem probe only.
+	FileHashes *FileHashCounts `json:"file_hashes,omitempty"`
+}
+
+// FileHashCounts counts the fs probe's hashed closes by source, on every
+// marked filesystem and for every process (P-50). Measurement only: the
+// verifier reads none of it.
+type FileHashCounts struct {
+	// Mode is "kernel" when the kernel copy ran, else "unavailable: " and
+	// the reason (an older kernel, no BPF LSM, a load or attach failure).
+	Mode string `json:"mode"`
+	// Kernel and Userspace count the closes published with a hash the
+	// kernel copy gave and with one the userspace settle path read.
+	Kernel    uint64 `json:"kernel"`
+	Userspace uint64 `json:"userspace"`
+	// Fallbacks counts, by reason, the closes the kernel gave no hash for,
+	// which then went through the userspace path: writer_held, too_large,
+	// not_cached, raced, ring_full, error, unmatched (no kernel record of
+	// the process and file), no_identity (the file could not be named).
+	Fallbacks map[string]uint64 `json:"fallbacks,omitempty"`
+	// Lost counts closes whose kernel record found no room in the ring, and
+	// SyncTimeouts the reads after which the kernel records did not arrive
+	// in time; both only send closes to the userspace path.
+	Lost         uint64 `json:"lost"`
+	SyncTimeouts uint64 `json:"sync_timeouts"`
 }
 
 // GoTLSCounts are the calls of crypto/tls.(*Conn).Write and Read whose

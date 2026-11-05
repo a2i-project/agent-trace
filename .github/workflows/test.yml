@@ -58,7 +58,7 @@ jobs:
       run: make generate
 
     - name: Fail if regeneration changed committed files
-      # The .bpf.c programs (proc.bpf.c, net.bpf.c, tls.bpf.c) are compiled
+      # The .bpf.c programs (proc.bpf.c, net.bpf.c, tls.bpf.c, khash.bpf.c) are compiled
       # locally and their .o/.go bindings are committed (CI has no clang in
       # the test job, so it can't build them at test time). Only the
       # generated .go files are compared: the .o bytes depend on the clang
@@ -67,7 +67,7 @@ jobs:
       # .bpf.c file without running `make generate` and committing the
       # result.
       run: |
-        dirs="pkg/probe/proc pkg/probe/net"
+        dirs="pkg/probe/proc pkg/probe/net pkg/probe/fs"
         if [ -n "$(git status --porcelain -- $dirs | grep -v '\.o$')" ]; then
           echo "::error::Committed BPF bindings are stale. Run 'make generate' and commit the result."
           git diff -- $dirs ':(exclude)*.o'

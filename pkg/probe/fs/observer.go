@@ -64,6 +64,20 @@ type Config struct {
 	// EventBufSize is the channel buffer size for emitted events.
 	// Defaults to 4096 if zero.
 	EventBufSize int
+
+	// KernelHash asks for the kernel content copy (P-48): at the last close
+	// of a written file, a BPF LSM program copies its content into a ring
+	// buffer and the probe hashes it, so the hash is the content at the close
+	// and nothing after the close withdraws it. It needs kernel 7.0 with the
+	// BPF LSM active; elsewhere the probe runs as without it and the
+	// coverage record says why. Off by default.
+	KernelHash bool
+	// KernelHashCap is the largest file the kernel copies; a larger one goes
+	// through the userspace path. Defaults to DefaultKernelHashCap.
+	KernelHashCap uint64
+	// KernelHashRing is the copy ring's size in bytes, a power of two times
+	// the page size. Defaults to DefaultKernelHashRing.
+	KernelHashRing uint64
 }
 
 // Observer watches filesystem events via fanotify and emits GroundTruthEvents.
@@ -256,6 +270,15 @@ type Observer struct {
 	// content.SHA256File; overridable in tests to control the read's outcome.
 	hashFD func(int) (string, error)
 
+	// khash is the kernel content copy, nil when it was not asked for or
+	// could not start (P-48); hashes counts the closes' hash sources for the
+	// coverage record, nil when it was not asked for (P-50). khashLost and
+	// khashTimeouts are the copy's loss counters, read at Stop.
+	khash         khashSource
+	hashes        *fileHashes
+	khashLost     uint64
+	khashTimeouts uint64
+
 	mu sync.Mutex
 }
 
@@ -372,6 +395,9 @@ func New(cfg Config) (*Observer, error) {
 	if err != nil {
 		dirs.close()
 		return fail(set, err)
+	}
+	if cfg.KernelHash {
+		o.startKernelHash(set.fds)
 	}
 	if table != nil {
 		names := map[int]bool{}
@@ -514,13 +540,17 @@ func (o *Observer) Overflow() bool {
 // is what QueueOverflow reports. UndrainedRecords counts the records the stop
 // drain could not read in its time budget.
 func (o *Observer) CaptureCoverage() models.ProbeCoverage {
-	return models.ProbeCoverage{
+	cov := models.ProbeCoverage{
 		Ran:              true,
 		QueueOverflow:    o.Overflow(),
 		HashlessCloses:   o.hashlessCloses.Load(),
 		UndrainedRecords: o.undrained.Load(),
 		UnresolvedPaths:  o.unresolved.Load(),
 	}
+	if o.hashes != nil {
+		cov.Diagnostics = &models.ProbeDiagnostics{FileHashes: o.hashes.counts(o.khashLost, o.khashTimeouts)}
+	}
+	return cov
 }
 
 // Start begins reading fanotify events in a background goroutine, then hashes
@@ -577,6 +607,10 @@ func (o *Observer) Stop() error {
 	// on beyond readLoop itself.
 	<-o.stopped
 
+	if o.khash != nil {
+		o.khashLost, o.khashTimeouts = o.khash.losses()
+		o.khash.close()
+	}
 	_ = unix.Close(o.fanotifyFD)
 	if o.mountTableFD >= 0 {
 		o.mountTableChanged = mountTableChanged(o.mountTableFD)
@@ -720,6 +754,7 @@ func (o *Observer) drainAtStop(buf []byte) {
 		if n == 0 {
 			return
 		}
+		o.syncKernelHash()
 		now := time.Now()
 		raw := parseEvents(buf, n, resolve, o.dirs)
 		for i := range raw {
@@ -819,6 +854,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 		if err != nil || n == 0 {
 			return false
 		}
+		o.syncKernelHash()
 
 		// One batch, one clock reading, and one nanosecond per record on top:
 		// the verifier sorts by timestamp (stably) and pairs by position, and a
@@ -1448,11 +1484,6 @@ func fdFlags(pid uint32, fd string) (int, bool) {
 // does attach reflects the eventual final content: a close is never hashed
 // until it has survived a full settle cycle with nothing superseding it.
 func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguous bool, mountFD int, handleType int32, handleData []byte, handle string) {
-	o.mu.Lock()
-	if o.pendingCloses == nil {
-		o.pendingCloses = make(map[string]*pendingClose)
-	}
-	superseded, existed := o.pendingCloses[path]
 	pathFD := -1
 	if handleData != nil && mountFD >= 0 {
 		var err error
@@ -1462,23 +1493,80 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 	} else if o.mountFD == -1 {
 		pathFD, _ = unix.Open(path, unix.O_RDONLY|unix.O_PATH, 0)
 	}
+	if o.khash != nil {
+		digest, sh, reason := o.kernelHashFor(pid, pathFD, mountFD, handleType, handleData)
+		if reason == "" {
+			o.emitKernelHashed(path, ts, pid, ambiguous, pathFD, digest, sh)
+			return
+		}
+		o.hashes.fallback(reason)
+	}
+	o.mu.Lock()
+	if o.pendingCloses == nil {
+		o.pendingCloses = make(map[string]*pendingClose)
+	}
+	superseded, existed := o.pendingCloses[path]
 	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle], opens: o.openedSince(path, handle, pid)}
 	o.mu.Unlock()
 
 	if existed {
-		if superseded.pathFD >= 0 {
-			_ = unix.Close(superseded.pathFD)
+		o.emitSuperseded(path, superseded)
+	}
+}
+
+// emitSuperseded publishes a pending close without a hash: a newer close
+// for its path arrived before it was ever judged settled.
+func (o *Observer) emitSuperseded(path string, superseded *pendingClose) {
+	if superseded.pathFD >= 0 {
+		_ = unix.Close(superseded.pathFD)
+	}
+	o.hashlessCloses.Add(1)
+	o.events <- models.GroundTruthEvent{
+		Timestamp:       superseded.ts,
+		ActionType:      models.FileClose,
+		Target:          path,
+		PathIsAmbiguous: superseded.ambiguous,
+		PID:             superseded.pid,
+	}
+}
+
+// emitKernelHashed publishes a close with the hash the kernel copied at the
+// close, at once and without the settle window: later opens, writes,
+// renames and deletions cannot change content already copied (P-48). A
+// close still pending for the path is superseded, as by any newer close.
+// The hash becomes the file's settled hash for later opens.
+func (o *Observer) emitKernelHashed(path string, ts time.Time, pid uint32, ambiguous bool, pathFD int, digest string, sh shadowHash) {
+	o.mu.Lock()
+	if o.pendingCloses == nil {
+		o.pendingCloses = make(map[string]*pendingClose)
+	}
+	superseded, existed := o.pendingCloses[path]
+	delete(o.pendingCloses, path)
+	if o.shadowHashes == nil {
+		o.shadowHashes = make(map[string]shadowHash)
+	}
+	o.shadowHashes[path] = sh
+	if sh.known {
+		if o.shadowHashesByInode == nil {
+			o.shadowHashesByInode = make(map[inodeKey]shadowHash)
 		}
-		o.hashlessCloses.Add(1)
-		o.events <- models.GroundTruthEvent{
-			Timestamp:  superseded.ts,
-			ActionType: models.FileClose,
-			Target:     path,
-			// No OutputHash: a newer close for this path arrived before
-			// this one was ever judged settled.
-			PathIsAmbiguous: superseded.ambiguous,
-			PID:             superseded.pid,
-		}
+		o.shadowHashesByInode[sh.key] = sh
+	}
+	o.mu.Unlock()
+	if pathFD >= 0 {
+		_ = unix.Close(pathFD)
+	}
+	if existed {
+		o.emitSuperseded(path, superseded)
+	}
+	o.hashes.add(true)
+	o.events <- models.GroundTruthEvent{
+		Timestamp:       ts,
+		ActionType:      models.FileClose,
+		Target:          path,
+		OutputHash:      &digest,
+		PathIsAmbiguous: ambiguous,
+		PID:             pid,
 	}
 }
 
@@ -1561,6 +1649,9 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 		}
 		if hashed {
 			event.OutputHash = &digest
+			if o.hashes != nil {
+				o.hashes.add(false)
+			}
 		} else {
 			o.hashlessCloses.Add(1)
 		}
