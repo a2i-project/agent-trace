@@ -12,5 +12,9 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
   else
     base="$remote_sha"
   fi
-  python3 "$root/scripts/check-docs.py" commits "$base" "$local_sha" || exit 1
+  # The local privileged test run (I-129) gates what lands on main; a push
+  # to another branch, such as a draft PR's, may come before it.
+  skip=1
+  [ "$_remote_ref" = refs/heads/main ] && skip=0
+  CHECK_DOCS_SKIP_PRIVILEGED=$skip python3 "$root/scripts/check-docs.py" commits "$base" "$local_sha" || exit 1
 done
