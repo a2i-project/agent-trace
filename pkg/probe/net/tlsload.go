@@ -25,6 +25,11 @@ var tlsMethodPrograms = map[string][]string{
 	MethodGoCrypto:   {"probe_go_write", "probe_go_write_ret", "probe_go_read", "probe_go_read_ret"},
 }
 
+// tlsSharedPrograms names, for a content method without programs of its
+// own, the method whose programs and maps it loads: tls-bun-boringssl hooks
+// BoringSSL's SSL_write and SSL_read, located by its own locator (N-51).
+var tlsSharedPrograms = map[string]string{MethodBunBoringSSL: MethodTLSSymbols}
+
 // tlsUserMaps are the maps userspace reads or writes for each content
 // method, "" for every capture with content. Each is loaded with its method
 // even when none of the loaded programs references it (ssl_read_counting is
@@ -59,8 +64,9 @@ func (p contentPlan) methods() []string {
 	return m
 }
 
-// selectTLSPrograms keeps in spec the common programs and those of methods,
-// the maps they reference (their own instructions and the functions they
+// selectTLSPrograms keeps in spec the common programs and those of methods
+// (for a method in tlsSharedPrograms, those of the method it names), the
+// maps they reference (their own instructions and the functions they
 // call) and the maps userspace uses for those methods (tlsUserMaps), and
 // removes every other program and map. It fails when a listed program or
 // map is missing or a method is unknown.
@@ -69,6 +75,14 @@ func selectTLSPrograms(spec *ebpf.CollectionSpec, methods []string) error {
 	for _, name := range tlsCommonPrograms {
 		keep[name] = true
 	}
+	var own []string
+	for _, m := range methods {
+		if shared, ok := tlsSharedPrograms[m]; ok {
+			m = shared
+		}
+		own = append(own, m)
+	}
+	methods = own
 	for _, m := range methods {
 		progs, ok := tlsMethodPrograms[m]
 		if !ok {

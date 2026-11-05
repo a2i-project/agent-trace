@@ -125,18 +125,19 @@ type Config struct {
 
 	// Content lists content methods by name with the executable or library
 	// each hooks, as the agent's profile chooses them (N-39): at most one
-	// of MethodTLSSymbols and MethodOpenSSLEx (the SSL side, which ExePath
-	// also sets as MethodTLSSymbols), MethodRustlsAEAD, and MethodGoCrypto
-	// (N-48). Empty with no ExePath: identity-only.
+	// of MethodTLSSymbols, MethodOpenSSLEx and MethodBunBoringSSL (the SSL
+	// side, which ExePath also sets as MethodTLSSymbols), MethodRustlsAEAD,
+	// and MethodGoCrypto (N-48). Empty with no ExePath: identity-only.
 	Content []ContentMethod
 }
 
 // Content method names, as config/agents.json names them (N-39).
 const (
-	MethodTLSSymbols = "tls-symbols"    // SSL_write and SSL_read
-	MethodOpenSSLEx  = "tls-openssl-ex" // SSL_write_ex and SSL_read_ex
-	MethodRustlsAEAD = "tls-rustls-aead"
-	MethodGoCrypto   = "tls-go-crypto" // Go's crypto/tls.(*Conn).Write and Read (N-48)
+	MethodTLSSymbols   = "tls-symbols"    // SSL_write and SSL_read
+	MethodOpenSSLEx    = "tls-openssl-ex" // SSL_write_ex and SSL_read_ex
+	MethodRustlsAEAD   = "tls-rustls-aead"
+	MethodGoCrypto     = "tls-go-crypto"     // Go's crypto/tls.(*Conn).Write and Read (N-48)
+	MethodBunBoringSSL = "tls-bun-boringssl" // SSL_write and SSL_read of a pinned Bun build (N-51)
 )
 
 // ContentMethod is one content method and the file it hooks.
@@ -166,7 +167,7 @@ func planContent(cfg Config) (contentPlan, error) {
 			return p, fmt.Errorf("content method %s names no file", m.Method)
 		}
 		switch m.Method {
-		case MethodTLSSymbols, MethodOpenSSLEx:
+		case MethodTLSSymbols, MethodOpenSSLEx, MethodBunBoringSSL:
 			if p.sslMethod != "" {
 				return p, fmt.Errorf("content methods %s and %s both hook SSL calls; a capture takes one", p.sslMethod, m.Method)
 			}
@@ -182,7 +183,7 @@ func planContent(cfg Config) (contentPlan, error) {
 			}
 			p.goPath = m.Path
 		default:
-			return p, fmt.Errorf("unknown content method %q (%s, %s, %s or %s)", m.Method, MethodTLSSymbols, MethodOpenSSLEx, MethodRustlsAEAD, MethodGoCrypto)
+			return p, fmt.Errorf("unknown content method %q (%s, %s, %s, %s or %s)", m.Method, MethodTLSSymbols, MethodOpenSSLEx, MethodBunBoringSSL, MethodRustlsAEAD, MethodGoCrypto)
 		}
 	}
 	return p, nil
@@ -675,7 +676,9 @@ func (o *Observer) prepareTLS(cfg Config) (err error) {
 
 // prepareSSL resolves the SSL side's write and read candidates in its file,
 // by symbol or by the method's locator (tlsoffset.Scan for tls-symbols,
-// tlsoffset.ScanOpenSSLEx for tls-openssl-ex), opens the file and the
+// tlsoffset.ScanOpenSSLEx for tls-openssl-ex, tlsoffset.ScanBunBoringSSL
+// for tls-bun-boringssl, whose one pinned pair of offsets the cache never
+// replaces and which is never cached, N-51), opens the file and the
 // ssl_events reader, and attaches the write probes at the first
 // (highest-ranked) candidate. Validation is a separate mandatory step
 // performed by net.Observer.Start, not New, because the process(es) whose
@@ -702,6 +705,10 @@ func (o *Observer) prepareSSL(cfg Config) error {
 		}
 		o.writeProgs = [2]*ebpf.Program{o.tlsObjs.ProbeSslWriteEx, o.tlsObjs.ProbeSslWriteExReturn}
 		o.readProgs = [2]*ebpf.Program{o.tlsObjs.ProbeSslReadExEntry, o.tlsObjs.ProbeSslReadExReturn}
+	}
+	if o.plan.sslMethod == MethodBunBoringSSL {
+		scan = tlsoffset.ScanBunBoringSSL
+		cacheKey = func(string) string { return "" }
 	}
 	res, err := scan(path)
 	if err != nil {

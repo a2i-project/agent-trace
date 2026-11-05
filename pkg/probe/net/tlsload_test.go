@@ -172,6 +172,30 @@ func hasJumpBack(insns asm.Instructions) bool {
 	return false
 }
 
+// tls-bun-boringssl loads exactly what tls-symbols loads, alone and beside
+// another method (N-51), and every shared method names a method with
+// programs of its own.
+func TestSelectTLSPrograms_BunBoringSSLLoadsTheSSLPrograms(t *testing.T) {
+	for m, shared := range tlsSharedPrograms {
+		if tlsMethodPrograms[shared] == nil || tlsMethodPrograms[m] != nil {
+			t.Errorf("%s shares %s's programs, which has none, or has its own", m, shared)
+		}
+	}
+	for _, other := range [][]string{nil, {MethodRustlsAEAD}, {MethodGoCrypto}} {
+		bun, _ := loadTlsbpf()
+		sym, _ := loadTlsbpf()
+		if err := selectTLSPrograms(bun, append([]string{MethodBunBoringSSL}, other...)); err != nil {
+			t.Fatal(err)
+		}
+		if err := selectTLSPrograms(sym, append([]string{MethodTLSSymbols}, other...)); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(sortedNames(bun.Programs), sortedNames(sym.Programs)) || !reflect.DeepEqual(sortedNames(bun.Maps), sortedNames(sym.Maps)) {
+			t.Errorf("with %v: %s loads %v and %v, %s %v and %v", other, MethodBunBoringSSL, sortedNames(bun.Programs), sortedNames(bun.Maps), MethodTLSSymbols, sortedNames(sym.Programs), sortedNames(sym.Maps))
+		}
+	}
+}
+
 // tlsFuncMethods says for which content methods each function of the
 // package that touches a map of the TLS objects runs: "" for every capture
 // with content. kernelCounters reads counters that may be absent.

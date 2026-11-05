@@ -30,6 +30,9 @@ type Result struct {
 	BuildID string
 	Write   []Candidate // SSL_write
 	Read    []Candidate // SSL_read
+	// Build names the pinned build ScanBunBoringSSL matched; empty for the
+	// other locators.
+	Build string
 }
 
 // ScanELF analyzes a stripped executable to find SSL_write candidates.

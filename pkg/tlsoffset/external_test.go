@@ -41,6 +41,15 @@ func TestLocators_ExternalBinary(t *testing.T) {
 			t.Logf("%s/%s encrypt=%v method %#x vtable %#x", m.Provider, m.Protocol, m.Encrypt, m.VA, m.Vtable)
 		}
 	}
+	b, err := ScanBunBoringSSL(path)
+	switch {
+	case errors.Is(err, ErrNoAnchor):
+		t.Logf("tls-bun-boringssl: %v", err)
+	case err != nil:
+		t.Fatalf("ScanBunBoringSSL: %v", err)
+	default:
+		t.Logf("%s: SSL_write %#x, SSL_read %#x", b.Build, b.Write[0].VA, b.Read[0].VA)
+	}
 	g, err := ScanGoTLS(path)
 	switch {
 	case errors.Is(err, ErrNoAnchor):
