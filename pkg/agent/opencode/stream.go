@@ -179,27 +179,61 @@ func without(g models.GroundTruth, drop map[int]bool) models.GroundTruth {
 	return out
 }
 
-// foldRereads drops the harness's read of what it has just written: after
-// every write and edit, the harness's process opened the file again
-// within rereadSpan of its close, as its next file event outside its own
-// directories, with the input hash equal to the close's hash (I-120). Such an open states nothing the write did not. An open with
-// other content, later, or after another file event of the process, stays.
+// foldRereads drops the harness's read of a file that has just been
+// written. After every write and edit, the harness's process opened the
+// file again within rereadSpan of its close, as its next file event
+// outside its own directories, with the input hash equal to the close's
+// hash (I-120). It does the same after a command or any other process
+// wrote a file of the workspace: on the first parity campaign it opened
+// the file 56 to 72 ms after that process's close, with the content just
+// written, also while no call ran (I-143). Such an open states nothing the
+// write did not. For a close by another process, the dropped open is the
+// harness's first open of the file after the close, within rereadSpan,
+// with the close's hash, and no write, close, rename or delete of the file
+// by any process lies between. An open with other content, later, or
+// after another change of the file, stays; so does one after a close
+// without a hash.
 func foldRereads(g models.GroundTruth, started map[uint32]bool) models.GroundTruth {
 	drop := map[int]bool{}
 	for i, e := range g {
-		if e.ActionType != models.FileClose || e.OutputHash == nil || !agentFile(e, started) {
+		if e.ActionType != models.FileClose || e.OutputHash == nil || e.PID == 0 || e.PathIsAmbiguous || isHarnessOwned(e.Target) {
 			continue
 		}
+		if agentFile(e, started) {
+			for j := i + 1; j < len(g); j++ {
+				n := g[j]
+				if n.PID != e.PID || !isFile(n.ActionType) || isHarnessOwned(n.Target) {
+					continue
+				}
+				if n.ActionType == models.FileOpen && n.Target == e.Target && agentFile(n, started) &&
+					n.InputHash != nil && *n.InputHash == *e.OutputHash && n.Timestamp.Sub(e.Timestamp) <= rereadSpan {
+					drop[j] = true
+				}
+				break
+			}
+			continue
+		}
+		// Another process's close: the harness's first open of the file
+		// after it.
+		opened := map[uint32]bool{}
 		for j := i + 1; j < len(g); j++ {
 			n := g[j]
-			if n.PID != e.PID || !isFile(n.ActionType) || isHarnessOwned(n.Target) {
+			if n.Timestamp.Sub(e.Timestamp) > rereadSpan {
+				break
+			}
+			if n.Target != e.Target || !isFile(n.ActionType) {
 				continue
 			}
-			if n.ActionType == models.FileOpen && n.Target == e.Target && agentFile(n, started) &&
-				n.InputHash != nil && *n.InputHash == *e.OutputHash && n.Timestamp.Sub(e.Timestamp) <= rereadSpan {
+			if n.ActionType != models.FileOpen {
+				break // the file changed again
+			}
+			if n.PID == e.PID || !agentFile(n, started) || opened[n.PID] {
+				continue
+			}
+			opened[n.PID] = true
+			if n.InputHash != nil && *n.InputHash == *e.OutputHash {
 				drop[j] = true
 			}
-			break
 		}
 	}
 	return without(g, drop)

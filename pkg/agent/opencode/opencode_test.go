@@ -550,3 +550,43 @@ func TestFoldSearchesRecognisesOnlyTheHarnesssOwnRipgrep(t *testing.T) {
 		t.Errorf("a cut command line: %+v", g)
 	}
 }
+
+// The harness reads a file another process has just written, with its
+// content, within a second of the close; that open is dropped, and no
+// other (I-143).
+func TestNormalizeStreamDropsTheReadOfAFileACommandWrote(t *testing.T) {
+	at := time.Date(2026, 11, 5, 2, 0, 0, 0, time.UTC)
+	hash := func(s string) *string { h := content.SHA256Bytes([]byte(s)); return &h }
+	ev := func(ms int, pid uint32, a models.ActionType, target string, in, out *string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at.Add(time.Duration(ms) * time.Millisecond), PID: pid, PPID: 1, ActionType: a, Target: target, InputHash: in, OutputHash: out}
+	}
+	g := models.GroundTruth{
+		{Timestamp: at, PID: 2, PPID: 1, ActionType: models.ProcessExec, Target: "/bin/bash -c echo"},
+		// Written by the command, read by the harness 60 ms later.
+		ev(10, 2, models.FileClose, "/ws/a", nil, hash("a")),
+		ev(20, 1, models.FileOpen, "/ws/other", hash("o"), nil),
+		ev(70, 1, models.FileOpen, "/ws/a", hash("a"), nil),
+		ev(80, 1, models.FileOpen, "/ws/a", hash("a"), nil), // a second open stays
+		// Another content, a close without a hash, a change between, and
+		// a read after a second.
+		ev(100, 2, models.FileClose, "/ws/b", nil, hash("b")),
+		ev(160, 1, models.FileOpen, "/ws/b", hash("x"), nil),
+		ev(200, 2, models.FileClose, "/ws/c", nil, nil),
+		ev(260, 1, models.FileOpen, "/ws/c", nil, nil),
+		ev(300, 2, models.FileClose, "/ws/d", nil, hash("d")),
+		ev(310, 2, models.FileRename, "/ws/d", nil, nil),
+		ev(360, 1, models.FileOpen, "/ws/d", hash("d"), nil),
+		ev(400, 2, models.FileClose, "/ws/e", nil, hash("e")),
+		ev(1500, 1, models.FileOpen, "/ws/e", hash("e"), nil),
+	}
+	var got []string
+	for _, e := range (Adapter{}).NormalizeStream(g) {
+		if e.PID == 1 {
+			got = append(got, e.Timestamp.Sub(at).String()+" "+e.Target)
+		}
+	}
+	want := "20ms /ws/other;80ms /ws/a;160ms /ws/b;260ms /ws/c;360ms /ws/d;1.5s /ws/e"
+	if strings.Join(got, ";") != want {
+		t.Errorf("harness opens kept\n%s\nwant\n%s", strings.Join(got, ";"), want)
+	}
+}
