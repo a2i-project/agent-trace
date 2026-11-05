@@ -79,7 +79,10 @@ func TestKernelMergesATruncatingOpenIntoTheUnreadClose(t *testing.T) {
 // not the file was already empty and whether or not it writes, while an open
 // that does not truncate carries no FAN_MODIFY. So an open record without a
 // modify changed no content. Each child exits before the queue is read, so
-// its open, truncation and close are merged into one record.
+// its open, truncation and close are normally merged into one record; the
+// test reads the union of the child's records until every expected bit has
+// arrived (at most 2 s), then once more, so a loaded host that delivers a
+// record late, or apart, does not fail it, and a stray bit still does.
 func TestKernelATruncatingOpenByAnotherProcessIsAModify(t *testing.T) {
 	fd, err := unix.FanotifyInit(uint(unix.FAN_CLASS_NOTIF|reportFlags|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK), unix.O_RDONLY)
 	if err != nil {
@@ -127,9 +130,22 @@ func TestKernelATruncatingOpenByAnotherProcessIsAModify(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%s: %v: %s", c.name, err, out)
 		}
-		got := masks()
-		if fmt.Sprint(got) != fmt.Sprint([]uint64{c.want}) {
-			t.Errorf("%s by another process gave records %#x, want one %#x", c.name, got, c.want)
+		var got []uint64
+		var union uint64
+		for deadline := time.Now().Add(2 * time.Second); union&c.want != c.want && time.Now().Before(deadline); {
+			for _, m := range masks() {
+				got, union = append(got, m), union|m
+			}
+			if union&c.want != c.want {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		for _, m := range masks() {
+			got, union = append(got, m), union|m
+		}
+		if union != c.want {
+			t.Errorf("%s by another process gave records %#x, want the bits %#x", c.name, got, c.want)
 		}
 	}
 }
