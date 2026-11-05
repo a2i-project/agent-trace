@@ -116,8 +116,9 @@ func readGroundTruth(path string) (models.GroundTruthFile, error) {
 }
 
 // trajectoryName is the session file's name in a run directory: the one the
-// manifest names, else the one the agent's profile gives (trace.file), from
-// the campaign's config or, when it has none, the default one.
+// manifest names, else the one the agent's profile gives (trace.file) for the
+// run's label (runLabel), from the campaign's config or, when it has none,
+// the default one.
 func trajectoryName(c *Campaign, r RunRecord) (string, error) {
 	if p := r.Paths["trajectory"]; p != nil && *p != "" {
 		return filepath.Base(*p), nil
@@ -129,7 +130,7 @@ func trajectoryName(c *Campaign, r RunRecord) (string, error) {
 			return "", fmt.Errorf("the manifest names no trajectory of the run, and no agent profile can: %w", err)
 		}
 	}
-	name, ok := cfg.TraceFile(r.Agent, r.Task)
+	name, ok := cfg.TraceFile(r.Agent, runLabel(r.Task))
 	if !ok {
 		return "", fmt.Errorf("the manifest names no trajectory of the run, and %s gives the %s profile no trace.file", cfg.Path, r.Agent)
 	}
@@ -143,8 +144,12 @@ func sessionIDPath(dir string, r RunRecord) string {
 	if p := r.Paths["session_id"]; p != nil && *p != "" {
 		return filepath.Join(dir, filepath.Base(*p))
 	}
-	return filepath.Join(dir, strings.ReplaceAll(r.Task, ":", "-")+".session-id.txt")
+	return filepath.Join(dir, runLabel(r.Task)+".session-id.txt")
 }
+
+// runLabel is the label the campaign runner gives a task's files: the task
+// with ":" replaced by "-", so heldout:long-cc writes heldout-long-cc.*.
+func runLabel(task string) string { return strings.ReplaceAll(task, ":", "-") }
 
 // recordedSessionID reads the session id the capture recorded, "" when
 // there is no file (a capture made before I-110) or it holds nothing.
@@ -159,11 +164,13 @@ func recordedSessionID(dir string, r RunRecord) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
+// groundTruthName is the capture file's name in a run directory: the one the
+// manifest names, else <label>.ground_truth.json, as the runner writes it.
 func groundTruthName(r RunRecord) string {
 	if p := r.Paths["ground_truth"]; p != nil && *p != "" {
 		return filepath.Base(*p)
 	}
-	return r.Task + ".ground_truth.json"
+	return runLabel(r.Task) + ".ground_truth.json"
 }
 
 // LoadSession reads a run's session, capture and controls. For an adapter
