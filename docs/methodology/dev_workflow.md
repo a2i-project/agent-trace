@@ -30,6 +30,25 @@ prompt or breaks the environment. An agent runs `go vet ./...` and the
 unprivileged tests locally, then either pushes and watches CI, or asks the
 human to run the privileged tests in their own terminal and paste the output.
 
+### Privileged tests the runners cannot run
+
+Some privileged tests need a kernel GitHub's runners do not have: the fs
+probe's kernel content copy needs kernel 7.0 with the BPF LSM active, and the
+runners' 7.0 kernel lists no `bpf` among its LSMs. Those tests skip in CI.
+`scripts/test-privileged-local.sh`, run by a human on a machine with such a
+kernel, builds the test binary of each package concerned (today `pkg/probe/fs`)
+as the invoking user, runs it with `sudo`, fails when a test that needs the
+missing kernel feature skipped, and on success prints one line:
+
+    Privileged-Tested-Locally: <kernel> <commit> <date>
+
+The line goes, as a trailer, into a commit of the same push, for example an
+empty commit made after the last rebase (`git commit --allow-empty`).
+`scripts/check-docs.py commits` refuses a range that changes `pkg/probe/fs`
+without a commit carrying it, or whose named commit's `pkg/probe/fs` differs
+from the range's head (I-129). Test after rebasing: a rebase changes the
+commit, and the commit CI checks against must be one it can read.
+
 Every capability gets at least one end-to-end test that drives `simagent` with
 a fully scripted action sequence, so a probe is validated where the answer is
 known before it is trusted on a real agent.
@@ -68,7 +87,8 @@ Each harness has a wrapper file at the repository root (`CLAUDE.md`,
 shape `[<tag>] <type>: <short description>` (the tag names the harness:
 `claude`, `codex`, `agy`), a list of details, and the trailers `Docs`
 (always), `Implements` and `Closes-Todo` (when they apply), `Co-Authored-By`,
-`Harness` and `Model`, with the model matching the session. Never force-push. Never commit secrets or build output other than the
+`Harness` and `Model`, with the model matching the session, and
+`Privileged-Tested-Locally` where a range needs it (above). Never force-push. Never commit secrets or build output other than the
 generated eBPF bindings.
 
 ## Documentation
@@ -133,7 +153,7 @@ already done, its premise changed, or the page is wrong, fix the docs first
 | Check | Where it runs |
 |---|---|
 | Published docs (`README.md`, `AGENTS.md`, the harness wrappers, `docs/README.md`, `docs/architecture/`, `docs/decisions/`, `docs/methodology/`, `docs/related_work/`): no em or en dashes; relative links resolve and none points into a local-only folder; every decision ID cited exists or is listed on the `Closed:` line of `open.md`; no local todo ID (unless the line says "local only") and no reference to the retired plan folder, also in tracked code; every architecture page has its `Checked against commit` line naming a real commit, and every page but `00_overview.md` has its six sections in order; every decision has `Status` and `Date`, and a `Superseded by` target exists; nothing decided is left in `open.md`; "not yet implemented" on an architecture page or the README names a decision whose Status still says so | `lint`: CI (`.github/workflows/docs.yml`) and the `pre-push` hook |
-| Every commit in the pushed range: a valid `Docs:` trailer; `Docs: updated` changes a published doc and the page of every component whose non-test code it changed (`PAGE_OF`); an architecture page it edits (except `00_overview.md`) names a commit whose code for that component, tests and fixtures excluded, equals the commit's parent; `Implements:` names an entry no longer marked "not yet implemented"; run locally, `Closes-Todo:` names no item still in `docs/todo/` | `commits BASE HEAD`: CI and the `pre-push` hook |
+| Every commit in the pushed range: a valid `Docs:` trailer; `Docs: updated` changes a published doc and the page of every component whose non-test code it changed (`PAGE_OF`); an architecture page it edits (except `00_overview.md`) names a commit whose code for that component, tests and fixtures excluded, equals the commit's parent; `Implements:` names an entry no longer marked "not yet implemented"; run locally, `Closes-Todo:` names no item still in `docs/todo/`; a range that changes `pkg/probe/fs` carries a `Privileged-Tested-Locally:` trailer naming a commit whose `pkg/probe/fs` equals the head's (I-129) | `commits BASE HEAD`: CI and the `pre-push` hook |
 | One message, before it is recorded: the `Docs:` trailer against the staged files, `Implements:`, and `Closes-Todo:` against the local `docs/todo/` | `commit-msg` hook |
 
 Exempt: merge commits, commits whose subject starts with `Revert "`, and commits by bots (Dependabot). A message-only `git commit --amend` is checked for its trailer only.
