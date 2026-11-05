@@ -5,7 +5,9 @@ The rules are in docs/methodology/dev_workflow.md ("Documentation"). This
 script enforces the mechanical part of them. Standard library only.
 
   check-docs.py lint                 check the published docs tree
-  check-docs.py commits BASE HEAD    check every commit in BASE..HEAD
+  check-docs.py commits BASE HEAD    check every commit in BASE..HEAD, and that
+                                     a range changing privileged-only code
+                                     names a local privileged test run
   check-docs.py commit-msg FILE      check one commit message (git hook)
 
 Exit status: 0 when clean, 1 when a rule is broken (each violation printed).
@@ -57,9 +59,17 @@ PAGE_OF = [
     ("scripts/seed/", "docs/architecture/40_tools.md"),
     ("Makefile", "docs/architecture/40_tools.md"),
     ("scripts/check-docs.py", "docs/methodology/dev_workflow.md"),
+    ("scripts/test-privileged-local.sh", "docs/methodology/dev_workflow.md"),
     ("scripts/hooks/", "docs/methodology/dev_workflow.md"),
     (".github/workflows/", "docs/methodology/dev_workflow.md"),
 ]
+# Code whose privileged tests need a kernel GitHub's runners lack (kernel 7.0
+# with the BPF LSM active). A commit range that changes it must carry a
+# 'Privileged-Tested-Locally: <kernel> <commit> <date>' trailer naming a
+# commit with the same code, tested by scripts/test-privileged-local.sh
+# (I-129).
+PRIVILEGED_PATHS = ["pkg/probe/fs/"]
+PRIVILEGED_TRAILER = re.compile(r"^Privileged-Tested-Locally: (\S+) ([0-9a-f]{7,40}) (\d{4}-\d{2}-\d{2})\s*$", re.M)
 LOCAL_DIRS = ("docs/todo/", "docs/eval/", "docs/research/", "docs/archive/")
 PAGE_SECTIONS = ["Objective", "Structure", "Technologies", "Workflow",
                  "Guarantees and loss accounting", "Known limits"]
@@ -302,6 +312,37 @@ def commits(base, head):
     for sha, errs in per_commit.items():
         if sha not in fixed:
             errors.extend(errs)
+    check_privileged(base, head)
+
+
+def check_privileged(base, head):
+    """A range that changes PRIVILEGED_PATHS needs a commit in it whose
+    message carries a Privileged-Tested-Locally trailer naming a commit
+    whose code under those paths equals head's: the code merged is the code
+    tested."""
+    shas = git("rev-list", "--no-merges", f"{base}..{head}").split()
+    touching = [sha for sha in shas if any(
+        f.startswith(tuple(PRIVILEGED_PATHS))
+        for f in git("diff-tree", "--no-commit-id", "--name-only", "-r", sha).split())]
+    if not touching:
+        return
+    claims = []
+    for sha in shas:
+        claims += PRIVILEGED_TRAILER.findall(git("log", "-1", "--format=%B", sha))
+    if not claims:
+        err(touching[0][:7], f"changes {', '.join(PRIVILEGED_PATHS)}, whose privileged tests GitHub's runners cannot run, "
+            "and no commit in the range carries 'Privileged-Tested-Locally: <kernel> <commit> <date>'; "
+            "run scripts/test-privileged-local.sh on the final code and add its line in a commit")
+        return
+    for kernel, tested, date in claims:
+        if subprocess.run(["git", "cat-file", "-e", f"{tested}^{{commit}}"], cwd=ROOT,
+                          capture_output=True).returncode != 0:
+            continue
+        same = subprocess.run(["git", "diff", "--quiet", tested, head, "--", *PRIVILEGED_PATHS], cwd=ROOT)
+        if same.returncode == 0:
+            return
+    err(touching[0][:7], f"Privileged-Tested-Locally names {', '.join(c[1] for c in claims)}, but no such commit "
+        f"has the same {', '.join(PRIVILEGED_PATHS)} as {head[:7]}; rerun scripts/test-privileged-local.sh on the final code")
 
 
 def main():
