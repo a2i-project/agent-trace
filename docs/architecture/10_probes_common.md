@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit f7e4411 on 2026-11-02.
+Checked against commit f80369f on 2026-11-05.
 
 ## Objective
 
@@ -14,7 +14,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | `cmd/watch/main.go` | `probeBuilders` registry, `runWatch`, `buildCoverage`; writes `ground_truth.json` |
 | `pkg/models/action.go` | `ActionType` values, `IsClaimable`, `IsStructural` |
 | `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry` with its harness-implied markers on an open, a request or a connection, V-33 and V-52, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
-| `pkg/models/coverage.go` | `ProbeCoverage`, `ProbeDiagnostics` (with `RingStats`, `TrackedSetStats`, `NetContentCounts`), `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema`, `MinCoverageSchema` |
+| `pkg/models/coverage.go` | `ProbeCoverage`, `ProbeDiagnostics` (with `RingStats`, `TrackedSetStats`, `NetContentCounts`, `FileHashCounts`), `Coverage`, `GroundTruthFile`, `FSScope`, `ParseGroundTruthFile`, `CoverageSchema`, `MinCoverageSchema` |
 | `pkg/models/fsmounts.go` | `FSMounts`, `Mount`: the fs probe's mount table in `fs_scope` (P-33) |
 | `pkg/models/response.go` | `ResponseAttestation`, `SSESummary`, `WebSocketSummary` (with the turn's `ResponseIDs`): the record a `net_response` event carries (N-29; a WebSocket turn's, N-41); `ModelRequestDigest`, `ModelItemDigest`: the digest a WebSocket `net_request` holding a Responses API request carries in `GroundTruthEvent.ModelRequest` (P-42) |
 | `pkg/models/sensitive.go` | `SensitiveSnapshot`, `SensitiveFile`, `SensitiveState`, `SensitiveChange` and their state, format and kind names: the snapshot of the harness's sensitive files (V-40) |
@@ -108,13 +108,13 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `Responses` | `responses` | net | response capture (`SSL_read`, N-29): `active` once a read validated the offset, `identity_only` without `ExePath`, `attach_failed` otherwise; absent in a capture written before it | `attach_failed` is a Note, unless `Content` is `attach_failed`, whose Note covers it |
 | `ResponseGaps` | `response_gaps` | net | response data the capture may be missing: faulted or ring-dropped `SSL_read` buffers, truncated responses, read streams that stopped parsing, responses with no host to name; a content gap on attestation, no claim depends on it | Note (content gap on attestation, N-29) |
 | `RequestsCut` | `requests_cut` | net | requests recorded cut (`RequestCut`): written in a call larger than the probe copies, with their target and without their body (N-44); a content gap, each request is in the ground truth; absent in a capture written before it | Note (content gap, N-44) |
-| `Diagnostics` | `diagnostics` | proc, net | occupancy and content counters, below; nil (absent) means not measured | not read |
+| `Diagnostics` | `diagnostics` | proc, net, fs (with `KernelHash`) | occupancy and content counters, below; nil (absent) means not measured | not read |
 
 Any Reason makes `Assess` return `Complete=false`, and the verifier then reports INCONCLUSIVE instead of FAITHFUL. Notes limit what content checks can say but do not make the event set incomplete. A nil coverage record (legacy file) is itself a Reason.
 
 ### Diagnostics
 
-`ProbeCoverage.Diagnostics` (`models.ProbeDiagnostics`, coverage schema 2) records how close a capture came to its limits, for the experiment record (P-34). `Assess` reads none of it, so it changes no Reason, Note or verdict (`TestDiagnosticsDoNotChangeAssess` in `cmd/watch`). A capture written before it, and a probe that keeps none (fs), has none: not measured, which is not zero. Every count inside is written, zero included. A field added later within schema 2 (`ssl_writes`, N-36; `content_methods`, N-39; `requests_cut` of `net_content`, N-44; `go_tls`, N-47; the WebSocket and rustls counts of `net_content`, N-41, its HTTP/2 counts, N-46, and its Go counts, N-48, written only when above zero) is absent from a capture written before it, which reads as not measured.
+`ProbeCoverage.Diagnostics` (`models.ProbeDiagnostics`, coverage schema 2) records how close a capture came to its limits, for the experiment record (P-34). `Assess` reads none of it, so it changes no Reason, Note or verdict (`TestDiagnosticsDoNotChangeAssess` in `cmd/watch`). A capture written before it, and the fs probe without its `KernelHash` option, has none: not measured, which is not zero. Every count inside is written, zero included. A field added later within schema 2 (`ssl_writes`, N-36; `content_methods`, N-39; `requests_cut` of `net_content`, N-44; `go_tls`, N-47; `file_hashes`, P-50; the WebSocket and rustls counts of `net_content`, N-41, its HTTP/2 counts, N-46, and its Go counts, N-48, written only when above zero) is absent from a capture written before it, which reads as not measured.
 
 | Field | JSON | Meaning |
 |---|---|---|
@@ -124,6 +124,7 @@ Any Reason makes `Assess` return `Complete=false`, and the verifier then reports
 | `ContentMethods` | `content_methods` | net only, with content capture: per configured content method by name (`tls-symbols`, `tls-openssl-ex`, `tls-rustls-aead`, `tls-go-crypto`), `requests` and `responses`, each `active` or `attach_failed`; the probe's `content` and `responses` are `active` when any method's are (N-42); an adapter reads one method's through `MethodContent` |
 | `SSLWrites` | `ssl_writes` | net only, with content capture, once the `SSL_write` offset validated and counting was switched on (absent otherwise: not measured): per call of a tracked process whose return was seen, `calls`, `partial` (returned more than zero and less than asked), `failed` (returned zero or less, an error or a retry such as `SSL_ERROR_WANT_WRITE`), `bytes_requested` (the lengths asked, summed) and `bytes_written` (the positive returns, summed); the content is copied at the return, as many bytes as written, so a partial or failed call contributes exactly what it wrote (N-36, N-37) |
 | `GoTLS` | `go_tls` | net only, with `tls-go-crypto` (absent otherwise): the calls of `crypto/tls.(*Conn).Write` and `Read` of tracked processes whose entry the probes saw (`write_calls`, `read_calls`) and those whose return they saw (`write_returns`, `read_returns`); calls in flight at the stop have no return, and a larger gap is a return the probes missed (N-47) |
+| `FileHashes` | `file_hashes` | fs only, with `KernelHash` (absent otherwise): `mode`, `kernel` when the kernel content copy ran, else `unavailable: ` and the reason; the closes published with a hash from the kernel copy (`kernel`) and from the userspace settle path (`userspace`); `fallbacks`, the closes the kernel gave no hash for by reason (`writer_held`, `too_large`, `not_cached`, `raced`, `ring_full`, `error`, `unmatched`, `no_identity`); `lost`, the closes whose kernel record found no room; `sync_timeouts`, the reads after which the kernel records did not arrive in time; counted on every marked filesystem for every process ([12_probe_fs.md](12_probe_fs.md), P-48 to P-50) |
 
 ### ground_truth.json
 

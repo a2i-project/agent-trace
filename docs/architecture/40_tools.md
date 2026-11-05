@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 98783ef on 2026-11-03.
+Checked against commit f80369f on 2026-11-05.
 
 ## Objective
 
@@ -34,6 +34,7 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 | `--net-content METHOD=PATH` | none | a content method and the file it hooks, repeatable (N-39): `tls-symbols` (as `--net-exe-path`), `tls-openssl-ex`, `tls-rustls-aead`, `tls-go-crypto` (N-48); at most one of the first two; an unknown method, or a file whose anchors are not found, fails the start |
 | `--net-cache-path PATH` | `$TMPDIR/agent-trace-tlsoffset-cache.json` | Cache of computed TLS offsets |
 | `--agent NAME` | every adapter | Adapter whose security-sensitive harness files are snapshotted (I-59); an unknown name is an error. Without it, the files every registered adapter declares |
+| `--fs-kernel-hash` | off | Hash a written file's content as the kernel copies it at its last close (P-48); needs kernel 7.0 with the BPF LSM active, otherwise the userspace path runs and `diagnostics.file_hashes` says why. A `fileHashes` part on the `fs probe diagnostics:` line counts the hashes by source |
 | `--agent-home DIR` | home of `$SUDO_UID`, else root's | Home of the user the agent runs as, which a declared `~/` file resolves against; every snapshotted file must belong to its owner |
 
 Modes: with a trailing `-- <command> [args]`, `watch` starts the command stopped before its exec, makes its pid the proc probe's ancestry root and the net probe's tracked pid, then lets it run (P-23), waits for it to exit (Ctrl+C kills it) and writes the file; the launch sequence, the output pipe and the wait for trailing events are in [10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes). With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
