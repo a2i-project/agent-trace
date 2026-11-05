@@ -89,6 +89,10 @@ type watchConfig struct {
 	// Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json when empty.
 	NetCachePath string
 
+	// FSKernelHash asks the fs probe for the kernel content copy at close
+	// (--fs-kernel-hash, P-48).
+	FSKernelHash bool
+
 	// ProcRingbufBytes overrides the proc probe's kernel ring buffer size.
 	// Zero keeps the default. Set from tests only, to force event loss; there
 	// is deliberately no command-line flag for it.
@@ -109,6 +113,7 @@ var probeBuilders = map[string]builderFunc{
 			Path:           cfg.Workspace,
 			AllFilesystems: true,
 			EventBufSize:   cfg.EventBufSize,
+			KernelHash:     cfg.FSKernelHash,
 		})
 	},
 	"proc": func(cfg watchConfig) (probe.Observer, error) {
@@ -220,6 +225,13 @@ func diagnosticsLine(name string, d *models.ProbeDiagnostics) string {
 	if w := d.SSLWrites; w != nil {
 		fmt.Fprintf(&b, " sslWrites calls=%d partial=%d failed=%d bytesRequested=%d bytesWritten=%d;",
 			w.Calls, w.Partial, w.Failed, w.BytesRequested, w.BytesWritten)
+	}
+	if h := d.FileHashes; h != nil {
+		fmt.Fprintf(&b, " fileHashes mode=%q kernel=%d userspace=%d lost=%d syncTimeouts=%d", h.Mode, h.Kernel, h.Userspace, h.Lost, h.SyncTimeouts)
+		for _, r := range sortedKeys(h.Fallbacks) {
+			fmt.Fprintf(&b, " fallback %s=%d", r, h.Fallbacks[r])
+		}
+		b.WriteString(";")
 	}
 	return strings.TrimSuffix(b.String(), ";")
 }
@@ -454,6 +466,7 @@ func main() {
 	var netExePath, netCachePath string
 	var netContent contentMethodsFlag
 	var agentName, agentHome string
+	var fsKernelHash bool
 
 	flag.StringVar(&workspace, "workspace", "", "Path to the workspace to watch (fs probe)")
 	flag.StringVar(&probesFlag, "probes", "fs,proc", "Comma-separated probes to run (available: "+availableProbes()+")")
@@ -465,6 +478,7 @@ func main() {
 	flag.Var(&netContent, "net-content", "A content method and the file it hooks, as METHOD=PATH (net probe; repeatable): "+probenet.MethodTLSSymbols+" (as --net-exe-path), "+probenet.MethodOpenSSLEx+", "+probenet.MethodBunBoringSSL+", "+probenet.MethodRustlsAEAD+", "+probenet.MethodGoCrypto+". At most one of the first three.")
 	flag.StringVar(&netCachePath, "net-cache-path", "", "JSON cache file for pre-computed TLS offsets (net probe). Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json.")
 	flag.StringVar(&agentName, "agent", "", "Adapter whose security-sensitive harness files are snapshotted at start and stop ("+strings.Join(agent.Names(), ", ")+"). Default: the files of every adapter")
+	flag.BoolVar(&fsKernelHash, "fs-kernel-hash", false, "Hash a written file's content as the kernel copies it at its last close (fs probe; needs kernel 7.0 with the BPF LSM active, else the userspace path runs and the coverage record says why)")
 	flag.StringVar(&agentHome, "agent-home", "", "Home directory of the user the agent runs as, which a declared ~/ file resolves against. Default: the home of the user who ran sudo ($SUDO_UID), else root's")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -483,7 +497,7 @@ func main() {
 		log.Fatal(err)
 	}
 	opts := watchOptions{
-		cfg:       watchConfig{Workspace: workspace, ProcFilter: procFilter, EventBufSize: bufSize, NetExePath: netExePath, NetContent: netContent, NetCachePath: netCachePath},
+		cfg:       watchConfig{Workspace: workspace, ProcFilter: procFilter, EventBufSize: bufSize, NetExePath: netExePath, NetContent: netContent, NetCachePath: netCachePath, FSKernelHash: fsKernelHash},
 		probes:    probesFlag,
 		out:       out,
 		rootPID:   rootPID,
