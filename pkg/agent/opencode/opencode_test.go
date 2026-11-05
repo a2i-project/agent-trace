@@ -465,16 +465,34 @@ func TestASearchIsClaimedWithItsFolder(t *testing.T) {
 		p    part
 		want string
 	}{
-		"grep, no path":             {search(toolGrep, map[string]any{"pattern": "x"}, "No files found"), SearchGrep + " /ws"},
-		"grep of a directory":       {search(toolGrep, map[string]any{"pattern": "x", "path": "src"}, "Found 1 matches\n/ws/src/a.go:\n  Line 1: x"), SearchGrep + " /ws/src"},
-		"grep of a matched file":    {search(toolGrep, map[string]any{"pattern": "x", "path": "src/a.go"}, "Found 1 matches\n/ws/src/a.go:\n  Line 1: x"), SearchGrep + " /ws/src"},
-		"grep of an absolute path":  {search(toolGrep, map[string]any{"pattern": "x", "path": "/data/../data"}, ""), SearchGrep + " /data"},
-		"glob, no path":             {search(toolGlob, map[string]any{"pattern": "*.txt"}, ""), SearchGlob + " /ws"},
-		"glob of a relative folder": {search(toolGlob, map[string]any{"pattern": "*.txt", "path": "sub/"}, ""), SearchGlob + " /ws/sub"},
+		"grep, no path":                            {search(toolGrep, map[string]any{"pattern": "x"}, "No files found"), SearchGrep + " /ws"},
+		"grep of a directory":                      {search(toolGrep, map[string]any{"pattern": "x", "path": "src"}, "Found 1 matches\n/ws/src/a.go:\n  Line 1: x"), SearchGrep + " /ws/src"},
+		"grep of a matched file":                   {search(toolGrep, map[string]any{"pattern": "x", "path": "src/a.go"}, "Found 1 matches\n/ws/src/a.go:\n  Line 1: x"), SearchGrep + " /ws/src"},
+		"grep of an absolute path":                 {search(toolGrep, map[string]any{"pattern": "x", "path": "/data/../data"}, ""), SearchGrep + " /data"},
+		"grep of a file, other files matched":      {search(toolGrep, map[string]any{"pattern": "x", "path": "src/a.go"}, "Found 1 matches\n/ws/src/b.go:\n  Line 1: x"), SearchGrep + " /ws/src"},
+		"grep of a directory, a name with a colon": {search(toolGrep, map[string]any{"pattern": "x", "path": "src"}, "Found 1 matches\n/ws/src/a:\n  Line 1: /ws/other:"), SearchGrep + " /ws/src"},
+		"grep of a file, nothing matched":          {search(toolGrep, map[string]any{"pattern": "x", "path": "src/a.go"}, "No files found"), SearchGrep + " /ws/src/a.go"},
+		"glob, no path":                            {search(toolGlob, map[string]any{"pattern": "*.txt"}, ""), SearchGlob + " /ws"},
+		"glob of a relative folder":                {search(toolGlob, map[string]any{"pattern": "*.txt", "path": "sub/"}, ""), SearchGlob + " /ws/sub"},
 	} {
 		tr, rep, err := Adapter{}.Parse(writeDB(t, map[string]string{sesMain: ""}, []part{c.p}))
 		if err != nil || len(tr) != 1 || tr[0].ActionType != models.ProcessExec || tr[0].Target != c.want || len(rep.UnknownTools) != 0 {
 			t.Errorf("%s: %v %+v %v", name, err, tr, rep.UnknownTools)
+		}
+	}
+	// A grep of a path an earlier read, write or edit showed to be a
+	// file searched its directory, even when nothing matched (I-142).
+	for _, tool := range []string{toolRead, toolWrite, toolEdit} {
+		in := map[string]any{"filePath": "/ws/src/a.go"}
+		if tool == toolWrite {
+			in["content"] = "x"
+		}
+		tr, _, err := Adapter{}.Parse(writeDB(t, map[string]string{sesMain: ""}, []part{
+			done(sesMain, tool, 0, 5, in),
+			{session: sesMain, message: "m2", tool: toolGrep, status: statusCompleted, input: map[string]any{"pattern": "x", "path": "src/a.go"}, output: "No files found", start: 10, end: 15},
+		}))
+		if err != nil || tr[len(tr)-1].Target != SearchGrep+" /ws/src" {
+			t.Errorf("after a %s: %v %+v", tool, err, tr)
 		}
 	}
 	_, rep, _ := Adapter{}.Parse(writeDB(t, map[string]string{sesMain: ""}, []part{search(toolGrep, map[string]any{}, "")}))

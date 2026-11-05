@@ -52,6 +52,9 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 	unknown := map[string]bool{}
 	known := newContents(disturbers(parts))
 	var claimed, unclaimedContent, dirReads, httpFetches int
+	// knownFiles are the paths an earlier completed read, write or edit
+	// showed to be a file (I-142).
+	knownFiles := map[string]bool{}
 	for _, p := range parts {
 		rep.ToolCalls++
 		tool, st := p.data.Tool, p.data.State
@@ -94,6 +97,7 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 				continue
 			}
 			tr = append(tr, mk(models.FileOpen, path))
+			knownFiles[path] = true
 			var md struct {
 				Loaded []string `json:"loaded"`
 			}
@@ -127,6 +131,7 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 				unclaimedContent++
 			}
 			tr = append(tr, mk(models.FileOpen, path), w)
+			knownFiles[path] = true
 		case tool == toolEdit:
 			path, ok := filePath(p)
 			if !ok {
@@ -145,6 +150,7 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 				unclaimedContent++
 			}
 			tr = append(tr, mk(models.FileOpen, path), w)
+			knownFiles[path] = true
 		case tool == toolWebFetch:
 			var in struct {
 				URL string `json:"url"`
@@ -160,7 +166,7 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 		case nonEffectful[tool]:
 			rep.Count(tool)
 		case tool == toolGrep || tool == toolGlob:
-			folder, ok := searchFolder(p)
+			folder, ok := searchFolder(p, knownFiles)
 			if !ok {
 				rep.ParseErrors = append(rep.ParseErrors, fmt.Sprintf("part %s: a %s call without a pattern or a folder", p.id, tool))
 				continue
@@ -373,17 +379,20 @@ func hunksOf(path, diff string) (string, bool) {
 	return rest, ok && rest != ""
 }
 
-// searchFolder is the folder a grep or glob call searched (I-124), as the
-// strings of the 1.19.5 binary show the tools choosing ripgrep's working
-// directory: the call's path, absolute or joined to the session's
-// directory, or that directory when the call names none. A glob's path
-// must be a directory. A grep's may be a file, and ripgrep then searches
-// the file's whole directory; the record says which only through its
-// output, which names each matched file as "<path>:" on a line of its
-// own, so a grep whose output names the path itself searched its
-// directory. A grep of a file that matched nothing is claimed with the
-// file as its folder (a known limit).
-func searchFolder(p toolPart) (string, bool) {
+// searchFolder is the folder a grep or glob call searched (I-124, I-142),
+// as the 1.19.5 binary chooses ripgrep's working directory: the call's
+// path, absolute or joined to the session's directory, or that directory
+// when the call names none. A glob's path must be a directory. A grep's
+// may be a file, and ripgrep then searches the file's whole directory with
+// "." (confirmed on the parity campaign), so the folder is the path's
+// directory when the path was a file. The record says so in two ways: the
+// output names each matched file as "<path>:" on a line of its own, and a
+// matched file that is the path itself or lies outside it shows the path
+// was a file; or an earlier completed read, write or edit of the path
+// (knownFiles) showed it to be one. A grep of a file that matched nothing
+// and that no earlier call touched is claimed with the file as its folder
+// (a known limit).
+func searchFolder(p toolPart, knownFiles map[string]bool) (string, bool) {
 	var in struct {
 		Pattern string  `json:"pattern"`
 		Path    *string `json:"path"`
@@ -399,13 +408,21 @@ func searchFolder(p toolPart) (string, bool) {
 		}
 	}
 	f = filepath.Clean(f)
-	if p.data.Tool == toolGrep && f != p.dir {
-		var out string
-		_ = json.Unmarshal(p.data.State.Output, &out)
-		for _, line := range strings.Split(out, "\n") {
-			if line == f+":" {
-				return filepath.Dir(f), true
-			}
+	if p.data.Tool != toolGrep || f == p.dir {
+		return f, true
+	}
+	if knownFiles[f] {
+		return filepath.Dir(f), true
+	}
+	var out string
+	_ = json.Unmarshal(p.data.State.Output, &out)
+	for _, line := range strings.Split(out, "\n") {
+		m, ok := strings.CutSuffix(line, ":")
+		if !ok || !filepath.IsAbs(m) || m != filepath.Clean(m) {
+			continue
+		}
+		if m == f || !strings.HasPrefix(m, f+"/") {
+			return filepath.Dir(f), true
 		}
 	}
 	return f, true
