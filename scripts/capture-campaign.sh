@@ -74,7 +74,9 @@
 # --run-as USER and --workspace-root DIR (defaults $AGENT_TRACE_RUN_AS and
 # $AGENT_TRACE_WORKSPACE_ROOT) are passed to every check and capture: the
 # agent runs as USER, a dedicated unprivileged user (I-137), each workspace
-# under the workspace root (I-138). USER's home is closed to you, so the
+# under the workspace root (I-138). An experiment campaign requires it
+# (I-139): cmd/analyze refuses one whose runs do not record a run-as user
+# other than you. USER's home is closed to you, so the
 # campaign asks for sudo before its checks, a dry run included, when USER is
 # not you; the version read after each run is then made as USER. Each
 # run.json records run_as (the user, its uid and yours) from the run's

@@ -35,7 +35,8 @@ func TestACampaignDryRunPassesTheRunAsUser(t *testing.T) {
 }
 
 // summarize writes the run-as user a run's task-meta.txt records into its
-// run.json (I-137), and nothing for a run recorded without one.
+// run.json (I-137), the form cmd/analyze reads (I-139), and nothing for a
+// run recorded without one.
 func TestRunJSONRecordsTheRunAsUser(t *testing.T) {
 	_, here, _, _ := runtime.Caller(0)
 	src, err := os.ReadFile(filepath.Join(filepath.Dir(here), "..", "..", "scripts", "capture-campaign.sh"))

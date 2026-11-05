@@ -1247,3 +1247,13 @@ Consequences:
 - The install commands are not in the profiles; an agent the table lacks gets a generic line.
 - Whether the printed steps install and log in each agent is checked only when the user follows them, with `capture-agent.sh --check --run-as NAME`.
 Alternatives rejected: installing the agents in the script (it would run the agents' installers as root, and log in needs the user); an `install` field in the profiles (left for the profiles' owner).
+
+### I-139: An experiment campaign requires every run to have run the agent as a user other than the operator
+Status: Accepted, implemented (`capture_user` in `config/protocol.json`; `CaptureUser`, `RequireCaptureUser` in `cmd/analyze/targets.go`; `RunRecord.RunAs`; `TestACampaignWithoutTheCaptureUserStopsTheAnalysis`, `TestLoadProtocolRefusesWhatItCannotRead`, `TestRepositoryProtocolHoldsTheRegisteredTargets`). The user's decision of 2026-11-05 (I-137). Extends E-8.
+Date: 2026-11-05.
+Context: The protocol file states what the analysis requires (E-8): every field is required, a requirement the protocol does not set is declared absent with a reason, and a campaign that does not meet one (an agent without targets) stops the analysis with exit 3 and a message naming the file.
+Decision: The protocol file gains `capture_user`, required: `{"require_other_user": true, "basis": ...}` or `{"none": reason}`. The repository's file requires it (basis I-139). With it required, `analyze` refuses (exit 3) a campaign any of whose manifest runs lacks `run_as`, lacks the operator's uid, or ran as the operator's uid, naming up to five runs, the count and the file, and saying how to analyse a campaign that is not an experiment (a protocol file whose `capture_user` is `none`).
+Consequences:
+- Every campaign recorded before I-137 (the pilots and the parity campaigns) is refused under the repository's protocol file; analysing one needs a protocol file that declares `capture_user` `none`.
+- The protocol file's schema stays 1; a file without the field is refused as any file without a required target.
+Alternatives rejected: a halt (exit 1, results written): the requirement is about what may be analysed as an experiment, as the per-agent targets are; an exclusion rule per run (a protocol change the user did not make).

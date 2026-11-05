@@ -226,6 +226,9 @@ func Analyze(o Options) (*Results, error) {
 	if err := proto.Require(agents); err != nil {
 		return nil, err
 	}
+	if err := proto.RequireCaptureUser(c); err != nil {
+		return nil, err
+	}
 	last := o.LastSeed
 	if last == 0 {
 		last = SeedLast

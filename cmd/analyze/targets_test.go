@@ -80,6 +80,9 @@ func TestRepositoryProtocolHoldsTheRegisteredTargets(t *testing.T) {
 	if got := p.heldOutLine(); got != "Claude Code `long`, agy `long` and `subagent`" {
 		t.Errorf("held-out line: %q", got)
 	}
+	if u := p.CaptureUser; u == nil || !u.RequireOtherUser || u.Basis != "I-139" {
+		t.Errorf("capture_user: %+v", u)
+	}
 }
 
 const validAgent = `{"agent": "claude-code", "label": "CC", "faithful_bar": {"min_rate": 0.5, "basis": "D2"}, "inconclusive_pilot_range": {"low": 0.3, "high": 0.7}, "tool_heavy_tasks": ["tools"], "d8_held_out_tasks": []}`
@@ -94,7 +97,7 @@ func writeProtocol(t *testing.T, body string) string {
 }
 
 func protocolWith(agents ...string) string {
-	return `{"schema": 1, "protocol": "test registration", "agents": [` + strings.Join(agents, ", ") + `]}`
+	return `{"schema": 1, "protocol": "test registration", "capture_user": {"none": "a test registration"}, "agents": [` + strings.Join(agents, ", ") + `]}`
 }
 
 // The loader refuses unknown fields, a target left out and malformed values,
@@ -114,7 +117,12 @@ func TestLoadProtocolRefusesWhatItCannotRead(t *testing.T) {
 	}
 	with := func(old, new string) string { return strings.Replace(validAgent, old, new, 1) }
 	for _, c := range []struct{ name, body, want string }{
-		{"unknown top-level field", `{"schema": 1, "protocol": "x", "agents": [` + validAgent + `], "extra": 1}`, "unknown field"},
+		{"unknown top-level field", `{"schema": 1, "protocol": "x", "capture_user": {"none": "x"}, "agents": [` + validAgent + `], "extra": 1}`, "unknown field"},
+		{"no capture user", strings.Replace(protocolWith(validAgent), `"capture_user": {"none": "a test registration"}, `, ``, 1), "no capture_user"},
+		{"capture user both", strings.Replace(protocolWith(validAgent), `{"none": "a test registration"}`, `{"none": "x", "require_other_user": true, "basis": "I-139"}`, 1), "either require_other_user"},
+		{"capture user neither", strings.Replace(protocolWith(validAgent), `{"none": "a test registration"}`, `{}`, 1), "either require_other_user"},
+		{"capture user without basis", strings.Replace(protocolWith(validAgent), `{"none": "a test registration"}`, `{"require_other_user": true}`, 1), "without the basis"},
+		{"capture user basis with none", strings.Replace(protocolWith(validAgent), `{"none": "a test registration"}`, `{"none": "x", "basis": "I-139"}`, 1), "basis without"},
 		{"unknown agent field", protocolWith(with(`"label"`, `"colour": 1, "label"`)), "unknown field"},
 		{"trailing data", protocolWith(validAgent) + `{}`, "after the top-level object"},
 		{"wrong schema", strings.Replace(protocolWith(validAgent), `"schema": 1`, `"schema": 2`, 1), "schema 2"},
@@ -139,6 +147,56 @@ func TestLoadProtocolRefusesWhatItCannotRead(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
 		}
+	}
+}
+
+// A protocol that requires the capture user (I-139) stops the analysis of a
+// campaign whose runs did not run the agent as another user, naming the
+// runs and the file; the same campaign is analysed under a protocol file
+// that declares the requirement absent.
+func TestACampaignWithoutTheCaptureUserStopsTheAnalysis(t *testing.T) {
+	uid := func(n int) *int { return &n }
+	for _, c := range []struct {
+		name  string
+		runAs *RunAsRecord
+		want  string
+	}{
+		{"no run_as", nil, "claude-code-2.1.296/edits/run-01 (no run_as)"},
+		{"the operator", &RunAsRecord{User: "carmine", UID: uid(1000), OperatorUID: uid(1000)}, "(ran as the operator)"},
+		{"no operator uid", &RunAsRecord{User: "agenttrace", UID: uid(4242)}, "(no operator uid)"},
+	} {
+		dir := syntheticCampaign(t, pairedRuns[:1])
+		setRunAs(t, dir, c.runAs)
+		o := testOptions(t, dir)
+		o.NoSweep, o.NoSensitivity = true, true
+		var errOut bytes.Buffer
+		if code := run(append(runArgs(o), "--no-sweep", "--no-sensitivity"), &bytes.Buffer{}, &errOut); code != exitError {
+			t.Fatalf("%s: exit %d, want %d; stderr %s", c.name, code, exitError, errOut.String())
+		}
+		if msg := errOut.String(); !strings.Contains(msg, c.want) || !strings.Contains(msg, ProtocolFileName+" requires every run") || !strings.Contains(msg, "1 of 1 run(s)") {
+			t.Errorf("%s: stderr: %s", c.name, msg)
+		}
+		o.Protocol = writeProtocol(t, protocolWith(validAgent))
+		o.Out = t.TempDir()
+		if _, err := Analyze(o); err != nil {
+			t.Errorf("%s: with capture_user none: %v", c.name, err)
+		}
+	}
+}
+
+// setRunAs rewrites every run of a synthetic campaign's manifest with the
+// given run-as record (nil removes it).
+func setRunAs(t *testing.T, dir string, a *RunAsRecord) {
+	t.Helper()
+	c, err := LoadCampaign(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range c.Manifest.Runs {
+		c.Manifest.Runs[i].RunAs = a
+	}
+	if err := writeJSON(filepath.Join(dir, "manifest.json"), c.Manifest); err != nil {
+		t.Fatal(err)
 	}
 }
 

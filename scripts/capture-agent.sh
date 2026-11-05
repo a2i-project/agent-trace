@@ -1704,7 +1704,8 @@ capture() {
       echo "instruction_file=${f/#"$agent_home"/\~} absent"
     fi
   done
-  # The user the agent ran as (I-137), and yours by uid only.
+  # The user the agent ran as (I-137), and yours by uid only: an experiment
+  # campaign requires the two to differ (I-139).
   if [ -n "$run_as" ]; then
     echo "run_as=$run_name uid=$run_uid"
     echo "operator_uid=$(id -u)"

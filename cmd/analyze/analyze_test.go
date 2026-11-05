@@ -59,6 +59,10 @@ func syntheticCampaign(t *testing.T, runs []fixtureRun) string {
 		}
 		rec := RunRecord{Agent: r.agent, Version: r.version, Task: r.task, Run: r.run, Mode: "identity", Dir: rel, Status: r.status, DurationS: 60}
 		rec.Controls.Taken, rec.Controls.From = true, rel
+		// The runs ran the agent as a dedicated user, as an experiment
+		// campaign requires (I-139).
+		uid, op := 4242, 1000
+		rec.RunAs = &RunAsRecord{User: "agenttrace", UID: &uid, OperatorUID: &op}
 		m.Runs = append(m.Runs, rec)
 	}
 	if err := writeJSON(filepath.Join(dir, "manifest.json"), m); err != nil {

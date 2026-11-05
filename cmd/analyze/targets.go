@@ -31,6 +31,9 @@ type Protocol struct {
 	// Registration identifies the registration the numbers belong to.
 	Registration string         `json:"protocol"`
 	Agents       []AgentTargets `json:"agents"`
+	// CaptureUser says whether the campaign's runs must have run the agent
+	// as a user other than the operator (I-139).
+	CaptureUser *CaptureUser `json:"capture_user"`
 
 	path   string
 	sha256 string
@@ -69,6 +72,16 @@ type FaithfulBar struct {
 	MinRate *float64 `json:"min_rate,omitempty"`
 	Basis   string   `json:"basis,omitempty"`
 	None    string   `json:"none,omitempty"`
+}
+
+// CaptureUser is either the requirement (RequireOtherUser, with the
+// decision it comes from) or its declared absence (None, with the reason):
+// every run of the campaign records the user its agent ran as (run_as),
+// and that user is not the operator.
+type CaptureUser struct {
+	RequireOtherUser bool   `json:"require_other_user,omitempty"`
+	Basis            string `json:"basis,omitempty"`
+	None             string `json:"none,omitempty"`
 }
 
 // PilotRange is either a range (Low to High, inclusive) or its declared
@@ -121,6 +134,16 @@ func (p *Protocol) validate() error {
 	}
 	if len(p.Agents) == 0 {
 		return errors.New("no agents")
+	}
+	switch u := p.CaptureUser; {
+	case u == nil:
+		return errors.New("no capture_user: give require_other_user with its basis, or none with the reason")
+	case u.RequireOtherUser == (u.None != ""):
+		return errors.New("capture_user: give either require_other_user (with basis) or none, not both or neither")
+	case u.RequireOtherUser && u.Basis == "":
+		return errors.New("capture_user: require_other_user without the basis it comes from")
+	case u.None != "" && u.Basis != "":
+		return errors.New("capture_user: basis without require_other_user")
 	}
 	p.byName = map[string]*AgentTargets{}
 	for i := range p.Agents {
@@ -220,6 +243,36 @@ func (p *Protocol) Require(agents []string) error {
 		return fmt.Errorf("the protocol file %s has no targets for agent(s) %s of the campaign: add an entry for each (declaring a target absent with none where the protocol sets none) before analysing", filepath.Base(p.path), strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// RequireCaptureUser fails, naming the file and the runs, when the file
+// requires the capture user (I-139) and a run of the campaign does not
+// record one, or records the operator's uid, so a campaign whose agent
+// could read the operator's home is never analysed as an experiment.
+func (p *Protocol) RequireCaptureUser(c *Campaign) error {
+	if p.CaptureUser == nil || !p.CaptureUser.RequireOtherUser {
+		return nil
+	}
+	var bad []string
+	for _, r := range c.Manifest.Runs {
+		switch a := r.RunAs; {
+		case a == nil || a.User == "" || a.UID == nil:
+			bad = append(bad, c.ID(r)+" (no run_as)")
+		case a.OperatorUID == nil:
+			bad = append(bad, c.ID(r)+" (no operator uid)")
+		case *a.UID == *a.OperatorUID:
+			bad = append(bad, c.ID(r)+" (ran as the operator)")
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	shown := bad
+	if len(shown) > 5 {
+		shown = append(shown[:5:5], fmt.Sprintf("and %d more", len(bad)-5))
+	}
+	return fmt.Errorf("the protocol file %s requires every run to have run the agent as a user other than the operator (capture_user, %s), and %d of %d run(s) did not: %s; capture with --run-as (scripts/setup-capture-user.sh), or analyse a campaign that is not an experiment with a protocol file whose capture_user is none",
+		filepath.Base(p.path), p.CaptureUser.Basis, len(bad), len(c.Manifest.Runs), strings.Join(shown, ", "))
 }
 
 // IsToolHeavy says whether a task is in an agent's tool-heavy subgroup. A

@@ -1,6 +1,10 @@
 {
   "schema": 1,
   "protocol": "docs/eval/experiment_protocol_v2.md (Claude Code registration, draft 2026-10-27)",
+  "capture_user": {
+    "require_other_user": true,
+    "basis": "I-139"
+  },
   "agents": [
     {
       "agent": "claude-code",

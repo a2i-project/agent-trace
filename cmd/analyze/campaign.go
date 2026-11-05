@@ -71,6 +71,17 @@ type RunRecord struct {
 	// current manifest does not carry (start-up, drain, watch CPU and peak
 	// RSS). Absent means not measured.
 	Cost *CostRecord `json:"cost"`
+	// RunAs is the user the agent ran as, from the run's task-meta.txt
+	// (I-137); absent when the capture ran it as the operator without
+	// --run-as.
+	RunAs *RunAsRecord `json:"run_as"`
+}
+
+// RunAsRecord is the user a run's agent ran as and the operator's uid.
+type RunAsRecord struct {
+	User        string `json:"user"`
+	UID         *int   `json:"uid"`
+	OperatorUID *int   `json:"operator_uid"`
 }
 
 // RecordedExclude is the runner's classification of a run that did not
