@@ -560,8 +560,10 @@
       },
       "content": [
         {
-          "method": "none",
-          "reason": "OpenCode's content capture is not profiled yet: its model traffic goes through the TLS of its Bun executable, which no content method hooks yet (I-112)"
+          "method": "tls-bun-boringssl",
+          "library": "{binary}",
+          "parser": "http1",
+          "note": "OpenCode is one Bun 1.4.4 executable with BoringSSL linked statically, without symbols or unwind table: SSL_write and SSL_read are found by the bytes of that Bun build, and any other build is refused (N-51). Bun's fetch offers ALPN http/1.1 alone unless a request forces HTTP/2 or an experimental flag is set, neither of which OpenCode does, so the model connection is HTTP/1.1 (N-52)."
         }
       ],
       "controls": {
