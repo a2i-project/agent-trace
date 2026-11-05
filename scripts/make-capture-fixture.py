@@ -43,11 +43,15 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
     /capture, both as paths and in the form Claude Code names its per-project
     directories with (every character but a letter or digit a dash), so the
     baseline's workspace placeholders are exercised; the home directory
-    becomes /home/user;
+    becomes /home/user, and so does the home of the user a capture ran the
+    agent as (--run-as: the home each ground truth's sensitive-file snapshot
+    records), whose name, from task-meta.txt, becomes user;
   * a capture may have been moved after it was recorded. The directory it was
     recorded in is read from each run's ground truth (its workspace is
     <recorded directory>/ws-<label>), must be the same for every run, and is
-    rewritten together with the directory the capture is in now;
+    rewritten together with the directory the capture is in now. A capture
+    run as another user recorded its workspaces under the workspace root,
+    <root>/capture-XXXXXX/ws-<label>, which is that recorded directory;
   * the snapshot-creation command keeps its first line, with its per-run id
     intact, and loses the script body. The body differs with the enabled tool
     set, so a reduced fixture cannot show that a baseline is tied to one;
@@ -244,6 +248,25 @@ for label in labels:
 if len(recorded) != 1:
     sys.exit("the runs were recorded in different directories: " + ", ".join(sorted(recorded)))
 recorded = recorded.pop()
+# A capture that ran the agent as another user (--run-as, I-137) names that
+# user's home, which each ground truth records as the home of its
+# sensitive-file snapshot, and that user's name, which task-meta.txt
+# records: both are rewritten and checked like yours.
+homes = {home}
+for label in labels:
+    with open(os.path.join(capture, label + ".ground_truth.json")) as f:
+        h = ((json.load(f).get("coverage") or {}).get("sensitive") or {}).get("home") or ""
+    if h.startswith("/") and len(h) > 1:
+        homes.add(h.rstrip("/"))
+homes = sorted(homes, key=len, reverse=True)
+run_as_user = ""
+try:
+    with open(os.path.join(capture, "task-meta.txt")) as f:
+        for line in f:
+            if line.startswith("run_as="):
+                run_as_user = line[len("run_as="):].split()[0]
+except (OSError, IndexError):
+    pass
 # Longest first, so a directory inside another is rewritten before it.
 roots = sorted({recorded, capture}, key=len, reverse=True)
 if recorded != capture:
@@ -265,11 +288,14 @@ def rewrite(s, label):
         s = s.replace(ws, "/ws/" + label).replace(mangle(ws), mangle("/ws/" + label))
     for root in roots:
         s = s.replace(root, "/capture").replace(mangle(root), mangle("/capture"))
-    s = s.replace(home, "/home/user")
+    for h in homes:
+        s = s.replace(h, "/home/user")
     for org in org_ids:
         s = s.replace(org, ZERO_UUID)
     s = SESSION_KEY.sub(lambda m: m.group(1) + ZERO_KEY, s)
     s = AVATAR.sub(lambda m: m.group(1) + AVATAR_ID, s)
+    if len(run_as_user) > 2:
+        s = s.replace(run_as_user, "user")
     return s.replace(os.environ.get("USER", "\0"), "user")
 
 
@@ -1007,7 +1033,7 @@ if server_ids:
     print("server ids rewritten: " + ", ".join("%d %s_" % (n, k) for k, n in sorted(per_prefix.items())))
 # Nothing private may be left in what was written.
 user = os.environ.get("USER", "")
-forbidden = {home} | org_ids | emails | codex_private | avatar_ids | opencode_private | ({user} if len(user) > 2 else set())
+forbidden = set(homes) | ({run_as_user} if len(run_as_user) > 2 else set()) | org_ids | emails | codex_private | avatar_ids | opencode_private | ({user} if len(user) > 2 else set())
 # Every form of the recorded and the current capture directory must be gone.
 forbidden |= set(roots) | {mangle(r) for r in roots}
 leaks = []

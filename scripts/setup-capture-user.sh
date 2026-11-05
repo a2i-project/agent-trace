@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# One-time setup of the dedicated user experiment captures run the agent as
+# (I-140): run it yourself, once, with sudo.
+#
+#   sudo scripts/setup-capture-user.sh [--user NAME] [--workspace-root DIR]
+#   scripts/setup-capture-user.sh --steps-only [--user NAME]
+#
+# It creates the user NAME (default agenttrace) with its own group, a home
+# of its own (/home/NAME, mode 700), no login password and no sudo, in no
+# group of yours, and the workspace root DIR (default
+# /var/lib/agent-trace/ws, root's, mode 711) under which
+# scripts/capture-agent.sh --run-as NAME puts each run's workspace (I-138).
+# It marks the user it creates in the account's comment field and refuses
+# to touch an existing user without that mark, so it never changes an
+# account it did not create; run again, it changes nothing that is already
+# as it should be. It checks that your home is closed to the new user
+# (mode 750 or stricter, I-137) and says how to close it, without changing
+# it.
+#
+# It runs no agent and installs none. It prints, for every agent
+# config/agents.json profiles, the steps to install the version the profile
+# lists last as NAME, with the profile's version lock, and to log in, which
+# you then follow yourself. --steps-only prints only those steps, without
+# root, and changes nothing.
+set -euo pipefail
+
+user=agenttrace
+ws_root=/var/lib/agent-trace/ws
+steps_only=
+while [ $# -gt 0 ]; do
+  case $1 in
+    --user) user=${2:?--user needs a name}; shift 2 ;;
+    --workspace-root) ws_root=${2:?--workspace-root needs a directory}; shift 2 ;;
+    --steps-only) steps_only=1; shift ;;
+    -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+case $user in [a-z_]*) ;; *) echo "--user: '$user' is not a user name" >&2; exit 2 ;; esac
+case $user in *[!a-z0-9_-]*) echo "--user: '$user' is not a user name" >&2; exit 2 ;; esac
+case $ws_root in /?*) ;; *) echo "--workspace-root must be absolute" >&2; exit 2 ;; esac
+root=$(cd "$(dirname "$0")/.." && pwd)
+config=${AGENT_TRACE_CONFIG:-$root/config/agents.json}
+home=/home/$user
+# The mark this script leaves in the account's comment field.
+mark="agent-trace capture user (scripts/setup-capture-user.sh)"
+
+# steps: the per-agent install and login steps, from the profiles.
+steps() {
+  python3 - "$config" "$user" <<'PY'
+import json, sys
+config, user = sys.argv[1:]
+adapters = json.load(open(config, encoding="utf-8"))["adapters"]
+# How each agent's pinned version is installed into the user's ~/.local,
+# keyed by the profile's binary; Reported from the vendors' instructions,
+# not run by this script. A binary missing here is installed by hand.
+INSTALL = {
+    "claude": ["curl -fsSL https://claude.ai/install.sh | bash -s {version}"],
+    "codex": ["npm install -g --prefix ~/.local @openai/codex@{version}"],
+    "opencode": ["npm install -g --prefix ~/.local opencode-ai@{version}"],
+    "agy": ["install -D -m 755 /path/to/agy-{version} ~/.local/bin/agy   # agy is one executable: a copy of an installed {version}, checked with agy --version"],
+}
+# How each logs in, run once by hand as the user.
+LOGIN = {"claude": "claude auth login", "codex": "codex login", "agy": "agy   # sign in once interactively, then /quit"}
+print("As %s (sudo -iu %s), for each agent the experiments use. The capture runs the agent with" % (user, user))
+print("PATH=~/.local/bin:/usr/local/bin:/usr/bin:/bin, so what an agent needs besides itself (node and npm")
+print("for the npm packages) must be installed system-wide, not in your home.")
+for name, p in sorted(adapters.items()):
+    binary = p.get("binary")
+    versions = [v["version"] for v in p.get("versions", [])]
+    if not binary or not versions:
+        continue
+    version = versions[-1]
+    lock = p.get("version_lock") or {}
+    env = " ".join("%s=%s" % kv for kv in sorted((lock.get("env") or {}).items()))
+    print("\n  %s: %s %s (the version config/agents.json lists last)" % (name, binary, version))
+    for c in INSTALL.get(binary, ["install %s %s into ~/.local/bin by hand" % (binary, version)]):
+        print("    " + c.format(version=version))
+    req = lock.get("require_setting")
+    if req:
+        key, value = req["key"], req["value"]
+        print("    # the version lock the capture checks (%s): %s/%s sets %s to \"%s\"" % (req.get("why", ""), req["dir"], req["file"], key, value))
+        obj = value
+        for part in reversed(key.split(".")):
+            obj = {part: obj}
+        print("    mkdir -p %s && printf '%%s\\n' '%s' > %s/%s" % (req["dir"], json.dumps(obj), req["dir"], req["file"]))
+    if p.get("pass_env"):
+        names = " ".join(p["pass_env"].get("names", []))
+        print("    # the profile passes %s from your session (%s): capture-agent.sh --run-as refuses it until that is settled (I-137)" % (names, p["pass_env"].get("why", "")))
+    if p.get("secret_env"):
+        names = " ".join(p["secret_env"].get("names", []))
+        print("    # no login: %s reaches each run on its stdin from your session (I-113), as without --run-as" % names)
+        print("    # its first run in %s's home installs its plugin and downloads ripgrep (I-112, I-116): before the first capture," % user)
+        print("    # run one warm-up run outside any capture, as %s, with the profile's environment and a prompt that uses grep" % user)
+    if binary in LOGIN:
+        print("    %s%s" % (env + " " if env else "", LOGIN[binary]))
+    print("    %s%s --version   # must print %s" % (env + " " if env else "", binary, version))
+print("\nThen, as you: scripts/capture-agent.sh --check --run-as %s --agent AGENT --task basic (after sudo -v)" % user)
+PY
+}
+
+if [ -n "$steps_only" ]; then
+  steps
+  exit 0
+fi
+[ "$(id -u)" = 0 ] || { echo "run it with sudo: sudo $0 $*" >&2; exit 1; }
+operator=${SUDO_USER:-}
+[ -n "$operator" ] && [ "$operator" != root ] || { echo "run it with sudo from your own account, so it knows whose home to check" >&2; exit 1; }
+for tool in getent useradd usermod id stat install; do
+  command -v "$tool" >/dev/null || { echo "$tool is not on PATH" >&2; exit 1; }
+done
+
+# The user: created with the mark, or found with it.
+if ent=$(getent passwd "$user"); then
+  IFS=: read -r _ _ uid _ gecos home _ <<<"$ent"
+  if [ "$gecos" != "$mark" ]; then
+    echo "a user $user exists that this script did not create (its comment is '$gecos'); it is left alone: choose another --user" >&2
+    exit 1
+  fi
+  echo "user $user exists (uid $uid), created by this script"
+else
+  getent group "$user" >/dev/null && { echo "a group $user exists without the user; it is left alone: choose another --user" >&2; exit 1; }
+  useradd --create-home --home-dir "$home" --user-group --shell /bin/bash --comment "$mark" "$user"
+  echo "created user $user (uid $(id -u "$user")), home $home"
+fi
+# No password to log in with: the account is reached with sudo -iu only.
+usermod --lock "$user" >/dev/null
+chmod 700 "$home"
+# No sudo and none of your groups, and you in none of its.
+groups=" $(id -nG "$user") "
+for g in sudo admin wheel "$(id -gn "$operator")"; do
+  case $groups in *" $g "*) echo "$user is in the group $g: remove it (gpasswd -d $user $g), then run again" >&2; exit 1 ;; esac
+done
+case " $(id -nG "$operator") " in *" $(id -gn "$user") "*) echo "$operator is in $user's group: remove it, then run again" >&2; exit 1 ;; esac
+
+# The workspace root, root's, which the agent's user can pass through only.
+install -d -o root -g root -m 755 "$(dirname "$ws_root")"
+install -d -o root -g root -m 711 "$ws_root"
+echo "workspace root $ws_root (root, 711)"
+
+# Your home must be closed to the new user (I-137); it is not changed here.
+op_home=$(getent passwd "$operator" | cut -d: -f6)
+mode=$(stat -c %a "$op_home")
+if [ $((8#$mode & 8#007)) -ne 0 ]; then
+  echo "WARNING: your home $op_home has mode $mode, which lets $user in; close it with: chmod 750 $op_home" >&2
+else
+  echo "your home $op_home has mode $mode: closed to $user"
+fi
+echo
+steps

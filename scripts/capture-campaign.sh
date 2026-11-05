@@ -13,7 +13,8 @@
 #                               [--validate] [--validate-e2e]
 #                               [--heldout-dir DIR] [--BINARY-model ID]
 #                               [--allow-unconfigured-version] [--new-version-stratum]
-#                               [--stop-after-failures N] PLAN OUTPUT_DIR
+#                               [--stop-after-failures N] [--run-as USER]
+#                               [--workspace-root DIR] PLAN OUTPUT_DIR
 #   scripts/capture-campaign.sh --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR
 #
 # PLAN is a text file with one entry per line, # starting a comment:
@@ -69,6 +70,15 @@
 # --dry-run stops there and prints the schedule: the runs already complete, the
 # task and control sessions still to record, the seed and the order of the
 # slots, and an estimate of the model turns.
+#
+# --run-as USER and --workspace-root DIR (defaults $AGENT_TRACE_RUN_AS and
+# $AGENT_TRACE_WORKSPACE_ROOT) are passed to every check and capture: the
+# agent runs as USER, a dedicated unprivileged user (I-137), each workspace
+# under the workspace root (I-138). USER's home is closed to you, so the
+# campaign asks for sudo before its checks, a dry run included, when USER is
+# not you; the version read after each run is then made as USER. Each
+# run.json records run_as (the user, its uid and yours) from the run's
+# task-meta.txt.
 #
 # Otherwise it builds the binaries once, asks for sudo once and keeps the
 # credential fresh while it runs. With --validate it then validates the
@@ -189,6 +199,8 @@ validate_only=
 heldout_dir=
 model_overrides=()
 new_stratum=
+run_as=${AGENT_TRACE_RUN_AS:-}
+ws_root=${AGENT_TRACE_WORKSPACE_ROOT:-}
 while [ $# -gt 0 ]; do
   case $1 in
     --dry-run) dry_run=1; shift ;;
@@ -202,13 +214,15 @@ while [ $# -gt 0 ]; do
     --allow-unconfigured-version) allow_unconfigured=1; shift ;;
     --new-version-stratum) new_stratum=1; shift ;;
     --stop-after-failures) stop_after=${2:?--stop-after-failures needs a number}; shift 2 ;;
+    --run-as) run_as=${2:?--run-as needs a user name}; shift 2 ;;
+    --workspace-root) ws_root=${2:?--workspace-root needs a directory}; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
 usage() {
-  echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--BINARY-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] PLAN OUTPUT_DIR" >&2
+  echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--BINARY-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] [--run-as USER] [--workspace-root DIR] PLAN OUTPUT_DIR" >&2
   echo "       $0 --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR" >&2
   exit 2
 }
@@ -766,6 +780,12 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
         "scale": scale(os.path.join(run_dir, f"{lab}.ground_truth.json"), os.path.join(run_dir, f"{lab}.watch.log")),
         "control_scale": control_scale,
     }
+    # The user the agent ran as (I-137), from task-meta.txt; absent when the
+    # capture ran it as the operator without --run-as.
+    m = re.fullmatch(r"(\S+) uid=(\d+)", meta.get("run_as", ""))
+    if m:
+        r["run_as"] = {"user": m.group(1), "uid": int(m.group(2)),
+                       "operator_uid": int(meta["operator_uid"]) if meta.get("operator_uid", "").isdigit() else None}
     cost = read_cost(os.path.join(run_dir, f"{lab}.cost.json"))
     if cost is not None:
         r["cost"] = cost
@@ -1163,6 +1183,22 @@ if [ -n "$validate_only" ]; then
 fi
 
 entries=$(helper plan "$plan") || die "the plan is not valid"
+# The run-as user (I-137): what every check and capture gets, and, for a
+# user other than you, sudo now, since the checks read that user's home.
+run_as_args=()
+run_uid=
+if [ -n "$run_as" ]; then
+  ent=$(getent passwd "$run_as") || die "--run-as: no user $run_as (getent passwd)"
+  IFS=: read -r _ _ run_uid run_gid _ run_home _ <<<"$ent"
+  run_as_args=(--run-as "$run_as")
+  [ -z "$ws_root" ] || run_as_args+=(--workspace-root "$ws_root")
+  if [ "$run_uid" != "$(id -u)" ]; then
+    echo "run as: $run_as (uid $run_uid); its home is read through sudo, so sudo is asked for before the checks"
+    sudo -v
+  else
+    run_uid=
+  fi
+fi
 if grep -q $'\theldout:' <<<"$entries" && [ -z "$heldout_dir" ]; then
   die "the plan has held-out tasks: give --heldout-dir DIR, which holds NAME/prompt.txt and NAME/tools.txt for each"
 fi
@@ -1174,7 +1210,7 @@ check() {
   [ "$3" != content ] || args+=(--content)
   [ -z "$allow_unconfigured" ] || args+=(--allow-unconfigured-version)
   case $2 in heldout:*) args+=(--heldout-dir "$heldout_dir") ;; esac
-  CONTROLS=$controls "$capture" "${args[@]}" "$out/.check"
+  CONTROLS=$controls "$capture" "${args[@]}" "${run_as_args[@]}" "$out/.check"
 }
 field() { sed -n "s/^$1=//p" <<<"$2"; }
 # agent_version AGENT: the version the installed agent states now, read the way
@@ -1185,6 +1221,15 @@ agent_version() {
   read -r -a args <<<"$(profile "$1" version_command args)"
   [ "${#args[@]}" -gt 0 ] || args=(--version)
   field=$(profile "$1" version_command field)
+  if [ -n "$run_uid" ]; then
+    # As the run-as user, its binary on its PATH, in a throwaway home of its
+    # own, as the capture script queries it.
+    # shellcheck disable=SC2016
+    sudo -n setpriv --reuid "$run_uid" --regid "$run_gid" --init-groups --reset-env env -C / HOME="$run_home" PATH="$run_home/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+      sh -c 'b=$(command -v "$1") || exit 1; shift; h=$(mktemp -d /tmp/agent-trace-version.XXXXXX) || exit 1; HOME=$h "$b" "$@" 2>/dev/null; rm -rf -- "$h"' agent-trace-version "$(profile "$1" binary)" "${args[@]}" |
+      awk -v last="$([ "$field" = last ] && echo 1)" '{print (last ? $NF : $1)}'
+    return
+  fi
   home=$(mktemp -d "${TMPDIR:-/tmp}/agent-trace-version.XXXXXX")
   HOME="$home" "$(profile "$1" binary)" "${args[@]}" 2>/dev/null | awk -v last="$([ "$field" = last ] && echo 1)" '{print (last ? $NF : $1)}'
   rm -rf -- "$home"
@@ -1343,6 +1388,7 @@ for line in "${pending_order[@]}"; do
     [ "$mode" != content ] || args+=(--content)
     [ -z "$allow_unconfigured" ] || args+=(--allow-unconfigured-version)
     case $task in heldout:*) args+=(--heldout-dir "$heldout_dir") ;; esac
+    args+=("${run_as_args[@]}")
     mkdir -p "$d"
     echo
     echo "=== $agent $version $task ($mode) run $i, slot $pos/$total, attempt $attempts -> $d"

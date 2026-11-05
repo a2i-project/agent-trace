@@ -18,6 +18,7 @@
 #   scripts/capture-agent.sh [--agent AGENT] [--task TASK] [--baseline-from DIR]
 #                            [--model ID] [--controls-before N] [--heldout-dir DIR]
 #                            [--allow-unconfigured-version] [--content] [--check]
+#                            [--run-as USER] [--workspace-root DIR]
 #                            [--no-build] [OUTPUT_DIR]
 #
 # The tasks are the profile's: Claude Code has basic, parallel, project,
@@ -73,6 +74,29 @@
 # what the controls of this capture are, as key=value lines, then exits
 # without creating OUTPUT_DIR, building or asking for sudo.
 # --no-build skips `make build`, for a caller that has built already.
+# --run-as USER (default $AGENT_TRACE_RUN_AS, else you) runs the agent as
+# USER (I-137), a dedicated unprivileged user (scripts/setup-capture-user.sh
+# creates agenttrace), so it cannot read your home. The script resolves
+# USER's uid, gid and home with getent and refuses root. When USER is not
+# you, every ~/ of the profile (the binary, looked up on USER's PATH,
+# ~/.local/bin, /usr/local/bin, /usr/bin and /bin; the version query; the
+# trace directory and databases; the instruction files moved aside; the
+# version lock's settings file; the model catalog; config_file) is USER's
+# home, watch gets it as --agent-home (the home its sensitive-file snapshot
+# records, V-40, I-111), and the run's environment gets HOME and that PATH.
+# USER's home is closed to you, so the script reads it through sudo (reads
+# as root, writes and SQLite reads as USER): it asks for sudo at its start,
+# and --check needs a sudo credential already (sudo -v), never prompting.
+# A profile with pass_env (agy's session bus) is refused, since your session
+# cannot reach another user's agent. Each run's workspace is then
+# <workspace root>/capture-XXXXXX/ws-<label> (I-138; --workspace-root DIR,
+# default $AGENT_TRACE_WORKSPACE_ROOT, else /var/lib/agent-trace/ws, outside
+# your home and the repository): prepared as today in OUTPUT_DIR/ws-<label>,
+# copied there as root, owned by USER with mode 700, and after the run copied
+# back to OUTPUT_DIR/ws-<label>, given to you, and removed from the root.
+# The ground truth and the transcripts name the root's path, which verify,
+# baseline and scripts/make-capture-fixture.py take as the run's workspace.
+# task-meta.txt records run_as=<user> uid=<uid> and operator_uid=<your uid>.
 #
 # Tasks (each fixed, so results compare across versions):
 #   basic     Read, Write (create), Edit, Write (overwrite), Bash. Five calls.
@@ -193,8 +217,9 @@
 # why several controls are taken and one is enough (V-24). Raise MIN_AGREEMENT
 # to keep only what every control did.
 #
-# The agent runs as you (setpriv execs it in place, so it keeps the pid watch
-# records as the root of the process tree) with your credentials, in print
+# The agent runs as you, or as --run-as USER (setpriv execs it in place, so
+# it keeps the pid watch records as the root of the process tree) with that
+# user's credentials, in print
 # mode, with the argument list of the profile's invocation. If its login has
 # expired, log in first (Claude Code: `claude auth login`; agy: run it once
 # interactively). The profile's methods (I-47, I-48 for agy):
@@ -306,17 +331,23 @@ trap 'echo "interrupted" >&2; exit 130' INT TERM
 # created at the original path is never overwritten: the user's stays aside
 # and the script says so.
 moved_instruction_files=()
+# The agent's home may belong to another user (--run-as, I-137): as_root
+# prefixes a read of it, as_agent a write or a SQLite read as that user. Both
+# are empty when the agent runs as you, so each command runs as before.
+as_root=()
+as_agent=()
+present() { "${as_root[@]}" test -e "$1" || "${as_root[@]}" test -L "$1"; }
 move_instruction_files() {
   local f a
   for f in "${instruction_files[@]}"; do
-    [ -e "$f" ] || [ -L "$f" ] || continue
+    present "$f" || continue
     a=$f.agent-trace-aside
-    if [ -e "$a" ] || [ -L "$a" ]; then
+    if present "$a"; then
       echo "   $a exists; not moving $f" >&2
       return 1
     fi
-    mv -n -- "$f" "$a" || return 1
-    if [ -e "$f" ] || [ -L "$f" ] || { [ ! -e "$a" ] && [ ! -L "$a" ]; }; then
+    "${as_agent[@]}" mv -n -- "$f" "$a" || return 1
+    if present "$f" || ! present "$a"; then
       echo "   could not move $f aside" >&2
       return 1
     fi
@@ -327,9 +358,9 @@ restore_instruction_files() {
   local f a
   for f in "${moved_instruction_files[@]}"; do
     a=$f.agent-trace-aside
-    if [ -e "$f" ] || [ -L "$f" ]; then
+    if present "$f"; then
       echo "WARNING: the run created $f; your own file stays at $a: compare the two and put yours back by hand" >&2
-    elif mv -n -- "$a" "$f" && { [ -e "$f" ] || [ -L "$f" ]; }; then
+    elif "${as_agent[@]}" mv -n -- "$a" "$f" && present "$f"; then
       :
     else
       echo "WARNING: could not put $f back; it is at $a: mv -n '$a' '$f'" >&2
@@ -337,7 +368,18 @@ restore_instruction_files() {
   done
   moved_instruction_files=()
 }
-trap restore_instruction_files EXIT
+# A run's workspace under the workspace root (--run-as, I-138) that an
+# interruption left there is copied back like any other before the script
+# exits, and the capture's directory under the root is removed when empty.
+ws_run=
+pending_ws=
+pending_dest=
+on_exit() {
+  restore_instruction_files
+  [ -z "$pending_ws" ] || release_workspace "$pending_ws" "$pending_dest" || true
+  [ -z "$ws_run" ] || sudo -n rmdir -- "$ws_run" 2>/dev/null || true
+}
+trap on_exit EXIT
 
 agent=
 task=basic
@@ -349,9 +391,13 @@ build=1
 model=
 controls_before=0
 heldout_dir=
+run_as=${AGENT_TRACE_RUN_AS:-}
+ws_root=${AGENT_TRACE_WORKSPACE_ROOT:-/var/lib/agent-trace/ws}
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs an agent name}; shift 2 ;;
+    --run-as) run_as=${2:?--run-as needs a user name}; shift 2 ;;
+    --workspace-root) ws_root=${2:?--workspace-root needs a directory}; shift 2 ;;
     --task) task=${2:?--task needs a task name}; shift 2 ;;
     --baseline-from) baseline_from=${2:?--baseline-from needs a directory}; shift 2 ;;
     --allow-unconfigured-version) allow_unconfigured=1; shift ;;
@@ -388,6 +434,49 @@ out=${1:-/tmp/agent-trace-capture-$(date +%Y%m%d-%H%M%S)}
 # Every later step names the output by this path, some after changing
 # directory, so a relative path is made absolute here.
 out=$(realpath -m -- "$out")
+# The user the agent runs as (I-137): you by default. --run-as USER names
+# another, resolved with getent; its home is where the profile's ~/ paths
+# resolve. Only a user other than you changes how the script works: its home
+# is read through sudo and its workspaces live under the workspace root.
+run_uid=$(id -u)
+run_gid=$(id -g)
+agent_home=$HOME
+run_name=
+other_user=
+run_path=
+if [ -n "$run_as" ]; then
+  case $run_as in -*|*[!A-Za-z0-9._-]*) echo "--run-as: '$run_as' is not a user name" >&2; exit 2 ;; esac
+  command -v getent >/dev/null || { echo "--run-as needs getent" >&2; exit 1; }
+  ent=$(getent passwd "$run_as") || { echo "--run-as: no user $run_as (getent passwd)" >&2; exit 1; }
+  IFS=: read -r run_name _ run_uid run_gid _ agent_home _ <<<"$ent"
+  [ "$run_uid" != 0 ] || { echo "--run-as: $run_as is root; the agent runs as an unprivileged user" >&2; exit 1; }
+  case $agent_home in /?*) ;; *) echo "--run-as: $run_as has no absolute home ('$agent_home')" >&2; exit 1 ;; esac
+  [ "$run_uid" = "$(id -u)" ] || other_user=1
+fi
+if [ -n "$other_user" ]; then
+  # Your session cannot reach another user's agent: the environment a
+  # profile passes from it (agy's session bus) is refused, never shared.
+  if [ "${#p_pass_env[@]}" -gt 0 ]; then
+    echo "--run-as $run_as: $agent's profile passes ${p_pass_env[*]} from your session ($p_pass_env_why); a run as another user cannot use your session, and the capture does not share it" >&2
+    exit 1
+  fi
+  ws_root=$(realpath -m -- "$ws_root")
+  case $ws_root/ in "$HOME"/*) echo "--workspace-root $ws_root is inside your home, which $run_as cannot enter" >&2; exit 1 ;; esac
+  case $ws_root/ in "$root"/*) echo "--workspace-root $ws_root is inside the repository" >&2; exit 1 ;; esac
+  case $out/ in "$ws_root"/*) echo "OUTPUT_DIR $out is inside the workspace root $ws_root, where $run_as works" >&2; exit 1 ;; esac
+  run_path=$agent_home/.local/bin:/usr/local/bin:/usr/bin:/bin
+  # USER's home is closed to you: its reads run as root, its writes and the
+  # SQLite reads of its live databases as USER, so nothing in it changes
+  # owner. sudo -n never prompts; the credential is asked for here, or, for
+  # --check, which never asks, must exist already.
+  as_root=(sudo -n)
+  as_agent=(sudo -n setpriv --reuid "$run_uid" --regid "$run_gid" --init-groups --reset-env env -C / HOME="$agent_home" PATH="$run_path")
+  if [ -n "$check_only" ]; then
+    sudo -n true 2>/dev/null || { echo "--check of a run as $run_as reads its home through sudo and never asks for a password: run sudo -v first" >&2; exit 1; }
+  else
+    sudo -v
+  fi
+fi
 # A content method this script does not implement refuses, as none does.
 if [ -n "$content" ]; then
   for i in "${!p_content_methods[@]}"; do
@@ -400,7 +489,13 @@ if [ -n "$content" ]; then
     esac
   done
 fi
-agent_bin=$(command -v "$p_binary") || { echo "$p_binary is not on PATH" >&2; exit 1; }
+if [ -n "$other_user" ]; then
+  # The agent's own installation, on its user's PATH.
+  agent_bin=$("${as_agent[@]}" sh -c 'command -v "$1"' agent-trace-which "$p_binary") && [ "${agent_bin#/}" != "$agent_bin" ] ||
+    { echo "$p_binary is not on $run_as's PATH ($run_path)" >&2; exit 1; }
+else
+  agent_bin=$(command -v "$p_binary") || { echo "$p_binary is not on PATH" >&2; exit 1; }
+fi
 # The model is pinned (D7), by default to the profile's; --model overrides it.
 # The check after each run reads the transcript, so an id the agent does not
 # run under fails the run as MODEL MISMATCH.
@@ -419,15 +514,15 @@ catalog_path=
 if [ -n "$p_model_catalog_path" ]; then
   catalog_path=$p_model_catalog_path
   [ -z "$p_model_catalog_override_env" ] || [ -z "${!p_model_catalog_override_env:-}" ] || catalog_path=${!p_model_catalog_override_env}
-  catalog_path=${catalog_path/#\~/$HOME}
+  catalog_path=${catalog_path/#\~/$agent_home}
   case $catalog_path in /*) ;; *) catalog_path=$root/$catalog_path ;; esac
-  extract="python3 $root/scripts/extract-model-catalog.py ${p_model_catalog_cache/#\~/$HOME} $p_model_default $catalog_path"
-  if [ ! -s "$catalog_path" ]; then
+  extract="python3 $root/scripts/extract-model-catalog.py ${p_model_catalog_cache/#\~/$agent_home} $p_model_default $catalog_path"
+  if ! "${as_root[@]}" test -s "$catalog_path"; then
     echo "the model catalog of $agent's profile, $catalog_path, is missing; write it from the agent's cache with:" >&2
     echo "  $extract" >&2
     exit 1
   fi
-  have=$(sha256sum "$catalog_path" | cut -d' ' -f1)
+  have=$("${as_root[@]}" sha256sum "$catalog_path" | cut -d' ' -f1)
   if [ "$have" != "$p_model_catalog_sha256" ]; then
     echo "the model catalog $catalog_path has SHA-256 $have; $agent's profile pins $p_model_catalog_sha256" >&2
     echo "write it again from the agent's cache with:" >&2
@@ -444,12 +539,12 @@ fi
 # interrupted capture is never overwritten: the capture refuses and says how
 # to put it back.
 instruction_files=()
-for f in "${p_instruction_files[@]}"; do instruction_files+=("${f/#\~/$HOME}"); done
+for f in "${p_instruction_files[@]}"; do instruction_files+=("${f/#\~/$agent_home}"); done
 for f in "${instruction_files[@]}"; do
   a=$f.agent-trace-aside
-  if [ -e "$a" ] || [ -L "$a" ]; then
+  if present "$a"; then
     echo "$a holds a file an interrupted capture moved aside; put it back first:" >&2
-    if [ -e "$f" ] || [ -L "$f" ]; then
+    if present "$f"; then
       echo "  $f exists too: compare the two, keep the one you want at $f, then remove $a" >&2
     else
       echo "  mv -n '$a' '$f'" >&2
@@ -463,10 +558,11 @@ done
 # every run (below).
 if [ -n "$p_require" ]; then
   settings_dir=
-  [ -z "$p_require_dir_env" ] || settings_dir=${!p_require_dir_env:-}
-  [ -n "$settings_dir" ] || settings_dir=${p_require_dir/#\~/$HOME}
+  # Your environment's directory is not the other user's (I-137).
+  [ -z "$p_require_dir_env" ] || [ -n "$other_user" ] || settings_dir=${!p_require_dir_env:-}
+  [ -n "$settings_dir" ] || settings_dir=${p_require_dir/#\~/$agent_home}
   agent_settings=$settings_dir/$p_require_file
-  python3 "$root/scripts/agent-profile.py" setting "$agent_settings" "$p_require_key" "$p_require_value" || {
+  "${as_root[@]}" python3 "$root/scripts/agent-profile.py" setting "$agent_settings" "$p_require_key" "$p_require_value" || {
     echo "$agent_settings must set $p_require_key to \"$p_require_value\": $p_require_why" >&2
     exit 1
   }
@@ -486,9 +582,15 @@ fi
 # exits from --version without removing the staging directory it creates
 # under ~/.codex/tmp/arg0-linux, which the next run's start-up renames and
 # deletes (I-90).
-version_home=$(mktemp -d "${TMPDIR:-/tmp}/agent-trace-version.XXXXXX")
-version=$(HOME="$version_home" "$agent_bin" "${p_version_args[@]}" 2>/dev/null | awk -v last="$([ "$p_version_field" = last ] && echo 1)" '{print (last ? $NF : $1)}')
-rm -rf -- "$version_home"
+if [ -n "$other_user" ]; then
+  # The same query as the agent's user, in a throwaway home of its own.
+  # shellcheck disable=SC2016
+  version=$("${as_agent[@]}" sh -c 'h=$(mktemp -d /tmp/agent-trace-version.XXXXXX) || exit 1; HOME=$h "$@" 2>/dev/null; rm -rf -- "$h"' agent-trace-version "$agent_bin" "${p_version_args[@]}" | awk -v last="$([ "$p_version_field" = last ] && echo 1)" '{print (last ? $NF : $1)}')
+else
+  version_home=$(mktemp -d "${TMPDIR:-/tmp}/agent-trace-version.XXXXXX")
+  version=$(HOME="$version_home" "$agent_bin" "${p_version_args[@]}" 2>/dev/null | awk -v last="$([ "$p_version_field" = last ] && echo 1)" '{print (last ? $NF : $1)}')
+  rm -rf -- "$version_home"
+fi
 [ -n "$version" ] || { echo "$p_binary ${p_version_args[*]} printed nothing" >&2; exit 1; }
 # The environment the agent needs from the session (agy logs in through the
 # Secret Service on the session bus); setpriv --reset-env below clears the
@@ -533,6 +635,9 @@ if [ "${#p_secret_env[@]}" -gt 0 ]; then
   secret_reader=(/bin/sh -c 'n=$1; shift; while [ "$n" -gt 0 ]; do IFS= read -r v || exit 125; export "$1=$v"; shift; n=$((n - 1)); done; unset v n; exec </dev/null; exec "$@"' agent-trace-secret-env "${#p_secret_env[@]}" "${p_secret_env[@]}")
 fi
 run_env+=("${p_lock_env[@]}" "${p_isolation_setenv[@]}")
+# Another user's run gets its home and PATH (setpriv --reset-env sets the
+# home too, and a PATH without ~/.local/bin).
+[ -z "$other_user" ] || run_env+=("HOME=$agent_home" "PATH=$run_path")
 # The agent's own configuration (the profile's config_file; OpenCode, I-113):
 # agent-trace's file, outside the repository, whose content is the
 # profile's. The capture writes it where it is missing and refuses one that
@@ -541,15 +646,20 @@ run_env+=("${p_lock_env[@]}" "${p_isolation_setenv[@]}")
 # names the model's provider and the agent's permissions.
 config_file=
 if [ -n "$p_config_file_path" ]; then
-  config_file=${p_config_file_path/#\~/$HOME}
+  config_file=${p_config_file_path/#\~/$agent_home}
   case $config_file in /*) ;; *) echo "config_file.path of $agent's profile must be absolute or start with ~/" >&2; exit 1 ;; esac
   case $config_file/ in "$root"/*) echo "the configuration file $config_file is inside the repository" >&2; exit 1 ;; esac
-  if [ ! -e "$config_file" ] && [ -z "$check_only" ]; then
-    mkdir -p "$(dirname "$config_file")"
-    printf '%s' "$p_config_file_content" >"$config_file"
+  if ! "${as_root[@]}" test -e "$config_file" && [ -z "$check_only" ]; then
+    if [ -n "$other_user" ]; then
+      # shellcheck disable=SC2016
+      printf '%s' "$p_config_file_content" | "${as_agent[@]}" sh -c 'mkdir -p "$(dirname "$1")" && cat >"$1"' agent-trace-config "$config_file"
+    else
+      mkdir -p "$(dirname "$config_file")"
+      printf '%s' "$p_config_file_content" >"$config_file"
+    fi
     echo "wrote $agent's configuration file $config_file from its profile"
   fi
-  if [ -e "$config_file" ] && [ "$(cat "$config_file"; printf x)" != "${p_config_file_content}x" ]; then
+  if "${as_root[@]}" test -e "$config_file" && [ "$("${as_root[@]}" cat "$config_file"; printf x)" != "${p_config_file_content}x" ]; then
     echo "the configuration file $config_file differs from the content of $agent's profile (config_file); it is never overwritten:" >&2
     echo "compare the two, then remove the file and the capture writes the profile's" >&2
     exit 1
@@ -557,7 +667,7 @@ if [ -n "$p_config_file_path" ]; then
   run_env+=("$p_config_file_env=$config_file")
   model_pin="$model_pin config_sha256=$(printf '%s' "$p_config_file_content" | sha256sum | cut -d' ' -f1)"
 fi
-trace_dir=${p_trace_dir/#\~/$HOME}
+trace_dir=${p_trace_dir/#\~/$agent_home}
 # What watch records besides the probes' defaults. Content capture hooks the
 # file each method's library parameter names ({binary} is the file the
 # agent's command resolves to, {binary_dir} that file's directory):
@@ -565,13 +675,16 @@ trace_dir=${p_trace_dir/#\~/$HOME}
 # --net-content METHOD=PATH.
 watch_mode=identity
 watch_flags=()
+# Another user's home is where watch resolves the adapters' ~/ files (V-40)
+# and what the ground truth records as the capture's home (I-111).
+[ -z "$other_user" ] || watch_flags+=(--agent-home "$agent_home")
 if [ -n "$content" ]; then
   watch_mode=content
-  agent_real=$(readlink -f "$agent_bin")
+  agent_real=$("${as_root[@]}" readlink -f "$agent_bin")
   for i in "${!p_content_methods[@]}"; do
     lib=${p_content_libraries[i]//\{binary_dir\}/"$(dirname "$agent_real")"}
-    lib=$(readlink -f "${lib//\{binary\}/"$agent_bin"}") || lib=
-    [ -f "$lib" ] || { echo "--content: the library of ${p_content_methods[i]} (${p_content_libraries[i]}) is not a file" >&2; exit 1; }
+    lib=$("${as_root[@]}" readlink -f "${lib//\{binary\}/"$agent_bin"}") || lib=
+    [ -n "$lib" ] && "${as_root[@]}" test -f "$lib" || { echo "--content: the library of ${p_content_methods[i]} (${p_content_libraries[i]}) is not a file" >&2; exit 1; }
     case ${p_content_methods[i]} in
       tls-symbols) watch_flags+=(--net-exe-path "$lib") ;;
       *) watch_flags+=(--net-content "${p_content_methods[i]}=$lib") ;;
@@ -798,7 +911,9 @@ if [ -n "$check_only" ]; then
 else
   mkdir -p "$out"
 fi
-if [ -n "$locked" ]; then
+# Another user's workspaces are not on this filesystem: each run checks its
+# own locked/ as that user (capture_one).
+if [ -n "$locked" ] && [ -z "$other_user" ]; then
   probe=$(mktemp -d "$probe_parent/.locked-probe.XXXXXX")
   chmod a-w "$probe"
   if [ -w "$probe" ]; then
@@ -822,9 +937,19 @@ if [ -n "$check_only" ]; then
   echo "model=$model_pin"
   echo "task_prompt_sha256=$task_prompt_sha256"
   echo "seed_sha256=$seed_sha256"
+  [ -z "$run_as" ] || echo "run_as=$run_name uid=$run_uid"
   exit 0
 fi
 echo "output: $out"
+if [ -n "$other_user" ]; then
+  # This capture's directory under the workspace root, which holds each
+  # run's workspace while it runs (I-138): root's, mode 711, so the agent's
+  # user reaches its own workspace and lists nothing.
+  sudo -n mkdir -p -- "$ws_root"
+  ws_run=$(sudo -n mktemp -d "$ws_root/capture-XXXXXX")
+  sudo -n chmod 711 -- "$ws_run"
+  echo "run as: $run_name (uid $run_uid), home $agent_home, workspaces under $ws_run"
+fi
 echo "$p_binary: $agent_bin ($version), task: $task"
 [ -z "$build" ] || (cd "$root" && make build >/dev/null)
 # An agent with a profile and no adapter in this build (Codex until its
@@ -912,6 +1037,26 @@ invocation() { # prompt tool_set
   done
 }
 
+# fetch [-r] SRC DEST: copy a file of the agent's home into the output; for
+# another user's home as root, then given to you.
+fetch() {
+  if [ -z "$other_user" ]; then cp "$@"; return; fi
+  sudo -n cp "$@" && sudo -n chown -R "$(id -u):$(id -g)" -- "${@: -1}"
+}
+# own_out: give you what a root reader wrote into the output.
+own_out() { [ -z "$other_user" ] || sudo -n chown -R "$(id -u):$(id -g)" -- "$out"; }
+
+# release_workspace WS DEST: another user's run workspace, copied back to
+# DEST in the output (OUTPUT_DIR/ws-<label>), given to you, and removed
+# from the workspace root (I-138).
+release_workspace() { # ws dest
+  sudo -n cp -a -- "$1" "$2" && sudo -n chown -R "$(id -u):$(id -g)" -- "$2" && sudo -n rm -rf -- "$1" || {
+    echo "   could not copy the workspace $1 back to $2; it stays under the workspace root" >&2
+    return 1
+  }
+  pending_ws=
+}
+
 capture_one() { # label prompt tools role
   local label=$1 prompt=$2 tools=$3 role=$4
   local ws="$out/ws-$label" tool_set rc=0
@@ -941,20 +1086,38 @@ capture_one() { # label prompt tools role
     # none: the agent takes no tool set; the prompt names the tools (I-79).
     none) tool_set= ;;
   esac
+  # Another user's run (I-138): the workspace prepared above moves to the
+  # workspace root, owned by that user with mode 700; env -C starts the
+  # agent in it, since you cannot enter it.
+  local env_dir=() run_cwd=$ws
+  if [ -n "$other_user" ]; then
+    local stage=$ws
+    ws=$ws_run/ws-$label
+    sudo -n cp -a -- "$stage" "$ws" && sudo -n chown -R "$run_uid:$run_gid" -- "$ws" && sudo -n chmod 700 -- "$ws" || return 1
+    pending_ws=$ws pending_dest=$stage
+    [ -z "$locked" ] || chmod u+w "$stage/$locked"
+    rm -rf -- "$stage" || return 1
+    if [ -n "$locked" ] && "${as_agent[@]}" test -w "$ws/$locked"; then
+      echo "   $ws/$locked is still writable for $run_name" >&2
+      return 1
+    fi
+    env_dir=(-C "$ws")
+    run_cwd=$ws_run
+  fi
   case $p_session_method in
     assigned) session=$(cat /proc/sys/kernel/random/uuid); echo "== $label: session $session" ;;
     stdout-json) echo "== $label" ;;
   esac
   # The databases that exist before the run: any other one after it is the
   # run's own or a subagent's (I-55).
-  [ "$p_trace_method" != sqlite-conversation ] || before=$(ls "$trace_dir" 2>/dev/null | grep '\.db$' || true)
+  [ "$p_trace_method" != sqlite-conversation ] || before=$("${as_root[@]}" ls "$trace_dir" 2>/dev/null | grep '\.db$' || true)
   invocation "$prompt" "$tool_set"
   local wrc=0
   # jsonl-rollout: a subagent's rollout is a file the run created.
   run_started=$(date +%s)
   move_instruction_files || return 1
   (
-    cd "$ws"
+    cd "$run_cwd"
     # stdin null: an agent that reads a piped stdin into its prompt gets
     # none (I-79); sudo asks for a password on the terminal, not on stdin.
     [ "$p_stdin" != null ] || exec </dev/null
@@ -962,15 +1125,19 @@ capture_one() { # label prompt tools role
     [ "${#secret_vals[@]}" -eq 0 ] || exec < <(printf '%s\n' "${secret_vals[@]}")
     measured "$label" sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
-      setpriv --reuid "$(id -u)" --regid "$(id -g)" --init-groups --reset-env \
-      env "${run_env[@]}" "${secret_reader[@]}" \
+      setpriv --reuid "$run_uid" --regid "$run_gid" --init-groups --reset-env \
+      env "${env_dir[@]}" "${run_env[@]}" "${secret_reader[@]}" \
       "$agent_bin" "${argv[@]}" >"$out/$label.watch.log" 2>&1
   ) || wrc=$?
   restore_instruction_files
   printf '%s\n' "$wrc" >"$out/$label.watch.exit"
   [ "$wrc" -eq 0 ] || echo "   watch exited non-zero, see $out/$label.watch.log (exit $wrc)"
   # Recording has ended: give the permission back so the output can be removed.
-  [ -z "$locked" ] || chmod u+w "$ws/$locked"
+  [ -z "$locked" ] || "${as_root[@]}" chmod u+w "$ws/$locked"
+  # Another user's workspace goes back where the output keeps it.
+  if [ -n "$other_user" ]; then
+    release_workspace "$ws" "$pending_dest" || return 1
+  fi
   # stdout-json: the agent prints one JSON object with the session id.
   [ "$p_session_method" != stdout-json ] ||
     session=$(grep -o "\"$p_session_key\":\"[0-9A-Za-z_-]*\"" "$out/$label.watch.log" | head -1 | cut -d'"' -f4 || true)
@@ -1009,17 +1176,17 @@ capture_one() { # label prompt tools role
 # transcripts in the <session>/subagents directory beside it.
 collect_jsonl_session() { # label
   local label=$1 found subs
-  found=$(find "$trace_dir" -name "$session.jsonl" -print -quit 2>/dev/null || true)
+  found=$("${as_root[@]}" find "$trace_dir" -name "$session.jsonl" -print -quit 2>/dev/null || true)
   if [ -z "$found" ]; then
     trace_gone="no transcript for session $session after the run"
     trace_missing="no transcript found for session $session"
     return 3
   fi
-  cp "$found" "$(trace_path "$label")" || return 1
-  if [ -d "${found%.jsonl}/subagents" ]; then
+  fetch "$found" "$(trace_path "$label")" || return 1
+  if "${as_root[@]}" test -d "${found%.jsonl}/subagents"; then
     subs=$(subagents_path "$label")
     mkdir -p "$(dirname "$subs")" || return 1
-    cp -r "${found%.jsonl}/subagents" "$subs"
+    fetch -r "${found%.jsonl}/subagents" "$subs"
     echo "   $(find "$subs" -name '*.jsonl' | wc -l) subagent transcript(s) copied"
   fi
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
@@ -1031,7 +1198,7 @@ collect_jsonl_session() { # label
 collect_sqlite_conversation() { # label
   local label=$1 f sid n=0 file subs
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
-  if [ -z "$session" ] || [ ! -f "$trace_dir/$session.db" ]; then
+  if [ -z "$session" ] || ! "${as_root[@]}" test -f "$trace_dir/$session.db"; then
     trace_gone="no conversation database for '${session}' after the run"
     trace_missing="no conversation database found for $label (id '${session}'), see $out/$label.watch.log"
     return 3
@@ -1039,18 +1206,19 @@ collect_sqlite_conversation() { # label
   echo "   conversation $session"
   file=$(trace_path "$label")
   subs=$(subagents_path "$label")
-  cp "$trace_dir/$session.db" "$file" || return 1
+  fetch "$trace_dir/$session.db" "$file" || return 1
   # A write-ahead log that the agent left unmerged holds steps too.
-  [ ! -s "$trace_dir/$session.db-wal" ] || cp "$trace_dir/$session.db-wal" "$file-wal"
-  for f in "$trace_dir"/*.db; do
+  ! "${as_root[@]}" test -s "$trace_dir/$session.db-wal" || fetch "$trace_dir/$session.db-wal" "$file-wal"
+  while IFS= read -r f; do
+    f=$trace_dir/$f
     sid=$(basename "$f" .db)
-    [ -f "$f" ] && [ "$sid" != "$session" ] || continue
+    "${as_root[@]}" test -f "$f" && [ "$sid" != "$session" ] || continue
     ! grep -qxF "$sid.db" <<<"$before" || continue
     mkdir -p "$subs"
-    cp "$f" "$subs/$sid.db"
-    [ ! -s "$f-wal" ] || cp "$f-wal" "$subs/$sid.db-wal"
+    fetch "$f" "$subs/$sid.db"
+    ! "${as_root[@]}" test -s "$f-wal" || fetch "$f-wal" "$subs/$sid.db-wal"
     n=$((n + 1))
-  done
+  done < <("${as_root[@]}" ls "$trace_dir" 2>/dev/null | grep '\.db$' || true)
   [ "$n" -eq 0 ] || echo "   $n subagent conversation database(s) copied"
 }
 
@@ -1061,14 +1229,14 @@ collect_sqlite_conversation() { # label
 collect_jsonl_rollout() { # label
   local label=$1 found n
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
-  found=$(find "$trace_dir" -name "rollout-*-$session.jsonl" -print -quit 2>/dev/null || true)
+  found=$("${as_root[@]}" find "$trace_dir" -name "rollout-*-$session.jsonl" -print -quit 2>/dev/null || true)
   if [ -z "$session" ] || [ -z "$found" ]; then
     trace_gone="no rollout for session '$session' after the run"
     trace_missing="no rollout found for $label (session '$session'), see $out/$label.watch.log"
     return 3
   fi
-  cp "$found" "$(trace_path "$label")" || return 1
-  n=$(python3 - "$trace_dir" "$((run_started - 1))" "$session" "$(subagents_path "$label")" <<'PY'
+  fetch "$found" "$(trace_path "$label")" || return 1
+  n=$("${as_root[@]}" python3 - "$trace_dir" "$((run_started - 1))" "$session" "$(subagents_path "$label")" <<'PY'
 import glob, json, os, shutil, sys
 top, since, session, dest = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
 n = 0
@@ -1088,6 +1256,7 @@ for p in sorted(glob.glob(os.path.join(top, "**", "rollout-*.jsonl"), recursive=
 print(n)
 PY
   ) || return 1
+  own_out || return 1
   [ "$n" -eq 0 ] || echo "   $n subagent rollout(s) copied"
 }
 
@@ -1103,18 +1272,26 @@ PY
 # the sessions whose parent chain leads to it, in the same copy. A database
 # that is gone, or a backup without the session, is a trace that is gone.
 collect_sqlite_sessions() { # label
-  local label=$1 db=$trace_dir/$p_trace_database n dest
+  local label=$1 db=$trace_dir/$p_trace_database n dest backup tmpd=
   dest=$(trace_path "$label")
   sudo chown -R "$(id -u):$(id -g)" "$out" 2>/dev/null || true
-  if [ -z "$session" ] || [ ! -f "$db" ]; then
+  if [ -z "$session" ] || ! "${as_root[@]}" test -f "$db"; then
     trace_gone="no session database $db, or no session id ('$session'), after the run"
     trace_missing="no session database or session id for $label (session '$session'), see $out/$label.watch.log"
     return 3
   fi
   # The byte copy first, before any reader of the database runs.
-  cp "$db" "$dest" || return 1
-  if [ -f "$db-wal" ]; then cp "$db-wal" "$dest-wal" || return 1; fi
-  n=$(python3 - "$db" "$dest.backup" "$session" <<'PY'
+  fetch "$db" "$dest" || return 1
+  if "${as_root[@]}" test -f "$db-wal"; then fetch "$db-wal" "$dest-wal" || return 1; fi
+  # The backup opens the live database: as its owner, so that a
+  # shared-memory file SQLite may create keeps the agent's user (I-137),
+  # into a directory of that user's, fetched after.
+  backup=$dest.backup
+  if [ -n "$other_user" ]; then
+    tmpd=$("${as_agent[@]}" mktemp -d /tmp/agent-trace-copy.XXXXXX) || return 1
+    backup=$tmpd/backup
+  fi
+  n=$("${as_agent[@]}" python3 - "$db" "$backup" "$session" <<'PY'
 import os, sqlite3, sys
 db, dest, session = sys.argv[1:]
 try:
@@ -1136,6 +1313,10 @@ except sqlite3.Error as e:
     print("error %s" % e)
 PY
   ) || return 1
+  if [ -n "$tmpd" ]; then
+    ! "${as_root[@]}" test -f "$backup" || fetch "$backup" "$dest.backup" || return 1
+    "${as_agent[@]}" rm -rf -- "$tmpd"
+  fi
   case $n in
     none)
       trace_gone="no session $session in the database after the run"
@@ -1154,9 +1335,15 @@ PY
 # may still hold the database open. A database that does not exist is noted
 # and skipped.
 snapshot_databases() { # label
-  local dest
-  dest=$out/${p_trace_snapshots//\{label\}/"$1"}
-  python3 - "$dest" "${p_trace_databases[@]/#\~/$HOME}" <<'PY'
+  local dest final tmpd=
+  final=$out/${p_trace_snapshots//\{label\}/"$1"}
+  dest=$final
+  # As the databases' owner, into a directory of that user's (I-137).
+  if [ -n "$other_user" ]; then
+    tmpd=$("${as_agent[@]}" mktemp -d /tmp/agent-trace-copy.XXXXXX) || return 1
+    dest=$tmpd/snapshots
+  fi
+  "${as_agent[@]}" python3 - "$dest" "${p_trace_databases[@]/#\~/$agent_home}" <<'PY'
 import os, sqlite3, sys
 dest, dbs = sys.argv[1], sys.argv[2:]
 os.makedirs(dest, exist_ok=True)
@@ -1172,6 +1359,9 @@ for db in dbs:
     src.close()
 print("   %d database snapshot(s) taken" % len([d for d in dbs if os.path.isfile(d)]))
 PY
+  [ -n "$tmpd" ] || return 0
+  mkdir -p "$(dirname "$final")" && fetch -r "$dest" "$final" || return 1
+  "${as_agent[@]}" rm -rf -- "$tmpd"
 }
 
 # The models a run's transcript records (D7), read by the profile's trace
@@ -1500,20 +1690,26 @@ capture() {
   echo "agent=$agent"
   echo "version=$version"
   [ -z "$p_model_effort" ] || echo "effort=$p_model_effort"
-  [ -z "$catalog_path" ] || echo "model_catalog=${catalog_path/#"$HOME"/\~} sha256=$(sha256sum "$catalog_path" | cut -d' ' -f1)"
-  [ -z "$config_file" ] || echo "config_file=${config_file/#"$HOME"/\~} sha256=$(sha256sum "$config_file" | cut -d' ' -f1) as $p_config_file_env"
+  [ -z "$catalog_path" ] || echo "model_catalog=${catalog_path/#"$agent_home"/\~} sha256=$("${as_root[@]}" sha256sum "$catalog_path" | cut -d' ' -f1)"
+  [ -z "$config_file" ] || echo "config_file=${config_file/#"$agent_home"/\~} sha256=$("${as_root[@]}" sha256sum "$config_file" | cut -d' ' -f1) as $p_config_file_env"
   [ "${#p_secret_env[@]}" -eq 0 ] || echo "secret_env=${p_secret_env[*]} passed on the runs' stdin, values not recorded"
   # The instruction files every run has moved aside (I-79), named with the
   # home directory as ~, with their hash, or absent.
   for f in "${instruction_files[@]}"; do
-    if [ -f "$f" ]; then
-      echo "instruction_file=${f/#"$HOME"/\~} sha256=$(sha256sum "$f" | cut -d' ' -f1) moved aside for every run"
-    elif [ -e "$f" ] || [ -L "$f" ]; then
-      echo "instruction_file=${f/#"$HOME"/\~} not a regular file, moved aside for every run"
+    if "${as_root[@]}" test -f "$f"; then
+      echo "instruction_file=${f/#"$agent_home"/\~} sha256=$("${as_root[@]}" sha256sum "$f" | cut -d' ' -f1) moved aside for every run"
+    elif present "$f"; then
+      echo "instruction_file=${f/#"$agent_home"/\~} not a regular file, moved aside for every run"
     else
-      echo "instruction_file=${f/#"$HOME"/\~} absent"
+      echo "instruction_file=${f/#"$agent_home"/\~} absent"
     fi
   done
+  # The user the agent ran as (I-137), and yours by uid only.
+  if [ -n "$run_as" ]; then
+    echo "run_as=$run_name uid=$run_uid"
+    echo "operator_uid=$(id -u)"
+    [ -z "$ws_run" ] || echo "workspace_root=$ws_run"
+  fi
 } >"$out/task-meta.txt"
 : >"$out/order.tsv"
 
