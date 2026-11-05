@@ -152,10 +152,10 @@ func TestPairedSearchFoldsTheFallbackUnderTheRipgrep(t *testing.T) {
 	var forms []searchForm
 	for _, e := range g.Events {
 		if e.ActionType == models.ProcessExec {
-			if f, q := searchOf(e.Target); f != notSearch {
-				forms = append(forms, f)
-				if q != "seed" || e.PPID != g.RootPID {
-					t.Errorf("%s: query %q, parent %d", e.Target, q, e.PPID)
+			if s := searchOf(e.Target); s.form != notSearch {
+				forms = append(forms, s.form)
+				if s.query != "seed" || e.PPID != g.RootPID {
+					t.Errorf("%s: query %q, parent %d", e.Target, s.query, e.PPID)
 				}
 			}
 		}

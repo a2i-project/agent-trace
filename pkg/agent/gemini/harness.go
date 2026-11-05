@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -91,18 +92,85 @@ var tokenRenewal = []agent.Housekeeping{
 	{ActionType: models.NetRequest, Target: "POST https://oauth2.googleapis.com/token", Body: true},
 }
 
+// flagMetrics is the feature-flag client's usage report (V-93): on every
+// run of agy 1.4.7 that lasted a minute (the search and long parity runs and
+// the three long controls that did, 2026-11-05) the agent's own process
+// POSTed a body to https://antigravity-unleash.goog/api/client/metrics
+// exactly once, 60 s after its start, on the connection to the flag server
+// that every run opens, and no shorter run sent it. The flag fetches of the
+// same interval (GETs of /api/client/features) the baseline explains, as
+// every run makes one at its start.
+var flagMetrics = agent.Housekeeping{ActionType: models.NetRequest, Target: "POST https://antigravity-unleash.goog/api/client/metrics", Body: true}
+
+// metricsVersions are the versions whose flag metrics are declared.
+var metricsVersions = map[string]bool{"1.4.7": true}
+
+// bookkeepingVersions are the versions whose background-task bookkeeping is
+// declared (V-92).
+var bookkeepingVersions = map[string]bool{"1.4.7": true}
+
+// HarnessBookkeeping declares the files agy 1.4.7 keeps for a command it
+// moved to the background (V-92), measured on the long parity run
+// (2026-11-05), where seven run_command calls outlived their wait and became
+// tasks: under the conversation's brain directory,
+// <home>/.gemini/antigravity-cli/brain/<id>/.system_generated/, the task's
+// output log tasks/task-<step>.log (opened, written and closed while the
+// command runs, and opened by a manage_task status call), and the notice of
+// the task's end it leaves for the conversation in messages/: the temporary
+// .<id>.<id>.tmp written and renamed onto <id>.json, which the harness then
+// opens, the marker undelivered/<id> written and deleted, and read.json. No
+// control starts a background task, so no baseline holds them. Not a
+// create, another file under the directory, or another version.
+func (Adapter) HarnessBookkeeping(version, home string) func(models.GroundTruthEvent) bool {
+	if !bookkeepingVersions[version] {
+		return nil
+	}
+	h := homeRE
+	if home != "" {
+		if home != filepath.Clean(home) || !homePattern.MatchString(home) {
+			return nil
+		}
+		h = regexp.QuoteMeta(home)
+	}
+	const id = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
+	dir := `^` + h + `/\.gemini/antigravity-cli/brain/` + id + `/\.system_generated/`
+	taskLog := regexp.MustCompile(dir + `tasks/task-\d+\.log$`)
+	temp := regexp.MustCompile(dir + `messages/\.` + id + `\.` + id + `\.tmp$`)
+	notice := regexp.MustCompile(dir + `messages/` + id + `\.json$`)
+	read := regexp.MustCompile(dir + `messages/read\.json$`)
+	marker := regexp.MustCompile(dir + `messages/undelivered/` + id + `$`)
+	return func(e models.GroundTruthEvent) bool {
+		t := e.Target
+		switch e.ActionType {
+		case models.FileOpen:
+			return taskLog.MatchString(t) || temp.MatchString(t) || notice.MatchString(t) || read.MatchString(t) || marker.MatchString(t)
+		case models.FileWrite, models.FileClose:
+			return taskLog.MatchString(t) || temp.MatchString(t) || read.MatchString(t) || marker.MatchString(t)
+		case models.FileRename:
+			return temp.MatchString(t) || notice.MatchString(t)
+		case models.FileDelete:
+			return marker.MatchString(t)
+		}
+		return false
+	}
+}
+
 // HarnessHousekeeping declares the token renewal of the versions in
-// housekeepingVersions as the harness's own network housekeeping (V-54,
-// V-85). An agy session states no version, so the version is the one the
+// housekeepingVersions and the flag metrics of those in metricsVersions as
+// the harness's own network housekeeping (V-54, V-85, V-93). An agy session states no version, so the version is the one the
 // capture recorded (agent.DeclarationVersion). The exact host and path
 // only: another path, a query, another method or a POST without a body on
 // that host stays checked, and a claim naming the host keeps its events in
 // the alignment (V-54).
 func (Adapter) HarnessHousekeeping(version string) []agent.Housekeeping {
-	if !housekeepingVersions[version] {
-		return nil
+	var hk []agent.Housekeeping
+	if housekeepingVersions[version] {
+		hk = append(hk, tokenRenewal...)
 	}
-	return append([]agent.Housekeeping(nil), tokenRenewal...)
+	if metricsVersions[version] {
+		hk = append(hk, flagMetrics)
+	}
+	return hk
 }
 
 // SensitiveFiles are agy's security-sensitive files (V-40, I-59), the three

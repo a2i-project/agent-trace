@@ -45,9 +45,9 @@ func TestSearchOfRecognisesOnlyTheMeasuredForms(t *testing.T) {
 		"grep cut by the probe":            {"/usr/bin/grep -l --binary-files=without-match -F -r -- se", notSearch, ""},
 		"a command":                        {"/usr/bin/bash -c grep -r seed .", notSearch, ""},
 	} {
-		form, q := searchOf(c.line)
-		if form != c.form || q != c.query {
-			t.Errorf("%s: searchOf = %v %q, want %v %q", name, form, q, c.form, c.query)
+		s := searchOf(c.line)
+		if s.form != c.form || s.query != c.query {
+			t.Errorf("%s: searchOf = %v %q, want %v %q", name, s.form, s.query, c.form, c.query)
 		}
 	}
 }
@@ -100,7 +100,7 @@ func renderProcs(g models.GroundTruth) string {
 // takes the claim's target, and the grep becomes its content, under it, with
 // its own command line kept.
 func TestFoldSearchesFoldsTheFallbackIntoTheFailedRipgrep(t *testing.T) {
-	got := renderProcs(foldSearches(searchShape()))
+	got := renderProcs(foldSearches(searchShape(), agentPID))
 	want := strings.Join([]string{
 		"process_fork 300<100 300",
 		"process_fork 301<100 301",
@@ -144,7 +144,7 @@ func TestFoldSearchesIsNarrow(t *testing.T) {
 	} {
 		g := mutate(searchShape())
 		var execs, under int
-		for _, e := range foldSearches(g) {
+		for _, e := range foldSearches(g, agentPID) {
 			if e.ActionType == models.ProcessExec {
 				if isSearchTarget(e.Target) {
 					execs++
@@ -163,7 +163,7 @@ func TestFoldSearchesIsNarrow(t *testing.T) {
 	g := searchShape()
 	other := "/usr/bin/grep -r seed ."
 	g[7].Target, g[10].Target = other, other
-	out := foldSearches(g)
+	out := foldSearches(g, agentPID)
 	if out[7].Target != other || out[7].PPID != agentPID || out[3].Target != SearchGrep+" "+ws {
 		t.Errorf("another program after the ripgrep: %s", renderProcs(out))
 	}
@@ -177,13 +177,13 @@ func TestFoldSearchesRewritesEitherFormAlone(t *testing.T) {
 	gr := models.GroundTruth{g[6], g[7], g[8], g[9], g[10]}
 	for name, s := range map[string]models.GroundTruth{"ripgrep": rg, "grep": gr} {
 		var n int
-		for _, e := range foldSearches(s) {
+		for _, e := range foldSearches(s, agentPID) {
 			if (e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit) && isSearchTarget(e.Target) && e.PPID == agentPID {
 				n++
 			}
 		}
 		if n != 2 {
-			t.Errorf("%s alone: %d of its exec and exit rewritten:\n%s", name, n, renderProcs(foldSearches(s)))
+			t.Errorf("%s alone: %d of its exec and exit rewritten:\n%s", name, n, renderProcs(foldSearches(s, agentPID)))
 		}
 	}
 }
@@ -242,14 +242,14 @@ func isSearchTarget(target string) bool {
 // any folder unverified. A claim names its SearchPath, cleaned.
 func TestASearchNamesItsFolder(t *testing.T) {
 	g := searchShape()
-	if got, cut := searchFolder(g[3], ripgrepSearch); got != SearchGrep+" "+ws || cut {
+	if got, cut := searchFolder(g[3], searchOf(g[3].Target)); got != SearchGrep+" "+ws || cut {
 		t.Errorf("ripgrep: %q %v", got, cut)
 	}
-	if got, cut := searchFolder(g[7], grepSearch); got != SearchGrep || !cut {
+	if got, cut := searchFolder(g[7], searchOf(g[7].Target)); got != SearchGrep || !cut {
 		t.Errorf("grep, no working directory: %q %v", got, cut)
 	}
 	g[7].Cwd = "/w/sub"
-	if got, cut := searchFolder(g[7], grepSearch); got != SearchGrep+" /w/sub" || cut {
+	if got, cut := searchFolder(g[7], searchOf(g[7].Target)); got != SearchGrep+" /w/sub" || cut {
 		t.Errorf("grep: %q %v", got, cut)
 	}
 	for in, want := range map[string]string{"/w/./x": SearchGrep + " /w/x", "": SearchGrep, "rel": SearchGrep + " rel"} {

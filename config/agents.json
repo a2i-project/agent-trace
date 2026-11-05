@@ -178,9 +178,10 @@
         },
         {
           "version": "1.4.7",
-          "verified": "2026-11-03",
+          "verified": "2026-11-05",
           "fixtures": [
-            "pkg/agent/gemini/testdata/paired-agy-1.4.7-basic"
+            "pkg/agent/gemini/testdata/paired-agy-1.4.7-basic",
+            "pkg/agent/gemini/testdata/paired-agy-1.4.7-search"
           ]
         }
       ],

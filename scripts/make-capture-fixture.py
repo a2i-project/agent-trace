@@ -88,7 +88,10 @@ trajectory_meta table cut to that cascade_id, which names the database and
 which the adapter takes as the session's (I-105, I-110), and each payload cut to the fields the adapter reads: the step
 type (1), field 4, and of field 5 the created (5.1), started (5.6) and
 completed (5.8) timestamps and the tool calls (5.4), each cut to its id (1),
-name (2) and JSON arguments (3), rewritten like every other path. A call
+name (2) and JSON arguments (3), rewritten like every other path, and of a
+background task's record (148) only its id (148.1, of the form
+<conversation id>/task-<n>), which marks a command the harness moved to the
+background (I-134). A call
 whose CodeContent the rewriting would change is refused rather than altered,
 since the adapter claims the hash of that content. A step with an
 invoke_subagent call also keeps, of its result (140), only the subagent
@@ -622,6 +625,20 @@ def subagent_result(ids):
     return m
 
 
+# A step's background task (148), which agy writes once a run_command
+# outlives its wait: the adapter claims a canceled command that has one
+# (I-134). Only its id (148.1, <conversation id>/task-<step>) is kept.
+TASK_FIELD = 148
+TASK_ID = re.compile(rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/task-[0-9]+")
+
+
+def reduce_task(task):
+    for n, wt, v in pb_fields(task):
+        if n == 1 and wt == 2 and TASK_ID.fullmatch(v):
+            return pb_field(TASK_FIELD, 2, pb_field(1, 2, v))
+    return b""
+
+
 def reduce_payload(payload):
     kept = b""
     for num, wt, v in pb_fields(payload):
@@ -635,6 +652,8 @@ def reduce_payload(payload):
                 elif n5 == 4 and w5 == 2:
                     inner += pb_field(4, 2, reduce_call(v5))
             kept += pb_field(5, 2, inner)
+        elif num == TASK_FIELD and wt == 2:
+            kept += reduce_task(v)
     ids = subagent_ids(payload)
     if ids:
         kept += subagent_result(ids)

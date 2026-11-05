@@ -32,7 +32,19 @@ const Name = "gemini"
 func init() { agent.Register(Adapter{}) }
 
 // Adapter implements agent.Adapter for Gemini.
-type Adapter struct{}
+type Adapter struct {
+	// root is the pid of the agent's own process, which WithAgentProcess
+	// sets for normalizing one capture: a search is a program the harness
+	// itself starts (I-133). Zero when the capture has no root.
+	root uint32
+}
+
+// WithAgentProcess returns the adapter that normalizes a capture whose
+// agent process is pid (agent.AgentProcessUser, I-133).
+func (a Adapter) WithAgentProcess(pid uint32) agent.Adapter {
+	a.root = pid
+	return a
+}
 
 func (Adapter) Name() string { return Name }
 
@@ -123,6 +135,11 @@ const (
 	toolGrepSearch  = "grep_search"
 	toolSubagent    = "invoke_subagent"
 	statusCompleted = 3
+	statusCanceled  = 6
+	// fieldTask is the step's background task (148): the task id, its log
+	// file and the command, written once a run_command outlives its
+	// WaitMsBeforeAsync and the harness moves it to the background.
+	fieldTask = 148
 )
 
 // nonEffectful tools perform no syscall of their own (D10), or, for list_dir
@@ -265,6 +282,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	if tl.persistent > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d command(s) ran in a persistent shell and produce no level-1 process, so they are not claimed (D7)", tl.persistent))
 	}
+	if tl.canceled > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d run_command step(s) canceled after the harness moved them to the background were claimed as commands that started (I-134)", tl.canceled))
+	}
 	if len(tl.statuses) > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("steps with a status other than completed (%d) were not claimed, whether they executed is unknown", sum(tl.statuses)))
 	}
@@ -282,6 +302,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 type tally struct {
 	unknown                           map[string]bool
 	sub, persistent, subagents, multi int
+	canceled                          int
 	fallbackTime                      bool
 	statuses                          map[int]int
 }
@@ -297,6 +318,7 @@ func (t *tally) add(o tally) {
 	t.persistent += o.persistent
 	t.subagents += o.subagents
 	t.multi += o.multi
+	t.canceled += o.canceled
 	t.fallbackTime = t.fallbackTime || o.fallbackTime
 }
 
@@ -393,9 +415,12 @@ func readConversation(path, thread string) (*conversation, error) {
 				c.tl.multi++
 			}
 			if status != statusCompleted {
-				rep.Count(fmt.Sprintf("%s (status %d)", cl.name, status))
-				c.tl.statuses[status]++
-				continue
+				if !startedTask(cl, status, payload) {
+					rep.Count(fmt.Sprintf("%s (status %d)", cl.name, status))
+					c.tl.statuses[status]++
+					continue
+				}
+				c.tl.canceled++
 			}
 			start, end, usedCreated, err := stepTimes(payload)
 			if err != nil {
@@ -448,6 +473,21 @@ func readConversation(path, thread string) (*conversation, error) {
 		return c, fmt.Errorf("%s has no steps", path)
 	}
 	return c, nil
+}
+
+// startedTask reports whether a step that did not complete is a command
+// that started all the same (I-134): a run_command canceled (status 6) after
+// the harness moved it to the background, which the step's task record
+// (fieldTask) states. Such a command ran for at least its
+// WaitMsBeforeAsync; on agy 1.4.7's long parity run every one was killed by
+// the agent's own manage_task call. Any other status, and a canceled step
+// with no task record, stays unclaimed (I-17).
+func startedTask(cl call, status int, payload []byte) bool {
+	if cl.name != toolRunCommand || status != statusCanceled {
+		return false
+	}
+	task, ok, err := bytesField(payload, fieldTask)
+	return err == nil && ok && len(task) > 0
 }
 
 func sum(m map[int]int) int {

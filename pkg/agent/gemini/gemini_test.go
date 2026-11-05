@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -432,5 +433,42 @@ func TestParseRealConversationsDoNotFail(t *testing.T) {
 		if _, _, err := (Adapter{}).Parse(f); err != nil {
 			t.Errorf("%s: %v", filepath.Base(f), err)
 		}
+	}
+}
+
+// withStatus sets the status (field 4) of a payload built by payload and
+// appends fields to it.
+func withStatus(p []byte, status int, extra ...[]byte) []byte {
+	head := cat(fVarint(1, 132), fVarint(4, 3))
+	if !bytes.HasPrefix(p, head) {
+		panic("not a payload built by payload")
+	}
+	return cat(append([][]byte{fVarint(1, 132), fVarint(4, uint64(status)), p[len(head):]}, extra...)...)
+}
+
+// I-134: a run_command canceled after the harness moved it to the
+// background (its step names a task, field 148) is claimed as a command
+// that started; a canceled one with no task, and any other tool or status,
+// stay unclaimed (I-17).
+func TestParseClaimsACanceledBackgroundCommand(t *testing.T) {
+	task := fBytes(148, fBytes(1, []byte("0b18d7d3-41b4-4dfe-b649-e8ba776c383a/task-1")))
+	run := func(cmd string) []byte {
+		return payload(at(1), at(2), at(9), toolCall("c", "run_command", map[string]any{"CommandLine": cmd, "WaitMsBeforeAsync": 5000}))
+	}
+	path := writeDB(t, []step{
+		{typ: 132, status: 6, payload: withStatus(run("grep -r x /"), 6, task)},
+		{typ: 132, status: 6, payload: withStatus(run("sleep 9"), 6)},
+		{typ: 132, status: 7, payload: withStatus(run("false"), 7, task)},
+		{typ: 132, status: 6, payload: withStatus(payload(at(3), at(4), at(5), toolCall("v", "view_file", map[string]any{"AbsolutePath": "/w/a"})), 6, task)},
+	})
+	tr, rep := parse(t, path)
+	if len(tr) != 1 || tr[0].ActionType != models.ProcessExec || tr[0].Target != "grep -r x /" || tr[0].End == nil || !tr[0].End.Equal(*at(9)) {
+		t.Fatalf("claims %+v, want the canceled background command from its start to its cancel", tr)
+	}
+	if rep.UnmappedByTool["run_command (status 6)"] != 1 || rep.UnmappedByTool["run_command (status 7)"] != 1 || rep.UnmappedByTool["view_file (status 6)"] != 1 {
+		t.Errorf("unmapped %v", rep.UnmappedByTool)
+	}
+	if d := strings.Join(rep.Degradations, "|"); !strings.Contains(d, "1 run_command step(s) canceled") || !strings.Contains(d, "status other than completed (3)") {
+		t.Errorf("degradations %v", rep.Degradations)
 	}
 }

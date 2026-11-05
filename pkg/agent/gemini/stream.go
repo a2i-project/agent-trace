@@ -33,11 +33,11 @@ var emptyHash = content.SHA256Bytes(nil)
 
 // NormalizeStream rewrites the processes of a grep_search call to the
 // claim's target, folding a failed ripgrep and its fallback grep into one
-// search (I-54, foldSearches), drops the create of a file the agent's process
-// creates and collapses its runs of opens of one file (I-50). Events are in
-// time order, ties in the order the probe emitted them.
-func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
-	g = foldSearches(g)
+// search (I-54, I-133, foldSearches), drops the create of a file the agent's
+// process creates and collapses its runs of opens of one file (I-50). Events
+// are in time order, ties in the order the probe emitted them.
+func (a Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
+	g = foldSearches(g, a.root)
 	started := commands(g)
 	return collapseOpens(foldCreates(g, started), started)
 }
@@ -45,8 +45,8 @@ func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
 // commands returns the processes the stream shows being forked, exec'd or
 // exiting. Those are commands the agent ran, never the agent's own process,
 // whose start precedes the capture: their events are the command's content,
-// which its claim explains, and no fold touches them. NormalizeStream does
-// not receive the root pid (I-43).
+// which its claim explains, and no fold touches them. This needs no root pid,
+// so a capture without one folds alike.
 func commands(g models.GroundTruth) map[uint32]bool {
 	started := map[uint32]bool{}
 	for _, e := range g {
