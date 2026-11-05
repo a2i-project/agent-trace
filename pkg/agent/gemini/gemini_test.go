@@ -472,3 +472,79 @@ func TestParseClaimsACanceledBackgroundCommand(t *testing.T) {
 		t.Errorf("degradations %v", rep.Degradations)
 	}
 }
+
+// V-95: a completed manage_task status call is claimed as an open of the log
+// its task's record names (field 148.2, a file:// URI); a kill claims
+// nothing, and a status call of a task no record names, or whose record's
+// log is not a task log, is counted and not claimed.
+func TestParseClaimsAStatusCallAsAReadOfTheTaskLog(t *testing.T) {
+	const id = "0b18d7d3-41b4-4dfe-b649-e8ba776c383a"
+	log := "/home/u/.gemini/antigravity-cli/brain/" + id + "/.system_generated/tasks/task-0.log"
+	record := func(task, uri string) []byte {
+		return fBytes(148, cat(fBytes(1, []byte(task)), fBytes(2, []byte(uri))))
+	}
+	run := withStatus(payload(at(1), at(1), at(6), toolCall("c", "run_command", map[string]any{"CommandLine": "sleep 60", "WaitMsBeforeAsync": 5000})), 3,
+		record(id+"/task-0", "file://"+log))
+	odd := withStatus(payload(at(1), at(1), at(6), toolCall("c", "run_command", map[string]any{"CommandLine": "sleep 61", "WaitMsBeforeAsync": 5000})), 3,
+		record(id+"/task-1", "file:///home/u/elsewhere.log"))
+	task := func(sec int, action, task string) []byte {
+		return payload(at(sec), at(sec), at(sec+1), toolCall("m", "manage_task", map[string]any{"Action": action, "TaskId": task}))
+	}
+	path := writeDB(t, []step{
+		{typ: 132, status: 3, payload: run},
+		{typ: 132, status: 3, payload: odd},
+		{typ: 132, status: 3, payload: task(7, "status", id+"/task-0")},
+		{typ: 132, status: 3, payload: task(9, "kill", id+"/task-0")},
+		{typ: 132, status: 3, payload: task(10, "status", id+"/task-1")},
+		{typ: 132, status: 3, payload: task(11, "status", id+"/task-9")},
+	})
+	tr, rep := parse(t, path)
+	var opens models.Trajectory
+	for _, e := range tr {
+		if e.Tool == "manage_task" {
+			opens = append(opens, e)
+		}
+	}
+	if len(opens) != 1 || opens[0].ActionType != models.FileOpen || opens[0].Target != log || !opens[0].Timestamp.Equal(*at(7)) || opens[0].End == nil || !opens[0].End.Equal(*at(8)) {
+		t.Fatalf("manage_task claims %+v, want the status call's open of the log", opens)
+	}
+	if rep.UnmappedByTool["manage_task"] != 3 {
+		t.Errorf("unmapped %v, want the kill and the two unresolved status calls", rep.UnmappedByTool)
+	}
+	d := strings.Join(rep.Degradations, "|")
+	if !strings.Contains(d, "1 manage_task status call(s) were claimed") || !strings.Contains(d, "2 manage_task status call(s) name a task") {
+		t.Errorf("degradations %v", rep.Degradations)
+	}
+}
+
+// V-95 end to end, through Prepare with the bookkeeping declarations of
+// 1.4.7 and a scope that marks the root filesystem, as a real capture does:
+// the harness's open of the log within an honest status call corroborates
+// its claim, and a status call with no open is Unwitnessed.
+func TestAStatusCallVerifiesOnItsOpenOfTheLog(t *testing.T) {
+	log := brain + "/tasks/task-0.log"
+	e := t0.Add(time.Second)
+	claim := models.TrajectoryEntry{Tool: "manage_task", Timestamp: t0, End: &e, ActionType: models.FileOpen, Target: log}
+	verify := func(g models.GroundTruth) verification.Verdict {
+		cov := &models.Coverage{Schema: models.CoverageSchema, Probes: map[string]models.ProbeCoverage{"fs": {Ran: true}, "proc": {Ran: true}}}
+		f := models.GroundTruthFile{Events: g, RootPID: agentPID, Workspace: ws, Coverage: cov, FSScope: &models.FSScope{Mounts: []string{"/"}}}
+		harness := func(e models.GroundTruthEvent) bool { return harnessOwned.MatchString(e.Target) }
+		in := agent.Prepare(Adapter{}, models.Trajectory{claim}, f, harness, verification.Options{IntervalSlack: 500 * time.Millisecond})
+		in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(Adapter{}, "1.4.7", f)
+		in.Options.HarnessClaimedWrites = agent.HarnessClaimedWrites(Adapter{}, "1.4.7", f)
+		return verification.Verify(in)
+	}
+	us := time.Microsecond
+	appends := models.GroundTruth{
+		ev(100*us, agentPID, models.FileOpen, log), ev(150*us, agentPID, models.FileWrite, log), ev(200*us, agentPID, models.FileClose, log),
+	}
+	honest := append(append(models.GroundTruth{}, appends...), ev(500000*us, agentPID, models.FileOpen, log))
+	v := verify(honest)
+	if v.Outcome != verification.OutcomeFaithful || len(v.Corroborated) != 1 || !v.Corroborated[0].Event.Timestamp.Equal(t0.Add(500*time.Millisecond)) {
+		t.Errorf("honest: outcome %s, corroborated %v, unexplained harness %v", v.Outcome, v.Corroborated, v.UnexplainedHarness)
+	}
+	v = verify(appends)
+	if v.Outcome != verification.OutcomeNotFaithful || len(v.Unwitnessed) != 1 {
+		t.Errorf("no open: outcome %s, unwitnessed %v", v.Outcome, v.Unwitnessed)
+	}
+}

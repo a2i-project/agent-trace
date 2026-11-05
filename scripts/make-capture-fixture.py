@@ -627,16 +627,29 @@ def subagent_result(ids):
 
 # A step's background task (148), which agy writes once a run_command
 # outlives its wait: the adapter claims a canceled command that has one
-# (I-134). Only its id (148.1, <conversation id>/task-<step>) is kept.
+# (I-134). Only its id (148.1, <conversation id>/task-<step>) and its log
+# (148.2, rewritten as every path) are kept.
 TASK_FIELD = 148
 TASK_ID = re.compile(rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/task-[0-9]+")
+# The task's log (148.2), a file:// URI under the conversation's brain
+# directory, which the adapter claims a manage_task status call opens (V-95).
+TASK_LOG = re.compile(r"file:///home/user/\.gemini/antigravity-cli/brain/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/\.system_generated/tasks/task-[0-9]+\.log")
 
 
-def reduce_task(task):
-    for n, wt, v in pb_fields(task):
-        if n == 1 and wt == 2 and TASK_ID.fullmatch(v):
-            return pb_field(TASK_FIELD, 2, pb_field(1, 2, v))
-    return b""
+def reduce_task(rec):
+    kept = b""
+    for n, wt, v in pb_fields(rec):
+        if n == 1 and wt == 2 and TASK_ID.fullmatch(v) and not kept:
+            kept = pb_field(1, 2, v)
+    if not kept:
+        return b""
+    for n, wt, v in pb_fields(rec):
+        if n == 2 and wt == 2:
+            log = rewrite(v.decode("utf-8", "replace"), task)
+            if TASK_LOG.fullmatch(log):
+                kept += pb_field(2, 2, log.encode())
+            break
+    return pb_field(TASK_FIELD, 2, kept)
 
 
 def reduce_payload(payload):

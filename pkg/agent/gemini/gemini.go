@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -285,6 +286,12 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	if tl.canceled > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d run_command step(s) canceled after the harness moved them to the background were claimed as commands that started (I-134)", tl.canceled))
 	}
+	if tl.statusReads > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d manage_task status call(s) were claimed as an open of their task's log, the file the step's task record names (V-95)", tl.statusReads))
+	}
+	if tl.statusUnresolved > 0 {
+		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d manage_task status call(s) name a task no step of the conversation records, so they are not claimed (V-95)", tl.statusUnresolved))
+	}
 	if len(tl.statuses) > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("steps with a status other than completed (%d) were not claimed, whether they executed is unknown", sum(tl.statuses)))
 	}
@@ -303,8 +310,12 @@ type tally struct {
 	unknown                           map[string]bool
 	sub, persistent, subagents, multi int
 	canceled                          int
-	fallbackTime                      bool
-	statuses                          map[int]int
+	// statusReads counts the manage_task status calls claimed as an open
+	// of their task's log, statusUnresolved those whose task the
+	// conversation's records do not name (V-95).
+	statusReads, statusUnresolved int
+	fallbackTime                  bool
+	statuses                      map[int]int
 }
 
 func (t *tally) add(o tally) {
@@ -319,6 +330,8 @@ func (t *tally) add(o tally) {
 	t.subagents += o.subagents
 	t.multi += o.multi
 	t.canceled += o.canceled
+	t.statusReads += o.statusReads
+	t.statusUnresolved += o.statusUnresolved
 	t.fallbackTime = t.fallbackTime || o.fallbackTime
 }
 
@@ -382,6 +395,9 @@ func readConversation(path, thread string) (*conversation, error) {
 	defer func() { _ = rows.Close() }()
 
 	steps := 0
+	// logs are the task logs the steps' task records name, by task id, for
+	// the manage_task status calls of later steps (V-95).
+	logs := map[string]string{}
 	for rows.Next() {
 		var idx, stepType, status int
 		var hasSub sql.NullBool
@@ -399,6 +415,11 @@ func readConversation(path, thread string) (*conversation, error) {
 		calls, err := submessages(payload, 5, 4)
 		if err != nil {
 			return c, fmt.Errorf("step %d: payload does not decode: %w", idx, err)
+		}
+		if id, log, ok, err := taskRecord(payload); err != nil {
+			return c, fmt.Errorf("step %d: task record: %w", idx, err)
+		} else if ok {
+			logs[id] = log
 		}
 		invokes := false
 		for _, call := range calls {
@@ -439,6 +460,16 @@ func readConversation(path, thread string) (*conversation, error) {
 				}
 			}
 			entries, why := claimsFor(cl, base)
+			if log, status := statusRead(cl, logs); status {
+				if log == "" {
+					c.tl.statusUnresolved++
+				} else {
+					e := base
+					e.ActionType, e.Target = models.FileOpen, log
+					entries, why = []models.TrajectoryEntry{e}, ""
+					c.tl.statusReads++
+				}
+			}
 			switch why {
 			case "":
 				c.tr = append(c.tr, entries...)
@@ -488,6 +519,51 @@ func startedTask(cl call, status int, payload []byte) bool {
 	}
 	task, ok, err := bytesField(payload, fieldTask)
 	return err == nil && ok && len(task) > 0
+}
+
+// toolManageTask is the tool the agent lists, checks and kills its
+// background tasks with.
+const toolManageTask = "manage_task"
+
+// taskRecord reads a step's background task record (fieldTask): its id
+// (148.1, <conversation id>/task-<step>) and its log (148.2, a file:// URI
+// of the log under the conversation's brain directory). ok is false when the
+// step has none, or when either field is missing or not of that form: such a
+// task's status calls are then not claimed.
+func taskRecord(payload []byte) (id, log string, ok bool, err error) {
+	task, has, err := bytesField(payload, fieldTask)
+	if err != nil || !has {
+		return "", "", false, err
+	}
+	idb, hasID, err := bytesField(task, 1)
+	if err != nil {
+		return "", "", false, err
+	}
+	uri, hasLog, err := bytesField(task, 2)
+	if err != nil {
+		return "", "", false, err
+	}
+	p, isFile := strings.CutPrefix(string(uri), "file://")
+	if !hasID || !hasLog || !isFile || !taskID.Match(idb) || strings.Contains(p, "%") || filepath.Clean(p) != p || !taskLog.MatchString(p) {
+		return "", "", false, nil
+	}
+	return string(idb), p, true, nil
+}
+
+// taskID is a task's id as its record and manage_task name it.
+var taskID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/task-[0-9]+$`)
+
+// statusRead reports whether cl is a manage_task status call (V-95) and,
+// if so, the log of the task it names, as a record of the conversation
+// states it, or "" when none does. The harness opens the log to answer the
+// call: on agy 1.4.7's long parity run each of the two status calls opened
+// its task's log once, within the call, and no kill opened it. Every other
+// action claims nothing.
+func statusRead(cl call, logs map[string]string) (string, bool) {
+	if cl.name != toolManageTask || str(cl.args["Action"]) != "status" {
+		return "", false
+	}
+	return logs[str(cl.args["TaskId"])], true
 }
 
 func sum(m map[int]int) int {
