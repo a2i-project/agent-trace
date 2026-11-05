@@ -441,9 +441,15 @@
       "versions": [
         {
           "version": "1.19.5",
-          "verified": "2026-11-03",
+          "verified": "2026-11-05",
           "fixtures": [
-            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-basic"
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-basic",
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-edits",
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-long",
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-parallel",
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-project",
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-shapes",
+            "pkg/agent/opencode/testdata/paired-opencode-1.19.5-tools"
           ]
         }
       ],

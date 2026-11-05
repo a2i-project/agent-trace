@@ -1,0 +1,2471 @@
+{
+ "events": [
+  {
+   "timestamp": "2026-11-05T15:15:46.694013454+01:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/dash",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.694231292+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.694599388+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.694630333+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.695205376+01:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/setpriv",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.695492779+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.695820664+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.695852461+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libcap-ng.so.0.0.0",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.695909318+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.696331487+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/locale/locale-archive",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.696487294+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.696525311+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.69656376+01:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.696616043+01:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.696652981+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.696680848+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_systemd.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.696770185+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697082253+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697100499+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_sss.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.69732212+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697361435+01:00",
+   "action_type": "file_open",
+   "target": "/etc/passwd",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697396044+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697415837+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697451368+01:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697491404+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697669068+01:00",
+   "action_type": "file_open",
+   "target": "/etc/group",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697734326+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/org.gnome.DisplayManager",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.697859906+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/run/systemd/userdb/io.systemd.DynamicUser",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.698286252+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/lib/sss/pipes/nss",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.698353149+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/cargo/bin/coreutils/env",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.698559654+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.698942667+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.698971736+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libsystemd.so.0.42.0",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.699064414+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.699136613+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.699206912+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.699281124+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.699362445+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.14.0",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.701679636+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/coreutils/locales/uucore/en-US.ftl",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.702358547+01:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/dash",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.702607265+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.703254433+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.703277793+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.703870163+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.npm-global/lib/node_modules/opencode-ai/bin/opencode.exe",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.704020405+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.704401453+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.704427374+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.704536201+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.704608336+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.704681125+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:46.707749326+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/zoneinfo/Europe/Stockholm",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.696951903+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/opencode/log/opencode.log",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.705657484+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/opencode/opencode.db",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.705921586+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/opencode/opencode.db-wal",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.705946757+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.local/share/opencode/opencode.db-shm",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.706094888+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.local/share/opencode/opencode.db-shm",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.916119317+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.local/share/opencode/opencode.db-wal",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.934653165+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.config/agent-trace/opencode-1.19.5.json",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.960170945+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.config/opencode/package.json",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:47.960724024+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.config/opencode/package-lock.json",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.42800603+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.local/share/opencode/log/opencode.log",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.547208878+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ca-certificates.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.548893114+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_R46.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.548940289+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.548940291+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.548972299+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_2_G3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549024707+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_RSA_R2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549061958+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Services_Root_Certificate_Authority_-_G2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549088829+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.54928403+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CFCA_EV_ROOT.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549284032+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549284034+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_ECC.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549284035+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Extended_Validation_Root.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549284036+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GDCA_TrustAUTH_R5_ROOT.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549284037+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549284038+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G4.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549284039+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R5.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549363618+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Public_Sector_Root_CA_1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549363621+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549363622+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_G1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549412687+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/CA_Disig_Root_R2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549412688+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_ECC_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549432393+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_RSA_G1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549450106+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_RootCA_2015.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549479091+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SECOM_TLS_RSA_Root_CA_2024.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549505217+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Autoridad_de_Certificacion_Firmaprofesional_CIF_A62634068.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549532371+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/BJCA_Global_Root_CA2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549552666+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NAVER_Global_Root_Certification_Authority.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549570583+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA_2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549686967+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ISRG_Root_X1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549686968+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_Root_CA_-_C1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549686971+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SECOM_TLS_ECC_Root_CA_2024.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549686972+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Network_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.54977622+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_C3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549776221+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Starfield_Root_Certificate_Authority_-_G2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549776222+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/T-TeleSec_GlobalRoot_Class_3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549776223+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_2_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549839757+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_ECC_RootCA1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549839759+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_1_2020.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549839761+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Global_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.54987847+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/certSIGN_Root_CA_G2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549878471+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549903823+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_Server_Root_ECC_G1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.549920225+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hongkong_Post_Root_CA_3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.54993792+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA15.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.54995514+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.54998196+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_Root_Certification_Authority_RSA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550003066+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ssl/certs/ssl-cert-snakeoil.pem",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550037013+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_1_G3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550060779+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Trusted_Root_G4.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550100127+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Hellenic_Academic_and_Research_Institutions_ECC_RootCA_2015.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550116208+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GC_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550130246+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550159867+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_R1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550175419+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550210606+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_RSA_Root_2023.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55023111+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsec_e-Szigno_Root_CA_2009.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550266006+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certainly_Root_E1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550283017+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_ECC_Root_CA_2022.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550300268+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SecureSign_Root_CA14.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550325109+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550343421+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_ECC_Root_Certificate_Authority_2017.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550366239+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_Root_CA_v2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550390104+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_R46.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.5504194+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HiPKI_Root_CA_-_G1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550439347+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Actalis_Authentication_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550464537+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_EC-384_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550483359+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_ECC_P384_Root_G5.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550507926+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/NetLock_Arany_=Class_Gold=_F\u0151tan\u00fas\u00edtv\u00e1ny.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550531104+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_RSA_TLS_2021.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550564953+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_Global_Root_CA_G3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550581096+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_RSA_TLS_Root_CA_v3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550611856+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Assured_ID_Root_G2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550632105+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SwissSign_RSA_TLS_Root_CA_2022_-_1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55065321+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_1_2020.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55067692+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_RSA_Root_CA_2021.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550702545+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ACCVRAIZ1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55073072+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550752056+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/AC_RAIZ_FNMT-RCM_SERVIDORES_SEGUROS.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550782906+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/ANF_Secure_Server_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550801634+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550926844+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Amazon_Root_CA_4.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550926846+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Atos_TrustedRoot_Root_CA_ECC_TLS_2021.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550926847+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Buypass_Class_3_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550926849+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_ECC_Certification_Authority.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55092685+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/COMODO_RSA_Certification_Authority.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550989976+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certigna_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.550989978+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Certum_Trusted_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551017908+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_BR_Root_CA_2_2023.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551041617+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_EV_Root_CA_2_2023.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551066008+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_2009.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551089717+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/D-TRUST_Root_Class_3_CA_2_EV_2009.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55112495+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_Global_Root_G3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551143508+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/DigiCert_TLS_RSA4096_Root_G5.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551186059+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GTS_Root_R4.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551207906+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_ECC_Root_CA_-_R4.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551229531+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_CA_-_R6.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55129024+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/GlobalSign_Root_E46.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551290242+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Go_Daddy_Root_Certificate_Authority_-_G2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551317934+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/HARICA_TLS_ECC_Root_CA_2021.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551359394+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/IdenTrust_Commercial_Root_CA_1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551375537+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Izenpe.com.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551414825+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Microsoft_RSA_Root_Certificate_Authority_2017.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55145139+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/OISTE_WISeKey_Global_Root_GB_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551482168+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/QuoVadis_Root_CA_3_G3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55150894+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_EV_Root_Certification_Authority_ECC.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551544783+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SSL.com_TLS_RSA_Root_CA_2022.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551566727+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/SZAFIR_ROOT_CA2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551585519+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Sectigo_Public_Server_Authentication_Root_E46.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551617165+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Security_Communication_RootCA2.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551653963+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TUBITAK_Kamu_SM_SSL_Kok_Sertifikasi_-_Surum_1.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551676319+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_CYBER_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551698129+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TWCA_Root_Certification_Authority.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551721351+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telekom_Security_TLS_ECC_Root_2020.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551740873+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/Telia_EC_TLS_Root_CA_v3.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551776049+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TrustAsia_TLS_RSA_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551798946+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/TunTrust_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551830056+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/UCA_Global_G2_Root.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551845688+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_ECC_Certification_Authority.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551865268+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/USERTrust_RSA_Certification_Authority.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551978657+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_Root_CA_2017.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.551998873+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/e-Szigno_TLS_Root_CA_2023.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.552034764+01:00",
+   "action_type": "file_open",
+   "target": "/usr/share/ca-certificates/mozilla/vTrus_ECC_Root_CA.crt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553411202+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553468938+01:00",
+   "action_type": "net_unix_connect",
+   "target": "unix:/var/run/nscd/socket",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553519615+01:00",
+   "action_type": "file_open",
+   "target": "/etc/nsswitch.conf",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553581663+01:00",
+   "action_type": "file_open",
+   "target": "/etc/host.conf",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.55363912+01:00",
+   "action_type": "file_open",
+   "target": "/run/systemd/resolve/stub-resolv.conf",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553639122+01:00",
+   "action_type": "file_open",
+   "target": "/etc/hosts",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553701739+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553734323+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libnss_mdns4_minimal.so.2",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.553966723+01:00",
+   "action_type": "net_dns",
+   "target": "openllm.scilifelab.se/A@127.0.0.53:53",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.559634591+01:00",
+   "action_type": "net_connect",
+   "target": "openllm.scilifelab.se",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.568386026+01:00",
+   "action_type": "net_request",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "request_hash": "sha256:04efb9b92af7b617b4d7a4927cea373df9f57ca5b7aaba56016bca6cef9568d7"
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.580876911+01:00",
+   "action_type": "file_open",
+   "target": "/tmp/.bun-1000-89812e6e6a68aaeb.so",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.58411031+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/b.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.584132834+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/c.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.584140188+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/d.txt",
+   "input_hash": "sha256:4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.604041827+01:00",
+   "action_type": "file_open",
+   "target": "/tmp/.bun-1000-71b650bef1b3e52c.node",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.604134467+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.604150539+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.35",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.604350986+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.87306036+01:00",
+   "action_type": "net_connect",
+   "target": "openllm.scilifelab.se",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.876351681+01:00",
+   "action_type": "net_request",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "request_hash": "sha256:b81ee6cec0d112ca38ab1e857e21dd8b496dc194238d93f317ec49680fdc872d"
+  },
+  {
+   "timestamp": "2026-11-05T15:15:49.962156246+01:00",
+   "action_type": "net_response",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "response": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "body_bytes": 836,
+    "body_hash": "sha256:b79b9ab203c29aa9c636a92a4b94ac9e2c638680c16fc094775633b36d209bc3",
+    "end": "2026-11-05T15:15:49.962156246+01:00",
+    "complete": true,
+    "paired": true,
+    "sse": {
+     "events": 5,
+     "types": {
+      "message": 5
+     }
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.182358359+01:00",
+   "action_type": "net_response",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "response": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "body_bytes": 28130,
+    "body_hash": "sha256:927d9ee648fe47016a4560ad64030397bb6aaee4004a0f09286b236861189dda",
+    "end": "2026-11-05T15:16:06.144411667+01:00",
+    "complete": true,
+    "paired": true,
+    "sse": {
+     "events": 121,
+     "types": {
+      "message": 121
+     }
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.322941914+01:00",
+   "action_type": "process_fork",
+   "target": "397207",
+   "pid": 397207,
+   "ppid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.323115711+01:00",
+   "action_type": "process_exec",
+   "target": "/bin/bash -c : agent-trace-control-marker",
+   "pid": 397207,
+   "ppid": 394160,
+   "cwd": "/ws/control-4",
+   "image": {
+    "filename": "/bin/bash",
+    "program": "/usr/bin/bash"
+   }
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.323146681+01:00",
+   "action_type": "file_open",
+   "target": "/usr/bin/bash",
+   "pid": 397207
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.323367529+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+   "pid": 397207
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.323597599+01:00",
+   "action_type": "file_open",
+   "target": "/etc/ld.so.cache",
+   "pid": 397207
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.323616909+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.6",
+   "pid": 397207
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.323661534+01:00",
+   "action_type": "file_open",
+   "target": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+   "pid": 397207
+  },
+  {
+   "timestamp": "2026-11-05T15:15:59.324288189+01:00",
+   "action_type": "process_exit",
+   "target": "/bin/bash -c : agent-trace-control-marker",
+   "exit_code": 0,
+   "pid": 397207,
+   "ppid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:06.240127437+01:00",
+   "action_type": "file_write",
+   "target": "/ws/control-4/agent-trace-control.txt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:06.240163581+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/agent-trace-control.txt",
+   "input_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:06.240229622+01:00",
+   "action_type": "file_write",
+   "target": "/ws/control-4/agent-trace-control.txt",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:06.240256617+01:00",
+   "action_type": "file_close",
+   "target": "/ws/control-4/agent-trace-control.txt",
+   "output_hash": "sha256:2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:06.273060249+01:00",
+   "action_type": "net_request",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "request_hash": "sha256:9831ca3d72b73859e0c74921b71668880b5947e920ec9bb20cbdac6517c6c077"
+  },
+  {
+   "timestamp": "2026-11-05T15:16:06.30784754+01:00",
+   "action_type": "file_open",
+   "target": "/ws/control-4/agent-trace-control.txt",
+   "input_hash": "sha256:2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.002521308+01:00",
+   "action_type": "net_response",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "response": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "body_bytes": 1182,
+    "body_hash": "sha256:a63caac6706e0c0d14797e93936732aae4d5b56bf3a7b68e8e5a04ea9406ca3c",
+    "end": "2026-11-05T15:16:07.002521308+01:00",
+    "complete": true,
+    "paired": true,
+    "sse": {
+     "events": 7,
+     "types": {
+      "message": 7
+     }
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.086153468+01:00",
+   "action_type": "net_request",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "request_hash": "sha256:66b2ac1f70c6e33e128dcd8c8a8942e47177d904a49003b66ef0c77115b7865b"
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.678536763+01:00",
+   "action_type": "net_response",
+   "target": "POST https://openllm.scilifelab.se/api/chat/completions",
+   "pid": 394160,
+   "response": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "body_bytes": 838,
+    "body_hash": "sha256:38c45b1061b0c8dc02bb05d5a29263cae64cc14b57c1888e5ca13aea22bd88c4",
+    "end": "2026-11-05T15:16:07.678536763+01:00",
+    "complete": true,
+    "paired": true,
+    "sse": {
+     "events": 5,
+     "types": {
+      "message": 5
+     }
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.727649716+01:00",
+   "action_type": "file_open",
+   "target": "/home/user/.config/agent-trace/opencode-1.19.5.json",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.734698212+01:00",
+   "action_type": "file_write",
+   "target": "/home/user/.local/share/opencode/opencode.db",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.737174171+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.local/share/opencode/opencode.db-shm",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.737174172+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.local/share/opencode/opencode.db-shm",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.737232566+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.local/share/opencode/opencode.db-wal",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.737281325+01:00",
+   "action_type": "file_delete",
+   "target": "/home/user/.local/share/opencode/opencode.db-wal",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.737315914+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.local/share/opencode/opencode.db",
+   "output_hash": "sha256:f5ae44bb1bd0ab3fbdaceefb673abdf67daf01e8618d45d53df0cabcbca8ac34",
+   "pid": 394160
+  },
+  {
+   "timestamp": "2026-11-05T15:16:07.785922875+01:00",
+   "action_type": "file_close",
+   "target": "/home/user/.local/share/opencode/log/opencode.log",
+   "output_hash": "sha256:0e41e2a7b8ccd60679cf77692c2ed3ea059ce447357c23319535a48b57f84422",
+   "pid": 394160
+  }
+ ],
+ "coverage": {
+  "schema": 2,
+  "probes": {
+   "fs": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "hashless_closes": 2
+   },
+   "net": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0,
+    "content": "active",
+    "responses": "active"
+   },
+   "proc": {
+    "ran": true,
+    "ringbuf_drops": 0,
+    "untracked_children": 0,
+    "state_map_full": 0,
+    "channel_drops": 0
+   }
+  }
+ },
+ "root_pid": 394160,
+ "workspace": "/ws/control-4",
+ "fs_scope": {
+  "rule": "tree-or-workspace",
+  "mounts": [
+   "/",
+   "/boot/efi",
+   "/dev/shm",
+   "/run",
+   "/run/credentials/systemd-journald.service",
+   "/run/credentials/systemd-resolved.service",
+   "/run/user/1000",
+   "/tmp"
+  ],
+  "unmarked": {
+   "/var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged": "fanotify_mark on /var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged: operation not supported"
+  },
+  "dropped_outside": 20561,
+  "filesystems": [
+   {
+    "device": "0:29",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 34,
+      "parent": 44,
+      "root": "/",
+      "point": "/run",
+      "names": true
+     },
+     {
+      "id": 1073,
+      "parent": 34,
+      "root": "/snapd/ns",
+      "point": "/run/snapd/ns"
+     }
+    ]
+   },
+   {
+    "device": "259:7",
+    "fstype": "ext4",
+    "mounts": [
+     {
+      "id": 44,
+      "parent": 1,
+      "root": "/",
+      "point": "/",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:7",
+    "fstype": "devtmpfs",
+    "mounts": [
+     {
+      "id": 41,
+      "parent": 44,
+      "root": "/",
+      "point": "/dev"
+     }
+    ]
+   },
+   {
+    "device": "0:27",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 43,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/shm",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:28",
+    "fstype": "devpts",
+    "mounts": [
+     {
+      "id": 45,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/pts"
+     }
+    ]
+   },
+   {
+    "device": "0:26",
+    "fstype": "sysfs",
+    "mounts": [
+     {
+      "id": 46,
+      "parent": 44,
+      "root": "/",
+      "point": "/sys"
+     }
+    ]
+   },
+   {
+    "device": "0:8",
+    "fstype": "securityfs",
+    "mounts": [
+     {
+      "id": 47,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/security"
+     }
+    ]
+   },
+   {
+    "device": "0:30",
+    "fstype": "cgroup2",
+    "mounts": [
+     {
+      "id": 48,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/cgroup"
+     }
+    ]
+   },
+   {
+    "device": "0:31",
+    "fstype": "pstore",
+    "mounts": [
+     {
+      "id": 49,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/pstore"
+     }
+    ]
+   },
+   {
+    "device": "0:32",
+    "fstype": "efivarfs",
+    "mounts": [
+     {
+      "id": 50,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/firmware/efi/efivars"
+     }
+    ]
+   },
+   {
+    "device": "0:33",
+    "fstype": "bpf",
+    "mounts": [
+     {
+      "id": 51,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/bpf"
+     }
+    ]
+   },
+   {
+    "device": "0:21",
+    "fstype": "configfs",
+    "mounts": [
+     {
+      "id": 52,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/config"
+     }
+    ]
+   },
+   {
+    "device": "0:25",
+    "fstype": "proc",
+    "mounts": [
+     {
+      "id": 53,
+      "parent": 44,
+      "root": "/",
+      "point": "/proc"
+     }
+    ]
+   },
+   {
+    "device": "0:34",
+    "fstype": "autofs",
+    "mounts": [
+     {
+      "id": 28,
+      "parent": 53,
+      "root": "/",
+      "point": "/proc/sys/fs/binfmt_misc"
+     }
+    ]
+   },
+   {
+    "device": "0:35",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 29,
+      "parent": 34,
+      "root": "/",
+      "point": "/run/credentials/systemd-journald.service",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:9",
+    "fstype": "debugfs",
+    "mounts": [
+     {
+      "id": 31,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/debug"
+     }
+    ]
+   },
+   {
+    "device": "0:14",
+    "fstype": "tracefs",
+    "mounts": [
+     {
+      "id": 32,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/kernel/tracing"
+     }
+    ]
+   },
+   {
+    "device": "0:36",
+    "fstype": "hugetlbfs",
+    "mounts": [
+     {
+      "id": 35,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/hugepages"
+     }
+    ]
+   },
+   {
+    "device": "0:23",
+    "fstype": "mqueue",
+    "mounts": [
+     {
+      "id": 36,
+      "parent": 41,
+      "root": "/",
+      "point": "/dev/mqueue"
+     }
+    ]
+   },
+   {
+    "device": "0:37",
+    "fstype": "fusectl",
+    "mounts": [
+     {
+      "id": 37,
+      "parent": 46,
+      "root": "/",
+      "point": "/sys/fs/fuse/connections"
+     }
+    ]
+   },
+   {
+    "device": "0:39",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 40,
+      "parent": 34,
+      "root": "/",
+      "point": "/run/credentials/systemd-resolved.service",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "7:1",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 42,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/bare/5"
+     }
+    ]
+   },
+   {
+    "device": "7:0",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 57,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/canonical-livepatch/418"
+     }
+    ]
+   },
+   {
+    "device": "7:2",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 61,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/code/274"
+     }
+    ]
+   },
+   {
+    "device": "7:5",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 66,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core22/2987"
+     }
+    ]
+   },
+   {
+    "device": "7:6",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 70,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core24/2124"
+     }
+    ]
+   },
+   {
+    "device": "7:3",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 77,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core18/3084"
+     }
+    ]
+   },
+   {
+    "device": "7:4",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 102,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/core20/2922"
+     }
+    ]
+   },
+   {
+    "device": "7:7",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 106,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/desktop-security-center/206"
+     }
+    ]
+   },
+   {
+    "device": "7:8",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 110,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/firefox/9137"
+     }
+    ]
+   },
+   {
+    "device": "259:1",
+    "fstype": "vfat",
+    "mounts": [
+     {
+      "id": 114,
+      "parent": 44,
+      "root": "/",
+      "point": "/boot/efi",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "7:9",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 118,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gnome-3-28-1804/198"
+     }
+    ]
+   },
+   {
+    "device": "7:10",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 178,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/firmware-updater/262"
+     }
+    ]
+   },
+   {
+    "device": "7:11",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 182,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gtk-common-themes/1535"
+     }
+    ]
+   },
+   {
+    "device": "7:15",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 186,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gnome-46-2404/177"
+     }
+    ]
+   },
+   {
+    "device": "7:13",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 190,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/gnome-42-2204/263"
+     }
+    ]
+   },
+   {
+    "device": "7:14",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 191,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/kf6-core24/69"
+     }
+    ]
+   },
+   {
+    "device": "7:12",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 221,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/mesa-2404/1839"
+     }
+    ]
+   },
+   {
+    "device": "7:16",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 225,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/kf6-core22/43"
+     }
+    ]
+   },
+   {
+    "device": "7:17",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 229,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/scc/27"
+     }
+    ]
+   },
+   {
+    "device": "7:20",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 233,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/snapd-desktop-integration/391"
+     }
+    ]
+   },
+   {
+    "device": "7:19",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 237,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/snapd/28254"
+     }
+    ]
+   },
+   {
+    "device": "7:21",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 241,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/prompting-client/228"
+     }
+    ]
+   },
+   {
+    "device": "7:18",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 245,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/snap-store/1468"
+     }
+    ]
+   },
+   {
+    "device": "0:47",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 249,
+      "parent": 44,
+      "root": "/",
+      "point": "/tmp",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "7:23",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 253,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/transmission/120"
+     }
+    ]
+   },
+   {
+    "device": "7:24",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 256,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/thunderbird/1312"
+     }
+    ]
+   },
+   {
+    "device": "7:22",
+    "fstype": "squashfs",
+    "mounts": [
+     {
+      "id": 261,
+      "parent": 44,
+      "root": "/",
+      "point": "/snap/vlc/4472"
+     }
+    ]
+   },
+   {
+    "device": "0:48",
+    "fstype": "binfmt_misc",
+    "mounts": [
+     {
+      "id": 265,
+      "parent": 28,
+      "root": "/",
+      "point": "/proc/sys/fs/binfmt_misc"
+     }
+    ]
+   },
+   {
+    "device": "0:65",
+    "fstype": "tmpfs",
+    "mounts": [
+     {
+      "id": 943,
+      "parent": 34,
+      "root": "/",
+      "point": "/run/user/1000",
+      "names": true
+     }
+    ]
+   },
+   {
+    "device": "0:5",
+    "fstype": "nsfs",
+    "mounts": [
+     {
+      "id": 1725,
+      "parent": 1073,
+      "root": "mnt:[4026532802]",
+      "point": "/run/snapd/ns/canonical-livepatch.mnt"
+     },
+     {
+      "id": 4503,
+      "parent": 1073,
+      "root": "mnt:[4026532857]",
+      "point": "/run/snapd/ns/snapd-desktop-integration.mnt"
+     },
+     {
+      "id": 5847,
+      "parent": 1073,
+      "root": "mnt:[4026532856]",
+      "point": "/run/snapd/ns/prompting-client.mnt"
+     },
+     {
+      "id": 5880,
+      "parent": 34,
+      "root": "net:[4026533023]",
+      "point": "/run/docker/netns/f38a1fa8a706"
+     },
+     {
+      "id": 6862,
+      "parent": 1073,
+      "root": "mnt:[4026532959]",
+      "point": "/run/snapd/ns/thunderbird.mnt"
+     },
+     {
+      "id": 9248,
+      "parent": 1073,
+      "root": "mnt:[4026532733]",
+      "point": "/run/snapd/ns/firmware-updater.mnt"
+     }
+    ]
+   },
+   {
+    "device": "0:75",
+    "fstype": "fuse.portal",
+    "mounts": [
+     {
+      "id": 1727,
+      "parent": 943,
+      "root": "/",
+      "point": "/run/user/1000/doc"
+     }
+    ]
+   },
+   {
+    "device": "0:102",
+    "fstype": "overlay",
+    "mounts": [
+     {
+      "id": 5855,
+      "parent": 44,
+      "root": "/",
+      "point": "/var/lib/docker/overlay2/10d8cc314a549f8e3f9e5e536082d03adf1c47714a5fdd382ab8576c8db43c69/merged"
+     }
+    ]
+   },
+   {
+    "device": "0:94",
+    "fstype": "fuse.gvfsd-fuse",
+    "mounts": [
+     {
+      "id": 615,
+      "parent": 943,
+      "root": "/",
+      "point": "/run/user/1000/gvfs"
+     }
+    ]
+   }
+  ],
+  "mount_table_changed": false
+ },
+ "sensitive": {
+  "home": "/home/user",
+  "files": [
+   {
+    "declared": "~/.claude.json",
+    "path": "/home/user/.claude.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "60ace6e5e5c0c92d32e730beebfd2dae718f9b995605ceac49d5dd513767ddc2"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "60ace6e5e5c0c92d32e730beebfd2dae718f9b995605ceac49d5dd513767ddc2"
+    }
+   },
+   {
+    "declared": "~/.claude/settings.json",
+    "path": "/home/user/.claude/settings.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "48f5c3f6dc4627ba2d70251824020d328ded8085a68d4593be9b655357df2203"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "48f5c3f6dc4627ba2d70251824020d328ded8085a68d4593be9b655357df2203"
+    }
+   },
+   {
+    "declared": "~/.claude/remote-settings.json",
+    "path": "/home/user/.claude/remote-settings.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "dcf59ccb9231f9502aa5e7f7bb152675e368206c639e8e42a18ccdd56c5fab6b"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "dcf59ccb9231f9502aa5e7f7bb152675e368206c639e8e42a18ccdd56c5fab6b"
+    }
+   },
+   {
+    "declared": "{workspace}/.claude/settings.json",
+    "path": "/ws/control-4/.claude/settings.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/.claude/settings.local.json",
+    "path": "/ws/control-4/.claude/settings.local.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.codex/config.toml",
+    "path": "/home/user/.codex/config.toml",
+    "start": {
+     "state": "present",
+     "format": "other",
+     "digest": "ea81c11cb1de98a7de9b22961d2976876ce7553b3350a60f37f592e231fe0ee2"
+    },
+    "stop": {
+     "state": "present",
+     "format": "other",
+     "digest": "ea81c11cb1de98a7de9b22961d2976876ce7553b3350a60f37f592e231fe0ee2"
+    }
+   },
+   {
+    "declared": "~/.codex/managed_config.toml",
+    "path": "/home/user/.codex/managed_config.toml",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.codex/requirements.toml",
+    "path": "/home/user/.codex/requirements.toml",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.codex/hooks.json",
+    "path": "/home/user/.codex/hooks.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/.codex/config.toml",
+    "path": "/ws/control-4/.codex/config.toml",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.gemini/antigravity-cli/settings.json",
+    "path": "/home/user/.gemini/antigravity-cli/settings.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "6bf73a5f37df39e4b41615bcb64008bbb7935fa39d1ebede86435a51c598e19c"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "6bf73a5f37df39e4b41615bcb64008bbb7935fa39d1ebede86435a51c598e19c"
+    }
+   },
+   {
+    "declared": "~/.gemini/config/config.json",
+    "path": "/home/user/.gemini/config/config.json",
+    "start": {
+     "state": "present",
+     "format": "json",
+     "digest": "63cf3ac4257c7f8f0d10c36f0d58228c45bbe07aaabcc1eef2b0e1ed79e79b10"
+    },
+    "stop": {
+     "state": "present",
+     "format": "json",
+     "digest": "63cf3ac4257c7f8f0d10c36f0d58228c45bbe07aaabcc1eef2b0e1ed79e79b10"
+    }
+   },
+   {
+    "declared": "~/.gemini/config/mcp_config.json",
+    "path": "/home/user/.gemini/config/mcp_config.json",
+    "start": {
+     "state": "present",
+     "format": "other",
+     "digest": "5c167219bac26604fc325670f49953f6d7943578f22b88a64557b3916efe3712"
+    },
+    "stop": {
+     "state": "present",
+     "format": "other",
+     "digest": "5c167219bac26604fc325670f49953f6d7943578f22b88a64557b3916efe3712"
+    }
+   },
+   {
+    "declared": "~/.config/opencode/opencode.json",
+    "path": "/home/user/.config/opencode/opencode.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.config/opencode/opencode.jsonc",
+    "path": "/home/user/.config/opencode/opencode.jsonc",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.config/opencode/config.json",
+    "path": "/home/user/.config/opencode/config.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "~/.config/opencode/AGENTS.md",
+    "path": "/home/user/.config/opencode/AGENTS.md",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/opencode.json",
+    "path": "/ws/control-4/opencode.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/opencode.jsonc",
+    "path": "/ws/control-4/opencode.jsonc",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/.opencode/opencode.json",
+    "path": "/ws/control-4/.opencode/opencode.json",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/.opencode/opencode.jsonc",
+    "path": "/ws/control-4/.opencode/opencode.jsonc",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   },
+   {
+    "declared": "{workspace}/AGENTS.md",
+    "path": "/ws/control-4/AGENTS.md",
+    "start": {
+     "state": "missing"
+    },
+    "stop": {
+     "state": "missing"
+    }
+   }
+  ]
+ },
+ "root_image": {
+  "filename": "/home/user/.npm-global/bin/opencode",
+  "program": "/home/user/.npm-global/lib/node_modules/opencode-ai/bin/opencode.exe"
+ }
+}
