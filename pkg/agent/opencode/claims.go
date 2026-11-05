@@ -189,7 +189,38 @@ func claimParts(parts []toolPart, root string, rep *agent.Report) models.Traject
 	if httpFetches > 0 {
 		rep.Degradations = append(rep.Degradations, fmt.Sprintf("%d webfetch(es) of a URL that is not https with a host name claim nothing", httpFetches))
 	}
-	return tr
+	return collapseOpenClaims(tr)
+}
+
+// collapseOpenClaims is the claim-side twin of collapseOpens (I-141), as
+// Claude Code's (I-32): adjacent opens of one file among the file claims
+// become one, across calls, sessions and messages, keeping the first and
+// widening its end to the latest. The observed side keeps one open of a
+// run of opens of one file by the harness's process that no other file
+// event of it breaks, so a read and a later write or edit of the file
+// with no other file call between are one open there. Claims of other
+// kinds do not break a run: the observed side only ever sees the
+// harness's own file events.
+func collapseOpenClaims(t models.Trajectory) models.Trajectory {
+	out := make(models.Trajectory, 0, len(t))
+	lastFile := -1
+	for _, e := range t {
+		if !isFile(e.ActionType) {
+			out = append(out, e)
+			continue
+		}
+		if lastFile >= 0 && e.ActionType == models.FileOpen && out[lastFile].ActionType == models.FileOpen &&
+			out[lastFile].Target == e.Target && out[lastFile].ImpliedBy == e.ImpliedBy {
+			if e.End != nil && (out[lastFile].End == nil || e.End.After(*out[lastFile].End)) {
+				end := *e.End
+				out[lastFile].End = &end
+			}
+			continue
+		}
+		out = append(out, e)
+		lastFile = len(out) - 1
+	}
+	return out
 }
 
 // filePath is a file tool's filePath, absolute, or relative and joined to

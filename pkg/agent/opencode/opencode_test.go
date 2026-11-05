@@ -3,6 +3,7 @@ package opencode
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,6 +429,32 @@ func TestFetchHost(t *testing.T) {
 }
 
 // A search claims its kind and the folder ripgrep searched (I-124).
+// Adjacent opens of one file among the file claims are one access, as on
+// the observed side, across calls; another file claim breaks the run, a
+// command does not (I-141).
+func TestAdjacentOpensOfAFileAreOneClaim(t *testing.T) {
+	path := writeDB(t, map[string]string{sesMain: ""}, []part{
+		done(sesMain, toolRead, 0, 5, map[string]any{"filePath": "a"}),
+		done(sesMain, toolBash, 10, 20, map[string]any{"command": "true"}),
+		{session: sesMain, message: "m2", tool: toolEdit, status: statusCompleted, input: map[string]any{"filePath": "a"}, start: 30, end: 40},
+		done(sesMain, toolRead, 50, 55, map[string]any{"filePath": "a"}),
+		done(sesMain, toolRead, 60, 65, map[string]any{"filePath": "b"}),
+		done(sesMain, toolRead, 70, 75, map[string]any{"filePath": "a"}),
+	})
+	tr, _, err := Adapter{}.Parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range tr {
+		got = append(got, fmt.Sprintf("%s %s %d-%d", c.ActionType, c.Target, c.Timestamp.UnixMilli()-t0, c.End.UnixMilli()-t0))
+	}
+	want := "file_open /ws/a 0-40;process_exec true 10-20;file_write /ws/a 30-40;file_open /ws/a 50-55;file_open /ws/b 60-65;file_open /ws/a 70-75"
+	if strings.Join(got, ";") != want {
+		t.Errorf("claims\n%s\nwant\n%s", strings.Join(got, ";"), want)
+	}
+}
+
 func TestASearchIsClaimedWithItsFolder(t *testing.T) {
 	search := func(tool string, in map[string]any, out string) part {
 		p := done(sesMain, tool, 0, 5, in)

@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 0373ddf on 2026-11-05.
+Checked against commit c595b23 on 2026-11-05.
 
 ## Objective
 
@@ -318,6 +318,8 @@ Parse and ParseSession (I-120). The database holds several sessions, so the adap
 | `grep`, `glob` | `process_exec` | `opencode search:grep <folder>` or `opencode search:glob <folder>`: the call's `path`, absolute or joined to the session's directory, or that directory; for a grep whose output names the path itself as a matched file, the path's directory (I-124) | none |
 | Any other tool | none, counted and listed in `UnknownTools` | | |
 | Any call whose status is not `completed` | none, counted as `<tool> (status <s>)` | | |
+
+Adjacent opens of one file among the file claims are then one claim, across calls, sessions and messages, the first kept with its end widened to the latest (`collapseOpenClaims`, I-141), as Claude Code's (I-32): the observed side keeps one open of a run of the harness's opens of one file that no other file event of its process breaks, so a read and a later write or edit of the file, with no other file call between, are one open there. A command or a connection does not break a run.
 
 A write's and an edit's content (I-121). OpenCode writes a write's content without its byte order mark and adds one when the content or the file it replaces had one, so the bytes written are the content exactly when the file was new (`metadata.exists` false), when the content starts with the mark, or when the session knows the file's prior content and it has none. Its edit matches the old string loosely (the survey saw an edit with a doubled backslash applied to a file holding one), so an edit's result is taken from the recorded diff (`metadata.diff`), never from the call's input: the diff's four header lines must name the file (`Index:`, a line of 67 `=`, `---`, `+++`), and its hunks must apply exactly to the file's known content, by Codex's rule (I-87). A file's content is known from a write that claims its hash and from an edit that does, chained, and is used only when no call that may write a file ran at any time between the start of the call it came from and the end of the call that uses it: a `bash` call, a search, a call of an unmapped tool, a call that did not complete. The report counts the writes and edits that claim their content and those that do not.
 
