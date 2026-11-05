@@ -15,6 +15,8 @@ import (
 const (
 	AgentClaudeCode = "claude-code"
 	AgentGemini     = "gemini"
+	AgentCodex      = "codex"
+	AgentOpenCode   = "opencode"
 )
 
 var (
@@ -47,6 +49,20 @@ func TestRepositoryProtocolHoldsTheRegisteredTargets(t *testing.T) {
 	if !ok || agy.FaithfulBar.MinRate != nil || agy.FaithfulBar.None == "" || agy.InconclusiveRange.None == "" {
 		t.Errorf("gemini declares no bar and no range: %+v", agy)
 	}
+	// Codex and OpenCode: no bar and no range (D2 registers Claude Code
+	// only), no held-out task (D8 names none), and no tool-heavy task, since
+	// neither harness makes a read of a background command's output file
+	// that the agent's read shares (I-131).
+	for _, name := range []string{AgentCodex, AgentOpenCode} {
+		a, ok := p.Targets(name)
+		if !ok || a.FaithfulBar.MinRate != nil || a.FaithfulBar.None == "" || a.InconclusiveRange.None == "" ||
+			len(*a.ToolHeavyTasks) != 0 || len(*a.D8HeldOutTasks) != 0 {
+			t.Errorf("%s: %+v", name, a)
+		}
+	}
+	if err := p.Require([]string{AgentClaudeCode, AgentGemini, AgentCodex, AgentOpenCode}); err != nil {
+		t.Errorf("every adapter with a profile has targets: %v", err)
+	}
 	for _, c := range []struct {
 		agent, task string
 		want        bool
@@ -54,6 +70,7 @@ func TestRepositoryProtocolHoldsTheRegisteredTargets(t *testing.T) {
 		{AgentClaudeCode, "tools", true}, {AgentClaudeCode, "long", true}, {AgentClaudeCode, "long-cc", true}, {AgentClaudeCode, "heldout:long-cc", true},
 		{AgentClaudeCode, "edits", false}, {AgentClaudeCode, "long-agy", false},
 		{AgentGemini, "long", true}, {AgentGemini, "heldout:long-agy", true}, {AgentGemini, "tools", false},
+		{AgentCodex, "tools", false}, {AgentCodex, "long", false}, {AgentOpenCode, "tools", false}, {AgentOpenCode, "long", false},
 		{"unlisted", "long", false},
 	} {
 		if got := p.IsToolHeavy(c.agent, c.task); got != c.want {

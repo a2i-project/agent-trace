@@ -27,6 +27,30 @@
       },
       "tool_heavy_tasks": ["long", "long-agy"],
       "d8_held_out_tasks": ["long", "subagent"]
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "faithful_bar": {
+        "none": "the protocol registers no bar for this agent (D2 sets one for Claude Code only; another agent's targets come with its amendment)"
+      },
+      "inconclusive_pilot_range": {
+        "none": "the protocol sets no pilot-informed range for this agent"
+      },
+      "tool_heavy_tasks": [],
+      "d8_held_out_tasks": []
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "faithful_bar": {
+        "none": "the protocol registers no bar for this agent (D2 sets one for Claude Code only; another agent's targets come with its amendment)"
+      },
+      "inconclusive_pilot_range": {
+        "none": "the protocol sets no pilot-informed range for this agent"
+      },
+      "tool_heavy_tasks": [],
+      "d8_held_out_tasks": []
     }
   ]
 }
