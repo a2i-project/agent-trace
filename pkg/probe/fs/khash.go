@@ -398,26 +398,58 @@ func (f *fileHashes) counts(lost, timeouts uint64) *models.FileHashCounts {
 	return c
 }
 
-// ext4SuperMagic is statfs's f_type of ext4.
-const ext4SuperMagic = 0xEF53
+// statfs f_type values of the filesystems whose file handles handleInode
+// decodes.
+const (
+	ext4SuperMagic  = 0xEF53
+	xfsSuperMagic   = 0x58465342
+	tmpfsSuperMagic = 0x01021994
+)
 
-// ext4HandleInode returns the device and inode number an ext4 file handle
-// names: its types FILEID_INO32_GEN (1) and FILEID_INO32_GEN_PARENT (2) begin
-// with the 32-bit inode number, in the host's byte order. It serves a file the probe can no longer open by its
-// handle, such as one deleted before its close was read.
-func ext4HandleInode(mountFD int, handleType int32, data []byte) (dev, ino uint64, ok bool) {
-	if (handleType != 1 && handleType != 2) || len(data) < 8 || mountFD < 0 {
+// decodeHandleInode returns the inode number a file handle of a filesystem
+// of type fsType names, read from the handle's bytes as the filesystem's
+// encode_fh wrote them, in the host's byte order (kernel 7.0 sources):
+//   - ext4 and XFS, FILEID_INO32_GEN (1) and FILEID_INO32_GEN_PARENT (2):
+//     the 32-bit inode number first;
+//   - XFS, FILEID_INO32_GEN with 64-bit inodes (0x81, 0x82): the 64-bit
+//     inode number first;
+//   - tmpfs (shmem_encode_fh, type 1): the generation, then the inode number's
+//     low and high 32 bits.
+//
+// Other filesystems and types are not decoded.
+func decodeHandleInode(fsType int64, handleType int32, data []byte) (uint64, bool) {
+	ne := binary.NativeEndian
+	switch {
+	case (fsType == ext4SuperMagic || fsType == xfsSuperMagic) && (handleType == 1 || handleType == 2) && len(data) >= 8:
+		return uint64(ne.Uint32(data)), true
+	case fsType == xfsSuperMagic && (handleType == 0x81 || handleType == 0x82) && len(data) >= 12:
+		return ne.Uint64(data), true
+	case fsType == tmpfsSuperMagic && handleType == 1 && len(data) >= 12:
+		return uint64(ne.Uint32(data[4:])) | uint64(ne.Uint32(data[8:]))<<32, true
+	}
+	return 0, false
+}
+
+// handleInode returns the device and inode number a file handle names,
+// without opening it (decodeHandleInode). It serves a file the probe can no
+// longer open by its handle, such as one deleted before its close was read:
+// open_by_handle_at refuses an unlinked inode on ext4 and tmpfs.
+func handleInode(mountFD int, handleType int32, data []byte) (dev, ino uint64, ok bool) {
+	if mountFD < 0 {
 		return 0, 0, false
 	}
 	var sfs unix.Statfs_t
-	if unix.Fstatfs(mountFD, &sfs) != nil || sfs.Type != ext4SuperMagic {
+	if unix.Fstatfs(mountFD, &sfs) != nil {
+		return 0, 0, false
+	}
+	if ino, ok = decodeHandleInode(int64(sfs.Type), handleType, data); !ok {
 		return 0, 0, false
 	}
 	var st unix.Stat_t
 	if unix.Fstat(mountFD, &st) != nil {
 		return 0, 0, false
 	}
-	return uint64(st.Dev), uint64(binary.NativeEndian.Uint32(data)), true
+	return uint64(st.Dev), ino, true
 }
 
 // kernelHashFor returns the kernel's hash of a close, and a fallback reason
@@ -434,7 +466,7 @@ func (o *Observer) kernelHashFor(pid uint32, pathFD, mountFD int, handleType int
 	}
 	if !sh.known {
 		var ok bool
-		if dev, ino, ok = ext4HandleInode(mountFD, handleType, handleData); !ok {
+		if dev, ino, ok = handleInode(mountFD, handleType, handleData); !ok {
 			return "", sh, reasonNoIdentity
 		}
 	}

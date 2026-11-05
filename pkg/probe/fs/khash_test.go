@@ -220,3 +220,75 @@ func TestObserver_KernelHashOffLeavesTheCoverageAsBefore(t *testing.T) {
 		t.Fatalf("Diagnostics = %+v, want the mode", d)
 	}
 }
+
+func TestDecodeHandleInode(t *testing.T) {
+	ne := binary.NativeEndian
+	ino32 := make([]byte, 8)
+	ne.PutUint32(ino32, 4242)
+	ne.PutUint32(ino32[4:], 7)
+	ino64 := make([]byte, 12)
+	ne.PutUint64(ino64, 1<<40|5)
+	shmem := make([]byte, 12)
+	ne.PutUint32(shmem, 9) // generation
+	ne.PutUint32(shmem[4:], 77)
+	ne.PutUint32(shmem[8:], 1)
+	for _, c := range []struct {
+		name   string
+		fsType int64
+		typ    int32
+		data   []byte
+		ino    uint64
+		ok     bool
+	}{
+		{"ext4", ext4SuperMagic, 1, ino32, 4242, true},
+		{"ext4 with parent", ext4SuperMagic, 2, append(append([]byte{}, ino32...), ino32...), 4242, true},
+		{"xfs 32-bit", xfsSuperMagic, 1, ino32, 4242, true},
+		{"xfs 64-bit", xfsSuperMagic, 0x81, ino64, 1<<40 | 5, true},
+		{"tmpfs", tmpfsSuperMagic, 1, shmem, 1<<32 | 77, true},
+		{"tmpfs short", tmpfsSuperMagic, 1, ino32, 0, false},
+		{"ext4 unknown type", ext4SuperMagic, 0x81, ino64, 0, false},
+		{"another filesystem", 0x9123683E, 1, ino32, 0, false},
+	} {
+		ino, ok := decodeHandleInode(c.fsType, c.typ, c.data)
+		if ok != c.ok || ino != c.ino {
+			t.Errorf("%s: decodeHandleInode = %d, %v; want %d, %v", c.name, ino, ok, c.ino, c.ok)
+		}
+	}
+}
+
+// TestHandleInodeOfARealHandle decodes the handle the kernel gives a file in
+// the test's directory, without root, and checks it names the file's inode
+// also after the file is deleted, the case that needs it (P-49). It skips
+// on a filesystem whose handles it does not decode.
+func TestHandleInodeOfARealHandle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		t.Fatal(err)
+	}
+	h, _, err := unix.NameToHandleAt(unix.AT_FDCWD, path, 0)
+	if err != nil {
+		t.Skipf("name_to_handle_at: %v", err)
+	}
+	dirFD, err := unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Close(dirFD) }()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	dev, ino, ok := handleInode(dirFD, h.Type(), h.Bytes())
+	if !ok {
+		var sfs unix.Statfs_t
+		_ = unix.Fstatfs(dirFD, &sfs)
+		t.Skipf("handles of filesystem type %#x, type %d, are not decoded", sfs.Type, h.Type())
+	}
+	if dev != uint64(st.Dev) || ino != st.Ino {
+		t.Fatalf("handleInode = %d:%d, want %d:%d", dev, ino, st.Dev, st.Ino)
+	}
+}
