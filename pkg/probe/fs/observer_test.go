@@ -1847,7 +1847,12 @@ func TestObserver_RelativePathKeysShadowHashesAbsolutely(t *testing.T) {
 func TestObserver_NotBeforeBoundsTheEvent(t *testing.T) {
 	skipUnprivileged(t)
 	dir := t.TempDir()
-	obs := startObserver(t, dir)
+	// No pid filter: the writes are made by child shells.
+	obs, err := New(Config{Path: dir, PathFilter: dir, EventBufSize: 256})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	obs.Start()
 	first := filepath.Join(dir, "first.txt")
 	beforeFirst := time.Now()
 	if out, err := exec.Command("sh", "-c", "echo one > "+first).CombinedOutput(); err != nil {
@@ -1862,14 +1867,18 @@ func TestObserver_NotBeforeBoundsTheEvent(t *testing.T) {
 		t.Fatalf("second write: %v\n%s", err, out)
 	}
 	end := time.Now()
+	events := collectEvents(obs, 1500*time.Millisecond)
 	if err := obs.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
+	}
+	for e := range obs.Events() {
+		events = append(events, e)
 	}
 	if obs.CaptureCoverage().ClockStepped {
 		t.Skip("the wall clock stepped during the test")
 	}
 	n := 0
-	for e := range obs.Events() {
+	for _, e := range events {
 		if e.Target != second {
 			continue
 		}
