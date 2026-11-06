@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/probe/fs"
 	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
 	"github.com/agent-trace/agent-trace/pkg/verification"
+	"golang.org/x/sys/unix"
 )
 
 func skipUnprivileged(t *testing.T) {
@@ -197,6 +199,68 @@ func TestStartHeld_AbortAndMissingProgram(t *testing.T) {
 	}
 	if _, err := startHeld([]string{"agent-trace-no-such-program"}, nil, nil, nil); err == nil {
 		t.Error("startHeld accepted a program that does not exist")
+	}
+}
+
+// openPTY opens a new pseudo-terminal and returns its slave side, or skips
+// the test where the host offers none.
+func openPTY(t *testing.T) *os.File {
+	t.Helper()
+	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY, 0)
+	if err != nil {
+		t.Skipf("no pseudo-terminal: %v", err)
+	}
+	t.Cleanup(func() { _ = master.Close() })
+	if err := unix.IoctlSetPointerInt(int(master.Fd()), unix.TIOCSPTLCK, 0); err != nil {
+		t.Skipf("unlock pseudo-terminal: %v", err)
+	}
+	n, err := unix.IoctlGetInt(int(master.Fd()), unix.TIOCGPTN)
+	if err != nil {
+		t.Skipf("pseudo-terminal number: %v", err)
+	}
+	slave, err := os.OpenFile(fmt.Sprintf("/dev/pts/%d", n), os.O_RDWR|unix.O_NOCTTY, 0)
+	if err != nil {
+		t.Skipf("open pseudo-terminal: %v", err)
+	}
+	t.Cleanup(func() { _ = slave.Close() })
+	return slave
+}
+
+// A terminal reaches the agent as its own descriptor, so an interactive
+// agent sees a terminal on stdout and stderr; a file still passes through a
+// pipe (I-159).
+func TestAgentOutput_HandsATerminalOverAndPipesAFile(t *testing.T) {
+	file, err := os.Create(filepath.Join(t.TempDir(), "out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	if _, ok := agentOutput(file).(passthrough); !ok {
+		t.Errorf("a file is handed over, want a pipe")
+	}
+	tty := openPTY(t)
+	if got := agentOutput(tty); got != io.Writer(tty) {
+		t.Fatalf("a terminal is %T, want the terminal itself", got)
+	}
+	marker := filepath.Join(t.TempDir(), "tty")
+	for _, f := range []*os.File{tty, file} {
+		_ = os.Remove(marker)
+		held, err := startHeld([]string{"/bin/sh", "-c", `if test -t 1 && test -t 2; then echo yes > "$1"; else echo no > "$1"; fi`, "agent", marker},
+			nil, agentOutput(f), agentOutput(f))
+		if err != nil {
+			t.Fatalf("startHeld: %v", err)
+		}
+		if err := held.release(); err != nil {
+			held.abort()
+			t.Fatalf("release: %v", err)
+		}
+		if err := held.cmd.Wait(); err != nil {
+			t.Fatalf("agent: %v", err)
+		}
+		got, _ := os.ReadFile(marker)
+		if want := map[bool]string{true: "yes", false: "no"}[f == tty]; strings.TrimSpace(string(got)) != want {
+			t.Errorf("output %s: the agent saw a terminal: %q, want %s", f.Name(), got, want)
+		}
 	}
 }
 

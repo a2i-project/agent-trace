@@ -96,6 +96,18 @@
         "{session}",
         "{prompt}"
       ],
+      "interactive": {
+        "note": "The invocation without print mode and without a prompt, for a session the operator types into (I-159): the same isolation, model, tool set and assigned session id as every run.",
+        "invocation": [
+          "{isolation}",
+          "--model",
+          "{model}",
+          "--allowedTools",
+          "{tool_set}",
+          "--session-id",
+          "{session}"
+        ]
+      },
       "trace": {
         "method": "jsonl-session",
         "dir": "~/.claude/projects",

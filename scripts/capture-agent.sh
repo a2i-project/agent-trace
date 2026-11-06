@@ -20,7 +20,7 @@
 #                            [--allow-unconfigured-version] [--content] [--check]
 #                            [--run-as USER] [--workspace-root DIR]
 #                            [--warm-up-only | --warm-up-from RECORD]
-#                            [--fs-kernel-hash] [--no-build] [OUTPUT_DIR]
+#                            [--fs-kernel-hash] [--interactive] [--no-build] [OUTPUT_DIR]
 #
 # The tasks are the profile's: Claude Code has basic, parallel, project,
 # edits, tools, shapes, long and websearch; Gemini has basic, search and long;
@@ -97,6 +97,18 @@
 # elsewhere the probe takes the userspace path, as without the flag, and the
 # script says so after the run, from the ground truth's coverage (P-50).
 # task-meta.txt records fs_kernel_hash=on or off.
+# --interactive (I-159) makes the task run a session you type into: the
+# agent starts on your terminal by the profile's interactive invocation
+# (Claude Code: the invocation without -p and without a prompt), in the
+# task's workspace with the task's tools, and the run ends when you leave
+# the agent. The task's prompt is not sent: you give the prompts. watch
+# hands the agent your terminal (a terminal is no file the fs probe
+# records), so watch's own messages appear there too and LABEL.watch.log
+# only says so. The controls are the task's, scripted as always, and the
+# report adds a third verdict, with the baseline and verify --startup-window
+# (V-82). A profile without an interactive invocation is refused, and so is
+# a stdin or stdout that is not a terminal. task-meta.txt records
+# interactive=on, and task_prompt_sha256 is that of the prompt not sent.
 # --run-as USER (default $AGENT_TRACE_RUN_AS, else you) runs the agent as
 # USER (I-137), a dedicated unprivileged user (scripts/setup-capture-user.sh
 # creates agenttrace), so it cannot read your home. The script resolves
@@ -423,6 +435,7 @@ warm_up_only=
 warm_up_from=
 fs_kernel_hash=
 [ "${AGENT_TRACE_FS_KERNEL_HASH:-}" != 1 ] || fs_kernel_hash=1
+interactive=
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs an agent name}; shift 2 ;;
@@ -440,6 +453,7 @@ while [ $# -gt 0 ]; do
     --warm-up-only) warm_up_only=1; shift ;;
     --warm-up-from) warm_up_from=${2:?--warm-up-from needs a warm-up record}; shift 2 ;;
     --fs-kernel-hash) fs_kernel_hash=1; shift ;;
+    --interactive) interactive=1; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
@@ -463,6 +477,22 @@ fi
 if [ -n "$warm_up_only" ] && [ -z "$p_warm_up_prompt" ]; then
   echo "--warm-up-only: $agent's profile names no warm_up" >&2
   exit 2
+fi
+# An interactive task run (I-159) needs the profile's interactive invocation
+# and a terminal to run on; --check creates nothing and needs none.
+if [ -n "$interactive" ]; then
+  if [ "${#p_interactive_invocation[@]}" -eq 0 ]; then
+    echo "--interactive: $agent's profile names no interactive invocation" >&2
+    exit 2
+  fi
+  if [ -n "$warm_up_only" ]; then
+    echo "--interactive is for a recorded task run; --warm-up-only records none" >&2
+    exit 2
+  fi
+  if [ -z "$check_only" ] && ! { [ -t 0 ] && [ -t 1 ]; }; then
+    echo "--interactive needs a terminal on stdin and stdout, which the agent runs on" >&2
+    exit 2
+  fi
 fi
 if [ "$controls_before" -gt 0 ] && [ -n "$baseline_from" ]; then
   echo "--controls-before orders the control runs of this capture; --baseline-from takes none" >&2
@@ -1016,6 +1046,7 @@ if [ -n "$check_only" ]; then
   [ "${#pass_env_dropped[@]}" -eq 0 ] || echo "pass_env_not_passed=${pass_env_dropped[*]}"
   [ -z "$warm_up_prompt_sha256" ] || echo "warm_up_prompt_sha256=$warm_up_prompt_sha256"
   [ -z "$fs_kernel_hash" ] || echo "fs_kernel_hash=on"
+  [ -z "$interactive" ] || echo "interactive=on"
   exit 0
 fi
 echo "output: $out"
@@ -1096,12 +1127,14 @@ sub_agent_md() { # tools
   printf -- '---\n# %s\nDo exactly what your caller asks, using the named tools, and nothing else.\n' "$(sub_agent_name)"
 }
 
-# invocation PROMPT TOOL_SET: the profile's invocation with its placeholders
+# invocation PROMPT TOOL_SET [interactive]: the profile's invocation, or with
+# a third word its interactive invocation (I-159), with its placeholders
 # filled, into the array argv.
-invocation() { # prompt tool_set
-  local w p
+invocation() { # prompt tool_set [interactive]
+  local w p words=("${p_invocation[@]}")
+  [ -z "${3:-}" ] || words=("${p_interactive_invocation[@]}")
   argv=()
-  for w in "${p_invocation[@]}"; do
+  for w in "${words[@]}"; do
     case $w in
       '{isolation}') argv+=("${agent_flags[@]}") ;;
       '{model}') argv+=("$model") ;;
@@ -1190,7 +1223,15 @@ capture_one() { # label prompt tools role
   # The databases that exist before the run: any other one after it is the
   # run's own or a subagent's (I-55).
   [ "$p_trace_method" != sqlite-conversation ] || before=$("${as_root[@]}" ls "$trace_dir" 2>/dev/null | grep '\.db$' || true)
-  invocation "$prompt" "$tool_set"
+  # The task run of an interactive capture runs on the operator's terminal
+  # (I-159).
+  local ia=
+  [ -z "$interactive" ] || [ "$role" != task ] || ia=1
+  invocation "$prompt" "$tool_set" $ia
+  if [ -n "$ia" ]; then
+    echo "   interactive: $agent starts on this terminal, in $ws, with the tools $tools."
+    echo "   Type your requests; the task's prompt is not sent. Leave $agent as you normally would to end the run."
+  fi
   local wrc=0
   # jsonl-rollout: a subagent's rollout is a file the run created.
   run_started=$(date +%s)
@@ -1199,14 +1240,21 @@ capture_one() { # label prompt tools role
     cd "$run_cwd"
     # stdin null: an agent that reads a piped stdin into its prompt gets
     # none (I-79); sudo asks for a password on the terminal, not on stdin.
-    [ "$p_stdin" != null ] || exec </dev/null
+    # An interactive run keeps the terminal as its stdin and output, and
+    # watch hands it over (I-159); its log says so.
+    if [ -n "$ia" ]; then
+      echo "interactive run (I-159): the agent and watch wrote to the operator's terminal, not to this file" >"$out/$label.watch.log"
+    else
+      [ "$p_stdin" != null ] || exec </dev/null
+      exec >"$out/$label.watch.log" 2>&1
+    fi
     # secret_env: the values on the run's stdin, for the reader shell.
     [ "${#secret_vals[@]}" -eq 0 ] || exec < <(printf '%s\n' "${secret_vals[@]}")
     measured "$label" sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$run_uid" --regid "$run_gid" --init-groups --reset-env \
       env "${env_dir[@]}" "${run_env[@]}" "${secret_reader[@]}" \
-      "$agent_bin" "${argv[@]}" >"$out/$label.watch.log" 2>&1
+      "$agent_bin" "${argv[@]}"
   ) || wrc=$?
   restore_instruction_files
   printf '%s\n' "$wrc" >"$out/$label.watch.exit"
@@ -1903,6 +1951,8 @@ fi
   [ -z "$warm_up_line" ] || echo "warm_up=$warm_up_line"
   # The fs probe's kernel copy (I-154).
   echo "fs_kernel_hash=$([ -n "$fs_kernel_hash" ] && echo on || echo off)"
+  # A task run the operator typed into (I-159): its prompt was not sent.
+  [ -z "$interactive" ] || echo "interactive=on prompts typed by the operator; task_prompt_sha256 is of the prompt not sent"
 } >"$out/task-meta.txt"
 : >"$out/order.tsv"
 
@@ -1969,6 +2019,15 @@ fi
   "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
     --ground-truth "$out/$task_label.ground_truth.json" --baseline "$out/baseline.json" \
     --json "$out/verify-baseline.json" || true
+  # An interactive session is what decides whether the start-up window
+  # (V-82) changes an honest run: the same verdict with the window on.
+  if [ -n "$interactive" ]; then
+    echo
+    echo "##### verify WITH the baseline and the start-up window (V-82)"
+    "$root/verify" --agent "$agent" --trajectory "$trajectory" "${version_flags[@]}" \
+      --ground-truth "$out/$task_label.ground_truth.json" --baseline "$out/baseline.json" \
+      --startup-window --json "$out/verify-baseline-startup.json" || true
+  fi
 } >"$out/report.txt" 2>&1
 # The trace as verify read it (V-59): a line a reader of the log sees.
 python3 - "$out/verify-baseline.json" <<'PY' || true

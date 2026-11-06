@@ -140,6 +140,7 @@ def shell(path, agent, task):
     if names and p.get("stdin", "inherit") != "null":
         fail(f"{where}: secret_env passes its values on the agent's stdin, so the profile's stdin must be null")
     put("p_secret_env", names)
+    names_secret = list(names)
     put("p_secret_env_why", se.get("why", ""))
 
     model = p.get("model") or {}
@@ -202,6 +203,30 @@ def shell(path, agent, task):
         fail(f"{where}: stdin {stdin!r} ({either(sorted(STDIN))})")
     put("p_stdin", stdin)
     put("p_invocation", inv)
+    # The interactive invocation (I-159): the agent started for an operator
+    # who types into it on the terminal, for --interactive's task run. The
+    # operator gives the prompts, so it names no {prompt}; the capture gives
+    # the session its id, since what the agent prints reaches the terminal
+    # and not the script; and the terminal is the agent's stdin, which a
+    # secret cannot then travel on.
+    ia = p.get("interactive") or {}
+    iinv = ia.get("invocation") or []
+    if ia and not iinv:
+        fail(f"{where}: interactive needs an invocation")
+    for w in iinv:
+        if w == "{prompt}":
+            fail(f"{where}: interactive.invocation names {{prompt}}; the operator types the prompts")
+        if w.startswith("{") and w.endswith("}") and w not in PLACEHOLDERS and w not in inv:
+            fail(f"{where}: interactive.invocation placeholder {w} is neither one of {', '.join(sorted(PLACEHOLDERS))} nor a param the invocation names")
+        for ph in re.findall(r"\{[A-Za-z0-9_-]+\}", w):
+            if w != ph and (ph not in INLINE or not model.get(INLINE[ph])):
+                fail(f"{where}: interactive.invocation word {w!r} holds {ph}, which is not filled inside a word for this profile")
+    if iinv and ses.get("method") != "assigned":
+        fail(f"{where}: interactive needs the session method assigned; the agent's output goes to the terminal, where the capture cannot read an id")
+    if iinv and names_secret:
+        fail(f"{where}: interactive cannot pass secret_env, whose values travel on the agent's stdin, the operator's terminal in an interactive run")
+    put("p_interactive_invocation", iinv)
+    put("p_interactive_note", ia.get("note", ""))
     put("p_params", names)
     for n in names:
         put("p_param_" + n.replace("-", "_"), param(params[n], task))

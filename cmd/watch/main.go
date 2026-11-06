@@ -59,6 +59,7 @@ import (
 	probenet "github.com/agent-trace/agent-trace/pkg/probe/net"
 	"github.com/agent-trace/agent-trace/pkg/probe/proc"
 	"github.com/agent-trace/agent-trace/pkg/verification"
+	"golang.org/x/sys/unix"
 )
 
 // watchConfig holds the flags a probe builder may need. Add fields here as
@@ -283,6 +284,25 @@ func hashlessCloses(g models.GroundTruth) uint64 {
 // child a pipe and copies from it, instead of handing the child the file
 // descriptor itself.
 type passthrough struct{ io.Writer }
+
+// agentOutput is what the agent gets for one of watch's own output
+// descriptors. A terminal is handed over as it is (I-159): an interactive
+// agent needs one to draw on and to size its screen, and a write to a
+// terminal is never a file event, since the fs probe marks neither devpts nor
+// devtmpfs. Anything else, a file above all, goes through a pipe, so what the
+// agent prints is not a file write by the agent.
+func agentOutput(f *os.File) io.Writer {
+	if isTerminal(f) {
+		return f
+	}
+	return passthrough{f}
+}
+
+// isTerminal reports whether f is a terminal.
+func isTerminal(f *os.File) bool {
+	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
+	return err == nil
+}
 
 // underDir reports whether path is dir or inside it. A plain prefix test
 // would let /ws admit /ws2.
@@ -772,8 +792,9 @@ func runWatch(opts watchOptions) error {
 		// The agent's output passes through watch on a pipe rather than
 		// inheriting the descriptors: when stdout is a file on a marked
 		// filesystem, every line the agent prints would otherwise be a file
-		// write by the agent, with no claim to explain it.
-		held, err := startHeld(opts.agentArgs, os.Stdin, passthrough{os.Stdout}, passthrough{os.Stderr})
+		// write by the agent, with no claim to explain it. A terminal is
+		// handed over (agentOutput).
+		held, err := startHeld(opts.agentArgs, os.Stdin, agentOutput(os.Stdout), agentOutput(os.Stderr))
 		if err != nil {
 			stopEverything()
 			return fmt.Errorf("start agent %q: %w", opts.agentArgs[0], err)

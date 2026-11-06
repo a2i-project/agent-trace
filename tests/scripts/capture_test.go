@@ -33,6 +33,8 @@ if args[:1] == ["--version"]:
 sid = args[args.index("--session-id") + 1]
 model = args[args.index("--model") + 1]
 prompt = args[-1]
+with open(os.path.join(os.environ["FAKE_DIR"], "claude.runs"), "a") as f:
+    f.write(json.dumps({"args": args, "stdin_tty": os.isatty(0), "stdout_tty": os.isatty(1)}) + "\n")
 ws = os.getcwd()
 proj = re.sub("[^a-zA-Z0-9]", "-", ws)
 real = os.path.join(os.environ["HOME"], ".claude", "projects", proj)
