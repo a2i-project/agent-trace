@@ -76,10 +76,15 @@ func TestTheWarmUpRunsOnceBeforeTheFirstRecordedRun(t *testing.T) {
 		t.Errorf("task-meta.txt:\n%s", meta)
 	}
 
-	// Claude Code's profile names no warm-up.
-	cout, _, code := runCapture(t, "")
-	if code != 0 {
-		t.Fatalf("claude capture exit %d", code)
+	// A profile that names no warm-up makes none (every repository profile
+	// names one since I-155, so the test removes Claude Code's).
+	croot, ctmp, cenv := layout(t, "")
+	withoutWarmUp(t, croot, "claude-code")
+	cout := filepath.Join(ctmp, "out")
+	ccmd := exec.Command("bash", filepath.Join(croot, "scripts", "capture-agent.sh"), "--no-build", "--task", "basic", cout)
+	ccmd.Env = cenv
+	if b, err := ccmd.CombinedOutput(); err != nil {
+		t.Fatalf("claude capture: %v\n%s", err, b)
 	}
 	if _, err := os.Stat(filepath.Join(cout, "warm-up.txt")); err == nil {
 		t.Errorf("a warm-up ran for a profile without one")
@@ -144,6 +149,7 @@ func TestAWarmUpRecordReplacesTheCapturesOwn(t *testing.T) {
 	if log, err := capture(filepath.Join(tmp, "out2"), "--warm-up-from", rec); err == nil || !strings.Contains(log, "does not record exit=0") {
 		t.Errorf("a failed record: %v\n%s", err, log)
 	}
+	withoutWarmUp(t, root, "claude-code")
 	if log, err := capture(filepath.Join(tmp, "out3"), "--agent", "claude-code", "--warm-up-only"); err == nil || !strings.Contains(log, "names no warm_up") {
 		t.Errorf("--warm-up-only without a warm_up: %v\n%s", err, log)
 	}
@@ -233,4 +239,25 @@ func TestACampaignWarmsUpOnceBeforeItsFirstSlot(t *testing.T) {
 			t.Errorf("run %v: fs_kernel_hash %v, scale %v", r["dir"], r["fs_kernel_hash"], r["scale"])
 		}
 	}
+}
+
+// withoutWarmUp removes agent's warm_up from the test's copy of the agent
+// configuration, for the checks of a profile that names none.
+func withoutWarmUp(t *testing.T, root, agent string) {
+	t.Helper()
+	path := filepath.Join(root, "config", "agents.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	delete(cfg["adapters"].(map[string]any)[agent].(map[string]any), "warm_up")
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, path, string(out)+"\n", 0o644)
 }

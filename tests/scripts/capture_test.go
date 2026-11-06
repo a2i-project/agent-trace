@@ -602,7 +602,7 @@ func TestCaptureOfAnAgentWithoutAnAdapter(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
-	if len(lines) != 2 { // the task and CONTROLS=1
+	if len(lines) != 3 { // the warm-up (I-155), the task and CONTROLS=1
 		t.Fatalf("codex ran %d times:\n%s", len(lines), calls)
 	}
 	for _, l := range lines {

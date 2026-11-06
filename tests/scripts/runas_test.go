@@ -157,7 +157,7 @@ func TestARunAsAnotherUserUsesItsHomeAndTheWorkspaceRoot(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(tmp, "fake", "version.home")); !strings.HasPrefix(string(b), "/tmp/agent-trace-version.") {
 		t.Errorf("version queried with HOME %q, want a throwaway home in /tmp", b)
 	}
-	if b, _ := os.ReadFile(filepath.Join(tmp, "fake", "claude-md.seen")); string(b) != "absent\nabsent\n" {
+	if b, _ := os.ReadFile(filepath.Join(tmp, "fake", "claude-md.seen")); string(b) != "absent\nabsent\nabsent\n" { // the warm-up (I-155), the task and the control
 		t.Errorf("the agent user's CLAUDE.md during the runs: %q", b)
 	}
 	for _, p := range []string{filepath.Join(home, ".claude", "CLAUDE.md"), filepath.Join(tmp, "home", ".claude", "CLAUDE.md")} {
