@@ -298,6 +298,14 @@ func agentOutput(f *os.File) io.Writer {
 	return passthrough{f}
 }
 
+// echoesEvents reports whether watch prints each observed event on stdout.
+// It does not when stdout is a terminal it hands to a launched agent: the
+// lines are every event the probes see, the host's included, before the
+// scope rule, and they would draw over the agent's interface (I-160).
+func echoesEvents(agent bool, stdout *os.File) bool {
+	return !agent || !isTerminal(stdout)
+}
+
 // isTerminal reports whether f is a terminal.
 func isTerminal(f *os.File) bool {
 	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
@@ -676,6 +684,7 @@ func runWatch(opts watchOptions) error {
 		wg     sync.WaitGroup
 	)
 	self := uint32(os.Getpid())
+	echo := echoesEvents(len(opts.agentArgs) > 0, os.Stdout)
 	collect := func(o probe.Observer) {
 		wg.Add(1)
 		go func() {
@@ -688,11 +697,13 @@ func runWatch(opts watchOptions) error {
 				if e.PID == self && verification.LaneOf(e.ActionType) == verification.LaneFS {
 					continue
 				}
-				fmt.Printf("%s  %-14s %s", e.Timestamp.Format("15:04:05.000"), e.ActionType, e.Target)
-				if e.ExitCode != nil {
-					fmt.Printf("  (exit %d)", *e.ExitCode)
+				if echo {
+					fmt.Printf("%s  %-14s %s", e.Timestamp.Format("15:04:05.000"), e.ActionType, e.Target)
+					if e.ExitCode != nil {
+						fmt.Printf("  (exit %d)", *e.ExitCode)
+					}
+					fmt.Println()
 				}
-				fmt.Println()
 				mu.Lock()
 				ground = append(ground, e)
 				mu.Unlock()

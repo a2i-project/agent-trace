@@ -264,6 +264,33 @@ func TestAgentOutput_HandsATerminalOverAndPipesAFile(t *testing.T) {
 	}
 }
 
+// The event lines stay on a file and on a terminal watch keeps, and stop on
+// a terminal handed to the agent, where they would draw over its interface
+// (I-160).
+func TestEchoesEvents_NotOnATerminalHandedToTheAgent(t *testing.T) {
+	file, err := os.Create(filepath.Join(t.TempDir(), "out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	tty := openPTY(t)
+	for _, c := range []struct {
+		name  string
+		agent bool
+		out   *os.File
+		want  bool
+	}{
+		{"file with an agent", true, file, true},
+		{"file without an agent", false, file, true},
+		{"terminal without an agent", false, tty, true},
+		{"terminal handed to the agent", true, tty, false},
+	} {
+		if got := echoesEvents(c.agent, c.out); got != c.want {
+			t.Errorf("%s: echoes %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 // TestRunWatch_RejectsRootPIDWithCommand is a pure-logic guard that needs no
 // privileges: the two ancestry-root mechanisms are mutually exclusive.
 func TestRunWatch_RejectsRootPIDWithCommand(t *testing.T) {
