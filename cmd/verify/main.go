@@ -156,6 +156,9 @@ func run(args []string, out, errOut io.Writer) int {
 	in.Options.HarnessClaimedWrites = agent.HarnessClaimedWrites(adapter, declVersion, gt)
 	// Its network housekeeping, such as a login-token renewal (V-54, V-57).
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(adapter, declVersion)
+	// The files its process reads while serving a claim, such as the
+	// resolver's configuration during a webfetch (V-100).
+	in.Options.HarnessServedReads = agent.HarnessServedReads(adapter, declVersion)
 	// Its start-up-only files, only when the rule is switched on (V-82).
 	if startupWindow {
 		in.Options.StartupOnly = agent.StartupFiles(adapter, declVersion, gt)
@@ -337,6 +340,9 @@ func report(w io.Writer, r reportInput) {
 	if len(v.HarnessHousekeeping) > 0 {
 		p("  Declared harness housekeeping: %d  (level-0 connections and requests the adapter declares as the harness's own housekeeping, such as its login-token renewal or a GET without a body of its model API, that no baseline rule explains and no claim names: explained by the declaration, V-54, V-57)\n", len(v.HarnessHousekeeping))
 	}
+	if len(v.HarnessServedReads) > 0 {
+		p("  Declared harness reads: %d  (level-0 opens of a file the adapter declares the harness reads while serving a claim, such as the resolver's configuration during a webfetch, inside such a claim's interval, that no baseline rule explains and no claim names: explained by the declaration, V-100)\n", len(v.HarnessServedReads))
+	}
 	if len(v.TraceTampering) > 0 {
 		p("  Trace tampering: %d  (writes, renames or deletes of the session's own trace files by a process other than the harness's, or claims of such a write: a finding, V-59)\n", len(v.TraceTampering))
 	}
@@ -403,6 +409,7 @@ func report(w io.Writer, r reportInput) {
 	printEvents(w, "Unexplained harness commands", harnessCommandExecs(v.UnexplainedHarnessCommands))
 	printEvents(w, "Declared harness bookkeeping", v.HarnessBookkeeping)
 	printEvents(w, "Declared harness housekeeping", v.HarnessHousekeeping)
+	printEvents(w, "Declared harness reads", v.HarnessServedReads)
 	printEvents(w, "Outside writes", v.OutsideWrites)
 	printEvents(w, "Baselined writes outside the harness's directories", v.BaselinedWritesOutsideHarness)
 	printSensitive(w, "Unexplained sensitive changes", v.UnexplainedSensitiveChanges)
@@ -1133,6 +1140,10 @@ type jsonAlignment struct {
 	// request the adapter declares as the harness's own housekeeping was
 	// explained by that declaration (V-54, V-57).
 	HarnessHousekeeping models.GroundTruth `json:"harness_housekeeping,omitempty"`
+	// HarnessServedReads is present only when some level-0 open of a file
+	// the adapter declares the harness reads while serving a claim was
+	// explained by that declaration (V-100).
+	HarnessServedReads models.GroundTruth `json:"harness_served_reads,omitempty"`
 	// HarnessImplied and HarnessImpliedUnpaired are present only when the
 	// adapter derived harness-implied claims (V-33).
 	HarnessImplied         []jsonImplied `json:"harness_implied,omitempty"`
@@ -1228,6 +1239,7 @@ func writeJSONReport(path string, r reportInput) error {
 	rep.Alignment.RepeatedOpens = v.RepeatedOpens
 	rep.Alignment.HarnessBookkeeping = v.HarnessBookkeeping
 	rep.Alignment.HarnessHousekeeping = v.HarnessHousekeeping
+	rep.Alignment.HarnessServedReads = v.HarnessServedReads
 	if t := v.Trace; t.Unreadable() || t.Compared || t.Note != "" {
 		rep.Trace = &t
 	}

@@ -58,17 +58,19 @@ func verifyParity(t *testing.T, task string, agreement float64) (verification.Ve
 	in := agent.PrepareWithBaseline(Adapter{}, tr, g, &b, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(Adapter{}, "1.19.5", g)
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(Adapter{}, "1.19.5")
+	in.Options.HarnessServedReads = agent.HarnessServedReads(Adapter{}, "1.19.5")
 	in.Trace.Decl = agent.Trace(Adapter{}, g, agent.TraceSession{ID: rep.TraceSession})
 	return verification.Verify(in), tr, rep
 }
 
 // Every claim of each run is corroborated at every agreement, and what is
 // left is exactly what no adapter rule explains yet (the adapters' page,
-// Known limits): on parallel the resolver's read of /etc/gai.conf for the
-// webfetch, on tools Bun's extraction of its two native libraries under
-// /tmp in the campaign's first run, on long the harness's reads of seven
-// files make dist wrote, whose closes the probe published without a hash.
-// project, shapes and edits are FAITHFUL (I-141, I-142, I-143).
+// Known limits): on tools Bun's extraction of its two native libraries
+// under /tmp in the campaign's first run, on long the harness's reads of
+// seven files make dist wrote, whose closes the probe published without a
+// hash. project, shapes and edits are FAITHFUL (I-141, I-142, I-143), and
+// so is parallel, whose resolver's read of /etc/gai.conf during the
+// webfetch is a declared harness read (V-100, I-146).
 func TestParityRunsLeaveOnlyTheKnownFindings(t *testing.T) {
 	cases := []struct {
 		task                     string
@@ -76,7 +78,7 @@ func TestParityRunsLeaveOnlyTheKnownFindings(t *testing.T) {
 		corroborated             int
 		unrecorded               []string // the findings' targets, the run's directories cut
 	}{
-		{"parallel", 8, 7, 1, 7, []string{"/etc/gai.conf"}},
+		{"parallel", 8, 7, 1, 7, nil},
 		{"edits", 7, 13, 0, 13, nil},
 		{"tools", 13, 18, 1, 18, []string{
 			"/tmp/.69537a66fb59892a-1.node", "/tmp/.69537a66fb59892a-1.node", "/tmp/.69537a66fb59892a-1.node",
@@ -100,6 +102,13 @@ func TestParityRunsLeaveOnlyTheKnownFindings(t *testing.T) {
 				got = append(got, strings.TrimPrefix(e.Target, "/ws/"+c.task+"/"))
 			}
 			sort.Strings(got)
+			var served []string
+			for _, e := range v.HarnessServedReads {
+				served = append(served, e.Target)
+			}
+			if wantServed := map[string]string{"parallel": "/etc/gai.conf"}[c.task]; strings.Join(served, ",") != wantServed {
+				t.Errorf("%s at %v: declared harness reads %v, want %q", c.task, ag, served, wantServed)
+			}
 			want := verification.OutcomeFaithful
 			if len(c.unrecorded) > 0 {
 				want = verification.OutcomeNotFaithful

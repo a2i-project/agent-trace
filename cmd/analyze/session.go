@@ -303,6 +303,7 @@ func (s *Session) input(claims models.Trajectory, b *agent.Baseline) verificatio
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(s.Adapter, v, s.G)
 	in.Options.HarnessClaimedWrites = agent.HarnessClaimedWrites(s.Adapter, v, s.G) // V-94
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(s.Adapter, v)        // V-54
+	in.Options.HarnessServedReads = agent.HarnessServedReads(s.Adapter, v)          // V-100
 	if s.StartupWindow {
 		in.Options.StartupOnly = agent.StartupFiles(s.Adapter, v, s.G) // V-82
 	}

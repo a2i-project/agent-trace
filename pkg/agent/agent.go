@@ -7,6 +7,7 @@
 package agent
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -293,8 +294,34 @@ type HarnessHousekeeper interface {
 	HarnessHousekeeping(version string) []Housekeeping
 }
 
+// ServedRead declares the exact files the harness's own process may read
+// while it serves a claim of one kind (V-100): a claim of type ActionType
+// whose Tool is Tool, such as OpenCode's webfetch, which connects to a host
+// of several addresses through glibc's resolver and so reads
+// /etc/gai.conf. Files are absolute and clean; any other entry, and a
+// declaration without a type or a tool, declares nothing.
+type ServedRead struct {
+	ActionType models.ActionType
+	Tool       string
+	Files      []string
+}
+
+// HarnessServedReader is implemented by an adapter that can name the files
+// its harness reads on its own while it serves a claim, which only that
+// claim causes and so no control can show. Given the harness version the
+// session records, it returns them, or nothing for a version whose binary
+// and captures were not read. The verifier explains a level-0 open of such
+// a file inside the interval of a claim of that kind, whose path no claim
+// names, as a declared harness read: not a finding and no reason for
+// INCONCLUSIVE (V-100). It explains, so a declaration names exact files of
+// one version.
+type HarnessServedReader interface {
+	HarnessServedReads(version string) []ServedRead
+}
+
 // DeclarationVersion is the harness version the version-gated declarations
-// (HarnessBookkeeping, HarnessHousekeeping, StartupFiles) are keyed by
+// (HarnessBookkeeping, HarnessHousekeeping, HarnessServedReads,
+// StartupFiles) are keyed by
 // (V-85): the version the session states (Report.AgentVersion) when it
 // states one, else the version the capture recorded, which the caller
 // passes (verify --agent-version, a campaign manifest's version). A session
@@ -370,6 +397,44 @@ func HarnessHousekeeping(a Adapter, version string) func(models.GroundTruthEvent
 			}
 		}
 		return false
+	}
+}
+
+// HarnessServedReads is the adapter's served-read declaration for the
+// harness version DeclarationVersion gives, as the verifier takes it
+// (verification.Options.HarnessServedReads, V-100): for a claim, the files
+// declared for its type and tool. A harness-implied claim (V-33) is served
+// by nothing. Nil when the adapter declares nothing for the version or the
+// version is empty.
+func HarnessServedReads(a Adapter, version string) func(models.TrajectoryEntry) []string {
+	sr, ok := a.(HarnessServedReader)
+	if !ok || version == "" {
+		return nil
+	}
+	type kind struct {
+		t    models.ActionType
+		tool string
+	}
+	declared := map[kind][]string{}
+	for _, d := range sr.HarnessServedReads(version) {
+		if d.ActionType == "" || d.Tool == "" {
+			continue
+		}
+		k := kind{d.ActionType, d.Tool}
+		for _, f := range d.Files {
+			if filepath.IsAbs(f) && filepath.Clean(f) == f {
+				declared[k] = append(declared[k], f)
+			}
+		}
+	}
+	if len(declared) == 0 {
+		return nil
+	}
+	return func(c models.TrajectoryEntry) []string {
+		if c.ImpliedBy != "" {
+			return nil
+		}
+		return declared[kind{c.ActionType, c.Tool}]
 	}
 }
 

@@ -590,3 +590,23 @@ func TestNormalizeStreamDropsTheReadOfAFileACommandWrote(t *testing.T) {
 		t.Errorf("harness opens kept\n%s\nwant\n%s", strings.Join(got, ";"), want)
 	}
 }
+
+// A webfetch's connection of 1.19.5 is served by the resolver's read of
+// /etc/gai.conf, and nothing else is (V-100, I-146).
+func TestHarnessServedReadsDeclareTheResolversConfigurationForAWebfetch(t *testing.T) {
+	sr := agent.HarnessServedReads(Adapter{}, "1.19.5")
+	if sr == nil {
+		t.Fatal("no declaration for 1.19.5")
+	}
+	fetch := models.TrajectoryEntry{ActionType: models.NetConnect, Tool: toolWebFetch, Target: "example.com"}
+	if got := sr(fetch); len(got) != 1 || got[0] != "/etc/gai.conf" {
+		t.Errorf("webfetch: %v", got)
+	}
+	bash := models.TrajectoryEntry{ActionType: models.ProcessExec, Tool: toolBash, Target: "curl https://example.com"}
+	if got := sr(bash); got != nil {
+		t.Errorf("bash: %v", got)
+	}
+	if agent.HarnessServedReads(Adapter{}, "1.19.6") != nil {
+		t.Error("a declaration for an unmeasured version")
+	}
+}

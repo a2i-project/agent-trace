@@ -163,6 +163,13 @@ type Verdict struct {
 	// network claim names. Explained by the declaration: not a finding and
 	// no reason for INCONCLUSIVE; listed so none is lost from view (V-54).
 	HarnessHousekeeping []models.GroundTruthEvent
+	// HarnessServedReads: level-0 opens of a file the adapter declares the
+	// harness's own process reads while it serves a claim of one kind
+	// (Options.HarnessServedReads), inside the interval of such a claim,
+	// that no baseline rule explains and whose path no file claim names.
+	// Explained by the declaration: not a finding and no reason for
+	// INCONCLUSIVE; listed so none is lost from view (V-100).
+	HarnessServedReads []models.GroundTruthEvent
 	// OutOfScope: file claims naming a path the capture could not have
 	// observed, by its fs_scope record (an unmarked filesystem, or, for a
 	// capture without the record, a path outside the workspace). They are
@@ -543,6 +550,10 @@ func Verify(in Input) Verdict {
 	// explains and whose target no claim names, is explained the same way
 	// (V-54).
 	part, v.HarnessHousekeeping = part.setAsideHousekeeping(in.Options.HarnessHousekeeping, claimedNetTargets(claims))
+	// A level-0 open of a file the adapter declares the harness reads while
+	// serving a claim, inside that claim's interval, whose path no claim
+	// names, is explained the same way (V-100).
+	part, v.HarnessServedReads = part.setAsideServedReads(in.Options.HarnessServedReads, claims, claimed, in.Options.IntervalSlack)
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in
 	// the sequence it could pair with a claim and leave a real one unpaired at
@@ -995,6 +1006,59 @@ func (p Partition) setAsideHousekeeping(housekeeping func(models.GroundTruthEven
 		if p.Owner[i] == nil && (e.ActionType == models.NetConnect || e.ActionType == models.NetRequest) && !e.TargetTruncated && !claimed[e.Target] && housekeeping(requestShape(e)) {
 			aside = append(aside, e)
 			continue
+		}
+		out.Observed = append(out.Observed, e)
+		out.Owner = append(out.Owner, p.Owner[i])
+	}
+	if aside == nil {
+		return p, nil
+	}
+	return out, aside
+}
+
+// setAsideServedReads removes from the aligned sequence each level-0
+// file_open, neither ambiguous nor truncated, of a path no in-scope file
+// claim names (claimed), that falls inside the interval, widened by slack,
+// of a claim for which served declares that exact path, and returns them
+// (V-100). A harness-implied claim (V-33) and a claim without an end serve
+// nothing: the first may not have happened, and the second has no interval
+// to hold the read. A command's open is never level 0, so the declaration
+// never explains what a command read.
+func (p Partition) setAsideServedReads(served func(models.TrajectoryEntry) []string, claims models.Trajectory, claimed map[string]bool, slack time.Duration) (Partition, []models.GroundTruthEvent) {
+	if served == nil {
+		return p, nil
+	}
+	type window struct{ from, to time.Time }
+	windows := map[string][]window{}
+	for _, c := range claims {
+		if c.ImpliedBy != "" || c.End == nil {
+			continue
+		}
+		for _, f := range served(c) {
+			if f != "" && !claimed[f] {
+				windows[f] = append(windows[f], window{c.Timestamp.Add(-slack), c.End.Add(slack)})
+			}
+		}
+	}
+	if len(windows) == 0 {
+		return p, nil
+	}
+	out := p
+	out.Observed, out.Owner = nil, nil
+	var aside []models.GroundTruthEvent
+	for i, e := range p.Observed {
+		if p.Owner[i] == nil && e.ActionType == models.FileOpen && !e.PathIsAmbiguous && !e.TargetTruncated {
+			inside := false
+			for _, w := range windows[e.Target] {
+				if !e.Timestamp.Before(w.from) && !e.Timestamp.After(w.to) {
+					inside = true
+					break
+				}
+			}
+			if inside {
+				aside = append(aside, e)
+				continue
+			}
 		}
 		out.Observed = append(out.Observed, e)
 		out.Owner = append(out.Owner, p.Owner[i])

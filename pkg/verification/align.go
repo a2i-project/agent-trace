@@ -192,6 +192,16 @@ type Options struct {
 	// housekeeping, neither a finding nor a reason for INCONCLUSIVE. Nil
 	// declares nothing.
 	HarnessHousekeeping func(models.GroundTruthEvent) bool
+	// HarnessServedReads names, for a claim, the exact files the harness's
+	// own process may read while it serves the claim, such as glibc's
+	// address-sorting configuration, which OpenCode's resolver reads during
+	// a webfetch of a host with several addresses, built for the session's
+	// own harness version (V-100). A level-0 file_open of such a file,
+	// inside the interval of a claim that names it, that no baseline rule
+	// explains and whose path no file claim names, is explained: it leaves
+	// the sequence before alignment and is listed as a declared harness
+	// read. It is never an open by a command. Nil declares nothing.
+	HarnessServedReads func(models.TrajectoryEntry) []string
 	// CollapseOpenRuns is declared by an adapter whose claims and observed
 	// stream treat a run of opens of one file by one process as one access,
 	// a run only another file event of that process breaks (Claude Code,

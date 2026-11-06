@@ -1292,6 +1292,16 @@ Consequences:
 - Every fixture's `cmd/verify` output and the attack evaluation are byte-identical: in the basic fixture only the harness writes.
 Alternatives rejected: A harness-implied open claimed for each command (V-33's witness is the command's open of the file, which a command that only writes does not make, and the background job's write falls in no call); a baseline rule (the paths are the task's).
 
+### I-146: OpenCode 1.19.5 declares glibc's /etc/gai.conf as read while serving a webfetch
+Status: Accepted, implemented (`Adapter.HarnessServedReads` and `servedReadVersions` in `pkg/agent/opencode/harness.go`; `TestHarnessServedReadsDeclareTheResolversConfigurationForAWebfetch`, `TestParityRunsLeaveOnlyTheKnownFindings`). The user's decision (a) of 2026-11-06; the first declaration of V-100.
+Date: 2026-11-06 (the first OpenCode 1.19.5 parity campaign, `opencode-parity-1`, private).
+Context: The `parallel` run's one finding was the harness's open of `/etc/gai.conf` 5 ms into its webfetch of `https://example.com`, after the DNS query for `example.com` and before the connection, inside the call's interval (V-100's context). No other run and no control fetched a host of several addresses.
+Decision: For 1.19.5, a `net_connect` claim of a `webfetch` call (the only claim the adapter derives from one) is served by `/etc/gai.conf`. Nothing else is declared, and no other version.
+Consequences:
+- `paired-opencode-1.19.5-parallel` verifies FAITHFUL at agreement 0.2, 0.6 and 1, with the read listed as a declared harness read; the other OpenCode fixtures are unchanged (**Verified**).
+- Other files the resolver may read for a webfetch (`/etc/hosts`, `/etc/nsswitch.conf`, `/etc/host.conf`, the stub resolver's configuration) are not declared: the harness reads them for its model connections too, so the baseline explains them, and no capture shows a webfetch reading them unexplained.
+Alternatives rejected: Declaring the file for every connection of the harness (its model connections never read it on the campaign, so a read beside them would be hidden for nothing).
+
 ### I-150: A profile names the `pass_env` variables that apply only to a run as the operator; agy runs as another user without a session bus
 Status: Accepted, implemented (`pass_env.operator_only` read by `scripts/agent-profile.py`; `pass_env_dropped` and `pass_env_not_passed` in `scripts/capture-agent.sh`; agy's profile in `config/agents.json`; `TestAgyRunsAsAnotherUserWithoutTheSessionBus`, `TestARunAsAnotherUserIsRefusedWhereItCannotWork`). The user's decision of 2026-11-06. Amends I-137.
 Date: 2026-11-06.

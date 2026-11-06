@@ -1403,3 +1403,37 @@ func TestStartupWindowIsReportedOnlyWhenSwitchedOn(t *testing.T) {
 		t.Fatalf("undeclared version: exit %d, stderr %s\n%s", code, errOut, out)
 	}
 }
+
+// V-100: on the OpenCode parity campaign's parallel run, the resolver's
+// read of /etc/gai.conf during the webfetch is reported as a declared
+// harness read, in the text and the JSON, and is no unrecorded event.
+func TestDeclaredHarnessReadsAreReported(t *testing.T) {
+	dir := "../../pkg/agent/opencode/testdata/paired-opencode-1.19.5-parallel"
+	jsonOut := filepath.Join(t.TempDir(), "r.json")
+	_, out, errOut := verify(t, "--agent", "opencode", "--trajectory", filepath.Join(dir, "parallel.opencode.db"),
+		"--ground-truth", filepath.Join(dir, "parallel.ground_truth.json"), "--json", jsonOut)
+	if !strings.Contains(out, "Declared harness reads: 1 ") || !strings.Contains(out, "Declared harness reads:\n") {
+		t.Errorf("text report lacks the declared read:\n%s\n%s", out, errOut)
+	}
+	var r struct {
+		Alignment struct {
+			Served     models.GroundTruth `json:"harness_served_reads"`
+			Unrecorded models.GroundTruth `json:"unrecorded"`
+		} `json:"alignment"`
+	}
+	data, err := os.ReadFile(jsonOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Alignment.Served) != 1 || r.Alignment.Served[0].Target != "/etc/gai.conf" {
+		t.Errorf("harness_served_reads = %v", r.Alignment.Served)
+	}
+	for _, e := range r.Alignment.Unrecorded {
+		if e.Target == "/etc/gai.conf" {
+			t.Errorf("/etc/gai.conf is unrecorded")
+		}
+	}
+}

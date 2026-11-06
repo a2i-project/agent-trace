@@ -65,6 +65,7 @@ func verifyPaired(t *testing.T, a agent.Adapter, claims models.Trajectory, g mod
 	in := agent.PrepareWithBaseline(a, claims, g, &b, verification.Options{IntervalSlack: 500 * time.Millisecond})
 	in.Options.HarnessBookkeeping = agent.HarnessBookkeeping(a, "1.19.5", g)
 	in.Options.HarnessHousekeeping = agent.HarnessHousekeeping(a, "1.19.5")
+	in.Options.HarnessServedReads = agent.HarnessServedReads(a, "1.19.5")
 	in.Trace.Decl = agent.Trace(a, g, agent.TraceSession{ID: "ses_e6104b41affeYWTnxd5AujBFQx"})
 	return verification.Verify(in)
 }

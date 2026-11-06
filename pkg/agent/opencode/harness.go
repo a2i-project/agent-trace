@@ -43,6 +43,23 @@ func (Adapter) HarnessCommands() []string { return nil }
 // in every run, which the baseline explains, and to no other host (V-34).
 func (Adapter) HarnessHosts() []string { return nil }
 
+// servedReadVersions are the versions whose webfetch was measured.
+var servedReadVersions = map[string]bool{"1.19.5": true}
+
+// HarnessServedReads declares glibc's address-sorting configuration
+// /etc/gai.conf for a webfetch's connection (V-100, I-146): resolving a
+// host of several addresses, the resolver in the harness's process reads
+// it to order them. On the parity campaign's parallel run the harness
+// opened it during the webfetch of example.com, which has four addresses,
+// and in none of its controls, whose model server has one. Of the
+// measured version only.
+func (Adapter) HarnessServedReads(version string) []agent.ServedRead {
+	if !servedReadVersions[version] {
+		return nil
+	}
+	return []agent.ServedRead{{ActionType: models.NetConnect, Tool: toolWebFetch, Files: []string{"/etc/gai.conf"}}}
+}
+
 // bookkeepingVersions are the versions whose database was measured.
 var bookkeepingVersions = map[string]bool{"1.19.5": true}
 
@@ -144,6 +161,7 @@ var (
 	_ agent.SessionTraceDeclarer = Adapter{}
 	_ agent.SessionParser        = Adapter{}
 	_ agent.HarnessBookkeeper    = Adapter{}
+	_ agent.HarnessServedReader  = Adapter{}
 	_ agent.StreamNormalizer     = Adapter{}
 	_ agent.SensitiveDeclarer    = Adapter{}
 )

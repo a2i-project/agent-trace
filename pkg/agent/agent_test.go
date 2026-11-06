@@ -730,3 +730,53 @@ func TestHarnessHousekeepingOrigin(t *testing.T) {
 		}
 	}
 }
+
+// servedReader declares served reads for one version (V-100).
+type servedReader struct {
+	fake
+	decl []ServedRead
+}
+
+func (s servedReader) HarnessServedReads(v string) []ServedRead {
+	if v != "1" {
+		return nil
+	}
+	return s.decl
+}
+
+// HarnessServedReads names the files declared for a claim's type and tool,
+// for the declared version only; a harness-implied claim is served by
+// nothing, and an entry without a type or a tool, or a path that is not
+// absolute and clean, declares nothing.
+func TestHarnessServedReads(t *testing.T) {
+	a := servedReader{decl: []ServedRead{
+		{ActionType: models.NetConnect, Tool: "webfetch", Files: []string{"/etc/gai.conf", "etc/hosts", "/etc/../etc/hosts", ""}},
+		{ActionType: models.NetConnect, Files: []string{"/etc/a"}},
+		{Tool: "webfetch", Files: []string{"/etc/b"}},
+	}}
+	sr := HarnessServedReads(a, "1")
+	if sr == nil {
+		t.Fatal("no declaration")
+	}
+	c := models.TrajectoryEntry{ActionType: models.NetConnect, Tool: "webfetch", Target: "example.com"}
+	if got := sr(c); len(got) != 1 || got[0] != "/etc/gai.conf" {
+		t.Errorf("webfetch connect: %v", got)
+	}
+	implied := c
+	implied.ImpliedBy = "webfetch https://example.com"
+	other := c
+	other.Tool = "bash"
+	request := c
+	request.ActionType = models.NetRequest
+	for _, x := range []models.TrajectoryEntry{implied, other, request} {
+		if got := sr(x); got != nil {
+			t.Errorf("%+v: %v", x, got)
+		}
+	}
+	if HarnessServedReads(a, "2") != nil || HarnessServedReads(a, "") != nil || HarnessServedReads(fake{}, "1") != nil {
+		t.Error("a declaration for another version, no version or an adapter without one")
+	}
+	if HarnessServedReads(servedReader{decl: []ServedRead{{ActionType: models.NetConnect, Tool: "webfetch", Files: []string{"rel"}}}}, "1") != nil {
+		t.Error("a declaration of only invalid paths")
+	}
+}
