@@ -118,9 +118,12 @@ type Config struct {
 	// set.
 	CachePath string
 
-	// ValidationTimeout bounds how long Observer.New waits for a candidate
-	// SSL_write offset to produce a parseable HTTP request before trying
-	// the next candidate (N-D4). Defaults to 5s.
+	// ValidationTimeout bounds how long the write validation in Start waits
+	// for a candidate SSL_write offset to produce a parseable HTTP request
+	// before trying the next candidate (N-D4), counted from the later of
+	// the candidate's attach and the first TLS ClientHello a tracked process
+	// sends (N-55). It also bounds each SSL_read candidate's window.
+	// Defaults to 5s.
 	ValidationTimeout time.Duration
 
 	// Content lists content methods by name with the executable or library
@@ -242,9 +245,14 @@ type Observer struct {
 	// sslDraining is raised by Stop once the TLS write side is detached:
 	// the next flush of the ssl ring then ends sslFeed's reading (N-32).
 	sslDraining atomic.Bool
-	cfg         Config
-	dropped     atomic.Uint64
-	stopOnce    sync.Once
+	// firstHelloNs is the wall-clock time, in ns, of the first TLS
+	// ClientHello a tracked process sent, 0 until one is seen. correlate
+	// sets it; the write validation reads it, since a candidate's window
+	// starts there (N-55).
+	firstHelloNs atomic.Int64
+	cfg          Config
+	dropped      atomic.Uint64
+	stopOnce     sync.Once
 
 	// tracking is raised once a pid is in tracked_pids, by New or TrackPID.
 	// Until then the probe watches nothing (N-26).
@@ -771,7 +779,7 @@ func (o *Observer) prepareSSL(cfg Config) error {
 //
 // On success the validated offset is cached by build ID, o.sslWriteLinks
 // is set and o.tlsActive becomes true. On failure (no candidate validates
-// within its timeout) it leaves o.sslWriteLinks nil, closes o.sslReader, and
+// within its window, or Stop began first) it leaves o.sslWriteLinks nil, closes o.sslReader, and
 // records the error in o.tlsAttachErr: Observer falls back to identity-only
 // operation exactly as if cfg.ExePath had never been set, rather than
 // failing the whole probe.
@@ -806,8 +814,12 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 				continue
 			}
 		}
-		rec, seen, ok := o.validateSSLWriteCandidate(timeout)
+		rec, seen, ok, expired := o.validateSSLWriteCandidate(timeout)
 		framesSeen += seen
+		if !ok && seen == 0 && !expired {
+			// Interrupted: Stop flushed or closed the reader.
+			stopped = true
+		}
 		if ok {
 			o.sslWriteLinks = ls
 			o.replay = append(o.replay, rec)
@@ -823,13 +835,15 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 		// so the reader does not hunt for a symbol-resolution bug that
 		// isn't there.
 		switch {
+		case stopped && o.firstHelloNs.Load() == 0:
+			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s before the capture stopped: no tracked process sent a TLS ClientHello", o.plan.sslPath)
 		case stopped:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s before the capture stopped", o.plan.sslPath)
 		case framesSeen > 0:
 			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): captured %d frame(s), none began with an HTTP/1.x request line or the HTTP/2 client preface",
 				o.plan.sslPath, len(o.tlsCandidates), framesSeen)
 		default:
-			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): no frame was captured from a tracked process within %s",
+			o.tlsAttachErr = fmt.Errorf("no SSL_write candidate validated in %s (%d tried): no frame was captured from a tracked process within %s of the first TLS ClientHello",
 				o.plan.sslPath, len(o.tlsCandidates), timeout)
 		}
 		_ = o.sslReader.Close()
@@ -856,32 +870,78 @@ func (o *Observer) attachAndValidateTLS(cfg Config) {
 	_ = o.tlsCache.Store(o.tlsBuildID, target)
 }
 
-// validateSSLWriteCandidate blocks for up to timeout waiting for one write
-// frame on o.sslReader and, if validRequestStart accepts it (an HTTP/1.x
-// request line or the HTTP/2 preface),
-// decodes and returns it (ok=true) so the caller can feed it to the
+// validationTick bounds each read of the write validation, so that it
+// notices the first ClientHello, the end of its window and Stop without a
+// record arriving.
+const validationTick = 100 * time.Millisecond
+
+// writeWindowEnd returns when a write candidate's validation window ends:
+// timeout after the later of the candidate's start and the first TLS
+// ClientHello of a tracked process (helloNs, wall-clock ns, 0 when none was
+// seen yet). started is false while no ClientHello has been seen: the window
+// has not begun, and the candidate waits (N-55).
+func writeWindowEnd(candStart time.Time, helloNs int64, timeout time.Duration) (end time.Time, started bool) {
+	if helloNs == 0 {
+		return time.Time{}, false
+	}
+	from := candStart
+	if hello := time.Unix(0, helloNs); hello.After(from) {
+		from = hello
+	}
+	return from.Add(timeout), true
+}
+
+// validateSSLWriteCandidate waits for one write frame on o.sslReader and, if
+// validRequestStart accepts it (an HTTP/1.x request line or the HTTP/2
+// preface), decodes and returns it (ok=true) so the caller can feed it to the
 // correlator instead of discarding it -- a short-lived tracked process may
 // never call SSL_write again after the one write that validated the offset,
 // so dropping this frame would silently lose its content.
+//
+// The wait ends at the candidate's window (writeWindowEnd), which starts at
+// the later of now and the first TLS ClientHello of a tracked process: a
+// process that has not begun a TLS connection cannot have called SSL_write,
+// so its silence is no evidence against the candidate (N-55). Until then the
+// candidate waits for its first frame or for Stop.
 //
 // Read frames (the SSL_read probes New attached) are not evidence about
 // the write candidate: they are held for replay, up to maxHeldReads, and
 // the wait goes on.
 //
-// seen reports whether a write frame arrived at all (1) or the read timed
-// out / the reader was closed (0), which is what lets the caller tell a
-// wrong offset apart from plaintext that is neither HTTP/1.x nor HTTP/2.
-func (o *Observer) validateSSLWriteCandidate(timeout time.Duration) (rec sslRecord, seen int, ok bool) {
-	o.sslReader.SetDeadline(time.Now().Add(timeout))
+// seen reports whether a write frame arrived at all (1) or not (0), which is
+// what lets the caller tell a wrong offset apart from plaintext that is
+// neither HTTP/1.x nor HTTP/2. expired reports that the window passed with
+// no write frame; with seen 0 and expired false the wait was interrupted by
+// Stop.
+func (o *Observer) validateSSLWriteCandidate(timeout time.Duration) (rec sslRecord, seen int, ok, expired bool) {
+	candStart := time.Now()
 	for {
+		end, started := writeWindowEnd(candStart, o.firstHelloNs.Load(), timeout)
+		now := time.Now()
+		if started && !now.Before(end) {
+			return sslRecord{}, 0, false, true
+		}
+		select {
+		case <-o.stopping:
+			return sslRecord{}, 0, false, false
+		default:
+		}
+		deadline := now.Add(validationTick)
+		if started && end.Before(deadline) {
+			deadline = end
+		}
+		o.sslReader.SetDeadline(deadline)
 		record, err := o.sslReader.Read()
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			continue
+		}
 		if err != nil {
-			return sslRecord{}, 0, false
+			return sslRecord{}, 0, false, false
 		}
 		o.sslRing.observe(&record)
 		rec, ok := decodeSSLRecord(record.RawSample)
 		if !ok {
-			return sslRecord{}, 1, false
+			return sslRecord{}, 1, false, false
 		}
 		if rec.hdr.Dir == sslDirRead {
 			if len(o.replay) < maxHeldReads {
@@ -892,9 +952,9 @@ func (o *Observer) validateSSLWriteCandidate(timeout time.Duration) (rec sslReco
 			continue
 		}
 		if !validRequestStart(rec.payload) {
-			return sslRecord{}, 1, false
+			return sslRecord{}, 1, false, false
 		}
-		return rec, 1, true
+		return rec, 1, true, false
 	}
 }
 
@@ -1214,8 +1274,10 @@ func (o *Observer) Dropped() uint64 {
 
 // Start begins reading ring-buffer records in background goroutines and, if
 // content capture was configured, validates and attaches the SSL_write
-// uprobe (see attachAndValidateTLS). The validation step blocks Start for up
-// to cfg.ValidationTimeout per SSL_write candidate; the probe.Observer
+// uprobe (see attachAndValidateTLS). The validation step blocks Start until a
+// candidate validates, every candidate's window has passed (cfg.ValidationTimeout
+// each, from the first TLS ClientHello of a tracked process, N-55) or Stop
+// begins; the probe.Observer
 // interface gives Start no error return, so a validation failure is
 // recorded (see TLSAttachError) and Observer degrades to identity-only
 // operation rather than failing the whole probe.
@@ -1590,6 +1652,10 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			o.dnsQuery(conn, rec.payload, ts)
 			return
 		}
+		if isClientHello(rec.payload) {
+			// The first starts the write validation's window (N-55).
+			o.firstHelloNs.CompareAndSwap(0, ts.UnixNano())
+		}
 		conn.hello = append(conn.hello[:0], rec.payload...)
 		conn.helloAt = ts
 		conn.helloPending = true
@@ -1649,6 +1715,13 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		}
 		delete(o.conns, key)
 	}
+}
+
+// isClientHello reports whether a connection's first write begins with a TLS
+// handshake record holding a ClientHello: content type 22, major version 3,
+// handshake type 1 after the five-byte record header.
+func isClientHello(p []byte) bool {
+	return len(p) >= 6 && p[0] == 0x16 && p[1] == 0x03 && p[5] == 0x01
 }
 
 // resolveHello parses the ClientHello captured for conn and reports whether
