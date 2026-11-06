@@ -17,7 +17,8 @@ import (
 
 // The shims. claude prints a configured version, writes a transcript whose
 // assistant record names the pinned model, and, for the task run with
-// FAKE_TASK=delete, deletes it again as an agent's command would; it leaves
+// FAKE_TASK=delete, deletes it again as an agent's command would (with
+// FAKE_TASK=slow it lasts 3 s); it leaves
 // the events a capture would hold in $FAKE_DIR/events.json, with the
 // transcript under /home/shim, a home the adapter declares (I-30, I-74).
 // watch runs the command after -- and writes a loss-free ground truth of
@@ -63,6 +64,9 @@ if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") ==
             script = pid
         pid = int(open("/proc/%d/stat" % pid).read().rsplit(")", 1)[1].split()[1])
     os.kill(script, 15)
+if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") == "slow":
+    import time
+    time.sleep(3)
 if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") == "delete":
     os.remove(path)
     cmd = "/bin/bash -c rm " + obs

@@ -412,7 +412,9 @@ restore_instruction_files() {
 ws_run=
 pending_ws=
 pending_dest=
+keepalive=
 on_exit() {
+  [ -z "$keepalive" ] || kill "$keepalive" 2>/dev/null || true
   restore_instruction_files
   [ -z "$pending_ws" ] || release_workspace "$pending_ws" "$pending_dest" || true
   [ -z "$ws_run" ] || sudo -n rmdir -- "$ws_run" 2>/dev/null || true
@@ -1074,6 +1076,14 @@ if [ -z "$warm_up_only" ] && [ "${probe#baseline: unknown agent}" != "$probe" ];
   echo "NOTE: this build has no $agent adapter: the capture records the ground truth, the trace, the controls and the manifest, and no baseline or verdict"
 fi
 sudo -v
+# The steps after a run read and copy through sudo -n, which never asks: a
+# run longer than sudo's credential timeout (an interactive session, I-159)
+# would leave them without one. The credential is refreshed every
+# SUDO_REFRESH_S seconds (default 60) while the script runs (I-161), as
+# capture-campaign.sh does for a campaign.
+capture_pid=$$
+( while sleep "${SUDO_REFRESH_S:-60}" && kill -0 "$capture_pid" 2>/dev/null; do sudo -n -v || exit 0; done ) >/dev/null 2>&1 </dev/null &
+keepalive=$!
 
 # measured LABEL COMMAND...: run the sudo'd watch command under
 # scripts/measure-watch.py, which writes LABEL.cost.json (H4b: start-up, drain,
