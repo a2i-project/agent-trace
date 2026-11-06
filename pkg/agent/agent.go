@@ -8,6 +8,7 @@ package agent
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -549,10 +550,32 @@ type Canonicalizer interface {
 	Canonical(models.GroundTruthEvent) models.GroundTruthEvent
 }
 
-// canonical is the event as it is compared with other runs.
+// canonical is the event as it is compared with other runs: the adapter's
+// per-run ids replaced (Canonicalizer), then the host's (canonicalHost).
 func canonical(a Adapter, e models.GroundTruthEvent) models.GroundTruthEvent {
 	if c, ok := a.(Canonicalizer); ok {
-		return c.Canonical(e)
+		e = c.Canonical(e)
+	}
+	return canonicalHost(e)
+}
+
+// imConfigPIDs is the debug line im-config 0.62 logs from
+// /etc/profile.d/im-config_wayland.sh in every login shell, whatever the
+// user's home holds: systemd-cat runs echo with the shell's pid and its
+// parent's. Its debug switch defaults to a non-empty "false", which logs.
+// A harness command that starts a login shell (Claude Code's and Codex's
+// shell snapshot) therefore runs these programs beneath it in every run,
+// each naming pids no other run has (I-156). Anchored, and keyed on the
+// whole line, so a line that differs in anything but the two pids stays
+// distinct.
+var imConfigPIDs = regexp.MustCompile(`( @ IM_CONFIG_ENTRY='[^']*' XDG_SESSION_TYPE ='[^']*' UID=\d+ PID=)\d+( PPID=)\d+$`)
+
+// canonicalHost replaces the per-run ids that the host, not the harness,
+// puts in what runs beneath a harness's commands, for every adapter alike
+// (I-156). Only process events carry them.
+func canonicalHost(e models.GroundTruthEvent) models.GroundTruthEvent {
+	if e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit {
+		e.Target = imConfigPIDs.ReplaceAllString(e.Target, "${1}N${2}N")
 	}
 	return e
 }
