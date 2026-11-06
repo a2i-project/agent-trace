@@ -117,6 +117,14 @@ Options: (a1) `~/.local/share/opencode/opencode.db` with its `-wal`, `-shm` and 
 Current behaviour: The profile declares the trace (I-114): the capture copies the database and treats a database or session that is gone as a trace that is gone. No adapter exists, so nothing is declared to `verify`. The fetches happen in the first run that meets them.
 Recommendation: (a1), (b1), (c1): the database is the only place the session lives and it changes as a whole file; the snapshot repository holds no claim; a warm-up keeps the harness's one-time actions out of every recorded run without installing anything.
 
+### O-40: How the verifier explains what Claude Code does only in an interactive session
+Status: Open. Raised 2026-11-06 by the first interactive capture (`captures/interactive-long-2`, V-82).
+Date: 2026-11-06.
+Question: The controls are print-mode runs, so the baseline cannot explain what the harness does only in an interactive session. On that capture, with the baseline: at start-up the harness ran `gh auth token`, `gh issue list -R anthropics/claude-code --author @me ...`, a `ps aux | grep` for editors and IDEs, `dpkg -S` of its own binary, a search of the workspace by its own program and `xdg-mime default claude-code-url-handler.desktop x-scheme-handler/claude-cli` (with the writes of that `.desktop` file), and connected to `downloads.claude.ai`; through the session it wrote the official plugin marketplace under `~/.claude/plugins/marketplaces` (about 2,500 of 2,644 unexplained harness events), its input history `~/.claude/history.jsonl` and its edit checkpoints `~/.claude/file-history/<session>/`; and it opened each workspace file the agent edited once without a claim covering it (6 unrecorded opens, probably the checkpoint's copy before the first edit, not yet checked). How should these be explained, and should an interactive session be verified with print-mode controls at all?
+Options: (1) interactive controls: a scripted terminal session (a pseudo-terminal the capture drives) run five times, so the baseline measures the interactive harness; (2) adapter rules for the interactive-only behaviours (declared harness files and commands, the checkpoint copy implied by the first Edit of a file), with print-mode controls; (3) verify interactive sessions only with the baseline and report the interactive-only activity as a stated limit.
+Current behaviour: An interactive capture is verified with the print-mode baseline; the activity above reads as unexplained harness activity and unrecorded opens, so an honest interactive session is NOT FAITHFUL.
+Recommendation: none yet; the user decides. (1) measures rather than declares and keeps the adapter unchanged, but needs a driven terminal; (2) is closest to how print mode is handled; (3) costs nothing and keeps the verdict honest about what it cannot explain.
+
 ## Proposals (not decided)
 
 ### O-18: Move net hooks to the kernel socket layer (fentry or LSM)
