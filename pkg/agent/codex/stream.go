@@ -1,10 +1,6 @@
 package codex
 
 import (
-	"path/filepath"
-	"strings"
-	"time"
-
 	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
 )
@@ -27,26 +23,20 @@ import (
 //     with no other event of the process between.
 //
 // The claims are an open and a write per changed file, so the observed side
-// is rewritten to that grain, and the failed attempts are dropped so a
-// command's own exec is the program that ran. A shape not listed stays as
-// the probe reported it.
+// is rewritten to that grain. The failed attempts stay in the stream; the
+// verifier keeps them apart, so a command's own exec is the program that
+// ran (I-157). A shape not listed stays as the probe reported it.
 
 // emptyHash is the input hash the probe gives the open that created a file
 // (P-22).
 var emptyHash = content.SHA256Bytes(nil)
 
-// attemptSpan bounds the gap between two exec attempts of one PATH search:
-// they were at most 15 microseconds apart in the capture.
-const attemptSpan = time.Millisecond
-
-// NormalizeStream drops the failed exec attempts of a PATH search
-// (failedAttempts), the create of a file the agent's process creates
+// NormalizeStream drops the create of a file the agent's process creates
 // (foldCreates), collapses its runs of opens of one file (collapseOpens)
 // and folds its in-place rewrites into one write carrying the close's hash
 // (foldInPlace). Events are in time order, ties in the order the probe
 // emitted them.
 func (Adapter) NormalizeStream(g models.GroundTruth) models.GroundTruth {
-	g = failedAttempts(g)
 	started := commands(g)
 	return foldInPlace(collapseOpens(foldCreates(g, started), started), started)
 }
@@ -81,52 +71,6 @@ func isFile(t models.ActionType) bool {
 // a path that is not the harness's: the events the file folds may rewrite.
 func agentFile(e models.GroundTruthEvent, started map[uint32]bool) bool {
 	return isFile(e.ActionType) && e.PID != 0 && !started[e.PID] && !e.PathIsAmbiguous && !harnessOwned.MatchString(e.Target)
-}
-
-// failedAttempts drops an exec that the same process's next event follows
-// within attemptSpan as another exec of the same program name and the same
-// arguments from another absolute directory: an attempt of a PATH search
-// that failed, since an exec that took effect would have loaded its program
-// before anything else. The last exec of such a run is kept.
-func failedAttempts(g models.GroundTruth) models.GroundTruth {
-	next := map[int]int{} // index -> index of the same process's next event
-	last := map[uint32]int{}
-	for i, e := range g {
-		if j, ok := last[e.PID]; ok {
-			next[j] = i
-		}
-		last[e.PID] = i
-	}
-	drop := map[int]bool{}
-	for i, e := range g {
-		j, ok := next[i]
-		if !ok || e.ActionType != models.ProcessExec || e.TargetTruncated || e.PID == 0 {
-			continue
-		}
-		n := g[j]
-		if n.ActionType == models.ProcessExec && !n.TargetTruncated && n.Timestamp.Sub(e.Timestamp) < attemptSpan && sameSearch(e.Target, n.Target) {
-			drop[i] = true
-		}
-	}
-	if len(drop) == 0 {
-		return g
-	}
-	out := make(models.GroundTruth, 0, len(g)-len(drop))
-	for i, e := range g {
-		if !drop[i] {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-// sameSearch reports whether two command lines run the same program name
-// from two absolute directories with the same arguments.
-func sameSearch(a, b string) bool {
-	pa, aa, _ := strings.Cut(a, " ")
-	pb, ab, _ := strings.Cut(b, " ")
-	return aa == ab && strings.HasPrefix(pa, "/") && strings.HasPrefix(pb, "/") && pa != pb &&
-		filepath.Base(pa) == filepath.Base(pb) && filepath.Dir(pa) != filepath.Dir(pb)
 }
 
 // foldCreates drops the create of a file by the agent's process when that

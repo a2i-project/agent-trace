@@ -381,7 +381,8 @@ func TestNormalizeStreamFoldsTheMeasuredShapes(t *testing.T) {
 	closeC := ev(40, 1, models.FileClose, "/ws/c.txt")
 	closeC.OutputHash = &h
 	g := models.GroundTruth{
-		// A PATH search of a helper by a command process.
+		// A PATH search of a helper by a command process: its failed
+		// attempts stay; the verifier keeps them apart (I-157).
 		ev(0, 5, models.ProcessFork, "5"),
 		ev(0, 5, models.ProcessExec, "/home/u/.codex/tmp/arg0-linux/codex-arg0abcdef/git remote -v"),
 		ev(0, 5, models.ProcessExec, "/usr/local/bin/git remote -v"),
@@ -417,7 +418,10 @@ func TestNormalizeStreamFoldsTheMeasuredShapes(t *testing.T) {
 		lines = append(lines, s)
 	}
 	want := []string{
-		"process_fork 5", "process_exec /usr/bin/git remote -v",
+		"process_fork 5",
+		"process_exec /home/u/.codex/tmp/arg0-linux/codex-arg0abcdef/git remote -v",
+		"process_exec /usr/local/bin/git remote -v",
+		"process_exec /usr/bin/git remote -v",
 		"file_open /ws/a.txt", "file_write /ws/a.txt #",
 		"file_open /ws/b.txt", "net_bind 0.0.0.0:0", "file_write /ws/b.txt",
 		"file_open /ws/other", "file_open /ws/c.txt", "file_write /ws/c.txt #",

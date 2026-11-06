@@ -68,7 +68,11 @@ type Partition struct {
 	// Capability holds listener and socket events (unclaimable, not
 	// structural) with their place in the tree. They are counted and kept as
 	// the record of what a subtree could do, never aligned.
-	Capability []AttributedEvent
+	Capability []AttributedEvent // Attempts holds the failed exec attempts of a PATH search (I-157) with
+	// their place in the tree. They ran no program: none is a command's
+	// exec, a program run beneath it or an action of the agent, so they are
+	// kept apart, never aligned, checked or counted.
+	Attempts []AttributedEvent
 }
 
 // Partition attributes every event of g and sorts it into its part. Structural
@@ -86,11 +90,16 @@ func (f *Forest) Partition(g models.GroundTruth) Partition {
 	copy(events, g)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp.Before(events[j].Timestamp) })
 
-	for _, e := range events {
+	failed := failedAttempts(events)
+	for i, e := range events {
 		if e.ActionType.IsStructural() {
 			continue
 		}
 		a := f.Attribute(e)
+		if failed[i] {
+			part.Attempts = append(part.Attempts, AttributedEvent{Event: e, Attribution: a})
+			continue
+		}
 		if !e.ActionType.IsClaimable() {
 			part.Capability = append(part.Capability, AttributedEvent{Event: e, Attribution: a})
 			if a.Zone == ZoneSubtree {

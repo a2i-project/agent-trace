@@ -1,6 +1,6 @@
 # Agent adapters
 
-Checked against commit 0259a21 on 2026-11-06.
+Checked against commit 915d439 on 2026-11-06.
 
 ## Objective
 
@@ -283,7 +283,7 @@ What the harness does, measured on the six runs of the first capture (I-82, I-83
 | `Process` | `ShellPerCommand: true`, `SubagentsInProcess: true`, `IntervalDecision`, `Parallel`, `ExitsClaimed: false` (the rollout records exit codes; they are not claimed, I-82) |
 | `Expresses` | `output_hash`: for an add (`Tool` `apply_patch:add`), and for an update exactly when it claims one (I-87). `exit_code`, `request_hash`, `input_hash`: never. Other fields: yes. |
 | `Normalize` | A process exec or exit whose target is the process setup's or the restoring shell's line becomes the command, read only when every line of the script before `exec '/bin/bash' -c ` is one of its measured shapes (the saved and restored variables, the source of `<home>/.codex/shell_snapshots/<uuid>.<n>.sh`, the PATH prefix, empty lines; each naming one variable throughout) and the rest is exactly one word of single-quoted segments and escaped quotes, or a bare word; a truncated event gives what the probe kept of the word as a prefix (V-26). Anything else (a `pty` setup, another shell, a line run before or after the payload, a second word) keeps its text. File targets lose a trailing ` (deleted)`. |
-| `NormalizeStream` | Drops an exec whose process's next event, within a millisecond, is an exec of the same program name and arguments from another absolute directory (a failed attempt of a PATH search). For the harness's process (not one the stream shows forked, exec'd or exiting) and not on its own files: drops a create (a `file_write` with no hash) whose process's next file event is the open of that file with the hash of empty content, at any distance in time (I-99); drops an open whose process's previous file event is an open of the same file; and folds an open, writes of the file and its close, with no other file event of the process between, into the open and one `file_write` at the close with the close's hash. |
+| `NormalizeStream` | Keeps the failed attempts of a PATH search, which the verifier sets apart for every adapter (I-157). For the harness's process (not one the stream shows forked, exec'd or exiting) and not on its own files: drops a create (a `file_write` with no hash) whose process's next file event is the open of that file with the hash of empty content, at any distance in time (I-99); drops an open whose process's previous file event is an open of the same file; and folds an open, writes of the file and its close, with no other file event of the process between, into the open and one `file_write` at the close with the close's hash. |
 | `CollapsesOpenRuns` | true (V-49). |
 | `Canonical` | The rollout's date, time and thread (`sessions/{date}/rollout-{time}-{id}.jsonl`), the shell snapshot's thread and stamp (`{id}.tmp-{n}`, `{id}.{n}.sh`), the arg0 directory's id (`codex-arg0{id}`), the thread lock's id and the app caches' `.tmp<6>` temporaries, in file and command targets (I-83). |
 | `HarnessProcess` | The native binary the npm launcher started (above, I-81). |
@@ -442,7 +442,6 @@ Then: create `pkg/agent/<name>`, register from `init`, blank-import the package 
 
 ## Known limits
 
-- The adapters treat the failed exec attempts of a PATH search differently: Codex's `NormalizeStream` drops them (I-82), Claude Code's keeps them as programs run beneath a command (only `rg`'s attempts take the search's target, I-128). Dropping them in Claude Code changes the output of 70 of the 96 fixture comparisons (its 2.1.296 and 2.1.306 fixtures), keeping them in Codex changes 21 (its `tools` fixtures), so neither direction is taken yet.
 - The host's login-shell scripts run beneath a harness command that starts a login shell (Claude Code's and Codex's shell snapshot), so what they do is part of that command's subtree record (V-38). Only one host line naming a per-run id is canonical (im-config 0.62's debug line, I-156); another host script that names a pid, a time or a random id there reads as an event beneath the command that the controls did not do, and a host whose scripts differ between the controls and the task run (an upgrade between them) reads the same.
 - Some code still names agents (I-77): the fixture version test (`TestEveryListedFixtureHasItsVersion`) checks each adapter's fixtures in its own way, and `scripts/make-capture-fixture.py` knows each format by name. `scripts/bench-overhead.sh` and `scripts/compare/` read the profiles (I-98).
 - The `sqlite-conversation` method's model check takes the tokens of the conversation's executor metadata shaped as a model id of the families `gemini-`, `claude-` and `gpt-`; a model of another family reads as none, so the run fails as a `MODEL MISMATCH`, not silently.

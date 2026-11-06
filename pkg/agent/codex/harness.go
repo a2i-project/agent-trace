@@ -68,9 +68,9 @@ func (Adapter) HarnessProcess(g models.GroundTruthFile) uint32 {
 const gitRemote = "/usr/bin/git -c safe.bareRepository=explicit -c core.hooksPath=/dev/null -c core.fsmonitor=false remote -v"
 
 // HarnessCommands declares the harness's occasional command (V-43). Its exec
-// is the one that took effect: NormalizeStream drops the failed attempts of
-// the PATH search before it, which name the harness's per-run arg0
-// directory (failedAttempts).
+// is the one that took effect: the verifier keeps the failed attempts of
+// the PATH search before it apart, which name the harness's per-run arg0
+// directory (I-157).
 func (Adapter) HarnessCommands() []string { return []string{gitRemote} }
 
 // HarnessHosts declares none: the capture's harness connected to chatgpt.com

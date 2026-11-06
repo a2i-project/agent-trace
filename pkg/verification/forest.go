@@ -54,7 +54,8 @@ type Process struct {
 	// Command is the level-1 ancestor of this process (itself for level 1).
 	// Nil for the agent and for processes outside the tree.
 	Command *Process
-	// Exec is the first exec event of this process, if it exec'd.
+	// Exec is the first exec event of this process that is not a failed
+	// attempt of a PATH search (I-157), if it exec'd.
 	Exec *models.GroundTruthEvent
 }
 
@@ -96,12 +97,14 @@ func BuildForest(g models.GroundTruth, rootPID uint32) *Forest {
 	copy(events, g)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp.Before(events[j].Timestamp) })
 
+	// A failed attempt of a PATH search is not the process's exec (I-157).
+	failed := failedAttempts(events)
 	var execs []models.GroundTruthEvent
-	for _, e := range events {
+	for i, e := range events {
 		switch {
 		case e.ActionType == models.ProcessFork && e.PID != 0:
 			f.add(&Process{PID: e.PID, PPID: e.PPID, Start: e.Timestamp})
-		case e.ActionType == models.ProcessExec && e.PID != 0:
+		case e.ActionType == models.ProcessExec && e.PID != 0 && !failed[i]:
 			execs = append(execs, e)
 		}
 	}
