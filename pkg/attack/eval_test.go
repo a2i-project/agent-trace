@@ -36,9 +36,10 @@ import (
 // generator's rates are also logged per harness, over that harness's
 // captures.
 //
-// The Claude Code and agy captures are gated. The Codex and OpenCode ones
-// are reported and not gated (E-5): each fails an acceptance check, as
-// 50_attack_generators.md states. The three tools captures, two of 2.1.296 and one of
+// The Claude Code, agy and OpenCode captures are gated. The Codex ones are
+// reported and not gated (E-5): each fails an acceptance check, as
+// 50_attack_generators.md states. OpenCode's was reported until I-147 and
+// I-148 dropped the harness's start-up opens of the workspace. The three tools captures, two of 2.1.296 and one of
 // 2.1.306, were reported and not gated until V-55 and V-56 explained their
 // mislocated fabrications and substitutions and their hidden Read of the
 // background output (E-5). On the 2.1.306 one the harness's package-manager
@@ -105,19 +106,20 @@ var captures = existing([]capture{
 	// than Claude Code, gated since they met every acceptance check.
 	gem("agy-basic", "paired-agy-1.3.4-basic", "basic", true),
 	gem("agy-search", "paired-agy-1.3.4-search", "search", true),
-	// The paired captures of Codex 0.166.0 and OpenCode 1.19.5, scored by the
-	// same generators and reported, not gated (E-5). The basic one of Codex
-	// lost six file events (V-39), so its honest control and every widened
-	// run are INCONCLUSIVE. On the two tools ones, a fabricated or
-	// substituted command placed among the three cat commands the agent ran
-	// at once is at times paired with one of them, and mislocated. On
-	// OpenCode's, b.txt is opened by a read and again by a later write, the
-	// honest alignment is already ambiguous, and a substituted read of b.txt
-	// at times reads as Unwitnessed, a fabrication, not as a Mismatched pair.
+	// The paired captures of Codex 0.166.0, scored by the same generators
+	// and reported, not gated (E-5). The basic one lost six file events
+	// (V-39), so its honest control and every widened run are INCONCLUSIVE.
+	// On the two tools ones, a fabricated or substituted command placed
+	// among the three cat commands the agent ran at once is at times paired
+	// with one of them, and mislocated.
 	cdx("codex-basic", "paired-codex-0.166.0-basic", "basic", false),
 	cdx("codex-tools", "paired-codex-0.166.0-tools", "tools", false),
 	cdx("codex-tools-2", "paired-codex-0.166.0-tools-2", "tools", false),
-	ocode("opencode-basic", "paired-opencode-1.19.5-basic", "basic", false),
+	// The paired capture of OpenCode 1.19.5, gated since I-147 and I-148:
+	// with the harness's start-up opens of the seeded files dropped, the
+	// baseline no longer explains a later open of b.txt, so a substituted
+	// read of it is a Mismatched pair and an omitted one is Unrecorded.
+	ocode("opencode-basic", "paired-opencode-1.19.5-basic", "basic", true),
 })
 
 func claude(name, fixture, label string, gated bool) capture {

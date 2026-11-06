@@ -695,6 +695,9 @@ func NormalizeCapture(a Adapter, g models.GroundTruthFile) models.GroundTruth {
 	if u, ok := a.(AgentProcessUser); ok {
 		a = u.WithAgentProcess(g.RootPID)
 	}
+	if u, ok := a.(WorkspaceUser); ok {
+		a = u.WithWorkspace(g.Workspace)
+	}
 	return normalize(a, g.Events)
 }
 
@@ -705,6 +708,15 @@ func NormalizeCapture(a Adapter, g models.GroundTruthFile) models.GroundTruth {
 // root, it returns the adapter to normalize with.
 type AgentProcessUser interface {
 	WithAgentProcess(pid uint32) Adapter
+}
+
+// WorkspaceUser is implemented by an adapter whose normalization needs the
+// directory the capture watched (GroundTruthFile.Workspace): OpenCode's
+// start-up opens of the workspace's files are its own (I-147). Given the
+// directory, empty when the capture names none, it returns the adapter to
+// normalize with.
+type WorkspaceUser interface {
+	WithWorkspace(dir string) Adapter
 }
 
 // AgentImageUser is implemented by an adapter whose Normalize needs the

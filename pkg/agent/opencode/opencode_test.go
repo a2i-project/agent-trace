@@ -610,3 +610,107 @@ func TestHarnessServedReadsDeclareTheResolversConfigurationForAWebfetch(t *testi
 		t.Error("a declaration for an unmeasured version")
 	}
 }
+
+// The harness's opens of workspace files before its first model response
+// are dropped, or, without a response, before 200 ms after its first model
+// connection; its other opens, a command's opens and later opens stay
+// (I-147).
+func TestNormalizeCaptureDropsTheStartupOpensOfTheWorkspace(t *testing.T) {
+	at := time.Date(2026, 11, 5, 2, 0, 0, 0, time.UTC)
+	h := content.SHA256Bytes([]byte("seed"))
+	ev := func(ms int, pid uint32, a models.ActionType, target string) models.GroundTruthEvent {
+		e := models.GroundTruthEvent{Timestamp: at.Add(time.Duration(ms) * time.Millisecond), PID: pid, ActionType: a, Target: target}
+		if a == models.FileOpen && strings.HasPrefix(target, "/ws/") {
+			e.InputHash = &h
+		}
+		return e
+	}
+	kept := func(g models.GroundTruthFile) string {
+		var got []string
+		for _, e := range agent.NormalizeCapture(Adapter{}, g) {
+			if e.ActionType == models.FileOpen {
+				got = append(got, e.Timestamp.Sub(at).String()+" "+e.Target)
+			}
+		}
+		return strings.Join(got, ";")
+	}
+	base := models.GroundTruth{
+		ev(0, 1, models.FileOpen, "/etc/hosts"),
+		ev(10, 1, models.NetConnect, "model.example"),
+		ev(70, 1, models.FileOpen, "/ws/b.txt"),
+		ev(70, 1, models.FileOpen, "/ws/c.txt"),
+		{Timestamp: at.Add(100 * time.Millisecond), PID: 2, PPID: 1, ActionType: models.ProcessExec, Target: "/bin/bash -c cat b.txt"},
+		ev(101, 2, models.FileOpen, "/ws/b.txt"),
+		ev(250, 1, models.FileOpen, "/ws/d.txt"),
+	}
+	g := models.GroundTruthFile{RootPID: 1, Workspace: "/ws", Events: base}
+	if got, want := kept(g), "0s /etc/hosts;101ms /ws/b.txt;250ms /ws/d.txt"; got != want {
+		t.Errorf("without content: %s, want %s", got, want)
+	}
+	// With a response at 60 ms, the bound is the response.
+	g.Events = append(models.GroundTruth{}, base[:2]...)
+	g.Events = append(g.Events, ev(60, 1, models.NetResponse, "POST https://model.example/v1"))
+	g.Events = append(g.Events, base[2:]...)
+	if got, want := kept(g), "0s /etc/hosts;70ms /ws/b.txt;70ms /ws/c.txt;101ms /ws/b.txt;250ms /ws/d.txt"; got != want {
+		t.Errorf("with content: %s, want %s", got, want)
+	}
+	// No root, no workspace, or no model traffic: nothing is dropped.
+	for _, x := range []models.GroundTruthFile{{Workspace: "/ws", Events: base}, {RootPID: 1, Events: base}, {RootPID: 1, Workspace: "/ws", Events: base[2:4]}} {
+		if got := kept(x); !strings.Contains(got, "70ms /ws/b.txt") {
+			t.Errorf("%+v: %s", x.RootPID, got)
+		}
+	}
+}
+
+// The second open of each of three reads that parallel calls interleaved
+// is dropped, so each read is one access; two sequential reads of one
+// file stay two, and an open without a hash is never paired (I-148).
+func TestNormalizeStreamPairsTheInterleavedOpensOfParallelReads(t *testing.T) {
+	at := time.Date(2026, 11, 5, 2, 0, 0, 0, time.UTC)
+	hash := func(s string) *string { h := content.SHA256Bytes([]byte(s)); return &h }
+	open := func(ms int, target string, in *string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at.Add(time.Duration(ms) * time.Millisecond), PID: 1, ActionType: models.FileOpen, Target: target, InputHash: in}
+	}
+	g := models.GroundTruth{
+		open(0, "/ws/n", hash("n")), open(1, "/ws/u", hash("u")), open(2, "/ws/a", hash("a")),
+		open(3, "/ws/n", hash("n")), open(4, "/ws/u", hash("u")), open(5, "/ws/a", hash("a")),
+		// Sequential reads of x, y, x: three accesses.
+		open(100, "/ws/x", hash("x")), open(101, "/ws/x", hash("x")),
+		open(200, "/ws/y", hash("y")), open(201, "/ws/y", hash("y")),
+		open(300, "/ws/x", hash("x")), open(301, "/ws/x", hash("x")),
+		// Without a hash: not paired across another file.
+		open(400, "/ws/p", nil), open(401, "/ws/q", nil), open(402, "/ws/p", nil),
+	}
+	var got []string
+	for _, e := range (Adapter{}).NormalizeStream(g) {
+		got = append(got, strings.TrimPrefix(e.Target, "/ws/"))
+	}
+	if want := "n,u,a,x,y,x,p,q,p"; strings.Join(got, ",") != want {
+		t.Errorf("opens kept %s, want %s", strings.Join(got, ","), want)
+	}
+}
+
+// The harness's reread of a file it has just edited is dropped also when
+// its open of /etc/hosts for the next model request comes first (I-148).
+func TestNormalizeStreamDropsTheRereadAfterAnotherFileEvent(t *testing.T) {
+	at := time.Date(2026, 11, 5, 2, 0, 0, 0, time.UTC)
+	hash := func(s string) *string { h := content.SHA256Bytes([]byte(s)); return &h }
+	ev := func(ms int, a models.ActionType, target string, in, out *string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at.Add(time.Duration(ms) * time.Millisecond), PID: 1, ActionType: a, Target: target, InputHash: in, OutputHash: out}
+	}
+	g := models.GroundTruth{
+		ev(0, models.FileOpen, "/ws/a", hash("old"), nil),
+		ev(1, models.FileOpen, "/ws/a", hash("old"), nil),
+		ev(2, models.FileWrite, "/ws/a", nil, nil),
+		ev(3, models.FileClose, "/ws/a", nil, hash("new")),
+		ev(30, models.FileOpen, "/etc/hosts", nil, nil),
+		ev(60, models.FileOpen, "/ws/a", hash("new"), nil),
+	}
+	var got []string
+	for _, e := range (Adapter{}).NormalizeStream(g) {
+		got = append(got, string(e.ActionType)+" "+e.Target)
+	}
+	if want := "file_open /ws/a,file_write /ws/a,file_open /etc/hosts"; strings.Join(got, ",") != want {
+		t.Errorf("events kept %s, want %s", strings.Join(got, ","), want)
+	}
+}

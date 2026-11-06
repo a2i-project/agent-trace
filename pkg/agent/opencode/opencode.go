@@ -18,7 +18,30 @@ const Name = "opencode"
 func init() { agent.Register(Adapter{}) }
 
 // Adapter implements agent.Adapter for OpenCode.
-type Adapter struct{}
+type Adapter struct {
+	// root is the pid of the agent's own process, which WithAgentProcess
+	// sets for normalizing one capture: the harness's start-up opens are
+	// its own (I-147). Zero when the capture has no root.
+	root uint32
+	// workspace is the directory the capture watched, which WithWorkspace
+	// sets for normalizing one capture (I-147). Empty when the capture
+	// names none.
+	workspace string
+}
+
+// WithWorkspace returns the adapter that normalizes a capture of the
+// workspace dir (agent.WorkspaceUser, I-147).
+func (a Adapter) WithWorkspace(dir string) agent.Adapter {
+	a.workspace = dir
+	return a
+}
+
+// WithAgentProcess returns the adapter that normalizes a capture whose
+// agent process is pid (agent.AgentProcessUser, I-147).
+func (a Adapter) WithAgentProcess(pid uint32) agent.Adapter {
+	a.root = pid
+	return a
+}
 
 func (Adapter) Name() string { return Name }
 
