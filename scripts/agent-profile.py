@@ -122,6 +122,13 @@ def shell(path, agent, task):
     pe = p.get("pass_env") or {}
     put("p_pass_env", pe.get("names") or [])
     put("p_pass_env_why", pe.get("why", ""))
+    # The names that apply only when the agent runs as the operator (I-150):
+    # a run as another user gets none of them, and is not refused for them.
+    oo = pe.get("operator_only") or []
+    if not isinstance(oo, list) or any(n not in (pe.get("names") or []) for n in oo):
+        fail(f"{where}: pass_env.operator_only must list names of pass_env.names")
+    put("p_pass_env_operator_only", oo)
+    put("p_pass_env_operator_only_why", pe.get("operator_only_why", ""))
     # Secret environment (a model provider's key): the names only; the
     # values reach the agent through its stdin, never a command line, so
     # the agent's stdin must otherwise be /dev/null.

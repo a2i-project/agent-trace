@@ -196,7 +196,12 @@
           "DBUS_SESSION_BUS_ADDRESS",
           "XDG_RUNTIME_DIR"
         ],
-        "why": "agy logs in through the session bus"
+        "why": "agy logs in through the session bus",
+        "operator_only": [
+          "DBUS_SESSION_BUS_ADDRESS",
+          "XDG_RUNTIME_DIR"
+        ],
+        "operator_only_why": "a run as another user has no session bus, and agy 1.4.7 then keeps its login in a file under that user's home, signed in once as that user without a bus (I-150)"
       },
       "instruction_files": {
         "note": "agy 1.4.7 opens ~/.gemini/AGENTS.md (the pilot captures): moved aside for each run and restored after it (I-79).",

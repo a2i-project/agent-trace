@@ -47,7 +47,8 @@
 # not hold (Claude Code: settings.json of the user, $CLAUDE_CONFIG_DIR or
 # ~/.claude, sets env.DISABLE_UPDATES to "1", since --setting-sources project,
 # the profile's isolation, ignores the user's settings). The environment the
-# profile's pass_env names must be set; it is passed to the run.
+# profile's pass_env names must be set; it is passed to the run (for a run
+# as another user, see --run-as).
 # --heldout-dir DIR holds held-out tasks (D8) outside the repository, one
 # directory NAME each with prompt.txt, tools.txt (the task's tools, separated by
 # white space) and an optional seed/ that every run starts from. The script
@@ -87,8 +88,11 @@
 # USER's home is closed to you, so the script reads it through sudo (reads
 # as root, writes and SQLite reads as USER): it asks for sudo at its start,
 # and --check needs a sudo credential already (sudo -v), never prompting.
-# A profile with pass_env (agy's session bus) is refused, since your session
-# cannot reach another user's agent. Each run's workspace is then
+# A profile's pass_env is refused, since your session cannot reach another
+# user's agent, except the names its pass_env.operator_only lists (agy's
+# session bus, I-150): those apply only to a run as you, a run as USER does
+# not get them, and task-meta.txt records them as pass_env_not_passed=.
+# Each run's workspace is then
 # <workspace root>/capture-XXXXXX/ws-<label> (I-138; --workspace-root DIR,
 # default $AGENT_TRACE_WORKSPACE_ROOT, else /var/lib/agent-trace/ws, outside
 # your home and the repository): prepared as today in OUTPUT_DIR/ws-<label>,
@@ -453,13 +457,22 @@ if [ -n "$run_as" ]; then
   case $agent_home in /?*) ;; *) echo "--run-as: $run_as has no absolute home ('$agent_home')" >&2; exit 1 ;; esac
   [ "$run_uid" = "$(id -u)" ] || other_user=1
 fi
+pass_env_dropped=()
 if [ -n "$other_user" ]; then
   # Your session cannot reach another user's agent: the environment a
-  # profile passes from it (agy's session bus) is refused, never shared.
-  if [ "${#p_pass_env[@]}" -gt 0 ]; then
-    echo "--run-as $run_as: $agent's profile passes ${p_pass_env[*]} from your session ($p_pass_env_why); a run as another user cannot use your session, and the capture does not share it" >&2
+  # profile passes from it is refused, never shared, except the names the
+  # profile says apply only when the agent runs as you (I-150; agy's
+  # session bus, without which it keeps its login in a file), which such a
+  # run does not get.
+  kept=()
+  for v in "${p_pass_env[@]}"; do
+    case " ${p_pass_env_operator_only[*]} " in *" $v "*) pass_env_dropped+=("$v") ;; *) kept+=("$v") ;; esac
+  done
+  if [ "${#kept[@]}" -gt 0 ]; then
+    echo "--run-as $run_as: $agent's profile passes ${kept[*]} from your session ($p_pass_env_why); a run as another user cannot use your session, and the capture does not share it" >&2
     exit 1
   fi
+  p_pass_env=()
   ws_root=$(realpath -m -- "$ws_root")
   case $ws_root/ in "$HOME"/*) echo "--workspace-root $ws_root is inside your home, which $run_as cannot enter" >&2; exit 1 ;; esac
   case $ws_root/ in "$root"/*) echo "--workspace-root $ws_root is inside the repository" >&2; exit 1 ;; esac
@@ -938,6 +951,7 @@ if [ -n "$check_only" ]; then
   echo "task_prompt_sha256=$task_prompt_sha256"
   echo "seed_sha256=$seed_sha256"
   [ -z "$run_as" ] || echo "run_as=$run_name uid=$run_uid"
+  [ "${#pass_env_dropped[@]}" -eq 0 ] || echo "pass_env_not_passed=${pass_env_dropped[*]}"
   exit 0
 fi
 echo "output: $out"
@@ -1711,6 +1725,8 @@ capture() {
     echo "operator_uid=$(id -u)"
     [ -z "$ws_run" ] || echo "workspace_root=$ws_run"
   fi
+  # The operator-only environment a run as another user did not get (I-150).
+  [ "${#pass_env_dropped[@]}" -eq 0 ] || echo "pass_env_not_passed=${pass_env_dropped[*]} (operator only: $p_pass_env_operator_only_why)"
 } >"$out/task-meta.txt"
 : >"$out/order.tsv"
 

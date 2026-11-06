@@ -258,18 +258,41 @@ func TestTheDefaultRunIsUnchanged(t *testing.T) {
 	}
 }
 
-// The environment a profile passes from your session (agy's session bus)
-// cannot reach another user's agent: the capture refuses, naming the agent
-// and the variables (I-137). Root and an unknown user are refused too.
+// editProfile applies edit to the profile of agent in the layout's config.
+func editProfile(t *testing.T, root, agent string, edit func(p map[string]any)) {
+	t.Helper()
+	path := filepath.Join(root, "config", "agents.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c map[string]any
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	edit(c["adapters"].(map[string]any)[agent].(map[string]any))
+	nb, _ := json.Marshal(c)
+	write(t, path, string(nb), 0o644)
+}
+
+// The environment a profile passes from your session cannot reach another
+// user's agent: the capture refuses, naming the agent and the variables
+// (I-137), except those the profile marks operator only (I-150). Root and
+// an unknown user are refused too.
 func TestARunAsAnotherUserIsRefusedWhereItCannotWork(t *testing.T) {
 	root, tmp, env := layout(t, "")
 	_, wsRoot, env := runAsLayout(t, root, tmp, env)
 	env = append(env, "DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent", "XDG_RUNTIME_DIR=/nonexistent")
+	copyProfile(t, root, "gemini", "busagent")
+	editProfile(t, root, "busagent", func(p map[string]any) {
+		p["versions"] = []any{map[string]any{"version": "1.3.4"}}
+		p["pass_env"].(map[string]any)["operator_only"] = []any{"XDG_RUNTIME_DIR"}
+	})
 	for _, c := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"--agent", "gemini", "--run-as", "agenttrace"}, "gemini's profile passes DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR from your session"},
+		{[]string{"--agent", "busagent", "--run-as", "agenttrace"}, "busagent's profile passes DBUS_SESSION_BUS_ADDRESS from your session"},
 		{[]string{"--run-as", "root"}, "is root"},
 		{[]string{"--run-as", "nobody-here"}, "no user nobody-here"},
 		{[]string{"--run-as", "agenttrace", "--workspace-root", filepath.Join(tmp, "home", "ws")}, "is inside your home"},
@@ -281,6 +304,74 @@ func TestARunAsAnotherUserIsRefusedWhereItCannotWork(t *testing.T) {
 		if err == nil || !strings.Contains(string(b), c.want) {
 			t.Errorf("%v: %v\n%s", c.args, err, b)
 		}
+	}
+}
+
+// agy's session bus is operator only (I-150): a run as another user gets
+// neither DBUS_SESSION_BUS_ADDRESS nor XDG_RUNTIME_DIR although your
+// session has them, its conversation database is copied from that user's
+// home, and task-meta.txt and the check name what was not passed. As the
+// operator the run still gets both.
+func TestAgyRunsAsAnotherUserWithoutTheSessionBus(t *testing.T) {
+	root, tmp, env := layout(t, "")
+	home, wsRoot, env := runAsLayout(t, root, tmp, env)
+	env = append(env, "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "XDG_RUNTIME_DIR=/run/user/1000")
+	out := filepath.Join(tmp, "out")
+	run := func(extra ...string) (string, error) {
+		args := append([]string{filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "gemini", "--task", "basic",
+			"--run-as", "agenttrace", "--workspace-root", wsRoot}, extra...)
+		cmd := exec.Command("bash", append(args, out)...)
+		cmd.Env = env
+		b, err := cmd.CombinedOutput()
+		return string(b), err
+	}
+	check, err := run("--check")
+	if err != nil || !strings.Contains(check, "pass_env_not_passed=DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR\n") {
+		t.Fatalf("--check: %v\n%s", err, check)
+	}
+	log, err := run()
+	if err != nil {
+		t.Fatalf("capture: %v\n%s", err, log)
+	}
+	calls := watchCalls(t, tmp)
+	if len(calls) != 2 {
+		t.Fatalf("watch ran %d times", len(calls))
+	}
+	for _, c := range calls {
+		joined := strings.Join(c, " ")
+		if strings.Contains(joined, "DBUS_SESSION_BUS_ADDRESS") || strings.Contains(joined, "XDG_RUNTIME_DIR") ||
+			!strings.Contains(joined, " "+filepath.Join(home, ".local", "bin", "agy")+" ") {
+			t.Errorf("watch command %s", joined)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "basic.conversation.db")); err != nil {
+		t.Errorf("conversation database: %v", err)
+	}
+	meta, _ := os.ReadFile(filepath.Join(out, "task-meta.txt"))
+	if !strings.Contains(string(meta), "pass_env_not_passed=DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR (operator only: ") {
+		t.Errorf("task-meta.txt:\n%s", meta)
+	}
+
+	// As the operator, the session's variables are passed as before.
+	root, tmp, env = layout(t, "")
+	if err := os.Rename(filepath.Join(root, "watch"), filepath.Join(root, "watch.real")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "watch"), recordingWatch, 0o755)
+	env = append(env, "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", "XDG_RUNTIME_DIR=/run/user/1000")
+	out = filepath.Join(tmp, "out")
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "capture-agent.sh"), "--no-build", "--agent", "gemini", "--task", "basic", out)
+	cmd.Env = env
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("capture as the operator: %v\n%s", err, b)
+	}
+	for _, c := range watchCalls(t, tmp) {
+		if got := strings.Join(after(c, "--reset-env", 3), " "); got != "env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus XDG_RUNTIME_DIR=/run/user/1000" {
+			t.Errorf("as the operator: %s", got)
+		}
+	}
+	if meta, _ := os.ReadFile(filepath.Join(out, "task-meta.txt")); strings.Contains(string(meta), "pass_env_not_passed") {
+		t.Errorf("as the operator, task-meta.txt:\n%s", meta)
 	}
 }
 
@@ -372,6 +463,19 @@ func TestTheSetupScriptPrintsThePinnedVersionsAndNeedsRoot(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `DISABLE_UPDATES=1 claude auth login`) {
 		t.Errorf("steps lack the version lock on the login:\n%s", b)
+	}
+	// agy (I-150): the copy is yours to make, and the sign-in leaves out
+	// the operator-only session bus, as the capture runs it.
+	for _, want := range []string{
+		`as you: cat "$(readlink -f "$(command -v agy)")" | sudo -u agenttrace sh -c 'mkdir -p /home/agenttrace/.local/bin && cat >/home/agenttrace/.local/bin/agy`,
+		"    env -u DBUS_SESSION_BUS_ADDRESS -u XDG_RUNTIME_DIR AGY_CLI_DISABLE_AUTO_UPDATE=true agy   # sign in once",
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("steps lack %q:\n%s", want, b)
+		}
+	}
+	if strings.Contains(string(b), "refuses it") {
+		t.Errorf("steps still say a profile is refused:\n%s", b)
 	}
 	b, err = exec.Command("bash", script).CombinedOutput()
 	if err == nil || !strings.Contains(string(b), "run it with sudo") {

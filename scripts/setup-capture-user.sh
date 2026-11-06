@@ -20,8 +20,11 @@
 # It runs no agent and installs none. It prints, for every agent
 # config/agents.json profiles, the steps to install the version the profile
 # lists last as NAME, with the profile's version lock, and to log in, which
-# you then follow yourself. --steps-only prints only those steps, without
-# root, and changes nothing.
+# you then follow yourself: as NAME, except a copy of an agent that is one
+# executable (agy), which you make from yours. A profile's pass_env names
+# that apply only to a run as you (agy's session bus, I-150) are left out of
+# its login, so it signs in as the capture runs it. --steps-only prints only
+# those steps, without root, and changes nothing.
 set -euo pipefail
 
 user=agenttrace
@@ -47,24 +50,31 @@ mark="agent-trace capture user (scripts/setup-capture-user.sh)"
 
 # steps: the per-agent install and login steps, from the profiles.
 steps() {
-  python3 - "$config" "$user" <<'PY'
-import json, sys
-config, user = sys.argv[1:]
+  local h
+  h=$(getent passwd "$user" 2>/dev/null | cut -d: -f6) || true
+  python3 - "$config" "$user" "${h:-$home}" <<'PY'
+import json, shlex, sys
+config, user, home = sys.argv[1:]
 adapters = json.load(open(config, encoding="utf-8"))["adapters"]
 # How each agent's pinned version is installed into the user's ~/.local,
 # keyed by the profile's binary; Reported from the vendors' instructions,
-# not run by this script. A binary missing here is installed by hand.
+# not run by this script. A binary missing here is installed by hand. An
+# entry marked "you" is run by you, not as the user: agy is one
+# executable, a copy of yours, which the user cannot read in your home.
 INSTALL = {
-    "claude": ["curl -fsSL https://claude.ai/install.sh | bash -s {version}"],
-    "codex": ["npm install -g --prefix ~/.local @openai/codex@{version}"],
-    "opencode": ["npm install -g --prefix ~/.local opencode-ai@{version}"],
-    "agy": ["install -D -m 755 /path/to/agy-{version} ~/.local/bin/agy   # agy is one executable: a copy of an installed {version}, checked with agy --version"],
+    "claude": [("user", "curl -fsSL https://claude.ai/install.sh | bash -s {version}")],
+    "codex": [("user", "npm install -g --prefix ~/.local @openai/codex@{version}")],
+    "opencode": [("user", "npm install -g --prefix ~/.local opencode-ai@{version}")],
+    "agy": [("you", "{binary} --version   # yours must print {version}; then copy it into %s's ~/.local/bin:" % user),
+            ("you", "cat \"$(readlink -f \"$(command -v {binary})\")\" | sudo -u %s sh -c 'mkdir -p %s/.local/bin && cat >%s/.local/bin/{binary} && chmod 755 %s/.local/bin/{binary}'"
+             % (user, shlex.quote(home), shlex.quote(home), shlex.quote(home)))],
 }
 # How each logs in, run once by hand as the user.
-LOGIN = {"claude": "claude auth login", "codex": "codex login", "agy": "agy   # sign in once interactively, then /quit"}
-print("As %s (sudo -iu %s), for each agent the experiments use. The capture runs the agent with" % (user, user))
-print("PATH=~/.local/bin:/usr/local/bin:/usr/bin:/bin, so what an agent needs besides itself (node and npm")
-print("for the npm packages) must be installed system-wide, not in your home.")
+LOGIN = {"claude": "claude auth login", "codex": "codex login",
+         "agy": "agy   # sign in once interactively, then /quit"}
+print("For each agent the experiments use: the lines marked 'as you' in your own shell, the others as %s" % user)
+print("(sudo -iu %s). The capture runs the agent with PATH=~/.local/bin:/usr/local/bin:/usr/bin:/bin, so what" % user)
+print("an agent needs besides itself (node and npm for the npm packages) must be installed system-wide, not in your home.")
 for name, p in sorted(adapters.items()):
     binary = p.get("binary")
     versions = [v["version"] for v in p.get("versions", [])]
@@ -74,8 +84,8 @@ for name, p in sorted(adapters.items()):
     lock = p.get("version_lock") or {}
     env = " ".join("%s=%s" % kv for kv in sorted((lock.get("env") or {}).items()))
     print("\n  %s: %s %s (the version config/agents.json lists last)" % (name, binary, version))
-    for c in INSTALL.get(binary, ["install %s %s into ~/.local/bin by hand" % (binary, version)]):
-        print("    " + c.format(version=version))
+    for who, c in INSTALL.get(binary, [("user", "install %s %s into ~/.local/bin by hand" % (binary, version))]):
+        print("    %s%s" % ("as you: " if who == "you" else "", c.format(version=version, binary=binary)))
     req = lock.get("require_setting")
     if req:
         key, value = req["key"], req["value"]
@@ -84,17 +94,28 @@ for name, p in sorted(adapters.items()):
         for part in reversed(key.split(".")):
             obj = {part: obj}
         print("    mkdir -p %s && printf '%%s\\n' '%s' > %s/%s" % (req["dir"], json.dumps(obj), req["dir"], req["file"]))
-    if p.get("pass_env"):
-        names = " ".join(p["pass_env"].get("names", []))
-        print("    # the profile passes %s from your session (%s): capture-agent.sh --run-as refuses it until that is settled (I-137)" % (names, p["pass_env"].get("why", "")))
+    pe = p.get("pass_env") or {}
+    unset = ""
+    if pe:
+        only = [n for n in pe.get("names", []) if n in (pe.get("operator_only") or [])]
+        rest = [n for n in pe.get("names", []) if n not in only]
+        if only:
+            # Signed in as the capture runs it: without the operator-only
+            # environment (I-150).
+            unset = "env " + " ".join("-u " + n for n in only) + " "
+            print("    # sign in without %s, as capture-agent.sh --run-as runs it (%s);" % (" ".join(only), pe.get("operator_only_why", "")))
+            print("    # a sudo -iu shell has none; a lingering user session would give it one at /run/user/UID/bus:")
+            print("    test -e /run/user/$(id -u)/bus && echo 'a session bus exists: sign in where there is none' || echo 'no session bus'")
+        if rest:
+            print("    # the profile passes %s from your session (%s): capture-agent.sh --run-as refuses it (I-137)" % (" ".join(rest), pe.get("why", "")))
     if p.get("secret_env"):
         names = " ".join(p["secret_env"].get("names", []))
         print("    # no login: %s reaches each run on its stdin from your session (I-113), as without --run-as" % names)
         print("    # its first run in %s's home installs its plugin and downloads ripgrep (I-112, I-116): before the first capture," % user)
         print("    # run one warm-up run outside any capture, as %s, with the profile's environment and a prompt that uses grep" % user)
     if binary in LOGIN:
-        print("    %s%s" % (env + " " if env else "", LOGIN[binary]))
-    print("    %s%s --version   # must print %s" % (env + " " if env else "", binary, version))
+        print("    %s%s%s" % (unset, env + " " if env else "", LOGIN[binary]))
+    print("    %s%s%s --version   # must print %s" % (unset, env + " " if env else "", binary, version))
 print("\nThen, as you: scripts/capture-agent.sh --check --run-as %s --agent AGENT --task basic (after sudo -v)" % user)
 PY
 }
