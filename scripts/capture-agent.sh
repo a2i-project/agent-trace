@@ -19,6 +19,7 @@
 #                            [--model ID] [--controls-before N] [--heldout-dir DIR]
 #                            [--allow-unconfigured-version] [--content] [--check]
 #                            [--run-as USER] [--workspace-root DIR]
+#                            [--warm-up-only | --warm-up-from RECORD]
 #                            [--no-build] [OUTPUT_DIR]
 #
 # The tasks are the profile's: Claude Code has basic, parallel, project,
@@ -75,6 +76,20 @@
 # what the controls of this capture are, as key=value lines, then exits
 # without creating OUTPUT_DIR, building or asking for sudo.
 # --no-build skips `make build`, for a caller that has built already.
+# Warm-up (I-151): a profile's warm_up names a prompt (and optionally its
+# tools) for one run of the profile's invocation that settles what the agent
+# does only on its first run (OpenCode: Bun's native libraries extracted
+# into /tmp after a reboot, its plugin and ripgrep in a new home, I-116).
+# Before the first recorded run the script makes that run once, in a
+# throwaway workspace with three one-line files, with the runs' environment,
+# user, model and moved-aside instruction files, outside watch, and writes
+# warm-up.log and warm-up.txt (agent, version, run_uid, model,
+# prompt_sha256, start, end, exit); task-meta.txt records it as warm_up=.
+# A failed warm-up stops the capture (exit 1) before any recorded run.
+# --warm-up-only makes the warm-up alone, into OUTPUT_DIR, without building;
+# --warm-up-from RECORD records an earlier warm-up of the same agent,
+# version, user and prompt that passed (a campaign's) instead of making one.
+# An agent whose profile names no warm_up gets none.
 # --run-as USER (default $AGENT_TRACE_RUN_AS, else you) runs the agent as
 # USER (I-137), a dedicated unprivileged user (scripts/setup-capture-user.sh
 # creates agenttrace), so it cannot read your home. The script resolves
@@ -397,6 +412,8 @@ controls_before=0
 heldout_dir=
 run_as=${AGENT_TRACE_RUN_AS:-}
 ws_root=${AGENT_TRACE_WORKSPACE_ROOT:-/var/lib/agent-trace/ws}
+warm_up_only=
+warm_up_from=
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs an agent name}; shift 2 ;;
@@ -411,6 +428,8 @@ while [ $# -gt 0 ]; do
     --heldout-dir) heldout_dir=${2:?--heldout-dir needs a directory}; shift 2 ;;
     --check) check_only=1; shift ;;
     --no-build) build=; shift ;;
+    --warm-up-only) warm_up_only=1; shift ;;
+    --warm-up-from) warm_up_from=${2:?--warm-up-from needs a warm-up record}; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
@@ -427,6 +446,14 @@ eval "$profile"
 agent=$p_agent
 case $controls_before in ''|*[!0-9]*) echo "--controls-before must be a number" >&2; exit 2 ;; esac
 [ "${CONTROLS:-5}" -ge "$controls_before" ] 2>/dev/null || { echo "--controls-before $controls_before is more than the ${CONTROLS:-5} control runs (CONTROLS)" >&2; exit 2; }
+if [ -n "$warm_up_only" ] && { [ -n "$check_only" ] || [ -n "$warm_up_from" ]; }; then
+  echo "--warm-up-only runs the warm-up; it takes neither --check nor --warm-up-from" >&2
+  exit 2
+fi
+if [ -n "$warm_up_only" ] && [ -z "$p_warm_up_prompt" ]; then
+  echo "--warm-up-only: $agent's profile names no warm_up" >&2
+  exit 2
+fi
 if [ "$controls_before" -gt 0 ] && [ -n "$baseline_from" ]; then
   echo "--controls-before orders the control runs of this capture; --baseline-from takes none" >&2
   exit 2
@@ -913,6 +940,28 @@ if [ -n "$baseline_from" ]; then
   fi
 fi
 
+# The warm-up (I-151): the profile's warm_up names a prompt that settles
+# what the agent does only on its first run (OpenCode's Bun extracts its
+# native libraries into /tmp after a reboot; its first run in a home installs
+# a plugin and downloads ripgrep, I-116). One run of the profile's invocation
+# with that prompt, in a throwaway workspace, with the runs' environment and
+# user and outside watch, is made before the first recorded run of this
+# invocation; a campaign makes it once and passes its record with
+# --warm-up-from, which this capture then records instead of running one.
+warm_up_prompt_sha256=
+if [ -n "$p_warm_up_prompt" ]; then
+  warm_up_prompt_sha256=$(printf '%s' "$p_warm_up_prompt" | sha256sum | cut -d' ' -f1)
+  warm_up_tools=${p_warm_up_tools:-$task_tools}
+fi
+if [ -n "$warm_up_from" ]; then
+  [ -n "$p_warm_up_prompt" ] || { echo "--warm-up-from: $agent's profile names no warm_up" >&2; exit 2; }
+  warm_up_from=$(realpath -m -- "$warm_up_from")
+  [ -f "$warm_up_from" ] || { echo "--warm-up-from: no warm-up record $warm_up_from" >&2; exit 1; }
+  for want in "agent=$agent" "version=$version" "run_uid=$run_uid" "prompt_sha256=$warm_up_prompt_sha256" "exit=0"; do
+    grep -qxF -- "$want" "$warm_up_from" || { echo "--warm-up-from: $warm_up_from does not record $want; it is not a passed warm-up of this agent, version, user and prompt" >&2; exit 1; }
+  done
+fi
+
 # A directory without write permission stops the harness's temporary file only
 # when the agent runs as a user the mode binds: root, or a filesystem that
 # ignores modes, would let the write take its usual temporary-and-rename path.
@@ -952,6 +1001,7 @@ if [ -n "$check_only" ]; then
   echo "seed_sha256=$seed_sha256"
   [ -z "$run_as" ] || echo "run_as=$run_name uid=$run_uid"
   [ "${#pass_env_dropped[@]}" -eq 0 ] || echo "pass_env_not_passed=${pass_env_dropped[*]}"
+  [ -z "$warm_up_prompt_sha256" ] || echo "warm_up_prompt_sha256=$warm_up_prompt_sha256"
   exit 0
 fi
 echo "output: $out"
@@ -965,15 +1015,16 @@ if [ -n "$other_user" ]; then
   echo "run as: $run_name (uid $run_uid), home $agent_home, workspaces under $ws_run"
 fi
 echo "$p_binary: $agent_bin ($version), task: $task"
-[ -z "$build" ] || (cd "$root" && make build >/dev/null)
+# A warm-up alone records nothing under watch: no build, no adapter.
+[ -z "$build" ] || [ -n "$warm_up_only" ] || (cd "$root" && make build >/dev/null)
 # An agent with a profile and no adapter in this build (Codex until its
 # adapter exists, I-79) is captured all the same: ground truth, trace,
 # controls and the manifest. Its baseline and verdicts need the adapter, so
 # they are skipped and report.txt says why. baseline names an agent it does
 # not know before it reads any file.
 no_adapter=
-probe=$("$root/baseline" --agent "$agent" --agent-version probe /nonexistent 2>&1 || true)
-if [ "${probe#baseline: unknown agent}" != "$probe" ]; then
+[ -n "$warm_up_only" ] || probe=$("$root/baseline" --agent "$agent" --agent-version probe /nonexistent 2>&1 || true)
+if [ -z "$warm_up_only" ] && [ "${probe#baseline: unknown agent}" != "$probe" ]; then
   no_adapter=1
   echo "NOTE: this build has no $agent adapter: the capture records the ground truth, the trace, the controls and the manifest, and no baseline or verdict"
 fi
@@ -1653,6 +1704,73 @@ print("damaged" if bad or not ok else "read")
 PY
 }
 
+# warm_up: the profile's warm-up run (I-151), recorded in OUTPUT_DIR as
+# warm-up.log (what the agent printed) and warm-up.txt (key=value lines:
+# the agent, version, user, prompt hash, times and exit status, which
+# --warm-up-from checks). The workspace is a throwaway one with the three
+# one-line files, prepared as a run's (with the warm-up's tools for a tool
+# set method that passes some), under the workspace root for another user,
+# and removed after the run. The run is the runs' exec chain without watch:
+# sudo, setpriv as the run's user, env with the runs' environment, the
+# secret reader, the agent with the profile's invocation and the pinned
+# model, with the instruction files moved aside. Returns the run's status.
+warm_up() {
+  local ws=$out/ws-warm-up tool_set env_dir=() run_cwd started ended rc=0
+  session=
+  rm -rf -- "$ws" && mkdir -p "$ws" || return 1
+  for f in b c d; do printf 'seed\n' >"$ws/$f.txt" || return 1; done
+  case $p_tool_set_method in
+    list) tool_set=$warm_up_tools ;;
+    agent-md)
+      mkdir -p "$ws/$p_tool_set_dir/$p_tool_set_name" || return 1
+      agent_md "$warm_up_tools" >"$ws/$p_tool_set_dir/$p_tool_set_name/agent.md" || return 1
+      if has_subagent_tool "$warm_up_tools"; then
+        sub_agent_md "$warm_up_tools" >"$ws/$p_tool_set_dir/$p_tool_set_name/$(sub_agent_name).md" || return 1
+      fi
+      tool_set=$p_tool_set_name
+      ;;
+    none) tool_set= ;;
+  esac
+  run_cwd=$ws
+  if [ -n "$other_user" ]; then
+    local stage=$ws
+    ws=$ws_run/ws-warm-up
+    sudo -n cp -a -- "$stage" "$ws" && sudo -n chown -R "$run_uid:$run_gid" -- "$ws" && sudo -n chmod 700 -- "$ws" || return 1
+    rm -rf -- "$stage" || return 1
+    env_dir=(-C "$ws")
+    run_cwd=$ws_run
+  fi
+  [ "$p_session_method" != assigned ] || session=$(cat /proc/sys/kernel/random/uuid)
+  invocation "$p_warm_up_prompt" "$tool_set"
+  echo "== warm-up (outside watch)"
+  started=$(date --iso-8601=seconds)
+  move_instruction_files || return 1
+  (
+    cd "$run_cwd"
+    [ "$p_stdin" != null ] || exec </dev/null
+    [ "${#secret_vals[@]}" -eq 0 ] || exec < <(printf '%s\n' "${secret_vals[@]}")
+    sudo setpriv --reuid "$run_uid" --regid "$run_gid" --init-groups --reset-env \
+      env "${env_dir[@]}" "${run_env[@]}" "${secret_reader[@]}" \
+      "$agent_bin" "${argv[@]}" >"$out/warm-up.log" 2>&1
+  ) || rc=$?
+  restore_instruction_files
+  ended=$(date --iso-8601=seconds)
+  # The workspace is thrown away.
+  if [ -n "$other_user" ]; then sudo -n rm -rf -- "$ws"; else rm -rf -- "$ws"; fi
+  {
+    echo "agent=$agent"
+    echo "version=$version"
+    echo "run_uid=$run_uid"
+    [ -z "$run_as" ] || echo "run_as=$run_name"
+    echo "model=$model"
+    echo "prompt_sha256=$warm_up_prompt_sha256"
+    echo "start=$started"
+    echo "end=$ended"
+    echo "exit=$rc"
+  } >"$out/warm-up.txt"
+  return "$rc"
+}
+
 # capture LABEL ROLE PROMPT TOOLS: one recorded run, then its model check, and a
 # line of order.tsv: the order the runs were recorded in (D11), their times,
 # the models their transcripts recorded, watch's exit status and the
@@ -1695,6 +1813,26 @@ capture() {
   esac
 }
 
+# The warm-up of this invocation, or the campaign's (--warm-up-from); a
+# failed one stops the capture before any recorded run.
+warm_up_line=
+if [ -n "$p_warm_up_prompt" ] && [ -z "$warm_up_from" ]; then
+  wrc=0
+  warm_up || wrc=$?
+  if [ "$wrc" -ne 0 ]; then
+    echo "WARM-UP FAILED (exit $wrc): see $out/warm-up.log; no run was recorded" >&2
+    exit 1
+  fi
+  warm_up_line="ran exit=0 prompt_sha256=$warm_up_prompt_sha256 record=warm-up.txt"
+elif [ -n "$warm_up_from" ]; then
+  warm_up_line="before this capture exit=0 prompt_sha256=$warm_up_prompt_sha256 record=$warm_up_from"
+fi
+if [ -n "$warm_up_only" ]; then
+  echo
+  echo "done (warm-up). Record: $out/warm-up.txt"
+  exit 0
+fi
+
 {
   echo "task=$task"
   echo "task_prompt_sha256=$task_prompt_sha256"
@@ -1727,6 +1865,8 @@ capture() {
   fi
   # The operator-only environment a run as another user did not get (I-150).
   [ "${#pass_env_dropped[@]}" -eq 0 ] || echo "pass_env_not_passed=${pass_env_dropped[*]} (operator only: $p_pass_env_operator_only_why)"
+  # The warm-up before the first recorded run (I-151).
+  [ -z "$warm_up_line" ] || echo "warm_up=$warm_up_line"
 } >"$out/task-meta.txt"
 : >"$out/order.tsv"
 

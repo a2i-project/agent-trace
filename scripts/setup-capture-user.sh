@@ -111,8 +111,8 @@ for name, p in sorted(adapters.items()):
     if p.get("secret_env"):
         names = " ".join(p["secret_env"].get("names", []))
         print("    # no login: %s reaches each run on its stdin from your session (I-113), as without --run-as" % names)
-        print("    # its first run in %s's home installs its plugin and downloads ripgrep (I-112, I-116): before the first capture," % user)
-        print("    # run one warm-up run outside any capture, as %s, with the profile's environment and a prompt that uses grep" % user)
+    if p.get("warm_up"):
+        print("    # no warm-up by hand: every capture first makes the profile's warm-up run as %s, outside watch (I-151)" % user)
     if binary in LOGIN:
         print("    %s%s%s" % (unset, env + " " if env else "", LOGIN[binary]))
     print("    %s%s%s --version   # must print %s" % (unset, env + " " if env else "", binary, version))

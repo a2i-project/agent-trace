@@ -82,6 +82,17 @@
 # run.json records run_as (the user, its uid and yours) from the run's
 # task-meta.txt.
 #
+# Warm-up (I-151): for each agent whose profile names a warm_up and that has
+# a slot to record, the invocation runs capture-agent.sh --warm-up-only once
+# before its first slot (after the validation), with the agent's first
+# pending slot's task and model and the run-as user, into
+# OUTPUT_DIR/warm-up/<agent>-<version>-<time>/ (warm-up.txt, warm-up.log,
+# campaign.log); every capture of that agent then passes --warm-up-from that
+# record and records it in its task-meta.txt and run.json (warm_up) instead
+# of making its own. A failed warm-up stops the campaign before any slot.
+# The manifest lists the warm-ups (warm_ups). The dry run names the agents
+# that get one.
+#
 # Otherwise it builds the binaries once, asks for sudo once and keeps the
 # credential fresh while it runs. With --validate it then validates the
 # instrument (protocol 9.4, I-67), in seconds: under watch (fs,proc, the agent
@@ -788,6 +799,10 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
     if m:
         r["run_as"] = {"user": m.group(1), "uid": int(m.group(2)),
                        "operator_uid": int(meta["operator_uid"]) if meta.get("operator_uid", "").isdigit() else None}
+    # The warm-up before the run's first recorded run (I-151), from
+    # task-meta.txt; absent for an agent whose profile names none.
+    if meta.get("warm_up"):
+        r["warm_up"] = meta["warm_up"]
     cost = read_cost(os.path.join(run_dir, f"{lab}.cost.json"))
     if cost is not None:
         r["cost"] = cost
@@ -880,9 +895,17 @@ def manifest(out, plan_path, commit, dirty, seed):
     except (OSError, ValueError):
         pass
     validations = [v for v in (load(p) for p in sorted(glob.glob(os.path.join(out, "validation", "*.json")))) if v]
+    # The campaign's warm-ups (I-151), each a record capture-agent.sh
+    # --warm-up-only wrote; one whose record is missing was cut short.
+    warm_ups = []
+    for d in sorted(glob.glob(os.path.join(out, "warm-up", "*"))):
+        if os.path.isdir(d):
+            rec = read_kv(os.path.join(d, "warm-up.txt"))
+            warm_ups.append(dict(rec, dir=d, exit=int(rec["exit"]) if rec.get("exit", "").isdigit() else None))
     m = {"schema": 2, "generated": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
          "plan": open(plan_path, encoding="utf-8").read(), "commit": commit, "dirty": dirty == "true",
          "seed": int(seed) if seed else None, "invocations": invocations, "validations": validations,
+         "warm_ups": warm_ups,
          "runs": runs, "attempts": attempts,
          "slots": sorted(slots.values(), key=lambda s: (s["agent"], s["task"], s["mode"], s["run"])),
          "exclusions": {"by_rule": dict(by_rule), "list": excluded},
@@ -1334,6 +1357,18 @@ if [ "${#pending_order[@]}" -gt 0 ]; then
   done
 fi
 [ -z "$validate" ] || echo "validation: simagent known answers against a baseline of $null_runs null runs${validate_e2e:+ and sudo go test ./tests/e2e} before the first run"
+# The agents whose profile names a warm-up (I-151) and that have a slot to
+# record: each gets one warm-up run before the invocation's first slot.
+warm_agents=()
+declare -A warm_slot=()
+for line in "${pending_order[@]}"; do
+  IFS=$'\t' read -r pos total agent task mode i split model <<<"$line"
+  [ -z "${warm_slot[$agent]:-}" ] || continue
+  [ -n "$(profile "$agent" warm_up prompt)" ] || continue
+  warm_slot[$agent]=$line
+  warm_agents+=("$agent")
+done
+for agent in "${warm_agents[@]}"; do echo "warm-up: $agent once before the first slot, outside watch (its profile's warm_up)"; done
 if [ -n "$dry_run" ]; then
   echo "dry run: everything checked; nothing was built, no sudo was asked for, no agent was run"
   exit 0
@@ -1351,6 +1386,31 @@ dirty=false
 start_privileged
 
 [ -z "$validate" ] || validate_instrument
+
+# One warm-up per agent that names one, before the first slot (I-151):
+# capture-agent.sh --warm-up-only, with the agent's first pending slot's task
+# and model and the run-as user, into OUTPUT_DIR/warm-up/<agent>-<version>-<time>;
+# each capture of the agent then records it (--warm-up-from) instead of
+# making its own. A failed warm-up stops the campaign before any slot.
+declare -A warm_from=()
+for agent in "${warm_agents[@]}"; do
+  IFS=$'\t' read -r pos total _ task mode i split model <<<"${warm_slot[$agent]}"
+  wdir=$out/warm-up/$agent-${agent_version_of[$agent]}-$(date +%Y%m%d-%H%M%S)
+  args=(--agent "$agent" --task "$task" --warm-up-only --model "$model")
+  [ -z "$allow_unconfigured" ] || args+=(--allow-unconfigured-version)
+  case $task in heldout:*) args+=(--heldout-dir "$heldout_dir") ;; esac
+  args+=("${run_as_args[@]}")
+  mkdir -p "$wdir"
+  echo
+  echo "=== warm-up of $agent ${agent_version_of[$agent]} -> $wdir"
+  set +e
+  CONTROLS=$controls "$capture" "${args[@]}" "$wdir" 2>&1 | tee -i "$wdir/campaign.log"
+  status=${PIPESTATUS[0]}
+  set -e
+  helper manifest "$out" "$plan" "$commit" "$dirty" "$seed"
+  [ "$status" -eq 0 ] || die "the warm-up of $agent failed (exit $status): read $wdir/campaign.log and $wdir/warm-up.log, then rerun the same command; no slot was recorded"
+  warm_from[$agent]=$wdir/warm-up.txt
+done
 
 helper invocation "$out" "$seed" "$commit" "$dirty" "$plan" "$controls" "$validate" "$validate_e2e" "$stop_after"
 interrupted=
@@ -1391,6 +1451,7 @@ for line in "${pending_order[@]}"; do
     [ -z "$allow_unconfigured" ] || args+=(--allow-unconfigured-version)
     case $task in heldout:*) args+=(--heldout-dir "$heldout_dir") ;; esac
     args+=("${run_as_args[@]}")
+    [ -z "${warm_from[$agent]:-}" ] || args+=(--warm-up-from "${warm_from[$agent]}")
     mkdir -p "$d"
     echo
     echo "=== $agent $version $task ($mode) run $i, slot $pos/$total, attempt $attempts -> $d"

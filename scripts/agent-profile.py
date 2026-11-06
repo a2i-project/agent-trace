@@ -257,6 +257,17 @@ def shell(path, agent, task):
         if not edit_tool and "{file}" in text:
             fail(f"{where}: {name} names {{file}}, and the profile has no controls.edit_tool")
 
+    # The warm-up (I-151): one run of the profile's invocation with this
+    # prompt, outside watch, before a capture's first recorded run; its
+    # tools, for a tool set method that passes some, else the task's.
+    wu = p.get("warm_up") or {}
+    if wu and not (isinstance(wu.get("prompt"), str) and wu["prompt"].strip()):
+        fail(f"{where}: warm_up needs a prompt")
+    if wu.get("tools") is not None and not isinstance(wu["tools"], str):
+        fail(f"{where}: warm_up.tools is the tools separated by spaces, as a task's")
+    put("p_warm_up_prompt", wu.get("prompt", ""))
+    put("p_warm_up_tools", wu.get("tools", ""))
+
     t = tasks.get(task) or {}
     put("p_task_builtin", builtin)
     put("p_task_prompt", t.get("prompt", ""))

@@ -553,6 +553,10 @@
         "key": "sessionID"
       },
       "stdin": "null",
+      "warm_up": {
+        "prompt": "Use the grep tool to search the files in this directory for the word seed. Then reply with the single word ok. Do not use any other tool.",
+        "note": "OpenCode's first run after a reboot has Bun extract two native libraries into /tmp/.bun-<uid>-* (the tools run of the parity campaign of 2026-11-05), and its first run in a home installs @opencode-ai/plugin from the npm registry and its first grep downloads ripgrep (I-116). The capture makes this run once before its first recorded run, outside watch, so no recorded run carries them (I-151)."
+      },
       "invocation": [
         "run",
         "--format",

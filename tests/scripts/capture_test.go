@@ -166,7 +166,8 @@ print(json.dumps({"conversation_id": cid, "response": "ok"}, separators=(",", ":
 // the prompt names the task tool, a subagent session whose parent_id names
 // it, with one tool part, and records the database's hash as the run left
 // it. It prints the session id as --format json does.
-// For the task run with FAKE_TASK=delete it deletes the database again.
+// For the task run with FAKE_TASK=delete it deletes the database again;
+// with FAKE_TASK=warmfail the warm-up run (I-151) exits 3.
 const fakeOpencode = `#!/usr/bin/env python3
 import hashlib, json, os, sqlite3, stat, sys, uuid
 args = sys.argv[1:]
@@ -213,6 +214,8 @@ with open(os.path.join(fake, "opencode.dbhash"), "a") as f:
     f.write(hashlib.sha256(open(path, "rb").read()).hexdigest() + "\n")
 if "agent-trace-control-marker" not in prompt and os.environ.get("FAKE_TASK") == "delete":
     os.remove(path)
+if os.environ.get("FAKE_TASK") == "warmfail" and "Use the grep tool to search the files in this directory" in prompt:
+    print("warm-up failed", file=sys.stderr); sys.exit(3)
 json.dump([], open(os.path.join(fake, "events.json"), "w"))
 print(json.dumps({"type": "step_start", "timestamp": 1, "sessionID": sid}, separators=(",", ":")))
 `
@@ -844,7 +847,8 @@ func runOpencode(t *testing.T, mode, task, key string, extra ...string) (root, t
 // the configuration file is written from the profile and named in
 // OPENCODE_CONFIG; the isolation and version-lock variables reach the run;
 // the session database is copied with the session and its subagent
-// (I-114), and the model check reads provider/model from it.
+// (I-114), and the model check reads provider/model from it. The profile's
+// warm-up (I-151) runs first, with the same environment and key.
 func TestCaptureOfOpencodePassesTheKeyOnStdinOnly(t *testing.T) {
 	_, tmp, out, log, err := runOpencode(t, "", "parallel", testKey)
 	if err != nil {
@@ -859,7 +863,7 @@ func TestCaptureOfOpencodePassesTheKeyOnStdinOnly(t *testing.T) {
 	}
 	config := filepath.Join(tmp, "home", ".config", "agent-trace", "opencode-1.19.5.json")
 	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
-	if len(lines) != 2 { // the task and CONTROLS=1
+	if len(lines) != 3 || !strings.Contains(lines[0], "Use the grep tool") { // the warm-up, the task and CONTROLS=1
 		t.Fatalf("opencode ran %d times:\n%s", len(lines), calls)
 	}
 	sum := sha256.Sum256([]byte(testKey))
@@ -899,8 +903,9 @@ func TestCaptureOfOpencodePassesTheKeyOnStdinOnly(t *testing.T) {
 	hashes, _ := os.ReadFile(filepath.Join(tmp, "fake", "opencode.dbhash"))
 	copied, _ := os.ReadFile(filepath.Join(out, "parallel.opencode.db"))
 	copySum := sha256.Sum256(copied)
-	if first, _, _ := strings.Cut(string(hashes), "\n"); first != hex.EncodeToString(copySum[:]) {
-		t.Errorf("parallel.opencode.db is not the database as the run left it: %s, the run's %s", hex.EncodeToString(copySum[:]), first)
+	// The warm-up's hash comes first.
+	if runs := strings.Split(string(hashes), "\n"); len(runs) < 2 || runs[1] != hex.EncodeToString(copySum[:]) {
+		t.Errorf("parallel.opencode.db is not the database as the run left it: %s, the runs' %q", hex.EncodeToString(copySum[:]), runs)
 	}
 	if _, err := os.Stat(filepath.Join(out, "parallel.opencode.db.backup")); err != nil {
 		t.Errorf("no backup copy: %v", err)
