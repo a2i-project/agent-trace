@@ -62,6 +62,18 @@ type TrajectoryEntry struct {
 	// command (V-48). False for a read that follows its command (I-46).
 	// Ignored without ImpliedBy; like it, it has no JSON form.
 	ImpliedBefore bool `json:"-"`
+	// OutputName is, for a call whose output the harness keeps in a file
+	// of the adapter's declared output family (V-56), that file's base name
+	// as the format states it, such as Claude Code's background command's
+	// "<task id>.output" (V-101). Empty when the format names none. Only an
+	// adapter's derivation sets it: it has no JSON form.
+	OutputName string `json:"-"`
+	// OutputDone is the latest moment the call's output can have become
+	// final by the format's own report of it: the call's result, or a later
+	// notice that a background call ended, with the format's timestamp
+	// resolution added (V-101). Nil when the format reports no end. Only an
+	// adapter's derivation sets it: it has no JSON form.
+	OutputDone *time.Time `json:"-"`
 }
 
 // impliedByKey and impliedBeforeKey are the names the harness-implied
@@ -88,6 +100,13 @@ type GroundTruthEvent struct {
 	// distinct from every real value: pid 0 is the idle task and never causes
 	// a userspace event. Attribution walks this up the process tree (V1).
 	PID uint32 `json:"pid,omitempty"`
+	// NotBefore is the earliest the event can have happened, when the probe
+	// can say: for a file event, the wall-clock reading the fs probe took
+	// before it last found the kernel queue empty ahead of reading the
+	// event's record (P-52). Timestamp is when the probe read the record,
+	// so the event happened between NotBefore and Timestamp. Nil when the
+	// probe does not record it, as before P-52 and on every other probe.
+	NotBefore *time.Time `json:"not_before,omitempty"`
 	// PPID is the parent of PID as the probe observed it when the process was
 	// created or exec'd. Only the proc probe sets it, since it is the only
 	// probe that sees processes start; zero means not recorded. It is what

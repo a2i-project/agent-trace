@@ -1838,3 +1838,56 @@ func TestObserver_RelativePathKeysShadowHashesAbsolutely(t *testing.T) {
 		}
 	}
 }
+
+// A file event's NotBefore bounds it from below and its timestamp from
+// above: a write made after the observer read and emptied the queue of an
+// earlier write carries a bound no earlier than that write and no later
+// than the end of its own, and a timestamp no earlier than its start
+// (P-52).
+func TestObserver_NotBeforeBoundsTheEvent(t *testing.T) {
+	skipUnprivileged(t)
+	dir := t.TempDir()
+	obs := startObserver(t, dir)
+	first := filepath.Join(dir, "first.txt")
+	beforeFirst := time.Now()
+	if out, err := exec.Command("sh", "-c", "echo one > "+first).CombinedOutput(); err != nil {
+		t.Fatalf("first write: %v\n%s", err, out)
+	}
+	// Give the read loop time to read the first write and find the queue
+	// empty, so the second write's records come in a later batch.
+	time.Sleep(200 * time.Millisecond)
+	second := filepath.Join(dir, "second.txt")
+	start := time.Now()
+	if out, err := exec.Command("sh", "-c", "echo two > "+second).CombinedOutput(); err != nil {
+		t.Fatalf("second write: %v\n%s", err, out)
+	}
+	end := time.Now()
+	if err := obs.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if obs.CaptureCoverage().ClockStepped {
+		t.Skip("the wall clock stepped during the test")
+	}
+	n := 0
+	for e := range obs.Events() {
+		if e.Target != second {
+			continue
+		}
+		n++
+		if e.NotBefore == nil {
+			t.Fatalf("%s %s has no NotBefore", e.ActionType, e.Target)
+		}
+		if e.NotBefore.After(end) {
+			t.Errorf("%s: NotBefore %v after the write ended at %v", e.ActionType, *e.NotBefore, end)
+		}
+		if e.NotBefore.Before(beforeFirst) {
+			t.Errorf("%s: NotBefore %v before the first write began at %v", e.ActionType, *e.NotBefore, beforeFirst)
+		}
+		if e.Timestamp.Before(start) {
+			t.Errorf("%s: read at %v before the write began at %v", e.ActionType, e.Timestamp, start)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no event of the second write")
+	}
+}

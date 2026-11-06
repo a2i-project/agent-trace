@@ -15,6 +15,9 @@ The fixture keeps what the adapter and verifier read and rewrites the rest:
     I-37), a Read's structured result (I-40, below), and any other structured
     result's type. A call's input is kept whole, so a Read's offset and limit
     stay;
+  * a queue-operation record that enqueues the notice that a background
+    command ended is kept as its type, operation, timestamp and the call's
+    tool_use id, which the adapter reads the call's end from (V-101);
   * only assistant and user records state calls and results (I-62). A record
     of another type that repeats some, such as the api-request-blob of
     2.1.306, a copy of a whole API request, is cut to its type, the zero
@@ -446,7 +449,7 @@ def check_copies(kept, src):
             for b in r["message"]["content"]:
                 stated[(b["type"], b.get("id") or b.get("tool_use_id"))] = b.get("input")
     for r in kept:
-        if r["type"] in CLAIM_TYPES:
+        if r["type"] in CLAIM_TYPES or r["type"] == "queue-operation":
             continue
         if set(r) != {"type", "sessionId", "message"} or set(r["message"]) != {"role", "content"}:
             sys.exit("%s: a copied %s record holds more than its tool blocks" % (src, r["type"]))
@@ -461,6 +464,22 @@ def check_copies(kept, src):
                          % (src, r["type"], key[0], key[1], " or ".join(CLAIM_TYPES)))
 
 
+TASK_NOTICE = re.compile(r"^<task-notification>\n(?:.*\n)*?<tool-use-id>(toolu_[0-9A-Za-z]+)</tool-use-id>\n")
+
+
+def task_notice(o):
+    """The enqueued notice that a background command ended, as the adapter
+    reads it (V-101): its type, operation, timestamp and the call's
+    tool_use id, the rest of its text left out. None for any other record."""
+    if o.get("type") != "queue-operation" or o.get("operation") != "enqueue" or not isinstance(o.get("content"), str):
+        return None
+    m = TASK_NOTICE.match(o["content"])
+    if not m:
+        return None
+    return {"type": "queue-operation", "operation": "enqueue", "timestamp": o["timestamp"], "sessionId": ZERO_UUID,
+            "content": "<task-notification>\n<tool-use-id>%s</tool-use-id>\n</task-notification>" % m.group(1)}
+
+
 def reduce_transcript(src, dst):
     kept = []
     names = {}  # tool_use id -> tool name, from the calls read so far
@@ -473,6 +492,10 @@ def reduce_transcript(src, dst):
             blocks = []
             if isinstance(m, dict) and isinstance(m.get("content"), list):
                 blocks = [b for b in m["content"] if b.get("type") in ("tool_use", "tool_result")]
+            notice = task_notice(o)
+            if notice:
+                kept.append(notice)
+                continue
             if o.get("type") not in CLAIM_TYPES:
                 if blocks:
                     kept.append(json.loads(rewrite(json.dumps(copy_record(o, blocks)), task)))

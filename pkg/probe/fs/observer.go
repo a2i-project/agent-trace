@@ -138,6 +138,16 @@ type Observer struct {
 	// keeps the birth time of the file it was read from, and an open of a
 	// file born at another time does not take it (P-45).
 	shadowHashesByInode map[inodeKey]shadowHash
+	// emptyAt is a wall-clock reading taken before the probe last found the
+	// kernel queue empty, or before the queue existed: every record read
+	// after it was queued after it, so no event in such a record happened
+	// before it. batchNotBefore is emptyAt as it stood when the record being
+	// processed was read, the NotBefore of that record's events (P-52).
+	emptyAt        time.Time
+	batchNotBefore time.Time
+	// clock watches the wall clock against the monotonic one, so a step of
+	// the wall clock, which would make emptyAt no bound, is reported (P-52).
+	clock wallClockWatch
 	// startedAt is when Start ran. A file born at or after it was created
 	// during the capture, so its first open is the one that created it, and
 	// the file was empty at that open (P-22).
@@ -304,7 +314,9 @@ type emitted struct {
 // cycle untouched, so a new pendingClose value is always allocated rather
 // than mutating one in place.
 type pendingClose struct {
-	ts        time.Time
+	ts time.Time
+	// notBefore is the NotBefore of the record that reported the close.
+	notBefore *time.Time
 	pid       uint32
 	ambiguous bool
 	pathFD    int
@@ -361,6 +373,8 @@ func New(cfg Config) (*Observer, error) {
 		}
 	}
 
+	// Taken before the queue exists, so it bounds every record's events.
+	created := time.Now()
 	fd, err := initFanotify()
 	if err != nil {
 		return nil, err
@@ -396,6 +410,7 @@ func New(cfg Config) (*Observer, error) {
 		dirs.close()
 		return fail(set, err)
 	}
+	o.emptyAt, o.clock = created, wallClockWatch{start: created}
 	if cfg.KernelHash {
 		o.startKernelHash(set.fds)
 	}
@@ -543,6 +558,7 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 	cov := models.ProbeCoverage{
 		Ran:              true,
 		QueueOverflow:    o.Overflow(),
+		ClockStepped:     o.clock.stepped,
 		HashlessCloses:   o.hashlessCloses.Load(),
 		UndrainedRecords: o.undrained.Load(),
 		UnresolvedPaths:  o.unresolved.Load(),
@@ -756,6 +772,7 @@ func (o *Observer) drainAtStop(buf []byte) {
 		}
 		o.syncKernelHash()
 		now := time.Now()
+		o.batchNotBefore = o.emptyAt
 		raw := parseEvents(buf, n, resolve, o.dirs)
 		for i := range raw {
 			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
@@ -777,11 +794,16 @@ func (o *Observer) drainAtStop(buf []byte) {
 func (o *Observer) readReady(buf []byte) int {
 	pollFDs := []unix.PollFd{{Fd: int32(o.fanotifyFD), Events: unix.POLLIN}}
 	for {
+		before := time.Now()
 		_, err := unix.Poll(pollFDs, 0)
 		if err == unix.EINTR {
 			continue
 		}
-		if err != nil || pollFDs[0].Revents&unix.POLLIN == 0 {
+		if err != nil {
+			return 0
+		}
+		if pollFDs[0].Revents&unix.POLLIN == 0 {
+			o.queueEmpty(before)
 			return 0
 		}
 		break
@@ -835,6 +857,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 	}
 
 	for {
+		before := time.Now()
 		_, err := unix.Poll(pollFDs, 0)
 		if err != nil {
 			if err == unix.EINTR {
@@ -843,6 +866,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 			return false
 		}
 		if pollFDs[0].Revents&unix.POLLIN == 0 {
+			o.queueEmpty(before)
 			o.releaseHeld()
 			return true
 		}
@@ -863,6 +887,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 		// (P-18). A batch is read in microseconds, so the offsets never reach
 		// the next batch's reading.
 		now := time.Now()
+		o.batchNotBefore = o.emptyAt
 		raw := parseEvents(buf, n, newKernelResolver(o.mounts, o.openHandle), o.dirs)
 		for i := range raw {
 			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
@@ -978,6 +1003,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 				Target:          e.Path,
 				PathIsAmbiguous: e.Ambiguous,
 				PID:             pidOf(e),
+				NotBefore:       o.notBefore(),
 			}})
 			continue
 		}
@@ -993,6 +1019,7 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 				Target:          e.Path,
 				PathIsAmbiguous: e.Ambiguous,
 				PID:             pidOf(e),
+				NotBefore:       o.notBefore(),
 			}
 			if actionType == models.FileOpen {
 				// No hash at all when the probe never measured the file's
@@ -1506,7 +1533,7 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 		o.pendingCloses = make(map[string]*pendingClose)
 	}
 	superseded, existed := o.pendingCloses[path]
-	o.pendingCloses[path] = &pendingClose{ts: ts, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle], opens: o.openedSince(path, handle, pid)}
+	o.pendingCloses[path] = &pendingClose{ts: ts, notBefore: o.notBefore(), pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle], opens: o.openedSince(path, handle, pid)}
 	o.mu.Unlock()
 
 	if existed {
@@ -1527,6 +1554,7 @@ func (o *Observer) emitSuperseded(path string, superseded *pendingClose) {
 		Target:          path,
 		PathIsAmbiguous: superseded.ambiguous,
 		PID:             superseded.pid,
+		NotBefore:       superseded.notBefore,
 	}
 }
 
@@ -1567,6 +1595,7 @@ func (o *Observer) emitKernelHashed(path string, ts time.Time, pid uint32, ambig
 		OutputHash:      &digest,
 		PathIsAmbiguous: ambiguous,
 		PID:             pid,
+		NotBefore:       o.notBefore(),
 	}
 }
 
@@ -1646,6 +1675,7 @@ func (o *Observer) resolveSettled(before map[string]*pendingClose, buf []byte, f
 			// registerClose's supersession above.
 			PathIsAmbiguous: entry.ambiguous,
 			PID:             entry.pid,
+			NotBefore:       entry.notBefore,
 		}
 		if hashed {
 			event.OutputHash = &digest
@@ -1865,4 +1895,61 @@ func isRegularFD(fd int) bool {
 		return false
 	}
 	return st.Mode&unix.S_IFMT == unix.S_IFREG
+}
+
+// notBefore is the NotBefore of the events of the record being processed,
+// nil when the probe holds no bound (an Observer built without New).
+func (o *Observer) notBefore() *time.Time {
+	if o.batchNotBefore.IsZero() {
+		return nil
+	}
+	t := o.batchNotBefore
+	return &t
+}
+
+// queueEmpty records that the kernel queue was found empty by a check that
+// began at before: every record read later was queued after before (P-52).
+func (o *Observer) queueEmpty(before time.Time) {
+	if o.emptyAt.IsZero() {
+		return
+	}
+	o.clock.check(before)
+	o.emptyAt = before
+}
+
+// maxSlew is the fastest the kernel lets time synchronisation slew the wall
+// clock against the monotonic one, 500 parts per million (MAXFREQ in the
+// kernel's timekeeping, adjtimex(2)). A larger difference between the two
+// is a step of the wall clock (P-52).
+const maxSlew = 2000
+
+// readJitter bounds the difference between the two clocks that comes from
+// reading them one after the other in one time.Now call, not from either
+// clock moving: the two vDSO reads are nanoseconds apart.
+const readJitter = time.Microsecond
+
+// wallClockWatch reports a step of the wall clock: a change of the wall
+// clock since start that differs from the monotonic clock's by more than a
+// slew could make it (P-52).
+type wallClockWatch struct {
+	start   time.Time
+	stepped bool
+}
+
+// check compares the two clocks' changes from start to now.
+func (w *wallClockWatch) check(now time.Time) {
+	if w.start.IsZero() || w.stepped {
+		return
+	}
+	w.stepped = clockStep(now.Sub(w.start), now.Round(0).Sub(w.start.Round(0)))
+}
+
+// clockStep reports whether a wall-clock change of wall over a monotonic
+// change of mono is more than a slew can make.
+func clockStep(mono, wall time.Duration) bool {
+	diff := wall - mono
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff > mono/maxSlew+readJitter
 }

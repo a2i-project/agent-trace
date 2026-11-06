@@ -67,6 +67,12 @@ type ProbeCoverage struct {
 	// QueueOverflow reports a kernel fanotify queue overflow, meaning some
 	// events were lost. Filesystem probe only.
 	QueueOverflow bool `json:"queue_overflow,omitempty"`
+	// ClockStepped reports that the wall clock stepped during the capture:
+	// it moved against the monotonic clock by more than time
+	// synchronisation can slew it, so the fs probe's NotBefore bounds are
+	// not bounds and the verifier does not use them (P-52). Filesystem
+	// probe only.
+	ClockStepped bool `json:"clock_stepped,omitempty"`
 	// Content is one of the Content* constants. Net probe only.
 	Content string `json:"content,omitempty"`
 	// HelloFaults counts reads of a connection's first bytes (the TLS

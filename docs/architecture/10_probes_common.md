@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 9c86aaf on 2026-11-05.
+Checked against commit dec5a49 on 2026-11-06.
 
 ## Objective
 
@@ -77,6 +77,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `ExitCode` | `exit_code` | proc, on `process_exit` when `exit_group` was seen |
 | `PID` | `pid` | all probes; 0 means not recorded |
 | `PPID` | `ppid` | proc only, on fork, exec and exit records |
+| `NotBefore` | `not_before` | fs, from P-52: the wall-clock reading taken before the probe last found the queue empty ahead of reading the event's record; the event happened between it and `timestamp` |
 | `PathIsAmbiguous` | `path_is_ambiguous` | fs, when only the parent directory resolved: the create, delete and rename records of captures made before P-25, which requested no entry names |
 | `TargetTruncated` | `target_truncated` | proc, when the command line or the program path did not fit the record (P-19) |
 | `Cwd`, `CwdTruncated` | `cwd`, `cwd_truncated` | proc, on `process_exec`: the working directory of the attempt, and whether the probe cut it (P-36) |
@@ -98,6 +99,7 @@ The two time sources differ in origin and latency, so the order of a file event 
 | `ChannelDrops` | `channel_drops` | proc, net | Go events channel full; fs never drops: a slow consumer blocks its read loop and the kernel queue overflows instead (`QueueOverflow`) | Reason |
 | `IOURingNetOps` | `io_uring_net_ops` | net | tracked processes submitted socket operations through io_uring, which no hook records (N-25; the classification is in [13_probe_net.md](13_probe_net.md)) | Reason |
 | `QueueOverflow` | `queue_overflow` | fs | fanotify `FAN_Q_OVERFLOW` seen | Reason |
+| `ClockStepped` | `clock_stepped` | fs | the wall clock moved against the monotonic clock by more than a slew can (P-52); `not_before` is then no bound | none: V-101 does not use the bounds |
 | `UndrainedRecords` | `undrained_records` | fs | records still queued when the stop drain's time budget ran out, never read (P-24); a lower bound | Reason |
 | `UnresolvedPaths` | `unresolved_paths` | fs | file events whose path no handle resolved, by any process but the recorder, one per action type of each record; `watch` leaves them out of the capture | Note (V-35) |
 | `UnresolvedInTree` | `unresolved_in_tree` | `cmd/watch`, for fs | of those, the events the process forest places in the agent's tree, one per action type; written by `watch` after the scope rule, not by the probe, which does not know the tree; zero without a root pid | Reason (V-39) |

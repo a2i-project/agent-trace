@@ -429,7 +429,12 @@ type record struct {
 	// file was created or updated, which decides whether the harness first
 	// opened the existing file.
 	ToolUseResult json.RawMessage `json:"toolUseResult"`
-	Message       *struct {
+	// Operation and Content are a queue-operation record's: from 2.1.296
+	// the harness enqueues a notice that a background command ended, which
+	// names the call by its tool_use id (V-101).
+	Operation string          `json:"operation"`
+	Content   json.RawMessage `json:"content"`
+	Message   *struct {
 		ID      string          `json:"id"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -554,6 +559,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 	// seen holds the tool_use and tool_result ids read so far, across the
 	// main transcript and its subagents.
 	seen := map[string]bool{}
+	// ended holds, per tool_use id, when the harness first enqueued the
+	// notice that the background command of that call ended (V-101).
+	ended := map[string]time.Time{}
 
 	read := func(file, thread string) error {
 		f, err := os.Open(file)
@@ -579,6 +587,12 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			// 2.1.306 an api-request-blob record copies an API request whose
 			// content repeats earlier calls and results under the same ids,
 			// with no timestamp and no structured result.
+			if id, ok := endNotice(r); ok {
+				if t, seen := ended[id]; !seen || r.Timestamp.Before(t) {
+					ended[id] = r.Timestamp
+				}
+				continue
+			}
 			want := claimBlock[r.Type]
 			if want == "" || r.Message == nil || len(r.Message.Content) == 0 || r.Message.Content[0] != '[' {
 				continue
@@ -727,6 +741,9 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 			rep.ServerCalls = append(rep.ServerCalls, verification.ServerCall{Tool: u.name, ID: u.id, RequestID: u.requestID, Host: modelAPIHost, Timestamp: u.ts})
 		}
 		entries, why := claimsFor(u, base, res)
+		if why == "" && u.name == toolBash && len(entries) > 0 {
+			entries[0].OutputName, entries[0].OutputDone = bashOutput(u.input, res, hasResult, ended[u.id])
+		}
 		if why == "" && u.name == toolBash && hasResult && harnessReadVersions[rep.AgentVersion] {
 			entries = append(entries, harnessReadClaims(u, base, res)...)
 		}
@@ -1022,3 +1039,66 @@ func claimsFor(u toolUse, base models.TrajectoryEntry, res toolResult) ([]models
 	}
 	return nil, reasonUnknown
 }
+
+// noticeTask matches the notice the harness enqueues when a background
+// command ends, from 2.1.296: a <task-notification> naming the call by
+// its tool_use id (V-101).
+var noticeTask = regexp.MustCompile(`^<task-notification>\n(?:.*\n)*?<tool-use-id>(toolu_[0-9A-Za-z]+)</tool-use-id>\n`)
+
+// endNotice returns the tool_use id a queue-operation record's enqueued
+// notice says ended, if r is one.
+func endNotice(r record) (string, bool) {
+	if r.Type != "queue-operation" || r.Operation != "enqueue" || len(r.Content) == 0 || r.Timestamp.IsZero() {
+		return "", false
+	}
+	var text string
+	if json.Unmarshal(r.Content, &text) != nil {
+		return "", false
+	}
+	m := noticeTask.FindStringSubmatch(text)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// timestampResolution is the resolution of the transcript's timestamps: a
+// record's moment lies within a millisecond after its stated timestamp.
+const timestampResolution = time.Millisecond
+
+// bashOutput is what a Bash call's claim says of its output file (V-101):
+// for a call sent to the background, the file's base name (the result's
+// background task id with ".output", I-73) and the end the harness
+// enqueued its notice of; for any other call with a result, no name and the
+// result's time. Each end is the latest moment the stated timestamp allows.
+// A call asked to run in the background whose result names no task says
+// nothing: its file is not the foreground call's.
+func bashOutput(input json.RawMessage, res toolResult, hasResult bool, ended time.Time) (string, *time.Time) {
+	latest := func(t time.Time) *time.Time {
+		l := t.Truncate(timestampResolution).Add(timestampResolution - time.Nanosecond)
+		return &l
+	}
+	if !hasResult {
+		return "", nil
+	}
+	if b := res.bash; b != nil && b.backgroundTask != "" {
+		if !taskID.MatchString(b.backgroundTask) {
+			return "", nil
+		}
+		if ended.IsZero() {
+			return b.backgroundTask + ".output", nil
+		}
+		return b.backgroundTask + ".output", latest(ended)
+	}
+	var in struct {
+		Background bool `json:"run_in_background"`
+	}
+	if json.Unmarshal(input, &in) != nil || in.Background {
+		return "", nil
+	}
+	return "", latest(res.ts)
+}
+
+// taskID is the shape of a background command's task id, as the output
+// file's name holds it (I-73).
+var taskID = regexp.MustCompile(`^b[0-9a-z]{8}$`)
