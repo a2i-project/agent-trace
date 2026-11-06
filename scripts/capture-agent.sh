@@ -20,7 +20,7 @@
 #                            [--allow-unconfigured-version] [--content] [--check]
 #                            [--run-as USER] [--workspace-root DIR]
 #                            [--warm-up-only | --warm-up-from RECORD]
-#                            [--no-build] [OUTPUT_DIR]
+#                            [--fs-kernel-hash] [--no-build] [OUTPUT_DIR]
 #
 # The tasks are the profile's: Claude Code has basic, parallel, project,
 # edits, tools, shapes, long and websearch; Gemini has basic, search and long;
@@ -90,6 +90,13 @@
 # --warm-up-from RECORD records an earlier warm-up of the same agent,
 # version, user and prompt that passed (a campaign's) instead of making one.
 # An agent whose profile names no warm_up gets none.
+# --fs-kernel-hash (default on when $AGENT_TRACE_FS_KERNEL_HASH is 1) passes
+# watch --fs-kernel-hash for the task and every control (I-154): the fs
+# probe hashes a written file's content as the kernel copies it at its last
+# close (P-48), where the kernel supports it (7.0 with the BPF LSM active);
+# elsewhere the probe takes the userspace path, as without the flag, and the
+# script says so after the run, from the ground truth's coverage (P-50).
+# task-meta.txt records fs_kernel_hash=on or off.
 # --run-as USER (default $AGENT_TRACE_RUN_AS, else you) runs the agent as
 # USER (I-137), a dedicated unprivileged user (scripts/setup-capture-user.sh
 # creates agenttrace), so it cannot read your home. The script resolves
@@ -414,6 +421,8 @@ run_as=${AGENT_TRACE_RUN_AS:-}
 ws_root=${AGENT_TRACE_WORKSPACE_ROOT:-/var/lib/agent-trace/ws}
 warm_up_only=
 warm_up_from=
+fs_kernel_hash=
+[ "${AGENT_TRACE_FS_KERNEL_HASH:-}" != 1 ] || fs_kernel_hash=1
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs an agent name}; shift 2 ;;
@@ -430,6 +439,7 @@ while [ $# -gt 0 ]; do
     --no-build) build=; shift ;;
     --warm-up-only) warm_up_only=1; shift ;;
     --warm-up-from) warm_up_from=${2:?--warm-up-from needs a warm-up record}; shift 2 ;;
+    --fs-kernel-hash) fs_kernel_hash=1; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
@@ -718,6 +728,9 @@ watch_flags=()
 # Another user's home is where watch resolves the adapters' ~/ files (V-40)
 # and what the ground truth records as the capture's home (I-111).
 [ -z "$other_user" ] || watch_flags+=(--agent-home "$agent_home")
+# The fs probe's kernel copy of written content (P-48, I-154); off unless
+# asked for, so the default command line is unchanged.
+[ -z "$fs_kernel_hash" ] || watch_flags+=(--fs-kernel-hash)
 if [ -n "$content" ]; then
   watch_mode=content
   agent_real=$("${as_root[@]}" readlink -f "$agent_bin")
@@ -1002,6 +1015,7 @@ if [ -n "$check_only" ]; then
   [ -z "$run_as" ] || echo "run_as=$run_name uid=$run_uid"
   [ "${#pass_env_dropped[@]}" -eq 0 ] || echo "pass_env_not_passed=${pass_env_dropped[*]}"
   [ -z "$warm_up_prompt_sha256" ] || echo "warm_up_prompt_sha256=$warm_up_prompt_sha256"
+  [ -z "$fs_kernel_hash" ] || echo "fs_kernel_hash=on"
   exit 0
 fi
 echo "output: $out"
@@ -1771,6 +1785,23 @@ warm_up() {
   return "$rc"
 }
 
+# kernel_hash_note LABEL: what the run's coverage says of the fs probe's
+# kernel copy (P-50), printed when it did not run.
+kernel_hash_note() { # label
+  python3 - "$out/$1.ground_truth.json" <<'PY' || true
+import json, sys
+try:
+    g = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    sys.exit()
+h = (((((g.get("coverage") or {}).get("probes") or {}).get("fs") or {}).get("diagnostics") or {}).get("file_hashes"))
+if h is None:
+    print("   NOTE: --fs-kernel-hash: the ground truth records no hash source; the fs probe hashed in userspace")
+elif h.get("mode") != "kernel":
+    print("   NOTE: --fs-kernel-hash: the kernel copy is %s; the fs probe hashed in userspace (%d closes)" % (h.get("mode"), h.get("userspace", 0)))
+PY
+}
+
 # capture LABEL ROLE PROMPT TOOLS: one recorded run, then its model check, and a
 # line of order.tsv: the order the runs were recorded in (D11), their times,
 # the models their transcripts recorded, watch's exit status and the
@@ -1780,6 +1811,9 @@ capture() {
   started=$(date --iso-8601=seconds)
   capture_one "$label" "$3" "$4" "$role" || rc=$?
   ended=$(date --iso-8601=seconds)
+  # The kernel copy asked for and not available: the probe hashed on the
+  # userspace path, which the run's coverage says (P-50, I-154).
+  [ -z "$fs_kernel_hash" ] || kernel_hash_note "$label"
   if [ "$rc" -eq 0 ] && [ "$role" = task ] && [ -n "$p_trace_declared" ]; then
     # A task transcript that is gone, empty or holds no record that parses
     # cannot be checked for its model: its run is a trace result, not a
@@ -1867,6 +1901,8 @@ fi
   [ "${#pass_env_dropped[@]}" -eq 0 ] || echo "pass_env_not_passed=${pass_env_dropped[*]} (operator only: $p_pass_env_operator_only_why)"
   # The warm-up before the first recorded run (I-151).
   [ -z "$warm_up_line" ] || echo "warm_up=$warm_up_line"
+  # The fs probe's kernel copy (I-154).
+  echo "fs_kernel_hash=$([ -n "$fs_kernel_hash" ] && echo on || echo off)"
 } >"$out/task-meta.txt"
 : >"$out/order.tsv"
 

@@ -249,7 +249,7 @@ func TestTheDefaultRunIsUnchanged(t *testing.T) {
 		ws := after(c, "--workspace", 1)
 		if len(ws) != 1 || filepath.Dir(ws[0]) != out || strings.Contains(joined, "--agent-home") || strings.Contains(joined, " -C ") ||
 			strings.Join(after(c, "--reuid", 3), " ") != fmt.Sprintf("%d --regid %d", os.Getuid(), os.Getgid()) ||
-			strings.Join(after(c, "--reset-env", 2), " ") != "env DISABLE_UPDATES=1" {
+			strings.Join(after(c, "--reset-env", 2), " ") != "env DISABLE_UPDATES=1" || strings.Contains(joined, "--fs-kernel-hash") {
 			t.Errorf("watch command %s", joined)
 		}
 	}

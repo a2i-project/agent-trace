@@ -179,7 +179,7 @@ func TestTheWarmUpRunsAsTheRunAsUser(t *testing.T) {
 
 // A campaign makes one warm-up per agent that names one, before its first
 // slot, passes its record to every capture of that agent, and lists it in
-// the manifest and each run.json.
+// the manifest and each run.json. It also passes --fs-kernel-hash.
 func TestACampaignWarmsUpOnceBeforeItsFirstSlot(t *testing.T) {
 	root, tmp, env := layout(t, "")
 	_, here, _, _ := runtime.Caller(0)
@@ -197,7 +197,7 @@ func TestACampaignWarmsUpOnceBeforeItsFirstSlot(t *testing.T) {
 	if log, err := run("--dry-run"); err != nil || !strings.Contains(log, "warm-up: opencode once before the first slot") {
 		t.Fatalf("dry run: %v\n%s", err, log)
 	}
-	log, err := run()
+	log, err := run("--fs-kernel-hash")
 	if err != nil {
 		t.Fatalf("campaign: %v\n%s", err, log)
 	}
@@ -227,6 +227,10 @@ func TestACampaignWarmsUpOnceBeforeItsFirstSlot(t *testing.T) {
 	for _, r := range m.Runs {
 		if w, _ := r["warm_up"].(string); !strings.HasPrefix(w, "before this capture exit=0") {
 			t.Errorf("run %v: warm_up %q", r["dir"], w)
+		}
+		// --fs-kernel-hash reaches every capture (I-154).
+		if r["fs_kernel_hash"] != "on" || r["scale"].(map[string]any)["file_hashes"] == nil {
+			t.Errorf("run %v: fs_kernel_hash %v, scale %v", r["dir"], r["fs_kernel_hash"], r["scale"])
 		}
 	}
 }

@@ -77,6 +77,9 @@ type SessionCost struct {
 	DrainS           *float64 `json:"drain_s"`
 	WatchCPUS        *float64 `json:"watch_cpu_s"`
 	WatchMaxRSSKB    *float64 `json:"watch_maxrss_kb"`
+	// FileHashes is the run's hashed closes by source when the capture asked
+	// for the fs probe's kernel copy (P-50, I-154); nil when it did not.
+	FileHashes *models.FileHashCounts `json:"file_hashes,omitempty"`
 }
 
 // Settings of the sensitivity analysis.
@@ -270,6 +273,7 @@ func (c *Campaign) sessionCost(rec RunRecord, s *Session) *SessionCost {
 	if rec.Scale != nil {
 		ev, pk := rec.Scale.Events.Total, rec.Scale.Processes.PeakAlive
 		sc.Events, sc.PeakProcesses = &ev, &pk
+		sc.FileHashes = rec.Scale.FileHashes
 	}
 	dir := c.RunDir(rec)
 	if st, err := os.Stat(filepath.Join(dir, groundTruthName(rec))); err == nil {

@@ -1329,3 +1329,18 @@ Consequences:
 - The warm-up's session is in the agent's session store before the recorded runs (OpenCode's database holds it); no trace method reads a session other than the run's.
 - Whether the warm-up settled everything is measured by the recorded runs, not checked by the capture: an effect the warm-up's prompt does not reach still shows in the first recorded run as unexplained harness activity.
 Alternatives rejected: Keeping the manual warm-up (it misses the reboot effect and needs the run-as user's environment by hand); recording the first run's extraction as harness activity (every first run after a reboot would carry it, and the controls of other runs would not); a warm-up under `watch` (its capture would be one more run nobody reads).
+
+### I-154: A capture setting turns on the fs probe's kernel hashing for every run of a capture or campaign
+Status: Accepted, implemented (`--fs-kernel-hash` and `kernel_hash_note` in `scripts/capture-agent.sh`; `--fs-kernel-hash`, `fs_kernel_hash` and the scale record's `file_hashes` in `scripts/capture-campaign.sh`; `ScaleRecord.FileHashes`, `SessionCost.FileHashes` and `reportFileHashes` in `cmd/analyze`; `TestTheFsKernelHashSettingReachesWatch`, `TestRunJSONRecordsTheHashSources`, `TestACampaignWarmsUpOnceBeforeItsFirstSlot`, `TestTheReportListsHashedClosesBySource`). The user's decision of 2026-11-06. Builds on P-48 to P-50.
+Date: 2026-11-06.
+Context: `watch --fs-kernel-hash` (P-48) hashes a written file's content as the kernel copies it at its last close, where the kernel supports it, and the coverage records where each close's hash came from (P-50). It is off by default. The user decided that captures on this laptop, whose kernel supports it, turn it on.
+Decision:
+- `capture-agent.sh` and `capture-campaign.sh` take `--fs-kernel-hash`, default on when `AGENT_TRACE_FS_KERNEL_HASH` is `1`, else off; no profile field, since the setting is the machine's, not the agent's. When on, `watch` gets `--fs-kernel-hash` for the task run and every control; when off, the command lines are unchanged.
+- `task-meta.txt` records `fs_kernel_hash=on` or `off`; each `run.json` records `fs_kernel_hash` from it, and its scale record and each control's carry the coverage's `file_hashes` when the ground truth has it; `invocations.jsonl` records the campaign's setting.
+- When the kernel copy did not run, the probe hashes in userspace as without the flag; the capture prints a note naming the coverage's mode after each such run and goes on. It does not refuse.
+- `cmd/analyze`'s report lists, after H4b, each task run's hashed closes by source when some run has them; a campaign without them gets no table.
+Consequences:
+- `--baseline-from` does not compare the setting: the kernel copy changes the source of a close's hash, not the events the controls record. A campaign mixing runs with and without it is visible per run in the manifest.
+- The instrument validation (`--validate`) does not pass the flag.
+- Every `task-meta.txt` gains the `fs_kernel_hash` line, `off` by default; nothing reads `task-meta.txt` by line position.
+Alternatives rejected: Refusing the flag on a kernel without support (the probe already falls back and says why, and the user asked to continue); a profile field (the setting does not depend on the agent).

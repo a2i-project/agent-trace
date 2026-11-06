@@ -21,7 +21,8 @@ import (
 // the events a capture would hold in $FAKE_DIR/events.json, with the
 // transcript under /home/shim, a home the adapter declares (I-30, I-74).
 // watch runs the command after -- and writes a loss-free ground truth of
-// those events. sudo and setpriv run what follows their options.
+// those events, with the fs probe's hash sources when it is given
+// --fs-kernel-hash (mode $FAKE_KHASH, default kernel). sudo and setpriv run what follows their options.
 const fakeClaude = `#!/usr/bin/env python3
 import json, os, re, sys
 args = sys.argv[1:]
@@ -222,16 +223,21 @@ print(json.dumps({"type": "step_start", "timestamp": 1, "sessionID": sid}, separ
 
 const fakeWatch = `#!/usr/bin/env bash
 set -e
-out= ws=
+out= ws= khash=
 while [ $# -gt 0 ] && [ "$1" != -- ]; do
-  case $1 in --out) out=$2; shift 2 ;; --workspace) ws=$2; shift 2 ;; *) shift ;; esac
+  case $1 in --out) out=$2; shift 2 ;; --workspace) ws=$2; shift 2 ;; --fs-kernel-hash) khash=1; shift ;; *) shift ;; esac
 done
 shift
 "$@"
-python3 - "$out" "$ws" "$FAKE_DIR/events.json" <<'PY'
-import json, sys
-out, ws, events = sys.argv[1:]
+python3 - "$out" "$ws" "$FAKE_DIR/events.json" "$khash" <<'PY'
+import json, os, sys
+out, ws, events, khash = sys.argv[1:]
 cov = {"schema": 2, "probes": {p: {"ran": True} for p in ("fs", "proc", "net")}}
+if khash:
+    # The fs probe's hash sources (P-50): FAKE_KHASH is the mode.
+    mode = os.environ.get("FAKE_KHASH", "kernel")
+    cov["probes"]["fs"]["diagnostics"] = {"file_hashes": {"mode": mode, "kernel": 3 if mode == "kernel" else 0, "userspace": 2,
+        "fallbacks": {"writer_held": 2} if mode == "kernel" else {}, "lost": 0, "sync_timeouts": 0}}
 json.dump({"events": json.load(open(events)), "coverage": cov, "root_pid": 1000, "workspace": ws}, open(out, "w"))
 PY
 `

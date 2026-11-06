@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/agent-trace/agent-trace/pkg/config"
+	"github.com/agent-trace/agent-trace/pkg/models"
 )
 
 // The campaign directory is the layout scripts/capture-campaign.sh writes:
@@ -110,6 +111,10 @@ type ScaleRecord struct {
 		Forks     int `json:"forks"`
 	} `json:"processes"`
 	Net map[string]any `json:"net"`
+	// FileHashes is the fs probe's hashed closes by source (P-50), which
+	// the runner copies from the ground truth's coverage when the capture
+	// asked for the kernel copy (I-154); nil otherwise.
+	FileHashes *models.FileHashCounts `json:"file_hashes"`
 }
 
 // CostRecord is the optional per-session cost record.

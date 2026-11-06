@@ -475,6 +475,33 @@ func reportH4(m *md, res *Results) {
 		}
 	}
 	listed(m, "Not measured (the manifest and logs do not carry the field)", nm)
+	reportFileHashes(m, res)
+}
+
+// reportFileHashes lists, per run whose capture asked for the fs probe's
+// kernel copy (I-154), its hashed closes by source (P-50). A campaign none
+// of whose runs asked for it gets no section.
+func reportFileHashes(m *md, res *Results) {
+	var rows [][]string
+	for _, r := range res.Runs {
+		if r.Cost == nil || r.Cost.FileHashes == nil {
+			continue
+		}
+		h := r.Cost.FileHashes
+		var fb []string
+		for _, k := range sortedKeys(h.Fallbacks) {
+			fb = append(fb, fmt.Sprintf("%s %d", k, h.Fallbacks[k]))
+		}
+		rows = append(rows, []string{"`" + r.ID + "`", r.Agent, r.Version, r.Task, h.Mode, fmt.Sprint(h.Kernel), fmt.Sprint(h.Userspace), strings.Join(fb, ", "), fmt.Sprint(h.Lost), fmt.Sprint(h.SyncTimeouts)})
+	}
+	if len(rows) == 0 {
+		return
+	}
+	m.line("### Hashed closes by source (P-50)")
+	m.blank()
+	m.line("Task runs whose capture asked for the fs probe's kernel copy (`--fs-kernel-hash`, I-154): the closes published with a kernel hash and with a userspace one, and why the kernel gave none. Measurement only; no verdict reads it.")
+	m.blank()
+	m.table([]string{"Run", "Agent", "Version", "Task", "Mode", "Kernel", "Userspace", "Fallbacks", "Lost", "Sync timeouts"}, rows)
 }
 
 func sumCell(s *Summary, format string) string {

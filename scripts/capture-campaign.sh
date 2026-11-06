@@ -14,7 +14,7 @@
 #                               [--heldout-dir DIR] [--BINARY-model ID]
 #                               [--allow-unconfigured-version] [--new-version-stratum]
 #                               [--stop-after-failures N] [--run-as USER]
-#                               [--workspace-root DIR] PLAN OUTPUT_DIR
+#                               [--workspace-root DIR] [--fs-kernel-hash] PLAN OUTPUT_DIR
 #   scripts/capture-campaign.sh --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR
 #
 # PLAN is a text file with one entry per line, # starting a comment:
@@ -81,6 +81,14 @@
 # not you; the version read after each run is then made as USER. Each
 # run.json records run_as (the user, its uid and yours) from the run's
 # task-meta.txt.
+#
+# --fs-kernel-hash (default on when $AGENT_TRACE_FS_KERNEL_HASH is 1) is
+# passed to every capture (I-154): watch hashes written content as the
+# kernel copies it, where the kernel supports it. Each run.json records
+# fs_kernel_hash (on or off, from task-meta.txt) and, in its scale record
+# and each control's, file_hashes, the coverage's hashed closes by source
+# (P-50), when the ground truth has them; invocations.jsonl records the
+# setting.
 #
 # Warm-up (I-151): for each agent whose profile names a warm_up and that has
 # a slot to record, the invocation runs capture-agent.sh --warm-up-only once
@@ -214,6 +222,8 @@ model_overrides=()
 new_stratum=
 run_as=${AGENT_TRACE_RUN_AS:-}
 ws_root=${AGENT_TRACE_WORKSPACE_ROOT:-}
+fs_kernel_hash=
+[ "${AGENT_TRACE_FS_KERNEL_HASH:-}" != 1 ] || fs_kernel_hash=1
 while [ $# -gt 0 ]; do
   case $1 in
     --dry-run) dry_run=1; shift ;;
@@ -229,13 +239,14 @@ while [ $# -gt 0 ]; do
     --stop-after-failures) stop_after=${2:?--stop-after-failures needs a number}; shift 2 ;;
     --run-as) run_as=${2:?--run-as needs a user name}; shift 2 ;;
     --workspace-root) ws_root=${2:?--workspace-root needs a directory}; shift 2 ;;
+    --fs-kernel-hash) fs_kernel_hash=1; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
 usage() {
-  echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--BINARY-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] [--run-as USER] [--workspace-root DIR] PLAN OUTPUT_DIR" >&2
+  echo "usage: $0 [--dry-run] [--controls N] [--seed N] [--validate] [--validate-e2e] [--heldout-dir DIR] [--BINARY-model ID] [--allow-unconfigured-version] [--new-version-stratum] [--stop-after-failures N] [--run-as USER] [--workspace-root DIR] [--fs-kernel-hash] PLAN OUTPUT_DIR" >&2
   echo "       $0 --validate-only [--validate-e2e] [--dry-run] OUTPUT_DIR" >&2
   exit 2
 }
@@ -552,7 +563,7 @@ def scale(gt_path, log_path):
         net = net_from_log(log_path)
     else:
         net = None  # schema 2 and the net probe kept no counters: it did not run
-    return {
+    rec = {
         "ground_truth": gt_path,
         "probes": probes,
         "diagnostics": diag,
@@ -563,6 +574,12 @@ def scale(gt_path, log_path):
         "processes": {"peak_alive": peak_processes(events, g.get("root_pid")),
                       "forks": by_type.get("process_fork", 0)},
     }
+    # The fs probe's hashed closes by source (P-50), present when the
+    # capture asked for the kernel copy (I-154).
+    fh = ((((cov.get("probes") or {}).get("fs") or {}).get("diagnostics") or {}).get("file_hashes"))
+    if fh is not None:
+        rec["file_hashes"] = fh
+    return rec
 
 
 def verdict(path):
@@ -803,6 +820,10 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
     # task-meta.txt; absent for an agent whose profile names none.
     if meta.get("warm_up"):
         r["warm_up"] = meta["warm_up"]
+    # The fs probe's kernel copy (I-154), from task-meta.txt; absent for a
+    # capture made before the setting was recorded.
+    if meta.get("fs_kernel_hash"):
+        r["fs_kernel_hash"] = meta["fs_kernel_hash"]
     cost = read_cost(os.path.join(run_dir, f"{lab}.cost.json"))
     if cost is not None:
         r["cost"] = cost
@@ -967,12 +988,12 @@ def estimate(task, pending, controls_per_run):
     print(per * int(pending) + ctl * int(pending) * int(controls_per_run))
 
 
-def invocation(out, seed, commit, dirty, plan_path, controls, validate, e2e, stop_after):
+def invocation(out, seed, commit, dirty, plan_path, controls, validate, e2e, stop_after, fs_kernel_hash=""):
     rec = {"start": datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "seed": int(seed),
            "commit": commit, "dirty": dirty == "true",
            "plan_sha256": hashlib.sha256(open(plan_path, "rb").read()).hexdigest(),
            "controls": int(controls), "validate": bool(validate), "validate_e2e": bool(e2e),
-           "stop_after_failures": int(stop_after)}
+           "stop_after_failures": int(stop_after), "fs_kernel_hash": "on" if fs_kernel_hash else "off"}
     with open(os.path.join(out, "invocations.jsonl"), "a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec) + "\n")
 
@@ -1412,7 +1433,7 @@ for agent in "${warm_agents[@]}"; do
   warm_from[$agent]=$wdir/warm-up.txt
 done
 
-helper invocation "$out" "$seed" "$commit" "$dirty" "$plan" "$controls" "$validate" "$validate_e2e" "$stop_after"
+helper invocation "$out" "$seed" "$commit" "$dirty" "$plan" "$controls" "$validate" "$validate_e2e" "$stop_after" "$fs_kernel_hash"
 interrupted=
 trap 'interrupted=1' INT
 failures=0
@@ -1452,6 +1473,9 @@ for line in "${pending_order[@]}"; do
     case $task in heldout:*) args+=(--heldout-dir "$heldout_dir") ;; esac
     args+=("${run_as_args[@]}")
     [ -z "${warm_from[$agent]:-}" ] || args+=(--warm-up-from "${warm_from[$agent]}")
+    # The AGENT_TRACE_FS_KERNEL_HASH default is the capture's too; the
+    # flag passes the setting explicitly (I-154).
+    [ -z "$fs_kernel_hash" ] || args+=(--fs-kernel-hash)
     mkdir -p "$d"
     echo
     echo "=== $agent $version $task ($mode) run $i, slot $pos/$total, attempt $attempts -> $d"
