@@ -291,7 +291,7 @@ func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	repo := filepath.Join(filepath.Dir(here), "..", "..")
 	tmp = t.TempDir()
 	root = filepath.Join(tmp, "root")
-	for _, f := range []string{"capture-agent.sh", "capture-claude-code.sh", "agent-profile.py", "measure-watch.py", "extract-model-catalog.py"} {
+	for _, f := range []string{"capture-agent.sh", "capture-claude-code.sh", "agent-profile.py", "measure-watch.py", "extract-model-catalog.py", "pty-drive.py"} {
 		copyFile(t, filepath.Join(repo, "scripts", f), filepath.Join(root, "scripts", f), 0o755)
 	}
 	copyFile(t, filepath.Join(repo, "config", "agents.json"), filepath.Join(root, "config", "agents.json"), 0o644)

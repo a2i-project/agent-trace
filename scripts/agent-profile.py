@@ -39,6 +39,11 @@ PLACEHOLDERS = {"{isolation}", "{model}", "{tool_set}", "{session}", "{prompt}"}
 # Placeholders filled inside a word, from the profile's model record.
 INLINE = {"{effort}": "effort", "{catalog}": "catalog"}
 STDIN = {"inherit", "null"}
+# The key names scripts/pty-drive.py maps to the bytes a terminal sends
+# (its KEYS; a test keeps the two equal).
+DRIVER_KEYS = {"enter", "tab", "space", "escape", "backspace", "up", "down", "right", "left", "ctrl-c", "ctrl-d"}
+# The trace methods whose transcript scripts/pty-drive.py counts turns in.
+DRIVER_TRACES = {"jsonl-session"}
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -227,6 +232,49 @@ def shell(path, agent, task):
         fail(f"{where}: interactive cannot pass secret_env, whose values travel on the agent's stdin, the operator's terminal in an interactive run")
     put("p_interactive_invocation", iinv)
     put("p_interactive_note", ia.get("note", ""))
+    # The driver of the interactive controls (I-162): the dialogs to answer
+    # (a screen marker and key names), the ready screen's markers, the exit
+    # command and the controls' prompts, the first of which is the capture's
+    # control prompt, {control_prompt}, so that its command stays excluded
+    # from the baseline. scripts/pty-drive.py counts the turns in the
+    # transcript, which only a jsonl-session trace gives it.
+    drv = ia.get("driver") or {}
+    if drv:
+        if not isinstance(drv, dict):
+            fail(f"{where}: interactive.driver must be an object")
+        if (p.get("trace") or {}).get("method") not in DRIVER_TRACES:
+            fail(f"{where}: interactive.driver needs a trace method whose turns the driver counts ({either(sorted(DRIVER_TRACES))})")
+        dialogs = drv.get("dialogs") or []
+        if not isinstance(dialogs, list):
+            fail(f"{where}: interactive.driver.dialogs must be a list")
+        for d in dialogs:
+            keys = d.get("keys") if isinstance(d, dict) else None
+            if not (isinstance(d, dict) and isinstance(d.get("marker"), str) and d["marker"].strip() and isinstance(keys, list) and keys):
+                fail(f"{where}: an interactive.driver dialog needs a marker and a list of keys")
+            bad = [k for k in keys if k not in DRIVER_KEYS]
+            if bad:
+                fail(f"{where}: interactive.driver dialog {d['marker']!r} names unknown key(s) {', '.join(map(str, bad))} ({either(sorted(DRIVER_KEYS))})")
+        ready = drv.get("ready")
+        if not (isinstance(ready, list) and ready and all(isinstance(m, str) and m.strip() for m in ready)):
+            fail(f"{where}: interactive.driver.ready must list the ready screen's markers")
+        if not (isinstance(drv.get("exit"), str) and drv["exit"].strip()):
+            fail(f"{where}: interactive.driver needs an exit command")
+        prompts = drv.get("prompts")
+        if not (isinstance(prompts, list) and prompts and all(isinstance(x, str) and x.strip() for x in prompts)):
+            fail(f"{where}: interactive.driver.prompts must list the controls' prompts")
+        if prompts[0] != "{control_prompt}" or "{control_prompt}" in prompts[1:]:
+            fail(f"{where}: interactive.driver.prompts must start with {{control_prompt}}, the capture's control prompt, and name it once")
+        put("p_driver", True)
+        put("p_driver_dialog_markers", [d["marker"] for d in dialogs])
+        put("p_driver_dialog_keys", [" ".join(d["keys"]) for d in dialogs])
+        put("p_driver_ready", ready)
+        put("p_driver_exit", drv["exit"])
+        put("p_driver_prompts", prompts)
+    else:
+        put("p_driver", False)
+        for k in ("dialog_markers", "dialog_keys", "ready", "prompts"):
+            put("p_driver_" + k, [])
+        put("p_driver_exit", "")
     put("p_params", names)
     for n in names:
         put("p_param_" + n.replace("-", "_"), param(params[n], task))

@@ -7,6 +7,7 @@ cost of the recording around one real session, for H4b (cmd/analyze reads
 
 COMMAND is the whole recorded command, with `--out GROUND_TRUTH.json` among
 the arguments of watch. The script finds the watch process by that argument,
+before any `--` (a wrapper that runs watch after its own `--` is not watch),
 and samples it every INTERVAL milliseconds from /proc while COMMAND runs.
 It changes nothing about COMMAND: same arguments, same standard streams,
 same exit status. It never reads the agent's data, and no Go code changes.
@@ -116,7 +117,10 @@ def pids():
 
 
 def find_watch(gt, skip):
-    """The process whose arguments carry --out GT and that is not sudo or us."""
+    """The process whose arguments carry --out GT before any --, and that is
+    not sudo or us. A wrapper that runs watch after its own -- (the
+    terminal driver of interactive controls, scripts/pty-drive.py) carries
+    the same words after it and is not taken."""
     want = gt.encode()
     for pid in pids():
         if pid in skip:
@@ -124,6 +128,8 @@ def find_watch(gt, skip):
         a = argv_of(pid)
         if not a or os.path.basename(a[0]) == b"sudo":
             continue
+        if b"--" in a:
+            a = a[:a.index(b"--")]
         for i in range(len(a) - 1):
             if a[i] == b"--out" and a[i + 1] == want:
                 return pid

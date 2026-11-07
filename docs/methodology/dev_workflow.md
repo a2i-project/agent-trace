@@ -113,7 +113,9 @@ in [`../README.md`](../README.md).
    `scripts/compare/`, the capture script `scripts/capture-agent.sh` with its
    wrapper `scripts/capture-claude-code.sh` and the profile reader
    `scripts/agent-profile.py`, the campaign runner `scripts/capture-campaign.sh` with
-   its helpers `scripts/measure-watch.py` and `scripts/annotate-run.sh`, and
+   its helpers `scripts/measure-watch.py` and `scripts/annotate-run.sh`, the
+   terminal driver `scripts/pty-drive.py`, the baseline review
+   `scripts/baseline-review.py`, and
    the capture seeds `scripts/seed/` to the tools page). Remove a known limit the commit
    fixes; add one it introduces. Set the page's `Checked against commit` line
    to the commit's parent.
