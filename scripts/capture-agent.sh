@@ -20,7 +20,8 @@
 #                            [--allow-unconfigured-version] [--content] [--check]
 #                            [--run-as USER] [--workspace-root DIR]
 #                            [--warm-up-only | --warm-up-from RECORD]
-#                            [--fs-kernel-hash] [--interactive] [--no-build] [OUTPUT_DIR]
+#                            [--fs-kernel-hash] [--interactive] [--controls-only]
+#                            [--review-against BASELINE] [--no-build] [OUTPUT_DIR]
 #
 # The tasks are the profile's: Claude Code has basic, parallel, project,
 # edits, tools, shapes, long and websearch; Gemini has basic, search and long;
@@ -104,11 +105,37 @@
 # the agent. The task's prompt is not sent: you give the prompts. watch
 # hands the agent your terminal (a terminal is no file the fs probe
 # records), so watch's own messages appear there too and LABEL.watch.log
-# only says so. The controls are the task's, scripted as always, and the
-# report adds a third verdict, with the baseline and verify --startup-window
-# (V-82). A profile without an interactive invocation is refused, and so is
-# a stdin or stdout that is not a terminal. task-meta.txt records
-# interactive=on, and task_prompt_sha256 is that of the prompt not sent.
+# only says so. The report adds a third verdict, with the baseline and
+# verify --startup-window (V-82), and every verify run gets --interactive,
+# which warns when the baseline's mode differs (V-103). A profile without
+# an interactive invocation is refused, and so is a stdin or stdout that is
+# not a terminal. task-meta.txt records interactive=on, and
+# task_prompt_sha256 is that of the prompt not sent.
+# Interactive controls (I-163): when the profile names interactive.driver,
+# the controls are interactive sessions too, by the same invocation, typed
+# by scripts/pty-drive.py on a pseudo-terminal of its own: the driver
+# answers the profile's dialogs, types the profile's prompts (the first is
+# the control prompt) one turn at a time and the exit command. sudo keeps
+# its credential per terminal, so the driver is started with sudo -n here,
+# on your terminal, and runs watch as root inside the new terminal without
+# sudo; the agent still runs as its user through setpriv. LABEL.watch.log
+# holds the driver's own lines and LABEL.pty.log the session's screen,
+# watch's messages included. A driver that times out ends the session and
+# the control fails like any other. The baseline is built with --mode
+# interactive (V-103), control-mode.txt and task-meta.txt record
+# "interactive driven prompts_sha256=<SHA-256 of the prompts, each followed
+# by a newline>", --baseline-from refuses controls of another mode, and
+# report.txt ends with scripts/baseline-review.py's review of the
+# baseline's rules (report only, I-164); --review-against BASELINE (a
+# print-mode baseline) makes it list only the rules BASELINE lacks. A
+# profile with an interactive invocation and no driver keeps print-mode
+# controls, and task-meta.txt says so (controls=print).
+# --controls-only (I-164) records the controls alone and builds
+# baseline.json, with no task run, to verify an earlier session against
+# them; report.txt gives the verify command and, for interactive controls,
+# the review. With --interactive it needs the profile's driver and no
+# terminal of yours for the agent. It takes neither --baseline-from nor
+# --controls-before, and task-meta.txt records controls_only=on.
 # --run-as USER (default $AGENT_TRACE_RUN_AS, else you) runs the agent as
 # USER (I-137), a dedicated unprivileged user (scripts/setup-capture-user.sh
 # creates agenttrace), so it cannot read your home. The script resolves
@@ -232,6 +259,9 @@
 #                             and recording mode (identity or content)
 #   control-model.txt, control-order.txt  their pinned model, and how many ran before
 #                             and after the task (before=2 after=3)
+#   control-mode.txt          only for interactive controls (I-163): interactive driven
+#                             prompts_sha256=<hash of the driver's prompts>
+#   control-N.pty.log         the screen of an interactive control, as the driver cleaned it
 #   task-meta.txt             the task, the SHA-256 of its prompt and seed, its tools, the model
 #   order.tsv                 each run in the order it was recorded: number, label, role
 #                             (task or control), start, end, the model check and the models
@@ -438,6 +468,8 @@ warm_up_from=
 fs_kernel_hash=
 [ "${AGENT_TRACE_FS_KERNEL_HASH:-}" != 1 ] || fs_kernel_hash=1
 interactive=
+controls_only=
+review_against=
 while [ $# -gt 0 ]; do
   case $1 in
     --agent) agent=${2:?--agent needs an agent name}; shift 2 ;;
@@ -456,6 +488,8 @@ while [ $# -gt 0 ]; do
     --warm-up-from) warm_up_from=${2:?--warm-up-from needs a warm-up record}; shift 2 ;;
     --fs-kernel-hash) fs_kernel_hash=1; shift ;;
     --interactive) interactive=1; shift ;;
+    --controls-only) controls_only=1; shift ;;
+    --review-against) review_against=${2:?--review-against needs a baseline file}; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
     *) break ;;
@@ -491,10 +525,33 @@ if [ -n "$interactive" ]; then
     echo "--interactive is for a recorded task run; --warm-up-only records none" >&2
     exit 2
   fi
-  if [ -z "$check_only" ] && ! { [ -t 0 ] && [ -t 1 ]; }; then
+  # Driven controls need no terminal of yours; the task run does.
+  if [ -z "$check_only" ] && [ -z "$controls_only" ] && ! { [ -t 0 ] && [ -t 1 ]; }; then
     echo "--interactive needs a terminal on stdin and stdout, which the agent runs on" >&2
     exit 2
   fi
+fi
+# Interactive controls (I-163): the profile's driver types them. Without
+# one, an interactive capture keeps print-mode controls.
+driven=
+[ -z "$interactive" ] || [ -z "$p_driver" ] || driven=1
+if [ -n "$controls_only" ]; then
+  if [ -n "$baseline_from" ] || [ "$controls_before" -gt 0 ] || [ -n "$warm_up_only" ]; then
+    echo "--controls-only records the control runs alone; it takes neither --baseline-from, --controls-before nor --warm-up-only" >&2
+    exit 2
+  fi
+  if [ -n "$interactive" ] && [ -z "$driven" ]; then
+    echo "--controls-only --interactive: $agent's profile names no interactive.driver to type the controls" >&2
+    exit 2
+  fi
+fi
+if [ -n "$review_against" ]; then
+  if [ -z "$driven" ]; then
+    echo "--review-against reviews the rules of interactive controls; this capture records none (--interactive with a profile driver)" >&2
+    exit 2
+  fi
+  review_against=$(realpath -m -- "$review_against")
+  [ -f "$review_against" ] || { echo "--review-against: no baseline $review_against" >&2; exit 1; }
 fi
 if [ "$controls_before" -gt 0 ] && [ -n "$baseline_from" ]; then
   echo "--controls-before orders the control runs of this capture; --baseline-from takes none" >&2
@@ -922,6 +979,24 @@ if [ -n "$p_edit_tool" ]; then
   control_excludes+=(--exclude "{workspace}/$control_file")
 fi
 
+# The driver's script (I-162, I-163): the profile's prompts with the
+# control prompt in place of {control_prompt}, and the mode the controls
+# are recorded in, which control-mode.txt holds and --baseline-from
+# compares.
+driver_prompts=()
+for x in "${p_driver_prompts[@]}"; do
+  if [ "$x" = '{control_prompt}' ]; then driver_prompts+=("$control_prompt"); else driver_prompts+=("$x"); fi
+done
+control_mode=print
+driver_flags=()
+if [ -n "$driven" ]; then
+  control_mode="interactive driven prompts_sha256=$(printf '%s\n' "${driver_prompts[@]}" | sha256sum | cut -d' ' -f1)"
+  for i in "${!p_driver_dialog_markers[@]}"; do driver_flags+=(--dialog "${p_driver_dialog_markers[i]}" "${p_driver_dialog_keys[i]}"); done
+  for m in "${p_driver_ready[@]}"; do driver_flags+=(--ready "$m"); done
+  for x in "${driver_prompts[@]}"; do driver_flags+=(--prompt "$x"); done
+  driver_flags+=(--exit-command "$p_driver_exit")
+fi
+
 # Refuse an unusable --baseline-from before anything that needs root or quota.
 if [ -n "$baseline_from" ]; then
   [ -e "$(ls "$baseline_from"/control-*.ground_truth.json 2>/dev/null | head -1)" ] || { echo "no control-*.ground_truth.json in $baseline_from" >&2; exit 1; }
@@ -981,6 +1056,14 @@ if [ -n "$baseline_from" ]; then
   if [ "$earlier" != "$watch_mode" ]; then
     echo "the control runs in $baseline_from were recorded with net mode $earlier, this capture uses $watch_mode" >&2
     echo "a baseline holds for one recording mode; run without --baseline-from to measure new controls" >&2
+    exit 1
+  fi
+  # Interactive controls (I-163) measure another harness than print-mode
+  # ones. A capture made before they existed recorded print-mode controls.
+  earlier=$(cat "$baseline_from/control-mode.txt" 2>/dev/null || echo print)
+  if [ "$earlier" != "$control_mode" ]; then
+    echo "the control runs in $baseline_from are $earlier, this capture's are $control_mode" >&2
+    echo "a baseline holds for one control mode; run without --baseline-from to measure new controls" >&2
     exit 1
   fi
 fi
@@ -1049,6 +1132,8 @@ if [ -n "$check_only" ]; then
   [ -z "$warm_up_prompt_sha256" ] || echo "warm_up_prompt_sha256=$warm_up_prompt_sha256"
   [ -z "$fs_kernel_hash" ] || echo "fs_kernel_hash=on"
   [ -z "$interactive" ] || echo "interactive=on"
+  [ -z "$interactive" ] || echo "controls=$control_mode"
+  [ -z "$controls_only" ] || echo "controls_only=on"
   exit 0
 fi
 echo "output: $out"
@@ -1234,11 +1319,21 @@ capture_one() { # label prompt tools role
   # run's own or a subagent's (I-55).
   [ "$p_trace_method" != sqlite-conversation ] || before=$("${as_root[@]}" ls "$trace_dir" 2>/dev/null | grep '\.db$' || true)
   # The task run of an interactive capture runs on the operator's terminal
-  # (I-159).
-  local ia=
+  # (I-159); its controls, with the profile's driver, on a terminal the
+  # driver makes (I-163).
+  local ia= drv= launcher=(sudo)
   [ -z "$interactive" ] || [ "$role" != task ] || ia=1
+  if [ -n "$driven" ] && [ "$role" = control ]; then
+    ia=1 drv=1
+    # sudo's credential is this terminal's: the driver starts here, with
+    # sudo -n, and runs watch as root on its own terminal (I-163).
+    launcher=(sudo -n "$root/scripts/pty-drive.py" --log "$out/$label.pty.log" "${driver_flags[@]}"
+      --trace-method "$p_trace_method" --trace-dir "$trace_dir" --session "$session" --)
+  fi
   invocation "$prompt" "$tool_set" $ia
-  if [ -n "$ia" ]; then
+  if [ -n "$drv" ]; then
+    echo "   interactive control: typed by scripts/pty-drive.py, screen in $out/$label.pty.log"
+  elif [ -n "$ia" ]; then
     echo "   interactive: $agent starts on this terminal, in $ws, with the tools $tools."
     echo "   Type your requests; the task's prompt is not sent. Leave $agent as you normally would to end the run."
   fi
@@ -1252,7 +1347,11 @@ capture_one() { # label prompt tools role
     # none (I-79); sudo asks for a password on the terminal, not on stdin.
     # An interactive run keeps the terminal as its stdin and output, and
     # watch hands it over (I-159); its log says so.
-    if [ -n "$ia" ]; then
+    if [ -n "$drv" ]; then
+      # The driver's own lines; the session's screen is LABEL.pty.log. No
+      # stdin: nothing reads your keyboard, and sudo makes no terminal.
+      exec </dev/null >"$out/$label.watch.log" 2>&1
+    elif [ -n "$ia" ]; then
       echo "interactive run (I-159): the agent and watch wrote to the operator's terminal, not to this file" >"$out/$label.watch.log"
     else
       [ "$p_stdin" != null ] || exec </dev/null
@@ -1260,7 +1359,7 @@ capture_one() { # label prompt tools role
     fi
     # secret_env: the values on the run's stdin, for the reader shell.
     [ "${#secret_vals[@]}" -eq 0 ] || exec < <(printf '%s\n' "${secret_vals[@]}")
-    measured "$label" sudo "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
+    measured "$label" "${launcher[@]}" "$root/watch" --probes fs,proc,net "${watch_flags[@]}" --workspace "$ws" \
       --out "$out/$label.ground_truth.json" -- \
       setpriv --reuid "$run_uid" --regid "$run_gid" --init-groups --reset-env \
       env "${env_dir[@]}" "${run_env[@]}" "${secret_reader[@]}" \
@@ -1962,7 +2061,17 @@ fi
   # The fs probe's kernel copy (I-154).
   echo "fs_kernel_hash=$([ -n "$fs_kernel_hash" ] && echo on || echo off)"
   # A task run the operator typed into (I-159): its prompt was not sent.
-  [ -z "$interactive" ] || echo "interactive=on prompts typed by the operator; task_prompt_sha256 is of the prompt not sent"
+  if [ -n "$controls_only" ]; then
+    echo "controls_only=on no task run"
+  elif [ -n "$interactive" ]; then
+    echo "interactive=on prompts typed by the operator; task_prompt_sha256 is of the prompt not sent"
+  fi
+  # The controls' mode (I-163).
+  if [ -n "$driven" ]; then
+    echo "controls=$control_mode"
+  elif [ -n "$interactive" ]; then
+    echo "controls=print (the profile names no interactive.driver)"
+  fi
 } >"$out/task-meta.txt"
 : >"$out/order.tsv"
 
@@ -1970,7 +2079,7 @@ controls_total=${CONTROLS:-5}
 if [ -z "$baseline_from" ]; then
   for n in $(seq 1 "$controls_before"); do capture "control-$n" control "$control_prompt" "$control_tools"; done
 fi
-capture "$task_label" task "$task_prompt" "$task_tools"
+[ -n "$controls_only" ] || capture "$task_label" task "$task_prompt" "$task_tools"
 
 if [ -n "$baseline_from" ]; then
   controls=("$baseline_from"/control-*.ground_truth.json)
@@ -1986,6 +2095,7 @@ else
   printf '%s' "$agent" >"$out/control-agent.txt"
   printf '%s' "$version" >"$out/control-version.txt"
   printf '%s' "$watch_mode" >"$out/control-watch.txt"
+  [ -z "$driven" ] || printf '%s' "$control_mode" >"$out/control-mode.txt"
   controls=("$out"/control-*.ground_truth.json)
 fi
 if [ -n "$no_adapter" ]; then
@@ -1994,15 +2104,37 @@ if [ -n "$no_adapter" ]; then
     echo "Build them from this capture once the adapter exists:"
     echo "  baseline --agent $agent --agent-version $version$(printf " %s '%s'" "${control_excludes[@]}") --out baseline.json control-*.ground_truth.json"
     [ -z "$baseline_from" ] || echo "  (the control runs are those in $baseline_from)"
-    echo "  verify --agent $agent --trajectory $(basename "$(trace_path "$task_label")") --ground-truth $task_label.ground_truth.json --baseline baseline.json$([ ! -s "$out/$task_label.session-id.txt" ] || echo " --session-id $(cat "$out/$task_label.session-id.txt")")"
+    [ -n "$controls_only" ] || echo "  verify --agent $agent --trajectory $(basename "$(trace_path "$task_label")") --ground-truth $task_label.ground_truth.json --baseline baseline.json$([ ! -s "$out/$task_label.session-id.txt" ] || echo " --session-id $(cat "$out/$task_label.session-id.txt")")"
   } >"$out/report.txt"
   echo
   echo "done (no adapter, no verdict). Read $out/report.txt"
   exit 0
 fi
 min_agreement=${MIN_AGREEMENT:-$(awk -v n="${#controls[@]}" 'BEGIN { printf "%.4f", 1 / n }')}
+# Driven controls make an interactive baseline (V-103).
+baseline_mode=()
+[ -z "$driven" ] || baseline_mode=(--mode interactive)
 "$root/baseline" --agent "$agent" --agent-version "$version" --min-agreement "$min_agreement" \
-  "${control_excludes[@]}" --out "$out/baseline.json" "${controls[@]}"
+  "${baseline_mode[@]}" "${control_excludes[@]}" --out "$out/baseline.json" "${controls[@]}"
+# The review of an interactive baseline's rules (I-164): report only, never
+# a gate.
+review() {
+  [ -n "$driven" ] || return 0
+  echo
+  echo "##### review of the baseline's rules (report only, I-164)"
+  python3 "$root/scripts/baseline-review.py" "$out/baseline.json" ${review_against:+--against "$review_against"} || true
+}
+if [ -n "$controls_only" ]; then
+  {
+    echo "##### controls only (I-164): no task run; the baseline is $out/baseline.json"
+    echo "verify a session of $agent $version with the task's tools against it:"
+    echo "  $root/verify --agent $agent --trajectory SESSION_FILE --ground-truth GROUND_TRUTH --session-id SESSION_ID --strict-version --baseline $out/baseline.json${interactive:+ --interactive}"
+    review
+  } >"$out/report.txt" 2>&1
+  echo
+  echo "done (controls only). Read $out/report.txt"
+  exit 0
+fi
 
 trajectory=$(trace_path "$task_label")
 # A version the config does not list makes the verdict INCONCLUSIVE (I-57).
@@ -2016,6 +2148,8 @@ version_flags=(--strict-version)
 task_session=$(cat "$out/$task_label.session-id.txt" 2>/dev/null || true)
 [ -z "$task_session" ] || version_flags+=(--session-id "$task_session")
 [ -n "$p_trace_states_version" ] || version_flags+=(--agent-version "$version")
+# The session's mode, for the baseline mode warning (V-103).
+[ -z "$interactive" ] || version_flags+=(--interactive)
 if [ -n "$p_trace_declared" ]; then
   version_flags+=(--check-trace-hash)
   [ -z "$p_trace_states_version" ] || [ "$(cat "$out/$task_label.trace.txt" 2>/dev/null || echo read)" = read ] || version_flags+=(--agent-version "$version")
@@ -2038,6 +2172,7 @@ fi
       --ground-truth "$out/$task_label.ground_truth.json" --baseline "$out/baseline.json" \
       --startup-window --json "$out/verify-baseline-startup.json" || true
   fi
+  review
 } >"$out/report.txt" 2>&1
 # The trace as verify read it (V-59): a line a reader of the log sees.
 python3 - "$out/verify-baseline.json" <<'PY' || true

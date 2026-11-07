@@ -41,6 +41,18 @@ proj = re.sub("[^a-zA-Z0-9]", "-", ws)
 real = os.path.join(os.environ["HOME"], ".claude", "projects", proj)
 os.makedirs(real, exist_ok=True)
 path = os.path.join(real, sid + ".jsonl")
+obs = "/home/shim/.claude/projects/%s/%s.jsonl" % (proj, sid)
+if "-p" not in args:
+    # A driven interactive control (I-163) runs under scripts/pty-drive.py:
+    # the fake terminal agent takes over, with this run's transcript.
+    pid = os.getppid()
+    while pid > 1:
+        if b"pty-drive.py" in open("/proc/%d/cmdline" % pid, "rb").read():
+            evs = [{"timestamp": "2026-10-31T10:00:00.00%dZ" % i, "action_type": t, "target": obs, "pid": 1000} for i, t in enumerate(("file_open", "file_write", "file_close"), 1)]
+            with open(os.path.join(os.environ["FAKE_DIR"], "events.json"), "w") as f:
+                json.dump(evs, f)
+            os.execvp("fake-tui", ["fake-tui", "--file", path, "--model", model])
+        pid = int(open("/proc/%d/stat" % pid).read().rsplit(")", 1)[1].split()[1])
 rec = {"type": "assistant", "sessionId": sid, "version": "2.1.306", "timestamp": "2026-10-31T10:00:00Z", "cwd": ws,
        "message": {"id": "m1", "model": model, "content": [{"type": "text", "text": "done"}]}}
 with open(path, "w") as f:
@@ -291,7 +303,7 @@ func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	repo := filepath.Join(filepath.Dir(here), "..", "..")
 	tmp = t.TempDir()
 	root = filepath.Join(tmp, "root")
-	for _, f := range []string{"capture-agent.sh", "capture-claude-code.sh", "agent-profile.py", "measure-watch.py", "extract-model-catalog.py", "pty-drive.py"} {
+	for _, f := range []string{"capture-agent.sh", "capture-claude-code.sh", "agent-profile.py", "measure-watch.py", "extract-model-catalog.py", "pty-drive.py", "baseline-review.py"} {
 		copyFile(t, filepath.Join(repo, "scripts", f), filepath.Join(root, "scripts", f), 0o755)
 	}
 	copyFile(t, filepath.Join(repo, "config", "agents.json"), filepath.Join(root, "config", "agents.json"), 0o644)
@@ -308,6 +320,7 @@ func layout(t *testing.T, mode string) (root, tmp string, env []string) {
 	write(t, filepath.Join(bin, "opencode"), fakeOpencode, 0o755)
 	write(t, filepath.Join(bin, "sudo"), fakeSudo, 0o755)
 	write(t, filepath.Join(bin, "setpriv"), fakeSetpriv, 0o755)
+	write(t, filepath.Join(bin, "fake-tui"), fakeTUI, 0o755)
 	home := filepath.Join(tmp, "home")
 	write(t, filepath.Join(home, ".claude", "settings.json"), `{"env": {"DISABLE_UPDATES": "1"}}`, 0o644)
 	fake := filepath.Join(tmp, "fake")
