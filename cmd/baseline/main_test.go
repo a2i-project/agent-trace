@@ -223,3 +223,47 @@ func TestReportsTheSensitiveRecord(t *testing.T) {
 		t.Errorf("an adapter that declares none: exit %d\n%s", code, stdout)
 	}
 }
+
+// --mode interactive records the control runs' mode in the baseline and
+// says so (V-103); the default, print, writes no mode field, so the file is
+// the one a build before V-103 wrote; an unknown mode is refused.
+func TestModeFlagRecordsInteractiveControls(t *testing.T) {
+	dir := t.TempDir()
+	r := write(t, dir, "r.json", models.GroundTruthFile{RootPID: 100, Coverage: cov(models.ProbeCoverage{Ran: true}), Events: models.GroundTruth{ev(models.NetConnect, "h")}})
+	for _, c := range []struct {
+		args       []string
+		mode, name string
+	}{
+		{nil, "", agent.BaselineModePrint},
+		{[]string{"--mode", "print"}, "", agent.BaselineModePrint},
+		{[]string{"--mode", "interactive"}, agent.BaselineModeInteractive, agent.BaselineModeInteractive},
+	} {
+		outPath := filepath.Join(dir, fmt.Sprintf("b%d.json", len(c.args)+len(c.mode)))
+		code, out, errOut := baseline(t, append(append([]string{"--agent", "generic", "--agent-version", "1", "--out", outPath}, c.args...), r)...)
+		if code != 0 {
+			t.Fatalf("%v: exit %d: %s %s", c.args, code, out, errOut)
+		}
+		raw, _ := os.ReadFile(outPath)
+		b, err := agent.LoadBaseline(outPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.Mode != c.mode || b.ModeName() != c.name {
+			t.Errorf("%v: mode %q (%s), want %q (%s)", c.args, b.Mode, b.ModeName(), c.mode, c.name)
+		}
+		if strings.Contains(string(raw), `"mode"`) != (c.mode != "") || strings.Contains(out, "mode: ") != (c.mode != "") {
+			t.Errorf("%v: mode field or line where it does not belong:\n%s\n%s", c.args, raw, out)
+		}
+	}
+	code, _, errOut := baseline(t, "--agent", "generic", "--agent-version", "1", "--mode", "batch", "--out", filepath.Join(dir, "x.json"), r)
+	if code != 3 || !strings.Contains(errOut, `mode "batch"`) {
+		t.Errorf("unknown mode: exit %d, %s", code, errOut)
+	}
+	bad := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(bad, []byte(`{"schema":1,"agent":"generic","mode":"batch","rules":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.LoadBaseline(bad); err == nil || !strings.Contains(err.Error(), `mode "batch"`) {
+		t.Errorf("a baseline of an unknown mode loads: %v", err)
+	}
+}

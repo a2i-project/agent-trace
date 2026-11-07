@@ -1437,3 +1437,65 @@ func TestDeclaredHarnessReadsAreReported(t *testing.T) {
 		}
 	}
 }
+
+// The baseline's mode is compared with the session's (V-103): a mismatch
+// is one WARNING line after the version check and a JSON field, and never
+// changes the verdict or the exit code; matching modes, and a print-mode
+// baseline without --interactive, print nothing new.
+func TestABaselineOfAnotherModeIsAWarningOnly(t *testing.T) {
+	dir := t.TempDir()
+	tr := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a")})
+	g := writeJSON(t, dir, "g.json", models.GroundTruthFile{Events: models.GroundTruth{event(models.FileWrite, "/w/a"), event(models.NetConnect, "api.example")}, RootPID: 100, Coverage: completeCov()})
+	base := agent.Baseline{Schema: agent.BaselineSchema, Agent: "generic", Runs: 1, MinAgreement: 1, Rules: []agent.Rule{{ActionType: models.NetConnect, Target: "api.example"}}, Subtrees: []agent.Subtree{}}
+	printMode := writeJSON(t, dir, "print.json", base)
+	base.Mode = agent.BaselineModeInteractive
+	interactive := writeJSON(t, dir, "interactive.json", base)
+
+	cases := []struct {
+		name, baseline string
+		flags          []string
+		warn           string
+	}{
+		{"print baseline, print session", printMode, nil, ""},
+		{"interactive baseline, interactive session", interactive, []string{"--interactive"}, ""},
+		{"interactive baseline, print session", interactive, nil, "measured from interactive control runs and the session is print (without --interactive)"},
+		{"print baseline, interactive session", printMode, []string{"--interactive"}, "measured from print control runs and the session is interactive (--interactive)"},
+	}
+	_, plain, _ := verify(t, "--trajectory", tr, "--ground-truth", g, "--baseline", printMode)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			jp := filepath.Join(t.TempDir(), "v.json")
+			code, out, errOut := verify(t, append([]string{"--trajectory", tr, "--ground-truth", g, "--baseline", c.baseline, "--json", jp}, c.flags...)...)
+			if code != 0 || !strings.Contains(out, "VERDICT: FAITHFUL") {
+				t.Fatalf("exit %d, want 0 whatever the modes:\n%s\n%s", code, out, errOut)
+			}
+			var rep struct {
+				SessionMode string `json:"session_mode"`
+				Warning     string `json:"baseline_mode_warning"`
+			}
+			b, _ := os.ReadFile(jp)
+			if err := json.Unmarshal(b, &rep); err != nil {
+				t.Fatal(err)
+			}
+			if c.warn == "" {
+				if strings.Contains(out, "V-103") || rep.Warning != "" {
+					t.Errorf("a warning for matching modes:\n%s", out)
+				}
+				if c.flags == nil && out != plain {
+					t.Errorf("the report differs from the print-mode one:\n%s", out)
+				}
+			} else {
+				lines := strings.Split(out, "\n")
+				if !strings.HasPrefix(lines[1], "WARNING: the baseline was "+c.warn[:len("measured")]) || !strings.Contains(out, c.warn) || !strings.Contains(rep.Warning, c.warn) {
+					t.Errorf("no warning %q in line 2:\n%s\njson: %q", c.warn, out, rep.Warning)
+				}
+				if strings.Replace(out, lines[1]+"\n", "", 1) != plain {
+					t.Errorf("the report differs by more than the warning:\n%s", out)
+				}
+			}
+			if want := map[bool]string{true: "interactive", false: ""}[c.flags != nil]; rep.SessionMode != want {
+				t.Errorf("session_mode %q, want %q", rep.SessionMode, want)
+			}
+		})
+	}
+}

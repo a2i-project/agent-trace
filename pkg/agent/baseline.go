@@ -41,10 +41,15 @@ type Rule struct {
 // the harness (D11, V7). It is keyed on the agent and its version, since
 // a harness's activity changes between versions.
 type Baseline struct {
-	Schema       int       `json:"schema"`
-	Agent        string    `json:"agent"`
-	AgentVersion string    `json:"agent_version"`
-	Captured     time.Time `json:"captured"`
+	Schema       int    `json:"schema"`
+	Agent        string `json:"agent"`
+	AgentVersion string `json:"agent_version"`
+	// Mode is how the control runs drove the harness (V-103):
+	// BaselineModeInteractive for controls typed into a terminal session by
+	// a driver, empty for print-mode controls, as in every
+	// baseline written before V-103. ModeName reads it.
+	Mode     string    `json:"mode,omitempty"`
+	Captured time.Time `json:"captured"`
 	// Runs is how many control runs the rules were taken from.
 	Runs int `json:"runs"`
 	// MinAgreement is the fraction of runs that had to perform an action for it
@@ -127,6 +132,22 @@ type Subtree struct {
 	Declared bool `json:"declared,omitempty"`
 }
 
+// The modes a baseline's control runs drove the harness in (V-103).
+// BaselineModePrint is the default: a baseline that names no mode is one.
+const (
+	BaselineModePrint       = "print"
+	BaselineModeInteractive = "interactive"
+)
+
+// ModeName is the mode the baseline's control runs drove the harness in,
+// BaselineModePrint when it names none (V-103).
+func (b Baseline) ModeName() string {
+	if b.Mode == "" {
+		return BaselineModePrint
+	}
+	return b.Mode
+}
+
 // RecordsSubtrees reports whether the baseline holds the subtrees of its
 // commands (V-38). A baseline written before V-38 does not.
 func (b Baseline) RecordsSubtrees() bool { return b.Subtrees != nil }
@@ -160,6 +181,10 @@ type CaptureOptions struct {
 	// the normalized target, and against the target with the run's
 	// workspace replaced by WorkspacePlaceholder (I-88).
 	Exclude []string
+	// Mode is how the control runs drove the harness (V-103): empty or
+	// BaselineModePrint for print-mode controls, which the baseline then
+	// does not name, or BaselineModeInteractive.
+	Mode string
 }
 
 // Capture builds a baseline from control runs. Each run's ground truth is
@@ -187,6 +212,14 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 	}
 	if agreement < 0 || agreement > 1 {
 		return Baseline{}, fmt.Errorf("min agreement %v is not a fraction between 0 and 1", agreement)
+	}
+	mode := opts.Mode
+	switch mode {
+	case "", BaselineModePrint:
+		mode = ""
+	case BaselineModeInteractive:
+	default:
+		return Baseline{}, fmt.Errorf("baseline mode %q is neither %s nor %s", opts.Mode, BaselineModePrint, BaselineModeInteractive)
 	}
 	need := int(math.Ceil(agreement*float64(len(runs)) - 1e-9))
 	if need < 1 {
@@ -263,7 +296,7 @@ func Capture(a Adapter, version string, runs []models.GroundTruthFile, now time.
 			}
 		}
 	}
-	b := Baseline{Schema: BaselineSchema, Agent: a.Name(), AgentVersion: version, Captured: now.UTC(), Runs: len(runs), MinAgreement: agreement}
+	b := Baseline{Schema: BaselineSchema, Agent: a.Name(), AgentVersion: version, Mode: mode, Captured: now.UTC(), Runs: len(runs), MinAgreement: agreement}
 	b.Excluded = append(b.Excluded, opts.Exclude...)
 	sort.Strings(b.Excluded)
 	for rule, n := range counts {
@@ -597,6 +630,9 @@ func LoadBaseline(path string) (Baseline, error) {
 	}
 	if b.Agent == "" {
 		return Baseline{}, fmt.Errorf("baseline %s names no agent", path)
+	}
+	if b.Mode != "" && b.Mode != BaselineModePrint && b.Mode != BaselineModeInteractive {
+		return Baseline{}, fmt.Errorf("baseline %s has mode %q, this build reads %s or %s", path, b.Mode, BaselineModePrint, BaselineModeInteractive)
 	}
 	return b, nil
 }

@@ -11,6 +11,10 @@
 // every control run performs and which is not the harness's own activity: as
 // a rule it would explain any later command with that target, and its whole
 // subtree, without a claim. verify then reads the result with --baseline.
+//
+// --mode interactive records that the control runs were interactive
+// sessions a driver typed into, so that verify can warn when it reads the
+// baseline for a session of the other mode (V-103).
 package main
 
 import (
@@ -37,19 +41,20 @@ func main() {
 func run(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("baseline", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	var agentName, version, outPath string
+	var agentName, version, outPath, mode string
 	var agreement float64
 	fs.StringVar(&agentName, "agent", "", "Adapter that normalizes the control runs ("+strings.Join(agent.Names(), ", ")+")")
 	fs.StringVar(&version, "agent-version", "", "Version of the agent that was run: a baseline holds for one version only")
 	fs.StringVar(&outPath, "out", "baseline.json", "Where to write the baseline")
 	fs.Float64Var(&agreement, "min-agreement", 1, "Fraction of control runs that must perform an action for it to count as the harness's. 1 keeps only what every run did; lower it if the harness does some things only some of the time, at the cost of a wider baseline")
+	fs.StringVar(&mode, "mode", agent.BaselineModePrint, "How the control runs drove the harness: "+agent.BaselineModePrint+" (scripted runs, the default) or "+agent.BaselineModeInteractive+" (terminal sessions a driver typed into); verify warns when the session's mode differs (V-103)")
 	var exclude []string
 	fs.Func("exclude", "Target that never becomes a rule, such as the command the control task itself was told to run; a rule for it would explain any later command with that target without a claim. Repeatable", func(v string) error {
 		exclude = append(exclude, v)
 		return nil
 	})
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(errOut, "Usage: baseline --agent NAME --agent-version V [--out FILE] [--exclude TARGET]... CONTROL_RUN.json...")
+		_, _ = fmt.Fprintln(errOut, "Usage: baseline --agent NAME --agent-version V [--mode print|interactive] [--out FILE] [--exclude TARGET]... CONTROL_RUN.json...")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -90,7 +95,7 @@ func run(args []string, out, errOut io.Writer) int {
 		runs = append(runs, f)
 	}
 
-	b, err := agent.Capture(a, version, runs, time.Now(), agent.CaptureOptions{MinAgreement: agreement, Exclude: exclude})
+	b, err := agent.Capture(a, version, runs, time.Now(), agent.CaptureOptions{MinAgreement: agreement, Exclude: exclude, Mode: mode})
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "baseline: %v\n", err)
 		return 3
@@ -119,6 +124,9 @@ func run(args []string, out, errOut io.Writer) int {
 		_, _ = fmt.Fprintf(out, "recorded what the controls changed in %d of %d sensitive harness file(s): %d change(s) by key path explained, %d unstable left out (V-40)\n", len(b.Sensitive.Files), len(agent.SensitiveFiles(a)), len(b.Sensitive.Changes), len(b.Sensitive.Unstable))
 	case len(agent.SensitiveFiles(a)) > 0:
 		_, _ = fmt.Fprintln(out, "note: some control run holds no snapshot of the harness's sensitive files (captured before V-40), so the baseline records none and verify checks no change of them")
+	}
+	if b.Mode != "" {
+		_, _ = fmt.Fprintf(out, "mode: %s (the control runs were terminal sessions; verify warns on a session of another mode, V-103)\n", b.Mode)
 	}
 	if b.Runs == 1 {
 		_, _ = fmt.Fprintln(out, "note: one control run cannot tell stable activity from incidental activity; capture at least three")

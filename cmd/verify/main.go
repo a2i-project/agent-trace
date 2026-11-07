@@ -40,7 +40,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.SetOutput(errOut)
 	var trajectoryPath, groundTruthPath, agentName, baselinePath string
 	var slack time.Duration
-	var ignoreExits, normalized, startupWindow bool
+	var ignoreExits, normalized, startupWindow, interactive bool
 	fs.StringVar(&trajectoryPath, "trajectory", "", "Path to the trajectory: the agent's own session file when an adapter reads it, or normalized trajectory JSON")
 	fs.StringVar(&groundTruthPath, "ground-truth", "", "Path to the observed ground truth JSON (written by watch)")
 	fs.StringVar(&agentName, "agent", "", "Adapter that reads the trajectory ("+strings.Join(agent.Names(), ", ")+"). Default: detect from the file, else generic")
@@ -49,6 +49,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.BoolVar(&normalized, "normalized", false, "Read --trajectory as normalized trajectory JSON (what cmd/attack writes) and use --agent only for the ground truth side")
 	fs.BoolVar(&ignoreExits, "ignore-exits", false, "Do not align process exits even if the adapter's format records them")
 	fs.BoolVar(&startupWindow, "startup-window", false, "Read an open of a file the adapter declares its harness reads only at start-up, made by the harness's process after the start-up and not within 2 s of its own write of the file, as the agent's (V-82). Off by default: untested on sessions over 6.5 minutes, interactive sessions and mid-session token renewal")
+	fs.BoolVar(&interactive, "interactive", false, "The session was an interactive one, typed into a terminal (capture-agent.sh --interactive). Only compared with the baseline's mode, for a warning line; the verdict is unchanged (V-103)")
 	var jsonPath, sessionID string
 	var traceHash bool
 	fs.BoolVar(&traceHash, "check-trace-hash", false, "Compare the session file read with the last content the probe hashed of the session's declared main file, and read a difference as a damaged trace (V-59). Only for the file the capture left, unmodified: a fixture rewritten after the capture differs")
@@ -180,11 +181,19 @@ func run(args []string, out, errOut io.Writer) int {
 		}
 	}
 
+	sessionMode := agent.BaselineModePrint
+	if interactive {
+		sessionMode = agent.BaselineModeInteractive
+	}
 	ri := reportInput{
 		trajectoryPath: trajectoryPath, groundTruthPath: groundTruthPath, adapter: adapter.Name(),
 		reader: readerNote(normalized, adapter.Name()),
 		parse:  rep, baseline: baseline, entries: len(tr), gt: gt, verdict: v,
 		version: vcheck, sessionID: sessionID, startup: startup,
+		modeWarning: modeWarning(baseline, sessionMode),
+	}
+	if interactive {
+		ri.sessionMode = sessionMode
 	}
 	_, ri.sessionScoped = adapter.(agent.SessionTraceDeclarer)
 	report(out, ri)
@@ -257,6 +266,26 @@ type reportInput struct {
 	// startup is the start-up window when --startup-window switched it on,
 	// else nil (V-82).
 	startup *jsonStartup
+	// sessionMode is the session's mode when --interactive stated it, and
+	// modeWarning the warning when the baseline's mode differs from the
+	// session's (V-103); both empty otherwise.
+	sessionMode, modeWarning string
+}
+
+// modeWarning is the warning line, without its "WARNING: " prefix, when the
+// baseline's control runs drove the harness in another mode than the
+// session ran in (V-103), and empty otherwise or without a baseline. It
+// never changes the verdict: a baseline of the other mode still explains
+// what the two modes share.
+func modeWarning(b *agent.Baseline, session string) string {
+	if b == nil || b.ModeName() == session {
+		return ""
+	}
+	how := "without --interactive"
+	if session == agent.BaselineModeInteractive {
+		how = "--interactive"
+	}
+	return fmt.Sprintf("the baseline was measured from %s control runs and the session is %s (%s): what the harness does only in one mode has no rule in the other's baseline and reads as unexplained harness activity; the verdict is unchanged (V-103)", b.ModeName(), session, how)
 }
 
 // jsonStartup is the start-up window of V-82 as --startup-window applied it:
@@ -274,6 +303,9 @@ func report(w io.Writer, r reportInput) {
 
 	p("=== Agent-Trace Verification Report ===\n")
 	printVersionCheck(w, r.version)
+	if r.modeWarning != "" {
+		p("WARNING: %s\n", r.modeWarning)
+	}
 	p("trajectory:   %s (%d entries, %s)\n", r.trajectoryPath, r.entries, r.reader)
 	p("ground truth: %s (%d events, root pid %d)\n", r.groundTruthPath, len(r.gt.Events), r.gt.RootPID)
 	switch {
@@ -1065,24 +1097,29 @@ type jsonReport struct {
 	Adapter     string `json:"adapter"`
 	// SessionID is present only when --session-id gave the session's id
 	// (I-110).
-	SessionID    string                    `json:"session_id,omitempty"`
-	RootPID      uint32                    `json:"root_pid"`
-	Workspace    string                    `json:"workspace,omitempty"`
-	FSScope      *models.FSScope           `json:"fs_scope,omitempty"`
-	Baseline     *agent.Baseline           `json:"baseline,omitempty"`
-	Parse        agent.Report              `json:"parse"`
-	Outcome      string                    `json:"outcome"`
-	ExitCode     int                       `json:"exit_code"`
-	Findings     int                       `json:"findings"`
-	Advisory     bool                      `json:"advisory"`
-	Ambiguous    bool                      `json:"ambiguous"`
-	Reasons      []string                  `json:"reasons,omitempty"`
-	Degradations []string                  `json:"degradations,omitempty"`
-	Alignment    jsonAlignment             `json:"alignment"`
-	Coverage     jsonCoverage              `json:"coverage"`
-	Capability   models.GroundTruth        `json:"capability,omitempty"`
-	Commands     []jsonCommand             `json:"commands"`
-	Complete     verification.Completeness `json:"completeness"`
+	SessionID string `json:"session_id,omitempty"`
+	// SessionMode is present only when --interactive stated the session's
+	// mode, and BaselineModeWarning only when the baseline's mode differs
+	// from the session's (V-103).
+	SessionMode         string                    `json:"session_mode,omitempty"`
+	BaselineModeWarning string                    `json:"baseline_mode_warning,omitempty"`
+	RootPID             uint32                    `json:"root_pid"`
+	Workspace           string                    `json:"workspace,omitempty"`
+	FSScope             *models.FSScope           `json:"fs_scope,omitempty"`
+	Baseline            *agent.Baseline           `json:"baseline,omitempty"`
+	Parse               agent.Report              `json:"parse"`
+	Outcome             string                    `json:"outcome"`
+	ExitCode            int                       `json:"exit_code"`
+	Findings            int                       `json:"findings"`
+	Advisory            bool                      `json:"advisory"`
+	Ambiguous           bool                      `json:"ambiguous"`
+	Reasons             []string                  `json:"reasons,omitempty"`
+	Degradations        []string                  `json:"degradations,omitempty"`
+	Alignment           jsonAlignment             `json:"alignment"`
+	Coverage            jsonCoverage              `json:"coverage"`
+	Capability          models.GroundTruth        `json:"capability,omitempty"`
+	Commands            []jsonCommand             `json:"commands"`
+	Complete            verification.Completeness `json:"completeness"`
 	versionJSON
 
 	// Sensitive is present only when the capture holds a snapshot of the
@@ -1233,6 +1270,7 @@ func writeJSONReport(path string, r reportInput) error {
 	rep.Alignment.CorroboratedHarnessShared = v.CorroboratedHarnessShared
 	rep.Alignment.UnexplainedHarnessCommands = harnessCommandExecs(v.UnexplainedHarnessCommands)
 	rep.versionJSON = r.version.json()
+	rep.SessionMode, rep.BaselineModeWarning = r.sessionMode, r.modeWarning
 	rep.ServerCalls = v.ServerCalls
 	rep.ModelRequests = v.ModelRequests
 	rep.Alignment.BaselinedWritesOutsideHarness = v.BaselinedWritesOutsideHarness
