@@ -108,7 +108,7 @@
           "{session}"
         ],
         "driver": {
-          "note": "How scripts/pty-drive.py drives the interactive controls (I-162, I-163). Measured on 2.1.306 in a pseudo-terminal (2026-11-07): a new workspace always shows the trust dialog with the cursor on 'No, exit', so Down then Enter (Enter alone exits); the ready screen shows the banner and the input glyph; /exit ends the session with status 0. The first prompt is the capture's control prompt, whose command the baseline excludes; the second measures what the harness does per prompt.",
+          "note": "How scripts/pty-drive.py drives the interactive controls (I-162, I-163). Measured on 2.1.306 in a pseudo-terminal (2026-11-07): a new workspace always shows the trust dialog with the cursor on 'No, exit', so Down then Enter (Enter alone exits); the ready screen shows the banner and the input glyph. Under the isolation flags (--disable-slash-commands) /exit is an unknown command; two Ctrl-D about 0.2 s apart on an empty input end the session with status 0 (one second apart they only print 'Press Ctrl-D again to exit'). The first prompt is the capture's control prompt, whose command the baseline excludes; the second measures what the harness does per prompt.",
           "dialogs": [
             {
               "marker": "Yes, I trust this folder",
@@ -122,7 +122,10 @@
             "Claude Code v",
             "\u276f"
           ],
-          "exit": "/exit",
+          "exit_keys": [
+            "ctrl-d",
+            "ctrl-d"
+          ],
           "prompts": [
             "{control_prompt}",
             "Reply with the single word ok. Do not use any tool."

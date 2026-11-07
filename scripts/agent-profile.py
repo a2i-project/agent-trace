@@ -257,8 +257,19 @@ def shell(path, agent, task):
         ready = drv.get("ready")
         if not (isinstance(ready, list) and ready and all(isinstance(m, str) and m.strip() for m in ready)):
             fail(f"{where}: interactive.driver.ready must list the ready screen's markers")
-        if not (isinstance(drv.get("exit"), str) and drv["exit"].strip()):
-            fail(f"{where}: interactive.driver needs an exit command")
+        # The exit: key names sent one by one (exit_keys), or a typed
+        # command (exit), exactly one of them.
+        ex, exk = drv.get("exit"), drv.get("exit_keys")
+        if (ex is None) == (exk is None):
+            fail(f"{where}: interactive.driver needs exactly one of exit (a typed command) and exit_keys (key names)")
+        if ex is not None and not (isinstance(ex, str) and ex.strip()):
+            fail(f"{where}: interactive.driver.exit must be a command")
+        if exk is not None:
+            if not (isinstance(exk, list) and exk):
+                fail(f"{where}: interactive.driver.exit_keys must list key names")
+            bad = [k for k in exk if k not in DRIVER_KEYS]
+            if bad:
+                fail(f"{where}: interactive.driver.exit_keys names unknown key(s) {', '.join(map(str, bad))} ({either(sorted(DRIVER_KEYS))})")
         prompts = drv.get("prompts")
         if not (isinstance(prompts, list) and prompts and all(isinstance(x, str) and x.strip() for x in prompts)):
             fail(f"{where}: interactive.driver.prompts must list the controls' prompts")
@@ -268,13 +279,15 @@ def shell(path, agent, task):
         put("p_driver_dialog_markers", [d["marker"] for d in dialogs])
         put("p_driver_dialog_keys", [" ".join(d["keys"]) for d in dialogs])
         put("p_driver_ready", ready)
-        put("p_driver_exit", drv["exit"])
+        put("p_driver_exit", ex or "")
+        put("p_driver_exit_keys", " ".join(exk or []))
         put("p_driver_prompts", prompts)
     else:
         put("p_driver", False)
         for k in ("dialog_markers", "dialog_keys", "ready", "prompts"):
             put("p_driver_" + k, [])
         put("p_driver_exit", "")
+        put("p_driver_exit_keys", "")
     put("p_params", names)
     for n in names:
         put("p_param_" + n.replace("-", "_"), param(params[n], task))

@@ -2,7 +2,7 @@
 """Drive an interactive agent session on a pseudo-terminal (I-162).
 
     pty-drive.py --log FILE [--dialog MARKER KEYS]... --ready MARKER...
-                 --prompt TEXT... --exit-command TEXT
+                 --prompt TEXT... (--exit-keys KEYS | --exit-command TEXT)
                  --trace-method jsonl-session --trace-dir DIR --session ID
                  [timeouts] -- COMMAND...
 
@@ -18,7 +18,11 @@ driver reads everything the child writes and types into it, in order:
      quiet for --settle seconds (the terminal interface echoes it), writes a
      carriage return, and waits until the agent's transcript shows that many
      turns ended.
-  3. It types the exit command the same way and waits for the child to exit.
+  3. It ends the session and waits for the child to exit: --exit-keys
+     writes the named keys one by one, --exit-key-delay seconds apart
+     (Claude Code 2.1.306 under --disable-slash-commands answers /exit with
+     "Unknown command" and exits on two Ctrl-D close together), or
+     --exit-command types a command the same way as a prompt.
 
 Screen matching: the output is cleaned of ANSI and OSC escape sequences and
 carriage returns, and a marker matches when it is in the text written since
@@ -32,8 +36,8 @@ messages (isSidechain not true) whose message.stop_reason is end_turn, by
 message id: Claude Code may write one message as several records.
 
 The cleaned screen goes to --log; the driver's own lines (what it is waiting
-for, a timeout) go to stderr. Exit status: the child's, after the exit
-command; 124 when a wait timed out (the driver then types the exit command,
+for, a timeout) go to stderr. Exit status: the child's, after the
+exit; 124 when a wait timed out (the driver then ends the session,
 gives the child --kill-grace seconds, sends it SIGTERM, then SIGKILL after
 as long again); the child's status, or 125 when that is 0, when the child
 exited before the script was done; 130 when the driver was interrupted (it
@@ -241,18 +245,27 @@ class Driver:
             self.wait("end of turn %d" % i, lambda: self.turns() >= i, a.turn_timeout)
             self.wait("quiet screen after turn %d" % i, self.quiet, a.turn_timeout)
             self.note("turn %d ended" % i)
-        self.note("exit command")
-        self.type(a.exit_command)
+        self.note("ending the session")
+        self.end()
         self.wait("exit of the session", lambda: self.reap() is not None, a.exit_timeout)
         self.pump(0.2)
         return self.status
 
+    def end(self):
+        """The profile's exit: its keys, or its typed command."""
+        if self.a.exit_keys:
+            for k in self.a.exit_keys.split():
+                self.write(KEYS[k])
+                self.pump(self.a.exit_key_delay)
+        else:
+            self.type(self.a.exit_command)
+
     def stop(self):
-        """End a session the script could not finish: the exit command, then
+        """End a session the script could not finish: the exit, then
         SIGTERM, then SIGKILL, each after --kill-grace seconds."""
         if self.reap() is None and self.fd is not None:
             try:
-                self.type(self.a.exit_command)
+                self.end()
             except OSError:
                 pass
         for sig in (None, signal.SIGTERM, signal.SIGKILL):
@@ -281,7 +294,9 @@ def parse(argv):
     ap.add_argument("--dialog", nargs=2, action="append", default=[], metavar=("MARKER", "KEYS"), help="a dialog's screen marker and the key names to send when it appears, once")
     ap.add_argument("--ready", action="append", required=True, help="a marker of the ready screen; all must appear")
     ap.add_argument("--prompt", action="append", required=True, help="a prompt to type, in order")
-    ap.add_argument("--exit-command", required=True, help="what ends the session")
+    ap.add_argument("--exit-keys", help="the key names that end the session, sent one by one")
+    ap.add_argument("--exit-key-delay", type=float, default=0.2, help="seconds between the exit keys")
+    ap.add_argument("--exit-command", help="a command typed to end the session, in place of --exit-keys")
     ap.add_argument("--trace-method", required=True, choices=["jsonl-session"], help="how turns are counted")
     ap.add_argument("--trace-dir", required=True, help="the transcripts' directory")
     ap.add_argument("--session", required=True, help="the session id, the transcript's name")
@@ -298,6 +313,12 @@ def parse(argv):
     a.command = argv[i + 1:]
     if not a.command:
         ap.error("no command after --")
+    if bool(a.exit_keys) == bool(a.exit_command):
+        ap.error("give exactly one of --exit-keys and --exit-command")
+    if a.exit_keys:
+        bad = [k for k in a.exit_keys.split() if k not in KEYS]
+        if bad:
+            ap.error("--exit-keys: unknown key name(s) %s (known: %s)" % (" ".join(bad), ", ".join(sorted(KEYS))))
     for marker, keys in a.dialog:
         bad = [k for k in keys.split() if k not in KEYS]
         if bad or not keys.split():

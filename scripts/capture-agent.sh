@@ -115,7 +115,8 @@
 # the controls are interactive sessions too, by the same invocation, typed
 # by scripts/pty-drive.py on a pseudo-terminal of its own: the driver
 # answers the profile's dialogs, types the profile's prompts (the first is
-# the control prompt) one turn at a time and the exit command. sudo keeps
+# the control prompt) one turn at a time and ends the session by the
+# profile's exit keys (Claude Code: Ctrl-D twice) or exit command. sudo keeps
 # its credential per terminal, so the driver is started with sudo -n here,
 # on your terminal, and runs watch as root inside the new terminal without
 # sudo; the agent still runs as its user through setpriv. LABEL.watch.log
@@ -994,7 +995,11 @@ if [ -n "$driven" ]; then
   for i in "${!p_driver_dialog_markers[@]}"; do driver_flags+=(--dialog "${p_driver_dialog_markers[i]}" "${p_driver_dialog_keys[i]}"); done
   for m in "${p_driver_ready[@]}"; do driver_flags+=(--ready "$m"); done
   for x in "${driver_prompts[@]}"; do driver_flags+=(--prompt "$x"); done
-  driver_flags+=(--exit-command "$p_driver_exit")
+  if [ -n "$p_driver_exit_keys" ]; then
+    driver_flags+=(--exit-keys "$p_driver_exit_keys")
+  else
+    driver_flags+=(--exit-command "$p_driver_exit")
+  fi
 fi
 
 # Refuse an unusable --baseline-from before anything that needs root or quota.

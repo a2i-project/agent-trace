@@ -1,6 +1,7 @@
 package scripts
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -18,9 +19,12 @@ import (
 // echoes what is typed. Each line typed is a prompt: after a second it
 // appends to --file a user record, a sidechain end_turn and one assistant
 // message written as two end_turn records with one id, and records whether
-// input arrived while the turn ran. /exit exits with $FAKE_TUI_EXIT.
+// input arrived while the turn ran. As Claude Code 2.1.306 under
+// --disable-slash-commands, /exit is an unknown command, and only two
+// Ctrl-D on an empty input within half a second exit (with $FAKE_TUI_EXIT);
+// one alone prints "Press Ctrl-D again to exit".
 // FAKE_TUI_MODE: noready shows no banner, noturn writes no end_turn, stuck
-// ignores /exit. Everything it sees goes to $FAKE_DIR/tui.log.
+// never exits. Everything it sees goes to $FAKE_DIR/tui.log.
 const fakeTUI = `#!/usr/bin/env python3
 import json, os, select, sys, time, tty
 args = sys.argv[1:]
@@ -46,7 +50,7 @@ if keys != b"\x1b[B\r":
 if mode == "noready":
     time.sleep(30); sys.exit(0)
 out("\x1b[2J\x1b[H\x1b[1mClaude Code\x1b[0m v2.1.306\r\n\x1b[2C\u276f ")
-n, buf = 0, b""
+n, buf, ctrl_d = 0, b"", None
 def append(*recs):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "a") as f:
@@ -56,15 +60,25 @@ while True:
     data = os.read(0, 1024)
     if not data:
         sys.exit(3)
+    now = time.monotonic()
     for ch in data:
+        if ch == 4 and not buf:
+            if ctrl_d is not None and now - ctrl_d <= 0.5:
+                log(exit=True)
+                if mode == "stuck":
+                    ctrl_d = None
+                    continue
+                out("\r\nbye\r\n"); sys.exit(int(os.environ.get("FAKE_TUI_EXIT", "0")))
+            ctrl_d = now
+            out("\r\nPress Ctrl-D again to exit\r\n")
+            continue
         if ch != 13:
             buf += bytes([ch]); out(bytes([ch]).decode(errors="replace")); continue
         text, buf = buf.decode(), b""
-        if text == "/exit":
-            log(exit=True)
-            if mode == "stuck":
-                continue
-            out("\r\nbye\r\n"); sys.exit(int(os.environ.get("FAKE_TUI_EXIT", "0")))
+        if text.startswith("/"):
+            log(unknown_command=text)
+            out("\r\nUnknown command: %s\r\n\x1b[2C\u276f " % text)
+            continue
         n += 1
         log(prompt=text)
         base = {"sessionId": sid, "version": "2.1.306", "timestamp": "2026-11-07T10:00:00Z", "cwd": os.getcwd()}
@@ -88,6 +102,7 @@ type tuiLog struct {
 	DialogKeys string `json:"dialog_keys"`
 	Prompt     string `json:"prompt"`
 	Exit       bool   `json:"exit"`
+	Unknown    string `json:"unknown_command"`
 	Turn       int    `json:"turn"`
 	TypedEarly bool   `json:"typed_during_turn"`
 }
@@ -113,7 +128,7 @@ func readTUILog(t *testing.T, fake string) []tuiLog {
 // fake's transcript under dir.
 func driverArgs(log, dir, session string, prompts ...string) []string {
 	args := []string{"--log", log, "--dialog", "Yes, I trust this folder", "down enter", "--ready", "Claude Code v", "--ready", "\u276f",
-		"--exit-command", "/exit", "--trace-method", "jsonl-session", "--trace-dir", dir, "--session", session, "--settle", "0.3", "--key-delay", "0.1"}
+		"--exit-keys", "ctrl-d ctrl-d", "--trace-method", "jsonl-session", "--trace-dir", dir, "--session", session, "--settle", "0.3", "--key-delay", "0.1"}
 	for _, p := range prompts {
 		args = append(args, "--prompt", p)
 	}
@@ -142,7 +157,12 @@ func drive(t *testing.T, env []string, args ...string) (int, string, string) {
 	for i, a := range full {
 		full[i] = strings.ReplaceAll(a, "{tmp}", tmp)
 	}
-	cmd := exec.Command("python3", full...)
+	// A bound for a driver that hangs, so the test fails instead of the
+	// package timing out; every drive here ends within 40 s.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "python3", full...)
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Env = append(append(os.Environ(), "FAKE_DIR="+fake, "TERM="), env...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -249,6 +269,51 @@ func TestTheDriverTimesOutAndStopsTheSession(t *testing.T) {
 			t.Errorf("exit %d:\n%s", code, stderr)
 		}
 	})
+	t.Run("typed /exit is an unknown command", func(t *testing.T) {
+		args := driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt")
+		for i, a := range args {
+			if a == "--exit-keys" {
+				args[i], args[i+1] = "--exit-command", "/exit"
+			}
+		}
+		code, stderr, fake := drive(t, nil, append(args, "--exit-timeout", "2", "--kill-grace", "1")...)
+		if code != 124 || !strings.Contains(stderr, "timeout: no exit of the session") {
+			t.Errorf("exit %d:\n%s", code, stderr)
+		}
+		unknown := false
+		for _, r := range readTUILog(t, fake) {
+			unknown = unknown || r.Unknown == "/exit"
+		}
+		if !unknown {
+			t.Errorf("the fake never saw /exit")
+		}
+	})
+	t.Run("exit keys too far apart", func(t *testing.T) {
+		args := append(driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt"), "--exit-key-delay", "1", "--exit-timeout", "2", "--kill-grace", "1")
+		code, stderr, _ := drive(t, nil, args...)
+		if code != 124 || !strings.Contains(stderr, "timeout: no exit of the session") {
+			t.Errorf("exit %d:\n%s", code, stderr)
+		}
+	})
+	t.Run("exit keys and command", func(t *testing.T) {
+		args := append(driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt"), "--exit-command", "/exit")
+		code, stderr, _ := drive(t, nil, args...)
+		if code != 2 || !strings.Contains(stderr, "exactly one of --exit-keys and --exit-command") {
+			t.Errorf("exit %d:\n%s", code, stderr)
+		}
+	})
+	t.Run("unknown exit key", func(t *testing.T) {
+		args := driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt")
+		for i, a := range args {
+			if a == "--exit-keys" {
+				args[i+1] = "ctrl-d eof"
+			}
+		}
+		code, stderr, _ := drive(t, nil, args...)
+		if code != 2 || !strings.Contains(stderr, "--exit-keys: unknown key name(s) eof") {
+			t.Errorf("exit %d:\n%s", code, stderr)
+		}
+	})
 	t.Run("unknown key", func(t *testing.T) {
 		args := driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt")
 		args[4] = "down return"
@@ -274,7 +339,10 @@ func TestTheDriverIsCheckedInTheProfile(t *testing.T) {
 		{func(p map[string]any) { driver(p)["prompts"] = []any{"Reply ok."} }, "must start with {control_prompt}"},
 		{func(p map[string]any) { driver(p)["prompts"] = []any{"{control_prompt}", "{control_prompt}"} }, "name it once"},
 		{func(p map[string]any) { driver(p)["ready"] = []any{} }, "driver.ready must list"},
-		{func(p map[string]any) { driver(p)["exit"] = "" }, "needs an exit command"},
+		{func(p map[string]any) { delete(driver(p), "exit_keys") }, "needs exactly one of exit"},
+		{func(p map[string]any) { driver(p)["exit"] = "/exit" }, "needs exactly one of exit"},
+		{func(p map[string]any) { driver(p)["exit_keys"] = []any{"ctrl-d", "eof"} }, "exit_keys names unknown key(s) eof"},
+		{func(p map[string]any) { delete(driver(p), "exit_keys"); driver(p)["exit"] = "" }, "driver.exit must be a command"},
 		{func(p map[string]any) {
 			driver(p)["dialogs"] = []any{map[string]any{"marker": "Trust?", "keys": []any{"down", "return"}}}
 		}, "unknown key(s) return"},
