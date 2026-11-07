@@ -557,6 +557,16 @@ func Verify(in Input) Verdict {
 	// serving a claim, inside that claim's interval, whose path no claim
 	// names, is explained the same way (V-100).
 	part, v.HarnessServedReads = part.setAsideServedReads(in.Options.HarnessServedReads, claims, claimed, in.Options.IntervalSlack)
+	// A level-0 open of a file a claim wrote earlier, with which the
+	// agent's own process copies it into the session's checkpoint the
+	// trace declaration names, is explained as bookkeeping (V-104).
+	var checkpoint func(file, written string) bool
+	if in.Trace.Decl != nil {
+		checkpoint = in.Trace.Decl.Checkpoint
+	}
+	var copies []models.GroundTruthEvent
+	part, copies = part.setAsideCheckpoints(checkpointOpens(checkpoint, in.Ground, claims, claimed, mounts, in.RootPID), in.Baseline)
+	v.HarnessBookkeeping = append(v.HarnessBookkeeping, copies...)
 	// A level-0 file event in the harness's own directories that no claim
 	// names is set aside before alignment, as a baseline event is: left in
 	// the sequence it could pair with a claim and leave a real one unpaired at

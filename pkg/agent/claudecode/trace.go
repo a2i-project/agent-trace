@@ -34,12 +34,17 @@ func (Adapter) Trace(workspace, home string) *verification.TraceDecl {
 // The session's record states no id the declaration takes (Report.TraceSession
 // stays empty), so without --session-id Trace decides, as I-74 does. An id
 // that is not a session id (a UUID) declares nothing here, and Trace then
-// decides.
+// decides. For a version in checkpointVersions it also declares the
+// session's edit checkpoints (declareCheckpoint, V-104).
 func (Adapter) SessionTrace(workspace, home string, s agent.TraceSession) *verification.TraceDecl {
 	if !sessionIDPattern.MatchString(s.ID) {
 		return nil
 	}
-	return declareTrace(workspace, home, regexp.QuoteMeta(s.ID))
+	d := declareTrace(workspace, home, regexp.QuoteMeta(s.ID))
+	if d != nil {
+		d.Checkpoint = declareCheckpoint(home, s.ID, s.Version)
+	}
+	return d
 }
 
 // sessionIDPattern is a Claude Code session id, as its transcripts are named.

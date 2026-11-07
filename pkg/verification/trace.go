@@ -27,6 +27,14 @@ type TraceDecl struct {
 	// no other process holds open and deletes when it closes it (V-76).
 	// Nil declares none.
 	Transient func(path string) bool
+	// Checkpoint reports whether written is a checkpoint version of file:
+	// the copy of a file the session edited that the harness keeps, under
+	// the session's id, so it can restore the file (V-104), such as Claude
+	// Code's ~/.claude/file-history/<session id>/. Only a declaration that
+	// names the session declares it, since another session's checkpoints
+	// explain nothing. The open with which the harness's process reads the
+	// file for the copy is explained (checkpointOpens). Nil declares none.
+	Checkpoint func(file, written string) bool
 }
 
 // TraceState is what the reader of the trace found when it read it.

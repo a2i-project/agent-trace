@@ -930,20 +930,29 @@ func foldNamedLockRewrite(g models.GroundTruth, used []bool, replace map[int]mod
 // run is broken by any other file event of that process, except one on the
 // harness's own files (I-30): the harness appends to its transcript and reads
 // its configuration between the opens a tool makes, and a claim knows nothing
-// of that.
+// of that. A run whose one open is the harness's copy of the file into its
+// edit checkpoint ends at the copy (checkpointCopies, V-104): the next open
+// of the file is a later access, not part of the copy.
 func collapseOpens(g models.GroundTruth) models.GroundTruth {
+	copies := checkpointCopies(g)
 	last := map[uint32]*models.GroundTruthEvent{}
+	single := map[uint32]bool{} // the run of last[pid] holds one open
 	out := make(models.GroundTruth, 0, len(g))
-	for _, e := range g {
+	for i, e := range g {
 		if !isFile(e.ActionType) || e.PID == 0 || harnessOwned.MatchString(e.Target) {
+			if prev := last[e.PID]; prev != nil && single[e.PID] && prev.ActionType == models.FileOpen && copies[i].of(*prev) {
+				delete(last, e.PID)
+			}
 			out = append(out, e)
 			continue
 		}
 		if prev := last[e.PID]; prev != nil && e.ActionType == models.FileOpen && prev.ActionType == models.FileOpen && prev.Target == e.Target {
+			single[e.PID] = false
 			continue
 		}
 		ev := e
 		last[e.PID] = &ev
+		single[e.PID] = true
 		out = append(out, e)
 	}
 	return out

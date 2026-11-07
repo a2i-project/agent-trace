@@ -40,20 +40,25 @@ type SessionTraceDeclarer interface {
 
 // TraceSession names the session whose files are the trace: its id and the
 // ids of the subagent sessions its record names as its own
-// (Report.TraceSubagents, V-80). An empty ID names none.
+// (Report.TraceSubagents, V-80). An empty ID names none. Version is the
+// harness version the session's record states (Report.AgentVersion), which
+// keys what a declaration says beyond where the trace is, such as where
+// the harness keeps the session's checkpoints (TraceDecl.Checkpoint,
+// V-104); empty keys nothing.
 type TraceSession struct {
 	ID        string
 	Subagents []string
+	Version   string
 }
 
 // SessionOf is the session a trace declaration takes for a record: the id
-// the record states, or id when it is not empty, with the subagents the
-// record names.
+// the record states, or id when it is not empty, with the subagents and
+// the version the record names.
 func SessionOf(rep Report, id string) TraceSession {
 	if id == "" {
 		id = rep.TraceSession
 	}
-	return TraceSession{ID: id, Subagents: rep.TraceSubagents}
+	return TraceSession{ID: id, Subagents: rep.TraceSubagents, Version: rep.AgentVersion}
 }
 
 // Trace is the adapter's trace declaration for a capture, or nil. s is the
