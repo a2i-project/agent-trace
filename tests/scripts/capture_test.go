@@ -44,10 +44,15 @@ path = os.path.join(real, sid + ".jsonl")
 obs = "/home/shim/.claude/projects/%s/%s.jsonl" % (proj, sid)
 if "-p" not in args:
     # A driven interactive control (I-163) runs under scripts/pty-drive.py:
-    # the fake terminal agent takes over, with this run's transcript.
+    # the fake terminal agent takes over, with this run's transcript. The
+    # walk stops at the capture script: a process above it, such as the
+    # shell that started go test, may name the driver in its command line.
     pid = os.getppid()
     while pid > 1:
-        if b"pty-drive.py" in open("/proc/%d/cmdline" % pid, "rb").read():
+        cmdline = open("/proc/%d/cmdline" % pid, "rb").read()
+        if b"capture-agent.sh" in cmdline:
+            break
+        if b"pty-drive.py" in cmdline:
             evs = [{"timestamp": "2026-10-31T10:00:00.00%dZ" % i, "action_type": t, "target": obs, "pid": 1000} for i, t in enumerate(("file_open", "file_write", "file_close"), 1)]
             with open(os.path.join(os.environ["FAKE_DIR"], "events.json"), "w") as f:
                 json.dump(evs, f)
