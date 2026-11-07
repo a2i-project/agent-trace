@@ -111,15 +111,8 @@ func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 func (a Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 	switch {
 	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
-		if payload, ok := evalPayload(e.Target); ok {
-			e.Target = payload
-		} else if prefix, ok := evalPayloadPrefix(e.Target); e.TargetTruncated && ok {
-			// The probe cut the wrapper: what it kept of the eval word is a
-			// prefix of the claimed command, and the verifier pairs it as such
-			// (V-26). The flag stays on the event.
-			e.Target = prefix
-		} else if kind, rest, ok := a.searchOf(e); ok {
-			e.Target, e.TargetTruncated = searchTarget(kind, rest, e)
+		if target, truncated, ok := a.recoverCommand(e); ok {
+			e.Target, e.TargetTruncated = target, truncated
 		} else {
 			e.Target = canonicalIDs(e.Target)
 		}
@@ -127,6 +120,35 @@ func (a Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, 
 		e.Target = withoutDeletedSuffix(e.Target)
 	}
 	return e, true
+}
+
+// recoverCommand is the command of an agent's tool call that a process
+// event's target holds, and whether the target is the probe's cut of it:
+// the eval word of a Bash call's wrapper, what a cut wrapper kept of that
+// word (V-26, the flag stays on the event), or a Grep or Glob search. ok is
+// false for any other process, the harness's own commands included.
+func (a Adapter) recoverCommand(e models.GroundTruthEvent) (target string, truncated, ok bool) {
+	if payload, ok := evalPayload(e.Target); ok {
+		return payload, e.TargetTruncated, true
+	}
+	if prefix, ok := evalPayloadPrefix(e.Target); e.TargetTruncated && ok {
+		return prefix, true, true
+	}
+	if kind, rest, ok := a.searchOf(e); ok {
+		target, truncated = searchTarget(kind, rest, e)
+		return target, truncated, true
+	}
+	return "", false, false
+}
+
+// RecoversCommand is agent.CommandRecoverer: Normalize recovers an agent's
+// Bash call or search from raw (V-102).
+func (a Adapter) RecoversCommand(raw models.GroundTruthEvent) bool {
+	if raw.ActionType != models.ProcessExec && raw.ActionType != models.ProcessExit {
+		return false
+	}
+	_, _, ok := a.recoverCommand(raw)
+	return ok
 }
 
 // Canonical replaces the per-run ids in the harness's own file paths with

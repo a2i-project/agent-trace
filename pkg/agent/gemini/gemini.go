@@ -88,6 +88,16 @@ func (Adapter) Expresses(e models.TrajectoryEntry, field string) bool {
 // IsHarnessNoise declares nothing: the baseline is measured per version (D11).
 func (Adapter) IsHarnessNoise(models.GroundTruthEvent) bool { return false }
 
+// RecoversCommand is agent.CommandRecoverer: Normalize recovers a
+// run_command's CommandLine from raw (V-102).
+func (Adapter) RecoversCommand(raw models.GroundTruthEvent) bool {
+	if raw.ActionType != models.ProcessExec && raw.ActionType != models.ProcessExit {
+		return false
+	}
+	_, ok := commandOf(raw.Target)
+	return ok
+}
+
 // Normalize recovers the CommandLine of a run_command from the `bash -c`
 // wrapper the harness execs it with (I-47), in the exec and the exit of the
 // process. A truncated wrapper recovers a prefix of the command, which the

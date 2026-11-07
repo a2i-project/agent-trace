@@ -79,6 +79,16 @@ func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bo
 	return e, true
 }
 
+// RecoversCommand is agent.CommandRecoverer: Normalize recovers an agent's
+// shell call from raw, the exec of Codex's wrapper (V-102).
+func (Adapter) RecoversCommand(raw models.GroundTruthEvent) bool {
+	if raw.ActionType != models.ProcessExec && raw.ActionType != models.ProcessExit {
+		return false
+	}
+	_, ok := recoverCommand(raw.Target, raw.TargetTruncated)
+	return ok
+}
+
 // Canonical replaces the per-run ids in the harness's own paths and
 // commands with fixed tokens (I-83), where runs are compared
 // (agent.Canonicalizer, I-41).

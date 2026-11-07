@@ -93,16 +93,34 @@ var shellPrefixes = []string{"/bin/bash -c ", "/usr/bin/bash -c "}
 func (Adapter) Normalize(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
 	switch {
 	case e.ActionType == models.ProcessExec || e.ActionType == models.ProcessExit:
-		for _, p := range shellPrefixes {
-			if strings.HasPrefix(e.Target, p) && len(e.Target) > len(p) {
-				e.Target = e.Target[len(p):]
-				break
-			}
+		if cmd, ok := commandOf(e.Target); ok {
+			e.Target = cmd
 		}
 	case isFile(e.ActionType):
 		e.Target = strings.TrimSuffix(e.Target, " (deleted)")
 	}
 	return e, true
+}
+
+// commandOf is the command of a bash call that a process target holds, the
+// target after the wrapper's prefix; ok is false for any other target.
+func commandOf(target string) (string, bool) {
+	for _, p := range shellPrefixes {
+		if strings.HasPrefix(target, p) && len(target) > len(p) {
+			return target[len(p):], true
+		}
+	}
+	return "", false
+}
+
+// RecoversCommand is agent.CommandRecoverer: Normalize recovers a bash
+// call's command from raw (V-102).
+func (Adapter) RecoversCommand(raw models.GroundTruthEvent) bool {
+	if raw.ActionType != models.ProcessExec && raw.ActionType != models.ProcessExit {
+		return false
+	}
+	_, ok := commandOf(raw.Target)
+	return ok
 }
 
 func isFile(t models.ActionType) bool {

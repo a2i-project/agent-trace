@@ -780,3 +780,55 @@ func TestHarnessServedReads(t *testing.T) {
 		t.Error("a declaration of only invalid paths")
 	}
 }
+
+// recovering is fake with a CommandRecoverer declaration.
+type recovering struct {
+	fake
+	recovers func(models.GroundTruthEvent) bool
+}
+
+func (r recovering) RecoversCommand(e models.GroundTruthEvent) bool { return r.recovers(e) }
+
+// V-102: a baseline command rule explains the harness's own exec of its line
+// and never an agent's tool call that Normalize recovered the same line from.
+// Without a CommandRecoverer declaration, an exec whose target Normalize
+// changes counts as recovered.
+func TestPrepareNeverLetsTheBaselineExplainARecoveredCommand(t *testing.T) {
+	unwrap := func(e models.GroundTruthEvent) (models.GroundTruthEvent, bool) {
+		e.Target = strings.TrimPrefix(e.Target, "wrapper ")
+		return e, true
+	}
+	measured := func(e models.GroundTruthEvent) bool { return e.ActionType == models.ProcessExec && e.Target == "ls" }
+	g := completeFile(models.GroundTruth{
+		{Timestamp: t0, ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: 100},
+		ev(models.ProcessExec, "ls", 200, 100),
+		{Timestamp: t0.Add(time.Second), ActionType: models.ProcessFork, Target: "x", PID: 300, PPID: 100},
+		{Timestamp: t0.Add(time.Second), ActionType: models.ProcessExec, Target: "wrapper ls", PID: 300, PPID: 100},
+	})
+	unrecorded := func(a Adapter) []uint32 {
+		var pids []uint32
+		for _, e := range verification.Verify(Prepare(a, nil, g, measured, verification.Options{IgnoreExits: true})).Unrecorded {
+			if e.ActionType == models.ProcessExec {
+				pids = append(pids, e.PID)
+			}
+		}
+		return pids
+	}
+	plain := fake{name: "f", norm: unwrap}
+	if got := unrecorded(plain); len(got) != 1 || got[0] != 300 {
+		t.Errorf("without a declaration: unrecorded execs %v, want only the wrapped one (300)", got)
+	}
+	declared := recovering{fake: plain, recovers: func(e models.GroundTruthEvent) bool { return strings.HasPrefix(e.Target, "wrapper ") }}
+	if got := unrecorded(declared); len(got) != 1 || got[0] != 300 {
+		t.Errorf("with a declaration: unrecorded execs %v, want only the wrapped one (300)", got)
+	}
+	// A declaration that recovers nothing keeps the old reading, in which the
+	// rule explains both: what an adapter's per-run id rewriting relies on.
+	none := recovering{fake: plain, recovers: func(models.GroundTruthEvent) bool { return false }}
+	if got := unrecorded(none); len(got) != 0 {
+		t.Errorf("with a declaration that recovers nothing: unrecorded execs %v, want none", got)
+	}
+	if RecoveredCommands(fake{name: "f"}, g) != nil {
+		t.Error("RecoveredCommands is not nil for an adapter whose Normalize changes nothing")
+	}
+}

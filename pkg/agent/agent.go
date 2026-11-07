@@ -456,6 +456,51 @@ func isOriginTarget(target string) bool {
 	return ok && host != "" && !strings.ContainsAny(host, "/?#@ ")
 }
 
+// CommandRecoverer is implemented by an adapter whose Normalize recovers the
+// command of an agent's tool call from the harness's wrapper around it (D6):
+// RecoversCommand reports whether Normalize does so for raw, an event as the
+// probe reported it. Prepare never lets the baseline explain such an exec
+// (V-102): its normalized line can equal a harness command's, which the
+// controls made a rule. An adapter without it is read by whether Normalize
+// changes the exec's target, which never misses a recovered command and may
+// keep a harness command from its rule.
+type CommandRecoverer interface {
+	RecoversCommand(raw models.GroundTruthEvent) bool
+}
+
+// RecoveredCommands recognises, among a capture's normalized events, the
+// execs whose raw event the adapter's Normalize recovered an agent's command
+// from (CommandRecoverer, V-102), by the raw event's pid and timestamp, which
+// Normalize keeps, as HarnessCommand does. a is the adapter as
+// NormalizeCapture configures it for g. Nil when no exec of the capture is
+// one.
+func RecoveredCommands(a Adapter, g models.GroundTruthFile) func(models.GroundTruthEvent) bool {
+	a = forCapture(a, g)
+	recovers := func(e models.GroundTruthEvent) bool {
+		if cr, ok := a.(CommandRecoverer); ok {
+			return cr.RecoversCommand(e)
+		}
+		n, keep := a.Normalize(e)
+		return keep && n.Target != e.Target
+	}
+	type key struct {
+		pid uint32
+		ts  int64
+	}
+	execs := map[key]bool{}
+	for _, e := range g.Events {
+		if e.ActionType == models.ProcessExec && recovers(e) {
+			execs[key{e.PID, e.Timestamp.UnixNano()}] = true
+		}
+	}
+	if len(execs) == 0 {
+		return nil
+	}
+	return func(e models.GroundTruthEvent) bool {
+		return e.ActionType == models.ProcessExec && execs[key{e.PID, e.Timestamp.UnixNano()}]
+	}
+}
+
 // HarnessCommand recognises, among a capture's normalized events, the execs
 // of the adapter's declared harness commands (V-43): an exec whose raw
 // target, before Normalize, is exactly a declared command line, not
@@ -712,6 +757,12 @@ func NormalizeGround(a Adapter, events models.GroundTruth) models.GroundTruth {
 // process from others (AgentProcessUser) its RootPID (I-128). Prepare and
 // the baseline's Capture use it on the capture as Rooted returns it.
 func NormalizeCapture(a Adapter, g models.GroundTruthFile) models.GroundTruth {
+	return normalize(forCapture(a, g), g.Events)
+}
+
+// forCapture is the adapter as NormalizeCapture normalizes g with: given
+// the capture's RootImage, RootPID and Workspace when it uses them.
+func forCapture(a Adapter, g models.GroundTruthFile) Adapter {
 	if u, ok := a.(AgentImageUser); ok {
 		a = u.WithAgentImage(g.RootImage)
 	}
@@ -721,7 +772,7 @@ func NormalizeCapture(a Adapter, g models.GroundTruthFile) models.GroundTruth {
 	if u, ok := a.(WorkspaceUser); ok {
 		a = u.WithWorkspace(g.Workspace)
 	}
-	return normalize(a, g.Events)
+	return a
 }
 
 // AgentProcessUser is implemented by an adapter whose normalization needs
@@ -827,7 +878,11 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 		claims = expanded
 	}
 	ground := NormalizeCapture(a, g)
+	recovered := RecoveredCommands(a, g)
 	baseline := func(e models.GroundTruthEvent) bool {
+		if recovered != nil && recovered(e) {
+			return false // an agent's tool call, whatever line it normalized to (V-102)
+		}
 		return a.IsHarnessNoise(e) || (measured != nil && measured(canonical(a, e)))
 	}
 	opts.Expresses = a.Expresses
