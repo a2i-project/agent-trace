@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Drive an interactive agent session on a pseudo-terminal (I-162).
 
-    pty-drive.py --log FILE [--dialog MARKER KEYS]... --ready MARKER...
+    pty-drive.py --log FILE [--dialog MARKER KEYS]... [--dialog-selected MARKER TEXT]...
+                 --ready MARKER...
                  --prompt TEXT... (--exit-keys KEYS | --exit-command TEXT)
                  --trace-method jsonl-session --trace-dir DIR --session ID
                  [timeouts] -- COMMAND...
@@ -13,7 +14,19 @@ driver reads everything the child writes and types into it, in order:
 
   1. It waits for the ready screen, answering each dialog whose MARKER
      appears by writing its KEYS (names separated by spaces, KEYS below),
-     at most once per dialog, at any time in the session.
+     at most once per dialog, at any time in the session, once the output
+     has been quiet for --settle seconds (the dialog is drawn). With
+     --dialog-selected, TEXT is how the option the last key confirms looks
+     when selected (with the interface's cursor glyph), and it must hold
+     MARKER: the driver writes the keys before the last, waits for quiet,
+     and writes the last key only when the dialog's latest drawing shows
+     TEXT (MARKER's latest match lies inside TEXT's latest match). A dialog
+     drawn again with another option selected gets the keys before the last
+     again, up to three times in all (SELECT_ATTEMPTS); a dialog not drawn again after them, or
+     still not showing TEXT, ends the session as a timeout, never confirming
+     an option it cannot see selected. Claude Code 2.1.306 drew its trust
+     dialog again with the cursor back on "No, exit" after Down was taken,
+     and the Enter then exited (2026-11-11).
   2. For each --prompt: it writes the text, waits until the output has been
      quiet for --settle seconds (the terminal interface echoes it), writes a
      carriage return, and waits until the agent's transcript shows that many
@@ -60,6 +73,9 @@ import struct
 import sys
 import termios
 import time
+
+# How many times a dialog's keys before the last are written, at most.
+SELECT_ATTEMPTS = 3
 
 # The key names a profile may use, as the bytes a terminal sends.
 KEYS = {
@@ -179,16 +195,52 @@ class Driver:
         self.seen = ""
         os.write(self.fd, data)
 
+    def settle(self):
+        """Read until the output has been quiet for --settle seconds, or
+        for --type-timeout at most."""
+        end = time.monotonic() + self.a.type_timeout
+        while not self.quiet() and time.monotonic() < end and self.reap() is None:
+            self.pump(0.1)
+
+    def keys(self, names):
+        for k in names:
+            if self.fd is None or self.reap() is not None:
+                raise Ended("the session ended while the driver answered a dialog")
+            self.write(KEYS[k])
+            self.pump(self.a.key_delay)
+
+    def shows(self, marker, selected):
+        """Whether the latest drawing of the dialog has selected on it: the
+        marker's latest match lies inside the selected text's latest match."""
+        m, s = SPACE.sub("", marker), SPACE.sub("", selected)
+        i, j = self.seen.rfind(s), self.seen.rfind(m)
+        return i >= 0 and i <= j and j + len(m) <= i + len(s)
+
     def dialogs(self):
-        """Answer each dialog whose marker is on the screen, once."""
+        """Answer each dialog whose marker is on the quiet screen, once."""
         for i, (marker, keys) in enumerate(self.a.dialog):
-            if i in self.answered or SPACE.sub("", marker) not in self.seen:
+            if i in self.answered or SPACE.sub("", marker) not in self.seen or not self.quiet():
                 continue
             self.answered.add(i)
             self.note("dialog %r: sending %s" % (marker, keys))
-            for k in keys.split():
-                self.write(KEYS[k])
-                self.pump(self.a.key_delay)
+            names = keys.split()
+            selected = self.a.selected.get(marker)
+            if selected is None:
+                self.keys(names)
+                continue
+            move, confirm = names[:-1], names[-1:]
+            for attempt in range(SELECT_ATTEMPTS):
+                if attempt:
+                    self.note("dialog %r: drawn again without %r selected; sending %s again" % (marker, selected, " ".join(move)))
+                self.keys(move)
+                self.settle()
+                if self.shows(marker, selected):
+                    self.keys(confirm)
+                    break
+                if not move or SPACE.sub("", marker) not in self.seen:
+                    raise Timeout("dialog %r: the screen does not show %r selected; not sending %s" % (marker, selected, " ".join(confirm)))
+            else:
+                raise Timeout("dialog %r: %r still not selected after sending %s %d times; not sending %s" % (marker, selected, " ".join(move), SELECT_ATTEMPTS, " ".join(confirm)))
 
     def wait(self, what, cond, timeout):
         end = time.monotonic() + timeout
@@ -207,9 +259,7 @@ class Driver:
         self.write(text.encode())
         # The interface echoes the text; the carriage return goes alone once
         # it has, or after --type-timeout at most.
-        end = time.monotonic() + self.a.type_timeout
-        while not self.quiet() and time.monotonic() < end and self.reap() is None:
-            self.pump(0.1)
+        self.settle()
         self.pump(self.a.settle)
         self.write(b"\r")
 
@@ -292,6 +342,7 @@ def parse(argv):
     ap = argparse.ArgumentParser(prog="pty-drive.py", description=__doc__.split("\n\n")[0])
     ap.add_argument("--log", required=True, help="where the cleaned screen text goes")
     ap.add_argument("--dialog", nargs=2, action="append", default=[], metavar=("MARKER", "KEYS"), help="a dialog's screen marker and the key names to send when it appears, once")
+    ap.add_argument("--dialog-selected", nargs=2, action="append", default=[], metavar=("MARKER", "TEXT"), help="how the option a --dialog's last key confirms looks when selected; the last key waits for it")
     ap.add_argument("--ready", action="append", required=True, help="a marker of the ready screen; all must appear")
     ap.add_argument("--prompt", action="append", required=True, help="a prompt to type, in order")
     ap.add_argument("--exit-keys", help="the key names that end the session, sent one by one")
@@ -323,6 +374,15 @@ def parse(argv):
         bad = [k for k in keys.split() if k not in KEYS]
         if bad or not keys.split():
             ap.error("dialog %r: unknown key name(s) %s (known: %s)" % (marker, " ".join(bad) or "none given", ", ".join(sorted(KEYS))))
+    a.selected = {}
+    for marker, text in a.dialog_selected:
+        if marker not in [m for m, _ in a.dialog]:
+            ap.error("--dialog-selected %r names no --dialog marker" % marker)
+        if marker in a.selected:
+            ap.error("--dialog-selected %r is given twice" % marker)
+        if SPACE.sub("", marker) not in SPACE.sub("", text):
+            ap.error("--dialog-selected %r: the selected text %r must hold the marker" % (marker, text))
+        a.selected[marker] = text
     return a
 
 

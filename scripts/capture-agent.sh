@@ -992,7 +992,10 @@ control_mode=print
 driver_flags=()
 if [ -n "$driven" ]; then
   control_mode="interactive driven prompts_sha256=$(printf '%s\n' "${driver_prompts[@]}" | sha256sum | cut -d' ' -f1)"
-  for i in "${!p_driver_dialog_markers[@]}"; do driver_flags+=(--dialog "${p_driver_dialog_markers[i]}" "${p_driver_dialog_keys[i]}"); done
+  for i in "${!p_driver_dialog_markers[@]}"; do
+    driver_flags+=(--dialog "${p_driver_dialog_markers[i]}" "${p_driver_dialog_keys[i]}")
+    [ -z "${p_driver_dialog_selected[i]}" ] || driver_flags+=(--dialog-selected "${p_driver_dialog_markers[i]}" "${p_driver_dialog_selected[i]}")
+  done
   for m in "${p_driver_ready[@]}"; do driver_flags+=(--ready "$m"); done
   for x in "${driver_prompts[@]}"; do driver_flags+=(--prompt "$x"); done
   if [ -n "$p_driver_exit_keys" ]; then

@@ -254,6 +254,12 @@ def shell(path, agent, task):
             bad = [k for k in keys if k not in DRIVER_KEYS]
             if bad:
                 fail(f"{where}: interactive.driver dialog {d['marker']!r} names unknown key(s) {', '.join(map(str, bad))} ({either(sorted(DRIVER_KEYS))})")
+            # selected: how the option the last key confirms looks when
+            # selected; the driver sends the last key only once the screen
+            # shows it, so it must hold the marker.
+            sel = d.get("selected")
+            if sel is not None and not (isinstance(sel, str) and re.sub(r"\s+", "", d["marker"]) in re.sub(r"\s+", "", sel)):
+                fail(f"{where}: interactive.driver dialog {d['marker']!r}: selected must be the selected option's screen text, holding the marker")
         ready = drv.get("ready")
         if not (isinstance(ready, list) and ready and all(isinstance(m, str) and m.strip() for m in ready)):
             fail(f"{where}: interactive.driver.ready must list the ready screen's markers")
@@ -278,13 +284,14 @@ def shell(path, agent, task):
         put("p_driver", True)
         put("p_driver_dialog_markers", [d["marker"] for d in dialogs])
         put("p_driver_dialog_keys", [" ".join(d["keys"]) for d in dialogs])
+        put("p_driver_dialog_selected", [d.get("selected") or "" for d in dialogs])
         put("p_driver_ready", ready)
         put("p_driver_exit", ex or "")
         put("p_driver_exit_keys", " ".join(exk or []))
         put("p_driver_prompts", prompts)
     else:
         put("p_driver", False)
-        for k in ("dialog_markers", "dialog_keys", "ready", "prompts"):
+        for k in ("dialog_markers", "dialog_keys", "dialog_selected", "ready", "prompts"):
             put("p_driver_" + k, [])
         put("p_driver_exit", "")
         put("p_driver_exit_keys", "")

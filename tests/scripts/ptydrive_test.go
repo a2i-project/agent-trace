@@ -14,8 +14,9 @@ import (
 
 // fakeTUI stands in for an interactive agent on a terminal: it records its
 // window size, shows a trust dialog drawn with cursor moves and escape
-// sequences, exits on Enter alone (as Claude Code 2.1.306 does) and goes on
-// after Down and Enter; it then shows a banner with an input glyph and
+// sequences and options unnumbered as 2.1.306 draws them, draws it again with the cursor on the second option at Down,
+// exits on Enter with the cursor on the first (as Claude Code 2.1.306 does)
+// and goes on with it on the second; it then shows a banner with an input glyph and
 // echoes what is typed. Each line typed is a prompt: after a second it
 // appends to --file a user record, a sidechain end_turn and one assistant
 // message written as two end_turn records with one id, and records whether
@@ -23,7 +24,10 @@ import (
 // --disable-slash-commands, /exit is an unknown command, and only two
 // Ctrl-D on an empty input within half a second exit (with $FAKE_TUI_EXIT);
 // one alone prints "Press Ctrl-D again to exit".
-// FAKE_TUI_MODE: noready shows no banner, noturn writes no end_turn, stuck
+// FAKE_TUI_MODE: reset draws the dialog once more with the cursor back on
+// the first option 0.2 s after the first Down (as 2.1.306 did on
+// 2026-11-11), resetalways after every Down, noselect never draws it
+// again; noready shows no banner, noturn writes no end_turn, stuck
 // never exits. Everything it sees goes to $FAKE_DIR/tui.log.
 const fakeTUI = `#!/usr/bin/env python3
 import json, os, select, sys, time, tty
@@ -40,12 +44,26 @@ def out(s):
 size = os.get_terminal_size(1)
 log(columns=size.columns, lines=size.lines, term=os.environ.get("TERM", ""))
 tty.setraw(0)
-out("\x1b[2J\x1b[H\x1b]0;fake\x07Do\x1b[1Cyou\x1b[1Ctrust\x1b[1Cthe\x1b[1Cfiles?\r\n\x1b[32m\u276f\x1b[0m 1. No, exit\r\n  2. Yes,\x1b[1CI\x1b[1Ctrust\x1b[1Cthis\x1b[1Cfolder\r\n")
-keys = b""
+def dialog(cursor):
+    mark = ["\x1b[32m\u276f\x1b[0m" if cursor == i else " " for i in (0, 1)]
+    out("\x1b[2;1H%s No, exit\x1b[K\r\n%s Yes,\x1b[1CI\x1b[1Ctrust\x1b[1Cthis\x1b[1Cfolder\x1b[K\r\n" % tuple(mark))
+out("\x1b[2J\x1b[H\x1b]0;fake\x07Do\x1b[1Cyou\x1b[1Ctrust\x1b[1Cthe\x1b[1Cfiles?\r\n")
+dialog(0)
+keys, cursor, resets = b"", 0, {"reset": 1, "resetalways": 99}.get(mode, 0)
 while not keys.endswith(b"\r"):
-    keys += os.read(0, 64)
+    data = os.read(0, 64)
+    keys += data
+    for _ in range(data.count(b"\x1b[B")):
+        cursor = 1
+        if mode != "noselect":
+            dialog(1)
+        if resets:
+            resets -= 1
+            time.sleep(0.2)
+            cursor = 0
+            dialog(0)
 log(dialog_keys=keys.decode())
-if keys != b"\x1b[B\r":
+if cursor != 1 or keys.replace(b"\x1b[B", b"") != b"\r":
     out("bye\r\n"); sys.exit(1)
 if mode == "noready":
     time.sleep(30); sys.exit(0)
@@ -128,7 +146,8 @@ func readTUILog(t *testing.T, fake string) []tuiLog {
 // fake's transcript under dir.
 func driverArgs(log, dir, session string, prompts ...string) []string {
 	args := []string{"--log", log, "--dialog", "Yes, I trust this folder", "down enter", "--ready", "Claude Code v", "--ready", "\u276f",
-		"--exit-keys", "ctrl-d ctrl-d", "--trace-method", "jsonl-session", "--trace-dir", dir, "--session", session, "--settle", "0.3", "--key-delay", "0.1"}
+		"--exit-keys", "ctrl-d ctrl-d", "--trace-method", "jsonl-session", "--trace-dir", dir, "--session", session, "--settle", "0.3", "--key-delay", "0.1",
+		"--dialog-selected", "Yes, I trust this folder", "\u276f Yes, I trust this folder"}
 	for _, p := range prompts {
 		args = append(args, "--prompt", p)
 	}
@@ -264,6 +283,7 @@ func TestTheDriverTimesOutAndStopsTheSession(t *testing.T) {
 	t.Run("session ends early", func(t *testing.T) {
 		args := driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt")
 		args[4] = "enter" // the dialog's Enter alone makes the fake exit 1
+		args = withoutSelected(args)
 		code, stderr, _ := drive(t, nil, append(args, quick...)...)
 		if code != 1 || !strings.Contains(stderr, "the session ended while waiting for ready screen") {
 			t.Errorf("exit %d:\n%s", code, stderr)
@@ -324,6 +344,70 @@ func TestTheDriverTimesOutAndStopsTheSession(t *testing.T) {
 	})
 }
 
+// withoutSelected drops --dialog-selected and its two values from args.
+func withoutSelected(args []string) []string {
+	for i, a := range args {
+		if a == "--dialog-selected" {
+			return append(append([]string{}, args[:i]...), args[i+3:]...)
+		}
+	}
+	return args
+}
+
+// A dialog's last key goes only once the screen shows the option it
+// confirms selected: a dialog drawn again with the cursor back on another
+// option gets the keys before the last again, and one that never shows the
+// option selected ends the drive as a timeout without the last key. Without
+// --dialog-selected, the redrawn dialog of 2026-11-11 makes the Enter exit.
+func TestTheDriverConfirmsOnlyASelectedOption(t *testing.T) {
+	quick := []string{"--ready-timeout", "10", "--exit-timeout", "5", "--kill-grace", "1"}
+	cases := []struct {
+		name, mode string
+		selected   bool
+		code       int
+		says, keys string
+	}{
+		{"drawn again", "reset", true, 0, "drawn again without", "\x1b[B\x1b[B\r"},
+		{"drawn again, unchecked", "reset", false, 1, "the session ended while waiting for ready screen", "\x1b[B\r"},
+		{"never drawn selected", "noselect", true, 124, "does not show '\u276f Yes, I trust this folder' selected; not sending enter", ""},
+		{"always drawn back", "resetalways", true, 124, "still not selected after sending down 3 times; not sending enter", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			args := append(driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt"), quick...)
+			if !c.selected {
+				args = withoutSelected(args)
+			}
+			code, stderr, fake := drive(t, []string{"FAKE_TUI_MODE=" + c.mode}, args...)
+			if code != c.code || !strings.Contains(stderr, c.says) {
+				t.Errorf("exit %d, want %d with %q:\n%s", code, c.code, c.says, stderr)
+			}
+			keys := ""
+			for _, r := range readTUILog(t, fake) {
+				keys += r.DialogKeys
+			}
+			if keys != c.keys {
+				t.Errorf("dialog keys %q, want %q", keys, c.keys)
+			}
+		})
+	}
+	for _, c := range []struct{ marker, text, says string }{
+		{"Trust?", "\u276f Trust?", "names no --dialog marker"},
+		{"Yes, I trust this folder", "\u276f Yes", "must hold the marker"},
+	} {
+		args := driverArgs("{tmp}/screen.log", "{tmp}/projects", "s1", "a prompt")
+		for i, a := range args {
+			if a == "--dialog-selected" {
+				args[i+1], args[i+2] = c.marker, c.text
+			}
+		}
+		code, stderr, _ := drive(t, nil, args...)
+		if code != 2 || !strings.Contains(stderr, c.says) {
+			t.Errorf("%q %q: exit %d:\n%s", c.marker, c.text, code, stderr)
+		}
+	}
+}
+
 // The profile's driver (I-162) is checked where the profile is read: its
 // dialogs, key names, ready markers, exit command and prompts, the first of
 // which must be the capture's control prompt, and a trace whose turns the
@@ -347,6 +431,9 @@ func TestTheDriverIsCheckedInTheProfile(t *testing.T) {
 			driver(p)["dialogs"] = []any{map[string]any{"marker": "Trust?", "keys": []any{"down", "return"}}}
 		}, "unknown key(s) return"},
 		{func(p map[string]any) { driver(p)["dialogs"] = []any{map[string]any{"marker": "Trust?"}} }, "needs a marker and a list of keys"},
+		{func(p map[string]any) {
+			driver(p)["dialogs"] = []any{map[string]any{"marker": "Trust?", "keys": []any{"down", "enter"}, "selected": "\u276f Yes"}}
+		}, "selected must be the selected option's screen text, holding the marker"},
 		{func(p map[string]any) { p["trace"].(map[string]any)["method"] = "jsonl-rollout" }, "whose turns the driver counts"},
 	}
 	for _, c := range cases {
