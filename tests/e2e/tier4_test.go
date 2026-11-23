@@ -67,7 +67,10 @@ func TestTier4_E2E_NotFaithful_ContentSubstitution(t *testing.T) {
 // written again reports no hash instead. It failed once in 40 CI runs with
 // the empty file's hash at 40 iterations (P-26): the kernel had merged
 // the next rewrite's open and truncation into the close's unread record. The
-// loop is now 200 iterations, to give that window more chances.
+// loop is now 200 iterations, to give that window more chances. It failed
+// three more times in CI in November 2026: a truncating open of the closing
+// process, merged into the close's record, had emptied the file and not yet
+// queued its modify or returned its descriptor (P-53).
 func TestTier4_E2E_RacedRewriteDropsStaleHash(t *testing.T) {
 	skipUnprivileged(t)
 

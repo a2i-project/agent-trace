@@ -1787,7 +1787,13 @@ func (o *Observer) hashSettledFD(target string, buf []byte, pathFD int, pid uint
 	}
 	o.mu.Unlock()
 
-	if err != nil || raced {
+	// An empty read is never trusted. A truncation empties the file before
+	// its FAN_MODIFY is queued and before the truncating open returns its
+	// descriptor, so while one is in progress the writer check, the drain
+	// and the generations all say nothing changed, and an open of the
+	// closing process merged into the close's own record leaves no other
+	// trace (P-53).
+	if err != nil || raced || d == emptyFileHash {
 		return "", false
 	}
 
