@@ -90,6 +90,14 @@ type Edit struct {
 	// refuted on them. Not a finding; it keeps FAITHFUL from being asserted
 	// (V-22).
 	Unverified []string
+	// Candidates names, for an insertion or a substitution of an ordinary
+	// claim, every claim of the lane that some minimum-cost alignment gives
+	// this finding instead, Claim included, in trajectory order: the claims
+	// interchangeable with Claim (equal in every field the pair comparison
+	// reads, time aside) that another minimum-cost alignment leaves unpaired,
+	// or pairs with this Event (V-109). Nil when the finding can name only
+	// Claim.
+	Candidates []*models.TrajectoryEntry
 }
 
 // DiffType is reported when a substitution crosses action types within a lane,
@@ -459,12 +467,17 @@ func targetAndContentDiffs(c models.TrajectoryEntry, e models.GroundTruthEvent, 
 
 // alignLane aligns one lane: its claims are cut into segments (a parallel
 // block or one claim) and aligned by alignBlocks, which with one-claim
-// segments is the ordered alignment.
+// segments is the ordered alignment. Each finding on a claim then names the
+// interchangeable claims another minimum-cost alignment gives it (V-109).
 func alignLane(lane Lane, claims models.Trajectory, observed models.GroundTruth, ci, ei []int, opts Options) (LaneAlignment, error) {
 	la := LaneAlignment{Lane: lane}
 	segs, degr := blockSegments(lane, claims, ci)
 	la.Degradations = degr
-	return alignBlocks(la, claims, observed, ci, ei, segs, opts)
+	la, cost, err := runBlocks(la, claims, observed, ci, ei, segs, opts, nil)
+	if err != nil {
+		return la, err
+	}
+	return la, candidates(&la, claims, observed, ci, ei, segs, opts, cost)
 }
 
 // truncatedPrefix reports whether the observed target is a truncated record

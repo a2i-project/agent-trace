@@ -116,6 +116,13 @@ func compareWithTheWholeTable(t *testing.T, name string, c models.Trajectory, o 
 	t.Helper()
 	got, gotErr := Align(c, o, opts)
 	want, wantErr := refAlign(c, o, opts)
+	// The reference program predates the candidate sets (V-109), which
+	// TestAlign_CandidatesAgreeWithBruteForce checks.
+	for i := range got {
+		for k := range got[i].Edits {
+			got[i].Edits[k].Candidates = nil
+		}
+	}
 	if gotErr != wantErr {
 		t.Fatalf("%s: err %v, the whole table gives %v", name, gotErr, wantErr)
 	}

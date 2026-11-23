@@ -119,6 +119,33 @@ const bandSlack = 4 * costIndel
 // state of a segment also at most 2^k - 1 flush predecessors, so the work is
 // O(cells * maxBlock) per run of the program.
 func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.GroundTruth, ci, ei []int, segs [][]int, opts Options) (LaneAlignment, error) {
+	la, _, err := runBlocks(la, claims, observed, ci, ei, segs, opts, nil)
+	return la, err
+}
+
+// forcing restricts one claim in a run of the program, so that the run's
+// minimum says whether some minimum-cost alignment of the lane gives that
+// claim a finding (V-109). The claim at position p of the lane pairs with
+// nothing when event is -1; otherwise it pairs with exactly the event at
+// position event and may not be left unpaired. bound is the lane's minimum
+// cost without the restriction: every path of at most that cost lies in the
+// band built for it (V-42), so one run over that band decides the question.
+type forcing struct {
+	p, event int
+	bound    int
+}
+
+// forbidden is the insertion cost of a claim forcing pairs: dearer than any
+// alignment of a lane the program can hold, and far below inf, so sums stay
+// exact.
+const forbidden = 1 << 24
+
+// runBlocks is alignBlocks, which also returns the lane's minimum cost. With
+// fc set it runs the program once over the band of fc.bound with fc's
+// restriction and returns only the minimum it finds there (above fc.bound
+// when no minimum-cost alignment meets the restriction), with neither count
+// nor edits.
+func runBlocks(la LaneAlignment, claims models.Trajectory, observed models.GroundTruth, ci, ei []int, segs [][]int, opts Options, fc *forcing) (LaneAlignment, int, error) {
 	n, m := len(ci), len(ei)
 	K := len(segs)
 	off := make([]int, K+1)
@@ -127,7 +154,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	}
 	states := off[K] + 1 // the last is the final state, segment K with mask 0
 	if states > maxCells {
-		return la, ErrTooLarge
+		return la, 0, ErrTooLarge
 	}
 	// fl is the layer a flush writes: 0 when no member is harness-implied and
 	// no event is a kept baseline event, so the program has one layer and
@@ -149,6 +176,9 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 		if opts.keptAt(j) {
 			fl, layers = 1, 2
 		}
+	}
+	if fc != nil && fc.event >= 0 {
+		ins[fc.p] = forbidden
 	}
 
 	const inf = math.MaxInt32 / 4
@@ -257,6 +287,9 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	var pair []int8
 	var pairLo, pairHi, pairBase []int
 	pairCode := func(p, e int) int8 {
+		if fc != nil && p == fc.p && e != fc.event {
+			return -1
+		}
 		pc, ok := pairCostOf(claims[ci[p]], observed[ei[e]], opts.keptAt(ei[e]), opts)
 		if !ok {
 			return -1
@@ -478,17 +511,27 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 	}
 
 	final := off[K]
+	if fc != nil {
+		bd, ok := makeBand(fc.bound)
+		if !ok || !pairsFor(bd) {
+			return la, 0, ErrTooLarge
+		}
+		c, _, _ := best(fill(bd, false), at(bd, final, m))
+		return la, int(c), nil
+	}
 	floor := lowerBound(0, 0)
 	u := floor + bandSlack
 	var bd *band
 	var tb []table
+	var minimum int32
 	for {
 		var ok bool
 		if bd, ok = makeBand(u); !ok || !pairsFor(bd) {
-			return la, ErrTooLarge
+			return la, 0, ErrTooLarge
 		}
 		tb = fill(bd, false)
 		c, _, _ := best(tb, at(bd, final, m))
+		minimum = c
 		if int(c) <= u || bd.full {
 			break
 		}
@@ -527,7 +570,7 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 		x := off[s] + mask
 		cell := at(bd, x, j)
 		if cell < 0 {
-			return la, errTraceback
+			return la, 0, errTraceback
 		}
 		here, hv, _ := best(tb, cell)
 		if afterDeletion {
@@ -583,13 +626,13 @@ func alignBlocks(la LaneAlignment, claims models.Trajectory, observed models.Gro
 			}
 		}
 		if !moved {
-			return la, errTraceback
+			return la, 0, errTraceback
 		}
 	}
 	for k := len(rev) - 1; k >= 0; k-- {
 		la.Edits = append(la.Edits, rev[k])
 	}
-	return la, nil
+	return la, int(minimum), nil
 }
 
 // interchangeable reports whether two claims are equal in every field the
