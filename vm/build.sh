@@ -11,7 +11,8 @@
 #      checked against its SHA-256: the Ubuntu 26.04 cloud image, Go, the
 #      Claude Code binary; agy, which no vendor URL serves by version, is
 #      copied from your install ($AGY_SOURCE, default the agy on PATH) and
-#      checked against its pinned hash;
+#      checked against its pinned hash, and so is Codex's private model
+#      catalog ($CODEX_CATALOG_SOURCE, default ~/.config/agent-trace/);
 #   2. take agent-trace at REV (default HEAD) as a shallow git clone, so the
 #      image holds a repository whose HEAD is that commit;
 #   3. boot a copy of the cloud image once, with a cloud-init seed served by a
@@ -70,6 +71,15 @@ if ! { [ -f "$agy" ] && [ "$(sha256sum "$agy" | cut -d' ' -f1)" = "$AGY_SHA256" 
   vm_log "agy $AGY_VERSION copied from $src into the cache"
 fi
 
+catalog=$cache/$CODEX_CATALOG_FILE
+if ! { [ -f "$catalog" ] && [ "$(sha256sum "$catalog" | cut -d' ' -f1)" = "$CODEX_CATALOG_SHA256" ]; }; then
+  src=${CODEX_CATALOG_SOURCE:-$HOME/.config/agent-trace/$CODEX_CATALOG_FILE}
+  [ -f "$src" ] || vm_die "Codex's model catalog is not in the cache and not at $src: set CODEX_CATALOG_SOURCE"
+  [ "$(sha256sum "$src" | cut -d' ' -f1)" = "$CODEX_CATALOG_SHA256" ] || vm_die "$src is not the catalog the codex profile pins (SHA-256 differs from vm/inputs.env)"
+  cp "$src" "$catalog.part" && mv "$catalog.part" "$catalog"
+  vm_log "Codex's model catalog copied from $src into the cache"
+fi
+
 work=$(mktemp -d "$VM_HOME/build.XXXXXX")
 http_pid=
 port=
@@ -120,7 +130,7 @@ http_pid=
 vm_log "copying the inputs in"
 vm_ssh "$port" 'mkdir -p /tmp/build'
 scp -q "${VM_SSH_OPTS[@]}" -P "$port" -r "$VM_REPO/vm/guest" "$VM_REPO/vm/inputs.env" "$work/agent-trace.tar.gz" \
-  "$cache/${GO_URL##*/}" "$cache/claude-$CLAUDE_VERSION" "$agy" "$VM_OPERATOR@127.0.0.1:/tmp/build/"
+  "$cache/${GO_URL##*/}" "$cache/claude-$CLAUDE_VERSION" "$agy" "$catalog" "$VM_OPERATOR@127.0.0.1:/tmp/build/"
 vm_log "provisioning (log: $work/provision.log, copied to the image's directory)"
 set +e
 vm_ssh "$port" "sudo env RECIPE_COMMIT=$recipe_commit RECIPE_DIRTY=$recipe_dirty SRC_COMMIT=$src_commit \

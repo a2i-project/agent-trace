@@ -34,7 +34,8 @@
 # host that goes down loses nothing the campaign wrote, and the same command
 # boots a fresh VM on the same disk and resumes. The campaign runs detached
 # in the guest; the runner follows its log, and when it ends copies the
-# output to OUTPUT_DIR/campaign/ over SSH. The values of the variables the
+# output to OUTPUT_DIR/campaign/ and its log to OUTPUT_DIR/campaign.log over
+# SSH. The values of the variables the
 # profiles name as secret_env (OpenCode's provider key) reach the guest on
 # SSH's stdin when they are set here, never on a command line.
 set -euo pipefail
@@ -169,7 +170,9 @@ print(" ".join(sorted({n for p in a.values() for n in (p.get("secret_env") or {}
     done
     rc=$(vm_ssh "$port" 'cat /var/lib/agent-trace/results/campaign.exit')
     mkdir -p "$out/campaign"
-    vm_ssh "$port" 'tar -C /var/lib/agent-trace/results/out -cf - .' | tar -C "$out/campaign" -xf -
+    # The campaign's output, when it wrote any (a dry run writes none).
+    vm_ssh "$port" 'if [ -d /var/lib/agent-trace/results/out ]; then tar -C /var/lib/agent-trace/results/out -cf - .; fi' | tar -C "$out/campaign" -xf - 2>/dev/null || true
+    vm_ssh "$port" 'cat /var/lib/agent-trace/results/campaign.log' >"$out/campaign.log"
     vm_log "campaign exit $rc; output copied to $out/campaign (the results disk stays at $results)"
     exit "$rc"
     ;;

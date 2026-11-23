@@ -1,6 +1,6 @@
 # Capture environment
 
-Checked against commit 67a0cec on 2026-11-23.
+Checked against commit 5d96d14 on 2026-11-23.
 
 ## Objective
 
@@ -21,7 +21,7 @@ refuse inside the repository.
 
 | File | Runs on | Does |
 |---|---|---|
-| `vm/inputs.env` | | the pinned inputs: the Ubuntu 26.04 cloud image (dated release URL and SHA-256), the kernel release and package version, the Ubuntu snapshot archive date and the packages with their versions, Go (URL and SHA-256), Claude Code (URL and SHA-256), Codex and OpenCode (npm versions), agy (version and SHA-256), the disk size and the build machine's size |
+| `vm/inputs.env` | | the pinned inputs: the Ubuntu 26.04 cloud image (dated release URL and SHA-256), the kernel release and package version, the Ubuntu snapshot archive date and the packages with their versions, Go (URL and SHA-256), Claude Code (URL and SHA-256), Codex and OpenCode (npm versions), agy (version and SHA-256), Codex's model catalog (file name and the SHA-256 its profile pins), the disk size and the build machine's size |
 | `vm/lib.sh` | host | helpers: the cache, the SSH key, QEMU start and stop, SSH |
 | `vm/build.sh` | host | builds the golden image with one command |
 | `vm/run.sh` | host | boots a throwaway VM from the image and runs a shell, a command or a campaign in it |
@@ -41,7 +41,7 @@ manifest `/etc/agent-trace/image.json` records the recipe commit (and whether
 `vm/` had uncommitted changes), the agent-trace commit, the base image URL
 and SHA-256, the kernel release, package version and active LSMs, the
 snapshot date and each package's installed version, the Go version, each
-agent's version, Claude Code's and agy's binary SHA-256, the npm packages'
+agent's version, Claude Code's and agy's binary SHA-256, the Codex catalog's SHA-256, the npm packages'
 versions and the SHA-256 of every file over 1 MiB under them (the native
 binaries), and the build time. `vm/build.sh` copies it beside the image
 (`<image>.json`) and adds the image's file name, SHA-256, size and build time.
@@ -60,7 +60,10 @@ key generated into the cache, the Ubuntu snapshot archive
 **Build.** `vm/build.sh [--commit REV] [--allow-dirty]` downloads each input
 into the cache and checks its SHA-256; agy, which no vendor URL serves by
 version, is copied from the operator's install (`$AGY_SOURCE`, default the
-`agy` on `PATH`) and checked against its pinned hash. It takes agent-trace at
+`agy` on `PATH`) and checked against its pinned hash, and so is Codex's
+private model catalog (`$CODEX_CATALOG_SOURCE`, default
+`~/.config/agent-trace/codex-catalog-0.166.0.json`), which provisioning
+installs at the path the codex profile names (mode 600). It takes agent-trace at
 `REV` (default `HEAD`) as a shallow clone, converts the cloud image into a
 new disk of 40 GiB, boots it once with a seed that creates the operator with
 the cache's key, copies the inputs in over SSH and runs
@@ -112,7 +115,7 @@ operator, detached from the SSH session, with the output on the results disk.
 The values of the profiles' `secret_env` variables set on the host reach the
 guest on SSH's stdin, are exported to the campaign and written nowhere. The
 runner follows the campaign's log, reconnecting when SSH drops, and when it
-ends copies the output to `OUTPUT_DIR/campaign/`. A VM or host that goes down
+ends copies the output to `OUTPUT_DIR/campaign/` and the log to `OUTPUT_DIR/campaign.log`. A VM or host that goes down
 loses nothing the campaign wrote: the same command boots a fresh VM on the
 same results disk and the campaign resumes (I-167).
 
@@ -154,8 +157,10 @@ The privileged tests that need the BPF LSM run in the same image:
 
 ## Known limits
 
-* agy comes from the operator's install, not from a vendor URL: a machine
-  without agy 1.4.7 (by hash) cannot build the image.
+* agy and Codex's model catalog come from the operator's files, not from a
+  vendor URL: a machine without them (by hash) cannot build the image. The
+  image holds the catalog, which is private; it stays in the local cache and
+  images like every other input.
 * Codex's and OpenCode's npm packages are pinned by version, not by hash; the
   manifest records what was installed, but a build does not refuse a registry
   that serves different bytes under the same version. The packages the

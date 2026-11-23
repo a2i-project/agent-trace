@@ -19,10 +19,10 @@ fs_on() { # serial label mountpoint owner
 }
 while [ $# -gt 0 ]; do
   case $1 in
-    --logins) fs_on agent-trace-logins agent-trace-logins /var/lib/agent-trace/logins root:root
+    --logins) fs_on agent-trace-logins at-logins /var/lib/agent-trace/logins root:root
               /usr/local/lib/agent-trace-vm/logins.sh restore ;;
-    --logins-rw) fs_on agent-trace-logins agent-trace-logins /var/lib/agent-trace/logins root:root ;;
-    --results) fs_on agent-trace-results agent-trace-results /var/lib/agent-trace/results trace:trace ;;
+    --logins-rw) fs_on agent-trace-logins at-logins /var/lib/agent-trace/logins root:root ;;
+    --results) fs_on agent-trace-results at-results /var/lib/agent-trace/results trace:trace ;;
     *) echo "attach: unknown $1" >&2; exit 2 ;;
   esac
   shift

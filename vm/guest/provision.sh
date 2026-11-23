@@ -71,6 +71,9 @@ as_agent mkdir -p "$ah/.claude"
 as_agent sh -c 'printf "%s\n" "{\"env\": {\"DISABLE_UPDATES\": \"1\"}}" > "$HOME/.claude/settings.json"'
 as_agent npm install -g --no-fund --no-audit --prefix "$ah/.local" "@openai/codex@$CODEX_VERSION" "opencode-ai@$OPENCODE_VERSION"
 
+# Codex's model catalog, at the path its profile names.
+as_agent mkdir -p "$ah/.config/agent-trace"
+install -o "$agent" -g "$agent" -m 600 "$dir/$CODEX_CATALOG_FILE" "$ah/.config/agent-trace/$CODEX_CATALOG_FILE"
 got_claude=$(as_agent env DISABLE_UPDATES=1 claude --version 2>/dev/null | awk '{print $1}')
 got_codex=$(as_agent codex --version 2>/dev/null | awk '{print $NF}')
 got_opencode=$(as_agent env OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1 opencode --version 2>/dev/null)
@@ -164,7 +167,9 @@ m = {
         "claude-code": {"version": "$got_claude", "binary": "~/.local/share/claude/versions/$CLAUDE_VERSION",
                         "sha256": sha(os.path.join(ah, ".local/share/claude/versions/$CLAUDE_VERSION")), "source": "$CLAUDE_URL",
                         "lock": "~/.claude/settings.json env.DISABLE_UPDATES=1"},
-        "codex": {"version": "$got_codex", "source": "npm @openai/codex@$CODEX_VERSION"},
+        "codex": {"version": "$got_codex", "source": "npm @openai/codex@$CODEX_VERSION",
+                  "model_catalog": {"path": "~/.config/agent-trace/$CODEX_CATALOG_FILE",
+                                    "sha256": sha(os.path.join(ah, ".config/agent-trace/$CODEX_CATALOG_FILE"))}},
         "opencode": {"version": "$got_opencode", "source": "npm opencode-ai@$OPENCODE_VERSION"},
         "gemini": {"version": "$got_agy", "binary": "~/.local/bin/agy", "sha256": sha(os.path.join(ah, ".local/bin/agy")),
                    "source": "the operator's install, checked against its pinned hash"},

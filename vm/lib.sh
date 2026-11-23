@@ -51,14 +51,15 @@ vm_free_port() {
 }
 
 # vm_boot DIR NAME CPUS MEM SSH_PORT [extra qemu args...]: start QEMU in the
-# background on the disk DIR/root.qcow2; the serial console goes to
+# background on the disk DIR/root.qcow2, the boot disk whatever else is
+# attached (the firmware would try a blank data disk first); the serial console goes to
 # DIR/console.log and the pid to DIR/qemu.pid. The network is user-mode, with
 # 127.0.0.1:SSH_PORT forwarded to the guest's port 22 and nothing else open.
 vm_boot() {
   local dir=$1 name=$2 cpus=$3 mem=$4 port=$5
   shift 5
   qemu-system-x86_64 -name "$name" -machine q35,accel=kvm -cpu host -smp "$cpus" -m "$mem" \
-    -drive "file=$dir/root.qcow2,if=virtio,format=qcow2,discard=unmap" \
+    -drive "file=$dir/root.qcow2,if=none,id=root,format=qcow2,discard=unmap" -device virtio-blk-pci,drive=root,bootindex=0 \
     -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-net-pci,netdev=n0 \
     -device virtio-rng-pci -display none -serial "file:$dir/console.log" -monitor none \
     -pidfile "$dir/qemu.pid" -daemonize "$@" || vm_die "QEMU did not start (see $dir/console.log)"
