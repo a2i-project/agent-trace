@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-// H4: overhead (protocol section 4 and 7). H4a reads the synthetic
-// benchmark's results.json (scripts/bench-overhead.sh) against the limits of
-// decision D3; H4b summarises the real sessions of the campaign.
+// H4: overhead (protocol section 4 and 7). H4a summarises the synthetic
+// benchmark's results.json (scripts/bench-overhead.sh); H4b summarises the
+// real sessions of the campaign. Neither reads a limit (E-11).
 
 // BenchSample is one measured run of the benchmark's samples.
 type BenchSample struct {
@@ -72,7 +72,7 @@ type BenchRun struct {
 	Machine map[string]any `json:"machine,omitempty"`
 	Params  map[string]any `json:"params,omitempty"`
 	Rows    []BenchRow     `json:"rows"`
-	Limits  []LimitResult  `json:"limits"`
+	Summary []BenchMeasure `json:"summary"`
 	// Drift is the change in the median wall ratio from this run to the
 	// matching run of --overhead-after, per row.
 	Drift []Drift `json:"drift,omitempty"`
@@ -87,12 +87,13 @@ type Drift struct {
 	Change    float64 `json:"change"`
 }
 
-// LimitResult is one D3 limit against a benchmark run.
-type LimitResult struct {
-	ID     string `json:"id"`
-	Limit  string `json:"limit"`
-	Result string `json:"result"`
-	Detail string `json:"detail"`
+// BenchMeasure is one summary line of a benchmark run: what is measured
+// and its value.
+type BenchMeasure struct {
+	ID      string `json:"id"`
+	Measure string `json:"measure"`
+	State   string `json:"state"`
+	Value   string `json:"value"`
 }
 
 func benchName(s BenchSample) string {
@@ -109,8 +110,8 @@ func val(p *float64) (float64, bool) {
 	return *p, true
 }
 
-// LoadBench reads one benchmark results.json and computes H4a's rows and the
-// D3 verdicts. Repetition 0 is the warm-up and is left out, as in the
+// LoadBench reads one benchmark results.json and computes H4a's rows and
+// summary lines. Repetition 0 is the warm-up and is left out, as in the
 // benchmark's own summary. Ratios pair each run under watch with the same
 // workload alone in the same repetition.
 func LoadBench(label, path string) (*BenchRun, error) {
@@ -213,7 +214,7 @@ func LoadBench(label, path string) (*BenchRun, error) {
 		}
 		run.Rows = append(run.Rows, row)
 	}
-	run.Limits = judgeBench(run)
+	run.Summary = summariseBench(run)
 	return run, nil
 }
 
@@ -226,48 +227,19 @@ func (r *BenchRun) row(name, cond string) *BenchRow {
 	return nil
 }
 
-// judgeBench applies the D3 limits to the condition `all`.
-func judgeBench(r *BenchRun) []LimitResult {
-	var out []LimitResult
-	// Wall ratio on the named workloads.
-	lim := LimitResult{ID: "H4a-wall", Limit: fmt.Sprintf("median wall ratio at most %.2f on %s under %s", MaxWallRatio, strings.Join(WallRatioWorkloads, " and "), H4Condition)}
+// summariseBench gives the summary lines of the condition `all`: each
+// workload's median wall ratio with its bootstrap interval, and over every
+// workload the largest median fixed cost and peak RSS (each workload's median
+// over its repetitions, with the largest single repetition beside it, the
+// user's reading of 2026-10-26) and the runs with loss.
+func summariseBench(r *BenchRun) []BenchMeasure {
+	wall := BenchMeasure{ID: "H4a-wall", Measure: fmt.Sprintf("median wall ratio per workload under %s", H4Condition)}
+	fixed := BenchMeasure{ID: "H4a-fixed-cost", Measure: fmt.Sprintf("fixed cost per session (start-up plus drain) under %s", H4Condition)}
+	rss := BenchMeasure{ID: "H4a-rss", Measure: fmt.Sprintf("peak RSS of the watch tree under %s", H4Condition)}
+	loss := BenchMeasure{ID: "H4a-loss", Measure: fmt.Sprintf("runs with loss under %s", H4Condition)}
 	var parts []string
-	worst, missing, over := 0.0, 0, 0
-	for _, name := range WallRatioWorkloads {
-		row := r.row(name, H4Condition)
-		if row == nil || row.WallRatio == nil {
-			missing++
-			parts = append(parts, name+": no data")
-			continue
-		}
-		m := row.WallRatio.Median
-		parts = append(parts, fmt.Sprintf("%s: median %.3f", name, m))
-		worst = math.Max(worst, m)
-		if m > MaxWallRatio {
-			over++
-		}
-	}
-	lim.Detail = strings.Join(parts, "; ")
-	switch {
-	case over > 0:
-		lim.Result = "REFUTED"
-	case missing > 0:
-		lim.Result = "NOT EVALUATED"
-	default:
-		lim.Result = "HOLDS"
-	}
-	out = append(out, lim)
-
-	// The other three limits are read over every workload under `all`.
-	fixed := LimitResult{ID: "H4a-fixed-cost", Limit: fmt.Sprintf("median fixed cost (start-up plus drain) at most %.0f s per session under %s, on every workload", MaxFixedCostSeconds, H4Condition)}
-	rss := LimitResult{ID: "H4a-rss", Limit: fmt.Sprintf("median peak RSS of the watch tree at most %.0f MiB under %s, on every workload", MaxWatchRSSMiB, H4Condition)}
-	loss := LimitResult{ID: "H4a-loss", Limit: fmt.Sprintf("zero runs with loss under %s, on every workload", H4Condition)}
-	// Fixed cost and RSS are read on each workload's median over the
-	// repetitions, the statistic D3's pilot figures are (2.5 s, 83 MiB), and
-	// the largest single repetition is shown beside it (the user's reading of
-	// 2026-10-26).
 	var fixedMax, rssMax, fixedTop, rssTop float64
-	lossRuns, failed, seen := 0, 0, 0
+	lossRuns, failed, okRuns, seen := 0, 0, 0, 0
 	for _, row := range r.Rows {
 		if row.Condition != H4Condition {
 			continue
@@ -275,6 +247,12 @@ func judgeBench(r *BenchRun) []LimitResult {
 		seen++
 		lossRuns += row.WithLoss
 		failed += row.Failed
+		okRuns += row.OK
+		if row.WallRatio == nil {
+			parts = append(parts, row.Name+": no data")
+		} else {
+			parts = append(parts, fmt.Sprintf("%s: median %.3f, bootstrap 95%% %s, %d ok run(s)", row.Name, row.WallRatio.Median, interval(row.WallRatioCI), row.OK))
+		}
 		if row.FixedCostS != nil {
 			fixedMax = math.Max(fixedMax, row.FixedCostS.Median)
 			fixedTop = math.Max(fixedTop, row.FixedCostS.Top1)
@@ -285,25 +263,16 @@ func judgeBench(r *BenchRun) []LimitResult {
 		}
 	}
 	if seen == 0 {
-		for _, l := range []*LimitResult{&fixed, &rss, &loss} {
-			l.Result, l.Detail = "NOT EVALUATED", "no run under "+H4Condition
+		for _, l := range []*BenchMeasure{&wall, &fixed, &rss, &loss} {
+			l.State, l.Value = NotMeasured, "no run under "+H4Condition
 		}
-	} else {
-		fixed.Detail = fmt.Sprintf("largest per-workload median %.3f s; largest single repetition %.3f s", fixedMax, fixedTop)
-		fixed.Result = passFail(fixedMax <= MaxFixedCostSeconds)
-		rss.Detail = fmt.Sprintf("largest per-workload median %.1f MiB; largest single repetition %.1f MiB", rssMax, rssTop)
-		rss.Result = passFail(rssMax <= MaxWatchRSSMiB)
-		loss.Detail = fmt.Sprintf("%d run(s) with loss; %d run(s) failed and are not counted as clean", lossRuns, failed)
-		loss.Result = passFail(lossRuns <= MaxLossRuns)
+		return []BenchMeasure{wall, fixed, rss, loss}
 	}
-	return append(out, fixed, rss, loss)
-}
-
-func passFail(ok bool) string {
-	if ok {
-		return "HOLDS"
-	}
-	return "REFUTED"
+	wall.State, wall.Value = Measured, strings.Join(parts, "; ")
+	fixed.State, fixed.Value = Measured, fmt.Sprintf("largest per-workload median %.3f s; largest single repetition %.3f s", fixedMax, fixedTop)
+	rss.State, rss.Value = Measured, fmt.Sprintf("largest per-workload median %.1f MiB; largest single repetition %.1f MiB", rssMax, rssTop)
+	loss.State, loss.Value = Measured, fmt.Sprintf("%d of %d ok run(s) with loss; %d run(s) failed and are not counted as clean", lossRuns, okRuns, failed)
+	return []BenchMeasure{wall, fixed, rss, loss}
 }
 
 // AddDrift computes the drift of this run against the same benchmark run

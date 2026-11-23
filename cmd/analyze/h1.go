@@ -10,9 +10,10 @@ import (
 	"strings"
 )
 
-// H1: the existing tools accept the attacks (protocol section 4). The
-// comparison harnesses are not reimplemented: this reads the output directory
-// of scripts/compare/sweep.py (results.jsonl, summary.json, run.json).
+// H1: how often the existing tools accept the attacks (protocol section 4).
+// The comparison harnesses are not reimplemented: this reads the output
+// directory of scripts/compare/sweep.py (results.jsonl, summary.json,
+// run.json).
 
 // Outcomes a sweep row can carry.
 const (
@@ -82,14 +83,17 @@ type H1Row struct {
 	Status string `json:"status,omitempty"`
 }
 
-// H1Claim is the verdict of one registered claim (H1a to H1d).
-type H1Claim struct {
-	ID         string `json:"id"`
-	Row        string `json:"row"`
-	Prediction string `json:"prediction"`
-	Refutation string `json:"refuted_if"`
-	Result     string `json:"result"`
-	Detail     string `json:"detail"`
+// H1Measure is the measurement of one tool row of protocol section 4 (H1a to
+// H1d): the share of attacked trajectories it accepts.
+type H1Measure struct {
+	ID      string `json:"id"`
+	Row     string `json:"row"`
+	Measure string `json:"measure"`
+	State   string `json:"state"`
+	Value   string `json:"value"`
+	// Acceptance is accepted over evaluated with a bootstrap over sessions
+	// (fixtures).
+	Acceptance ClusterRate `json:"acceptance"`
 }
 
 // H1Control is one control row: it shows the harness can produce a
@@ -132,8 +136,7 @@ type H1Results struct {
 	Controls      []H1Control `json:"controls"`
 	// ControlRows lists the rows (honest, drop-not-resealed, ...) by outcome.
 	ControlRowCounts map[string]map[string]int `json:"control_row_outcomes"`
-	Claims           []H1Claim                 `json:"claims"`
-	Whole            H1Claim                   `json:"whole"`
+	Measures         []H1Measure               `json:"measures"`
 	EditSplit        *EditSplit                `json:"edit_criterion_detection"`
 	NaiveCommandA3   *H1Row                    `json:"command_criterion_naive_a3,omitempty"`
 }
@@ -335,7 +338,7 @@ func BuildH1(dir string) (*H1Results, error) {
 			res.NaiveCommandA3 = &r
 		}
 	}
-	res.Claims, res.Whole = judgeH1(res, rows, held)
+	res.Measures = measureH1(res, rows, held)
 	return res, nil
 }
 
@@ -429,8 +432,11 @@ func buildEditSplit(rows []SweepRow, held map[cellKey]bool) *EditSplit {
 	return e
 }
 
-// judgeH1 evaluates the registered claims H1a to H1d and H1 as a whole.
-func judgeH1(res *H1Results, rows []SweepRow, held map[cellKey]bool) ([]H1Claim, H1Claim) {
+// measureH1 measures the four registered tool rows: how many attacked
+// trajectories each accepts. A row whose cells' controls did not hold, or
+// whose control row did not reject every kind, is UNJUDGED: its numbers do
+// not measure acceptance.
+func measureH1(res *H1Results, rows []SweepRow, held map[cellKey]bool) []H1Measure {
 	controlHeld := func(tool, cond string) (bool, bool) {
 		any := false
 		for _, c := range res.Controls {
@@ -443,99 +449,84 @@ func judgeH1(res *H1Results, rows []SweepRow, held map[cellKey]bool) ([]H1Claim,
 		}
 		return true, any
 	}
-	// rowsOf counts judged outcomes of a tool row over the attack kinds that
-	// pass keep.
-	type tally struct{ accepted, detected, evaluated, unjudged, other int }
+	// count tallies the judged outcomes of a tool row over the attack kinds
+	// that pass keep, per fixture for the bootstrap.
+	type tally struct {
+		accepted, detected, evaluated, unjudged int
+		fixtures                                map[string]*[2]float64
+	}
 	count := func(tool, cond, attacker string, keep func(SweepRow) bool) tally {
-		var t tally
+		t := tally{fixtures: map[string]*[2]float64{}}
 		for _, r := range rows {
 			if r.Tool != tool || r.Condition != cond || isControlKind(r.Kind) || (attacker != "" && r.Attacker != attacker) || !keep(r) {
 				continue
 			}
-			switch r.Outcome {
-			case OutAccepted, OutDetected:
-				if !held[cellKey{rowKey{r.Tool, r.Condition, r.Attacker, r.Kind}, r.Fixture}] {
-					t.unjudged++
-					continue
-				}
-				t.evaluated++
-				if r.Outcome == OutAccepted {
-					t.accepted++
-				} else {
-					t.detected++
-				}
-			default:
-				t.other++
+			if r.Outcome != OutAccepted && r.Outcome != OutDetected {
+				continue
+			}
+			if !held[cellKey{rowKey{r.Tool, r.Condition, r.Attacker, r.Kind}, r.Fixture}] {
+				t.unjudged++
+				continue
+			}
+			t.evaluated++
+			fx := t.fixtures[r.Fixture]
+			if fx == nil {
+				fx = &[2]float64{}
+				t.fixtures[r.Fixture] = fx
+			}
+			fx[1]++
+			if r.Outcome == OutAccepted {
+				t.accepted++
+				fx[0]++
+			} else {
+				t.detected++
 			}
 		}
 		return t
 	}
 	all := func(SweepRow) bool { return true }
-	judge := func(id, row, pred, refuted string, t tally, ctlTool, ctlCond string, violations func(tally) int) H1Claim {
-		c := H1Claim{ID: id, Row: row, Prediction: pred, Refutation: refuted}
+	measure := func(id, row, what string, t tally, ctlTool, ctlCond string) H1Measure {
+		c := H1Measure{ID: id, Row: row, Measure: what}
+		var clusters []Cluster
+		for _, fx := range sortedFixtures(t.fixtures) {
+			clusters = append(clusters, Cluster{Den: t.fixtures[fx][1], Nums: []float64{t.fixtures[fx][0]}})
+		}
+		c.Acceptance = ClusterBootstrap(clusters, 1, BootstrapResamples, BootstrapSeed)[0]
 		ctlOK, ctlAny := true, false
 		if ctlTool != "" {
 			ctlOK, ctlAny = controlHeld(ctlTool, ctlCond)
 		}
-		v := violations(t)
+		counts := fmt.Sprintf("accepted %s over %d session(s); detected %d", crText(c.Acceptance), len(t.fixtures), t.detected)
 		switch {
 		case t.evaluated == 0 && t.unjudged > 0:
-			c.Result, c.Detail = "UNJUDGED", fmt.Sprintf("%d row(s) set aside: the cells' controls did not hold", t.unjudged)
+			c.State, c.Value = Unjudged, fmt.Sprintf("%d row(s) set aside: the cells' controls did not hold", t.unjudged)
 		case t.evaluated == 0:
-			c.Result, c.Detail = "NOT EVALUATED", "no judged row in the sweep"
+			c.State, c.Value = NotMeasured, "no judged row in the sweep"
 		case !ctlOK:
-			c.Result, c.Detail = "UNJUDGED", "a control row did not behave as registered ("+ctlTool+" "+ctlCond+" must reject every kind)"
-		case v > 0:
-			c.Result, c.Detail = "REFUTED", fmt.Sprintf("%d of %d evaluated trajectories contradict the prediction", v, t.evaluated)
+			c.State, c.Value = Unjudged, counts+"; a control row did not behave as registered ("+ctlTool+" "+ctlCond+" must reject every kind)"
 		default:
-			c.Result, c.Detail = "HOLDS", fmt.Sprintf("%d of %d evaluated trajectories as predicted", t.evaluated-v, t.evaluated)
+			c.State, c.Value = Measured, counts
 		}
-		if t.unjudged > 0 && c.Result != "UNJUDGED" {
-			c.Detail += fmt.Sprintf("; %d row(s) UNJUDGED and not counted", t.unjudged)
+		if t.unjudged > 0 && c.State != Unjudged {
+			c.Value += fmt.Sprintf("; %d row(s) UNJUDGED and not counted", t.unjudged)
 		}
 		if ctlTool != "" && !ctlAny {
-			c.Detail += "; its control row is absent from the sweep"
+			c.Value += "; its control row is absent from the sweep"
 		}
 		return c
 	}
-	acceptAll := func(t tally) int { return t.detected }
-	var claims []H1Claim
-	claims = append(claims, judge("H1a", "halo-record, chain re-sealed, no checkpoint (no-checkpoint)",
-		"accepts 100% of A1 to A4", "any attacked chain fails halo verify",
-		count(ToolHalo, "no-checkpoint", "", all), ToolHalo, "witness-checkpoint", acceptAll))
-	claims = append(claims, judge("H1b", "Signet, operator key, honest key pinned (operator-key)",
-		"accepts 100% of A1 to A4", "any attacked chain is rejected",
-		count(ToolSignet, "operator-key", "", all), ToolSignet, "other-key", acceptAll))
-	claims = append(claims, judge("H1c", "reproducible-trajectories, command criterion, adaptive attacker",
-		"accepts 100% of A1 to A4", "any attacked trajectory gets not_reproducible",
-		count(ToolRT, "command-criterion", "adaptive", all), "", "", acceptAll))
-	// H1d: accepts every non-edit mutation and every A4; detects only edits.
+	var out []H1Measure
+	out = append(out, measure("H1a", "halo-record, chain re-sealed, no checkpoint (no-checkpoint)", "acceptance of A1 to A4",
+		count(ToolHalo, "no-checkpoint", "", all), ToolHalo, "witness-checkpoint"))
+	out = append(out, measure("H1b", "Signet, operator key, honest key pinned (operator-key)", "acceptance of A1 to A4",
+		count(ToolSignet, "operator-key", "", all), ToolSignet, "other-key"))
+	out = append(out, measure("H1c", "reproducible-trajectories, command criterion, adaptive attacker", "acceptance of A1 to A4",
+		count(ToolRT, "command-criterion", "adaptive", all), "", ""))
+	// H1d: the edit criterion on mutations of non-Write/Edit claims and on
+	// A4; its detection of Write and Edit mutations is the edit split.
 	edit := count(ToolRT, "edit-criterion", "adaptive", func(r SweepRow) bool {
 		return r.Kind == "interval-widening" || !isEditMutation(r.Mutation)
 	})
-	claims = append(claims, judge("H1d", "reproducible-trajectories, edit criterion",
-		"accepts 100% of mutations of non-Write/Edit claims and 100% of A4; detects only on Write and Edit",
-		"it rejects a mutation of a non-edit claim or any A4", edit, "", "", acceptAll))
-
-	whole := H1Claim{ID: "H1", Row: "all rows", Prediction: "every compared tool accepts every attack on an action outside its trust anchor, and only the edit criterion detects anything, on edits of git-tracked files only", Refutation: "any of H1a to H1d is refuted"}
-	refuted, unjudged, none := 0, 0, 0
-	for _, c := range claims {
-		switch c.Result {
-		case "REFUTED":
-			refuted++
-		case "UNJUDGED":
-			unjudged++
-		case "NOT EVALUATED":
-			none++
-		}
-	}
-	switch {
-	case refuted > 0:
-		whole.Result, whole.Detail = "REFUTED", fmt.Sprintf("%d of the four claims refuted", refuted)
-	case unjudged+none > 0:
-		whole.Result, whole.Detail = "UNJUDGED", fmt.Sprintf("none refuted; %d UNJUDGED, %d not evaluated", unjudged, none)
-	default:
-		whole.Result, whole.Detail = "HOLDS", "all four claims hold"
-	}
-	return claims, whole
+	out = append(out, measure("H1d", "reproducible-trajectories, edit criterion", "acceptance of mutations of non-Write/Edit claims and of A4", edit, "", ""))
+	return out
 }

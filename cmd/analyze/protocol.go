@@ -7,16 +7,15 @@ import (
 	"github.com/agent-trace/agent-trace/pkg/attack"
 )
 
-// Every threshold, seed, selection and stratum of the registered experiment
+// Every estimator setting, seed, selection and stratum of the experiment
 // that applies to all agents lives in this file, and nowhere else in the
-// command; the per-agent targets (H3d's FAITHFUL bar, H3c's pilot range, the
-// tool-heavy tasks) and the registration's name live in the protocol file
-// (targets.go, E-8). The freeze pins the registration by pinning the two.
-// Each constant names the section of
+// command; the per-agent settings (labels, the tool-heavy tasks) and the
+// registration's name live in the protocol file (targets.go, E-8). The
+// command reports measurements with their intervals and counts and holds no
+// target, bar or limit (E-11). Each constant names the section of
 // docs/eval/experiment_protocol_v2.md (the protocol) or of
 // docs/eval/decisions-2026-10-26.md (the decisions, which override it) it
-// mirrors. A bar that moves after the first campaign run is a deviation
-// (protocol 11.2), not an edit of this file.
+// mirrors.
 
 // Estimator rules, protocol section 4.
 const (
@@ -29,12 +28,6 @@ const (
 	ConfidenceLevel = 0.95
 	ZScore95        = 1.959963984540054
 	OneSidedAlpha   = 0.05
-)
-
-// H3, protocol section 4 and decision D5.
-const (
-	// NearZeroFP is H3a's near-zero bar: a point estimate above it refutes.
-	NearZeroFP = 0.05
 )
 
 // PrimaryAgreement is the baseline agreement of every primary number: a rule
@@ -125,11 +118,11 @@ type GenSpec struct {
 // sensitive rows are secondary (protocol 5.3).
 func (g GenSpec) Primary() bool { return g.Select == SelUniform }
 
-// InVerdict says whether the row counts toward the H2a to H2c verdicts: a
+// InPrimaryRates says whether the row counts toward the H2a to H2c rates: a
 // primary row that is not a retimed omission. Retimed omissions are reported
 // apart, with the runs they push outside their interval (protocol 4, H2 "also
 // reported"; the user's reading of 2026-10-26).
-func (g GenSpec) InVerdict() bool { return g.Primary() && !g.Retime }
+func (g GenSpec) InPrimaryRates() bool { return g.Primary() && !g.Retime }
 
 // SubstituteFields are the fields of the per-field runs (protocol 5.3):
 // one run of seeds for each field the agent's claims carry.
@@ -163,24 +156,8 @@ func GenSpecs() []GenSpec {
 	return out
 }
 
-// H4a limits, decision D3 (deployment-argued, stated as set after the pilot).
-const (
-	// MaxWallRatio is the median workload wall ratio under `all` on the
-	// workloads named in WallRatioWorkloads.
-	MaxWallRatio = 1.15
-	// MaxFixedCostSeconds is the fixed cost per session (start-up plus drain).
-	MaxFixedCostSeconds = 5.0
-	// MaxWatchRSSMiB is the peak resident set of the watch process tree.
-	MaxWatchRSSMiB = 256.0
-	// MaxLossRuns is the number of runs under `all` with any loss: zero.
-	MaxLossRuns = 0
-)
-
-// WallRatioWorkloads names the synthetic workloads the wall ratio limit
-// applies to, as the benchmark names them (workload and size).
-var WallRatioWorkloads = []string{"shell-100", "shell-1000"}
-
-// H4Condition is the benchmark condition the limits apply to.
+// H4Condition is the benchmark condition the H4a summary lines read: every
+// probe on.
 const H4Condition = "all"
 
 // Names of the comparison tool rows of the H1 table (protocol 4, H1), as

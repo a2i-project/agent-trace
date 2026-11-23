@@ -77,9 +77,6 @@ func TestH3CellAppliesTheExclusionRulesAndKeepsTheThreeCounts(t *testing.T) {
 	if all.Faithful.Evaluated != 9 || all.Faithful.Succeeded != 6 {
 		t.Errorf("H3d: %+v", all.Faithful)
 	}
-	if all.Inconclusive.InRange == nil || *all.Inconclusive.InRange {
-		t.Errorf("2 of 9 is 22%%, below the Claude Code range: it must say outside, got %v", all.Inconclusive.InRange)
-	}
 
 	// Scopes: held out is its own stratum (D8).
 	held := BuildH3Cell(repoProtocol(), runs, av, ScopeHeldOut, SettingPrimary)
@@ -113,16 +110,18 @@ func resultsWith(runs []RunOutput) *Results {
 	return &Results{H3: BuildH3(repoProtocol(), runs, false), H4: &H4Results{}, Runs: runs, protocol: repoProtocol()}
 }
 
-func verdictOf(res *Results, id, scopeContains string) Verdict {
-	for _, v := range res.Verdicts {
+func measureOf(res *Results, id, scopeContains string) Measurement {
+	for _, v := range res.Measurements {
 		if v.ID == id && strings.Contains(v.Scope, scopeContains) {
 			return v
 		}
 	}
-	return Verdict{}
+	return Measurement{}
 }
 
-func TestH3VerdictsAgainstTheRegisteredThresholds(t *testing.T) {
+// The H3 lines state the measured rates with their intervals and counts and
+// no target: the same numbers whatever the agent (E-11).
+func TestH3LinesAreMeasurementsWithoutTargets(t *testing.T) {
 	build := func(n, fp, faithful int, agentName string) *Results {
 		var runs []RunOutput
 		for i := 0; i < n; i++ {
@@ -136,40 +135,38 @@ func TestH3VerdictsAgainstTheRegisteredThresholds(t *testing.T) {
 			runs = append(runs, synthRun(i, agentName, "2.1.306", "edits", h))
 		}
 		res := resultsWith(runs)
-		res.Verdicts, res.Halts = BuildVerdicts(res)
+		res.Measurements, res.Halts = BuildMeasurements(res)
 		return res
 	}
-	// 0 of 60: zero holds, with the exact bound the protocol quotes (4.9%).
+	// 0 of 60: the exact one-sided bound the protocol quotes (4.9%).
 	r := build(60, 0, 30, AgentClaudeCode)
-	if v := verdictOf(r, "H3a-zero", "claude-code"); v.Result != Holds || !strings.Contains(v.Detail, "upper bound 0.049") {
-		t.Errorf("zero: %+v", v)
+	if v := measureOf(r, "H3a", "claude-code"); v.State != Measured || !strings.Contains(v.Value, "0 of 60 runs (0.0%)") || !strings.Contains(v.Value, "upper bound 0.049") {
+		t.Errorf("H3a: %+v", v)
 	}
-	if v := verdictOf(r, "H3a-near-zero", "claude-code"); v.Result != Holds {
-		t.Errorf("near zero: %+v", v)
+	if v := measureOf(r, "H3d", "claude-code"); v.State != Measured || !strings.Contains(v.Value, "30 of 60 runs (50.0%), Wilson 95% [") || !strings.Contains(v.Value, "evaluated 60, succeeded 30") {
+		t.Errorf("H3d: %+v", v)
 	}
-	if v := verdictOf(r, "H3d", "claude-code"); v.Result != Holds {
-		t.Errorf("30 of 60 FAITHFUL meets the 50%% bar: %+v", v)
+	if v := measureOf(r, "H3c", "claude-code"); v.State != Measured || !strings.Contains(v.Value, "50.0% of 60 completed runs INCONCLUSIVE") {
+		t.Errorf("H3c: %+v", v)
 	}
-	// 4 of 60 is above 5%: near-zero refuted, zero refuted. 29 of 60 misses D2.
 	r = build(60, 4, 29, AgentClaudeCode)
-	if v := verdictOf(r, "H3a-near-zero", "claude-code"); v.Result != Refuted {
-		t.Errorf("4 of 60: %+v", v)
+	if v := measureOf(r, "H3a", "claude-code"); !strings.Contains(v.Value, "4 of 60 runs (6.7%), Wilson 95% [") {
+		t.Errorf("H3a: %+v", v)
 	}
-	if v := verdictOf(r, "H3a-zero", "claude-code"); v.Result != Refuted {
-		t.Errorf("any false positive refutes zero: %+v", v)
-	}
-	if v := verdictOf(r, "H3d", "claude-code"); v.Result != Refuted {
-		t.Errorf("29 of 60 FAITHFUL is below 50%%: %+v", v)
-	}
-	// 3 of 60 is 5%, which is not above the bar.
-	r = build(60, 3, 30, AgentClaudeCode)
-	if v := verdictOf(r, "H3a-near-zero", "claude-code"); v.Result != Holds {
-		t.Errorf("3 of 60 is exactly 5%%: %+v", v)
-	}
-	// agy has no FAITHFUL bar: reported.
+	// agy is measured the same way.
 	r = build(20, 0, 0, AgentGemini)
-	if v := verdictOf(r, "H3d", "gemini"); v.Result != Reported || !strings.Contains(v.Threshold, "no threshold") {
+	if v := measureOf(r, "H3d", "gemini"); v.State != Measured || !strings.Contains(v.Value, "0 of 20 runs (0.0%), Wilson 95% [") {
 		t.Errorf("agy H3d: %+v", v)
+	}
+	for _, m := range r.Measurements {
+		for _, word := range []string{"HOLDS", "REFUTED", "threshold", "bar"} {
+			if strings.Contains(m.Value, word) || strings.Contains(m.Measure, word) || m.State == word {
+				t.Errorf("%s names %q: %+v", m.ID, word, m)
+			}
+		}
+	}
+	if len(r.Halts) != 0 {
+		t.Errorf("halts: %v", r.Halts)
 	}
 }
 
@@ -179,11 +176,11 @@ func TestAnUnattributedInconclusiveHaltsTheCampaign(t *testing.T) {
 		synthRun(2, AgentClaudeCode, "2.1.306", "edits", inconclusiveRun("something no cause names")),
 	}
 	res := resultsWith(runs)
-	res.Verdicts, res.Halts = BuildVerdicts(res)
+	res.Measurements, res.Halts = BuildMeasurements(res)
 	if len(res.Halts) != 1 || !strings.Contains(res.Halts[0], "H3c") || !strings.Contains(res.Halts[0], "edits/run-02") {
 		t.Fatalf("halts: %v", res.Halts)
 	}
-	if v := verdictOf(res, "H3c", "claude-code"); v.Result != Halt {
+	if v := measureOf(res, "H3c", "claude-code"); v.State != Measured || !strings.Contains(v.Value, "1 INCONCLUSIVE run(s) with a reason no listed cause matches") {
 		t.Errorf("H3c: %+v", v)
 	}
 	report := Report(res2(res))
@@ -199,13 +196,13 @@ func TestAnUnknownReasonBesideAKnownOneHalts(t *testing.T) {
 		synthRun(1, AgentClaudeCode, "2.1.306", "edits", inconclusiveRun(harnessFileReason, "a reason a new verifier gives")),
 	}
 	res := resultsWith(runs)
-	res.Verdicts, res.Halts = BuildVerdicts(res)
+	res.Measurements, res.Halts = BuildMeasurements(res)
 	if len(res.Halts) != 1 || !strings.Contains(res.Halts[0], "edits/run-01") {
 		t.Fatalf("halts: %v", res.Halts)
 	}
-	v := verdictOf(res, "H3c", "claude-code")
-	if v.Result != Halt || !strings.Contains(v.Detail, "a reason a new verifier gives") {
-		t.Errorf("H3c must halt and name the reason: %+v", v)
+	v := measureOf(res, "H3c", "claude-code")
+	if !strings.Contains(v.Value, "a reason a new verifier gives") {
+		t.Errorf("H3c must name the reason: %+v", v)
 	}
 	inc := res.H3.Cell(AgentVersion{AgentClaudeCode, "2.1.306"}, ScopeAll).Inconclusive
 	if inc.Primary[CauseHarnessFile] != 1 || inc.Multi[CauseHarnessFile] != 1 {
@@ -379,7 +376,7 @@ func cell(tool, cond, attacker, kind, fixture string, held bool) map[string]any 
 const editMutation = `[{"kind":"substitution","before":{"tool":"Edit"},"after":{"tool":"Edit"}}]`
 const bashMutation = `[{"kind":"substitution","before":{"tool":"Bash"},"after":{"tool":"Bash"}}]`
 
-func TestH1ClaimsAndControls(t *testing.T) {
+func TestH1MeasuresAndControls(t *testing.T) {
 	var rows, cells []map[string]any
 	for _, kind := range H1Kinds {
 		for _, fx := range []string{"basic", "edits"} {
@@ -414,13 +411,14 @@ func TestH1ClaimsAndControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range h.Claims {
-		if c.Result != Holds {
-			t.Errorf("%s should hold on this sweep: %+v", c.ID, c)
-		}
+	want := map[string]string{"H1a": "accepted 24 of 24 (1.000, bootstrap 95% [1.000, 1.000]) over 2 session(s); detected 0", "H1b": "accepted 24 of 24", "H1c": "accepted 24 of 24", "H1d": "accepted 2 of 2"}
+	if len(h.Measures) != 4 {
+		t.Fatalf("one measure per registered row: %+v", h.Measures)
 	}
-	if h.Whole.Result != Holds {
-		t.Errorf("H1: %+v", h.Whole)
+	for _, c := range h.Measures {
+		if c.State != Measured || !strings.Contains(c.Value, want[c.ID]) || c.Acceptance.CI == nil {
+			t.Errorf("%s: %+v", c.ID, c)
+		}
 	}
 	var halo *H1Row
 	for i, r := range h.Rows {
@@ -445,7 +443,7 @@ func TestH1ClaimsAndControls(t *testing.T) {
 	}
 }
 
-func TestH1RefutationUnjudgedAndControlFailure(t *testing.T) {
+func TestH1DetectionUnjudgedAndControlFailure(t *testing.T) {
 	m := `[{"kind":"omission","before":{"tool":"Bash"}}]`
 	base := func() ([]map[string]any, []map[string]any) {
 		rows := []map[string]any{
@@ -460,16 +458,16 @@ func TestH1RefutationUnjudgedAndControlFailure(t *testing.T) {
 		}
 		return rows, cells
 	}
-	claim := func(h *H1Results, id string) H1Claim {
-		for _, c := range h.Claims {
+	claim := func(h *H1Results, id string) H1Measure {
+		for _, c := range h.Measures {
 			if c.ID == id {
 				return c
 			}
 		}
-		return H1Claim{}
+		return H1Measure{}
 	}
 
-	// A detection refutes the row and the whole.
+	// A detection lowers the acceptance and is counted.
 	rows, cells := base()
 	rows = append(rows, sweepRow(ToolHalo, "no-checkpoint", "", "omission", "basic", 2, OutDetected, m))
 	cells[0] = cell(ToolHalo, "no-checkpoint", "", "omission", "basic", true)
@@ -477,21 +475,21 @@ func TestH1RefutationUnjudgedAndControlFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c := claim(h, "H1a"); c.Result != Refuted || h.Whole.Result != Refuted {
-		t.Errorf("H1a %+v whole %+v", c, h.Whole)
+	if c := claim(h, "H1a"); c.State != Measured || !strings.Contains(c.Value, "accepted 1 of 2 (0.500") || !strings.Contains(c.Value, "detected 1") {
+		t.Errorf("H1a: %+v", c)
 	}
-	if c := claim(h, "H1b"); c.Result != Holds {
+	if c := claim(h, "H1b"); c.State != Measured || !strings.Contains(c.Value, "accepted 1 of 1 (1.000") {
 		t.Errorf("H1b: %+v", c)
 	}
-	if c := claim(h, "H1c"); c.Result != NotEvaluated {
-		t.Errorf("a row with no data is not evaluated, not held: %+v", c)
+	if c := claim(h, "H1c"); c.State != NotMeasured {
+		t.Errorf("a row with no data is not measured: %+v", c)
 	}
 
 	// Controls that did not hold: the row is UNJUDGED and its trajectories are not counted.
 	rows, cells = base()
 	cells[1] = cell(ToolSignet, "operator-key", "", "omission", "basic", false)
 	h, _ = BuildH1(writeSweep(t, rows, cells))
-	if c := claim(h, "H1b"); c.Result != Unjudged {
+	if c := claim(h, "H1b"); c.State != Unjudged {
 		t.Errorf("H1b with controls that failed: %+v", c)
 	}
 	for _, r := range h.Rows {
@@ -505,27 +503,25 @@ func TestH1RefutationUnjudgedAndControlFailure(t *testing.T) {
 	rows, cells = base()
 	rows[1] = sweepRow(ToolHalo, "witness-checkpoint", "", "omission", "basic", 1, OutAccepted, m)
 	h, _ = BuildH1(writeSweep(t, rows, cells))
-	if c := claim(h, "H1a"); c.Result != Unjudged || !strings.Contains(c.Detail, "control") {
+	if c := claim(h, "H1a"); c.State != Unjudged || !strings.Contains(c.Value, "control") {
 		t.Errorf("H1a with a failed witness control: %+v", c)
 	}
-	if h.Whole.Result != Unjudged {
-		t.Errorf("none refuted and some unjudged: %+v", h.Whole)
-	}
 
-	// H1d: the edit criterion rejecting a non-edit mutation refutes; rejecting an edit does not.
+	// H1d counts the non-edit mutations and A4 only: a detected edit
+	// mutation is the edit split's, a detected non-edit one lowers H1d.
 	rows, cells = base()
 	rows = append(rows,
 		sweepRow(ToolRT, "edit-criterion", "adaptive", "substitution", "basic", 1, OutDetected, editMutation),
 		sweepRow(ToolRT, "edit-criterion", "adaptive", "substitution", "basic", 2, OutAccepted, `[{"before":{"tool":"Read"}}]`))
 	cells = append(cells, cell(ToolRT, "edit-criterion", "adaptive", "substitution", "basic", true))
 	h, _ = BuildH1(writeSweep(t, rows, cells))
-	if c := claim(h, "H1d"); c.Result != Holds {
-		t.Errorf("an edit mutation may be detected: %+v", c)
+	if c := claim(h, "H1d"); c.State != Measured || !strings.Contains(c.Value, "accepted 1 of 1") {
+		t.Errorf("an edit mutation is not in H1d: %+v", c)
 	}
 	rows = append(rows, sweepRow(ToolRT, "edit-criterion", "adaptive", "substitution", "basic", 3, OutDetected, `[{"before":{"tool":"Read"}}]`))
 	h, _ = BuildH1(writeSweep(t, rows, cells))
-	if c := claim(h, "H1d"); c.Result != Refuted {
-		t.Errorf("a rejected non-edit mutation refutes H1d: %+v", c)
+	if c := claim(h, "H1d"); !strings.Contains(c.Value, "accepted 1 of 2") || !strings.Contains(c.Value, "detected 1") {
+		t.Errorf("a rejected non-edit mutation is counted in H1d: %+v", c)
 	}
 	if _, err := BuildH1(t.TempDir()); err == nil {
 		t.Error("a directory without a sweep must be an error")
@@ -564,23 +560,22 @@ func writeBench(t *testing.T, doc map[string]any) string {
 	return p
 }
 
-func limit(r *BenchRun, id string) LimitResult {
-	for _, l := range r.Limits {
+func limit(r *BenchRun, id string) BenchMeasure {
+	for _, l := range r.Summary {
 		if l.ID == id {
 			return l
 		}
 	}
-	return LimitResult{}
+	return BenchMeasure{}
 }
 
-func TestH4aLimitsAgainstD3(t *testing.T) {
-	// Within every limit: ratio 1.08, fixed cost 2.5 s, 83 MiB, no loss.
+func TestH4aSummaryLinesMeasureWithoutLimits(t *testing.T) {
 	ok, err := LoadBench("disk", writeBench(t, benchDoc(1.08, 1.08, 83*1024, 2.0, false)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"H4a-wall", "H4a-fixed-cost", "H4a-rss", "H4a-loss"} {
-		if l := limit(ok, id); l.Result != Holds {
+		if l := limit(ok, id); l.State != Measured {
 			t.Errorf("%s: %+v", id, l)
 		}
 	}
@@ -597,32 +592,32 @@ func TestH4aLimitsAgainstD3(t *testing.T) {
 		t.Errorf("fixed cost %+v rss %+v", row.FixedCostS, row.PeakRSSMiB)
 	}
 
-	// Each limit refuted in turn.
+	// Each line gives the measured value, every workload's wall ratio with
+	// its interval, and no limit.
 	slow, _ := LoadBench("x", writeBench(t, benchDoc(1.08, 1.16, 83*1024, 2.0, false)))
-	if l := limit(slow, "H4a-wall"); l.Result != Refuted || !strings.Contains(l.Detail, "shell-1000: median 1.160") {
+	if l := limit(slow, "H4a-wall"); !strings.Contains(l.Value, "shell-100: median 1.080, bootstrap 95% [") || !strings.Contains(l.Value, "shell-1000: median 1.160") {
 		t.Errorf("wall: %+v", l)
 	}
 	costly, _ := LoadBench("x", writeBench(t, benchDoc(1.0, 1.0, 83*1024, 4.6, false)))
-	if l := limit(costly, "H4a-fixed-cost"); l.Result != Refuted {
+	if l := limit(costly, "H4a-fixed-cost"); !strings.Contains(l.Value, "largest per-workload median 5.100 s") {
 		t.Errorf("fixed cost 5.1 s: %+v", l)
 	}
 	big, _ := LoadBench("x", writeBench(t, benchDoc(1.0, 1.0, 257*1024, 1.0, false)))
-	if l := limit(big, "H4a-rss"); l.Result != Refuted {
+	if l := limit(big, "H4a-rss"); !strings.Contains(l.Value, "largest per-workload median 257.0 MiB") {
 		t.Errorf("rss: %+v", l)
 	}
 	lossy, _ := LoadBench("x", writeBench(t, benchDoc(1.0, 1.0, 1024, 1.0, true)))
-	if l := limit(lossy, "H4a-loss"); l.Result != Refuted || !strings.Contains(l.Detail, "2 run(s) with loss") {
+	if l := limit(lossy, "H4a-loss"); !strings.Contains(l.Value, "2 of 10 ok run(s) with loss") {
 		t.Errorf("loss: %+v", l)
 	}
-	// The exact limit is not exceeded.
-	edge, _ := LoadBench("x", writeBench(t, benchDoc(1.15, 1.15, 256*1024, 4.5, false)))
-	for _, id := range []string{"H4a-wall", "H4a-fixed-cost", "H4a-rss"} {
-		if l := limit(edge, id); l.Result != Holds {
-			t.Errorf("%s at its limit must hold: %+v", id, l)
+	for _, b := range []*BenchRun{ok, slow, costly, big, lossy} {
+		for _, l := range b.Summary {
+			if strings.Contains(l.Value+l.Measure, "at most") || strings.Contains(l.Value+l.Measure, "D3") {
+				t.Errorf("%s names a limit: %+v", l.ID, l)
+			}
 		}
 	}
-	// Both limits are read on the median: one repetition above the limit
-	// out of five holds, and the maximum is shown beside it.
+	// The median is read, with the largest repetition beside it.
 	spiky := benchDoc(1.0, 1.0, 83*1024, 2.0, false)
 	for _, smp := range spiky["samples"].([]map[string]any) {
 		if smp["condition"] == "all" && smp["size"] == 100 && smp["rep"] == 2 {
@@ -630,17 +625,17 @@ func TestH4aLimitsAgainstD3(t *testing.T) {
 		}
 	}
 	sp, _ := LoadBench("x", writeBench(t, spiky))
-	if l := limit(sp, "H4a-rss"); l.Result != Holds || !strings.Contains(l.Detail, "median 83.0 MiB") || !strings.Contains(l.Detail, "single repetition 300.0 MiB") {
+	if l := limit(sp, "H4a-rss"); !strings.Contains(l.Value, "median 83.0 MiB") || !strings.Contains(l.Value, "single repetition 300.0 MiB") {
 		t.Errorf("rss on the median: %+v", l)
 	}
-	if l := limit(sp, "H4a-fixed-cost"); l.Result != Holds || !strings.Contains(l.Detail, "single repetition 10.000 s") {
+	if l := limit(sp, "H4a-fixed-cost"); !strings.Contains(l.Value, "single repetition 10.000 s") {
 		t.Errorf("fixed cost on the median: %+v", l)
 	}
-	// A benchmark without the named workloads is not evaluated.
+	// A benchmark without runs under all is not measured.
 	doc := benchDoc(1, 1, 1, 1, false)
 	doc["samples"] = []map[string]any{}
 	empty, _ := LoadBench("x", writeBench(t, doc))
-	if l := limit(empty, "H4a-wall"); l.Result != NotEvaluated {
+	if l := limit(empty, "H4a-wall"); l.State != NotMeasured {
 		t.Errorf("no data: %+v", l)
 	}
 	// Drift between a run and its repeat.
@@ -693,10 +688,10 @@ func TestAnalyzeReadsTheComparisonAndTheOverheadBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v := verdictOf(res, "H1a", ""); v.Result != Holds {
+	if v := measureOf(res, "H1a", ""); v.State != Measured || !strings.Contains(v.Value, "accepted 1 of 1") {
 		t.Errorf("H1a: %+v", v)
 	}
-	if v := verdictOf(res, "H4a-wall", "disk"); v.Result != Holds {
+	if v := measureOf(res, "H4a-wall", "disk"); v.State != Measured || !strings.Contains(v.Value, "shell-100: median 1.080") {
 		t.Errorf("H4a-wall: %+v", v)
 	}
 	if len(res.H4.Bench) != 1 || len(res.H4.Bench[0].Drift) == 0 {

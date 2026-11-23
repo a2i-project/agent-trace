@@ -187,20 +187,28 @@ func TestEndToEndOnPairedFixtures(t *testing.T) {
 	if len(res.H2.Surface) != 2 || res.H2.Surface[0].Claims == 0 {
 		t.Errorf("the attack surface: %+v", res.H2.Surface)
 	}
-	wantIDs := map[string]bool{"H2a": true, "H2b": true, "H2c": true, "H2d": true, "H2e": true, "H3a-zero": true, "H3a-near-zero": true, "H3b": true, "H3c": true, "H3d": true, "H1": true, "H4a": true, "H4b": true}
-	for _, v := range res.Verdicts {
+	wantIDs := map[string]bool{"H2a": true, "H2b": true, "H2c": true, "H2d": true, "H2e": true, "H3a": true, "H3b": true, "H3c": true, "H3d": true, "H1": true, "H4a": true, "H4b": true}
+	for _, v := range res.Measurements {
 		delete(wantIDs, v.ID)
 	}
 	if len(wantIDs) != 0 {
-		t.Errorf("verdict lines missing for %v", wantIDs)
+		t.Errorf("measurement lines missing for %v", wantIDs)
 	}
-	for _, v := range res.Verdicts {
-		if v.ID == "H1" && v.Result != NotEvaluated {
+	for _, v := range res.Measurements {
+		if v.ID == "H1" && v.State != NotMeasured {
 			t.Errorf("H1 without a comparison directory: %+v", v)
+		}
+		if v.State != Measured && v.State != NotMeasured {
+			t.Errorf("a line is a measurement or says it is not measured: %+v", v)
 		}
 	}
 	report := Report(res)
-	for _, want := range []string{"## Halt conditions", "## Verdicts", "REDUCED SWEEP", "### Attack surface per session", "### Premise check", "H3c", "Every excluded run"} {
+	for _, word := range []string{"## Verdicts", "HOLDS", "REFUTED", "Registered threshold"} {
+		if strings.Contains(report, word) {
+			t.Errorf("report names %q", word)
+		}
+	}
+	for _, want := range []string{"## Halt conditions", "## Measurements", "REDUCED SWEEP", "### Attack surface per session", "### Premise check", "H3c", "Every excluded run"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report lacks %q", want)
 		}
@@ -512,17 +520,17 @@ func TestComposedA4CoversEveryInnerPosition(t *testing.T) {
 		t.Errorf("a verifier that finds nothing misses both: %+v", run.A4)
 	}
 
-	// Found but neither classified nor located: H2d holds, H2b and H2c judge it.
+	// Found but neither classified nor located: counted apart, H2b and H2c read it.
 	res := &Results{H2: &H2Results{Sessions: 1, A4: []A4Summary{{Agent: AgentClaudeCode, Sessions: 1, Positions: 3, ComposedPositions: 2, ComposedMisses: []string{"x: detected=true classified=false located=false"}}}}, H3: &H3Results{}, H4: &H4Results{}, protocol: repoProtocol()}
-	res.Verdicts, res.Halts = BuildVerdicts(res)
-	if v := verdictOf(res, "H2d", "every capture"); v.Result != Holds || !strings.Contains(v.Detail, "not classified or not located") {
+	res.Measurements, res.Halts = BuildMeasurements(res)
+	if v := measureOf(res, "H2d", "every capture"); v.State != Measured || !strings.Contains(v.Value, "5 positions checked: 0 widening(s) changed the verdict and 0 omission(s) with widened neighbours were not found; 1 found but not classified or not located") {
 		t.Errorf("H2d: %+v", v)
 	}
 	res.H2.A4[0].ComposedNotFound = []string{"y: detected=false"}
 	res.H2.A4[0].ComposedMisses = append(res.H2.A4[0].ComposedMisses, "y: detected=false")
-	res.Verdicts, res.Halts = BuildVerdicts(res)
-	if v := verdictOf(res, "H2d", "every capture"); v.Result != Refuted {
-		t.Errorf("an omission not found refutes H2d: %+v", v)
+	res.Measurements, res.Halts = BuildMeasurements(res)
+	if v := measureOf(res, "H2d", "every capture"); !strings.Contains(v.Value, "1 omission(s) with widened neighbours were not found; 1 found") {
+		t.Errorf("an omission not found is counted: %+v", v)
 	}
 }
 
@@ -559,43 +567,47 @@ func h2Run(id, variant string, detectable, detected, classified, located int) Ru
 	return RunOutput{ID: id, Agent: AgentClaudeCode, Version: "2.1.306", Task: "edits", Attack: &AttackRun{Tallies: []*Tally{{Variant: variant, N: 1, AttackedRuns: detectable, Mutations: detectable, Detectable: detectable, Detected: detected, Classified: classified, Located: located}}}}
 }
 
-func h2Verdict(t *testing.T, runs []RunOutput, misses []Miss, id string) Verdict {
+func h2Measure2(t *testing.T, runs []RunOutput, misses []Miss, id string) Measurement {
 	t.Helper()
 	res := &Results{Runs: runs, H2: BuildH2(repoProtocol(), runs, SeedLast), H3: &H3Results{}, H4: &H4Results{}, protocol: repoProtocol()}
 	res.H2.Misses = misses
-	res.Verdicts, res.Halts = BuildVerdicts(res)
-	return verdictOf(res, id, "every capture")
+	res.Measurements, res.Halts = BuildMeasurements(res)
+	return measureOf(res, id, "every capture")
 }
 
-// H2b and H2c divide by the detected mutations: a miss refutes H2a only.
+// H2b and H2c divide by the detected mutations, with the rate over the
+// detectable ones beside them; a miss counts in H2a only.
 func TestH2bAndH2cAreOverDetectedMutations(t *testing.T) {
 	runs := []RunOutput{h2Run("r1", "fabricate", 10, 9, 9, 9)}
 	misses := []Miss{{Run: "r1", Variant: "fabricate", N: 1}}
-	if v := h2Verdict(t, runs, misses, "H2a"); v.Result != Refuted {
+	if v := h2Measure2(t, runs, misses, "H2a"); v.State != Measured || !strings.Contains(v.Value, "9 of 10 (0.900, bootstrap 95% [") || !strings.Contains(v.Value, "1 miss(es)") {
 		t.Errorf("H2a: %+v", v)
 	}
 	for _, id := range []string{"H2b", "H2c"} {
-		v := h2Verdict(t, runs, misses, id)
-		if v.Result != Holds || !strings.Contains(v.Detail, "9 of 9 detected") || !strings.Contains(v.Detail, "over the detectable mutations 9 of 10") {
+		v := h2Measure2(t, runs, misses, id)
+		if v.State != Measured || !strings.Contains(v.Value, "over the detected mutations 9 of 9 (1.000") || !strings.Contains(v.Value, "over the detectable mutations 9 of 10 (0.900") {
 			t.Errorf("%s: %+v", id, v)
 		}
 	}
 	runs = []RunOutput{h2Run("r1", "fabricate", 10, 10, 9, 10)}
-	if v := h2Verdict(t, runs, nil, "H2b"); v.Result != Refuted {
-		t.Errorf("one detected mutation not classified refutes H2b: %+v", v)
+	if v := h2Measure2(t, runs, nil, "H2b"); !strings.Contains(v.Value, "over the detected mutations 9 of 10 (0.900") {
+		t.Errorf("one detected mutation not classified: %+v", v)
 	}
 }
 
-// Retimed omissions are reported apart: a retimed miss refutes nothing.
-func TestRetimedOmissionsAreOutsideTheVerdicts(t *testing.T) {
+// Retimed omissions are reported apart, outside the H2a to H2c lines.
+func TestRetimedOmissionsAreOutsideThePrimaryRates(t *testing.T) {
 	runs := []RunOutput{h2Run("r1", "omit", 10, 10, 10, 10), h2Run("r2", "omit-retime", 10, 8, 7, 7)}
 	misses := []Miss{{Run: "r2", Variant: "omit-retime", N: 1}, {Run: "r2", Variant: "omit-retime", N: 1}}
 	for _, id := range []string{"H2a", "H2b", "H2c"} {
-		if v := h2Verdict(t, runs, misses, id); v.Result != Holds || !strings.Contains(v.Detail, "10 of 10") {
+		if v := h2Measure2(t, runs, misses, id); !strings.Contains(v.Value, "10 of 10") || strings.Contains(v.Value, " of 20") {
 			t.Errorf("%s must not count retimed omissions: %+v", id, v)
 		}
 	}
-	if v := h2Verdict(t, runs, misses, "H2-retimed"); v.Result != Reported || !strings.Contains(v.Detail, "8 of 10 detectable detected") {
+	if v := h2Measure2(t, runs, misses, "H2a"); !strings.Contains(v.Value, "0 miss(es)") {
+		t.Errorf("a retimed miss is not an H2a miss: %+v", v)
+	}
+	if v := h2Measure2(t, runs, misses, "H2-retimed"); v.State != Measured || !strings.Contains(v.Value, "8 of 10 detectable detected") {
 		t.Errorf("retimed line: %+v", v)
 	}
 }

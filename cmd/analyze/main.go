@@ -4,16 +4,16 @@
 // tools read from the comparison sweep's output (H1) and the overhead (H4),
 // with the exclusion rules applied and every excluded run listed. It writes
 // results.json, which holds each number, count and interval, and report.md,
-// which holds the tables and one verdict line per registered hypothesis against
-// the registered thresholds.
+// which holds the tables and one measurement line per measured quantity, with
+// its interval and counts and no target or verdict (E-11).
 //
 //	analyze --campaign OUTPUT_DIR [--out DIR] [--protocol FILE]
 //	        [--comparison SWEEP_DIR] [--overhead LABEL=results.json]...
 //	        [--seeds N] [--jobs N] [--startup-window]
 //
-// The thresholds, seeds and strata common to all agents are constants in
-// protocol.go; the per-agent targets are read from the protocol file
-// (targets.go). The same inputs give byte-identical outputs.
+// The estimator settings, seeds and strata common to all agents are
+// constants in protocol.go; the per-agent settings are read from the
+// protocol file (targets.go). The same inputs give byte-identical outputs.
 //
 // Exit codes: 0 done, 1 done and a halt condition of protocol 10.2 occurred,
 // 3 usage or I/O error.
@@ -54,7 +54,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.StringVar(&o.Campaign, "campaign", "", "Campaign directory: the manifest layout of scripts/capture-campaign.sh (required)")
 	fs.StringVar(&o.Out, "out", "", "Where to write results.json and report.md (default: the campaign directory)")
 	fs.StringVar(&o.Config, "config", "", "Agent version config (default as verify: $"+"AGENT_TRACE_CONFIG, else config/agents.json)")
-	fs.StringVar(&o.Protocol, "protocol", "", "Protocol file of the per-agent targets (default: "+ProtocolFileName+" beside the agent version config)")
+	fs.StringVar(&o.Protocol, "protocol", "", "Protocol file of the per-agent settings (default: "+ProtocolFileName+" beside the agent version config)")
 	fs.StringVar(&o.Comparison, "comparison", "", "Output directory of scripts/compare/sweep.py, for H1")
 	fs.Var(&overhead, "overhead", "Overhead benchmark results.json as LABEL=PATH, for H4a. Repeatable (for example tmpfs and disk)")
 	fs.Var(&overheadAfter, "overhead-after", "The same benchmark repeated after the campaign, LABEL=PATH with the label of an --overhead run: the difference is reported as machine drift")
@@ -102,8 +102,8 @@ func run(args []string, out, errOut io.Writer) int {
 		_, _ = fmt.Fprintf(errOut, "analyze: %v\n", err)
 		return exitError
 	}
-	for _, v := range res.Verdicts {
-		_, _ = fmt.Fprintf(out, "%-14s %-13s %s\n", v.ID, v.Result, v.Scope)
+	for _, v := range res.Measurements {
+		_, _ = fmt.Fprintf(out, "%-14s %-13s %s\n", v.ID, v.State, v.Scope)
 	}
 	_, _ = fmt.Fprintf(out, "wrote %s and %s\n", filepath.Join(o.Out, "results.json"), filepath.Join(o.Out, "report.md"))
 	if len(res.Halts) > 0 {

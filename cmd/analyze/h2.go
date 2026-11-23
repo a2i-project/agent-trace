@@ -377,7 +377,7 @@ func mislocationName(cat int) string {
 }
 
 // PrimaryPooled sums the tallies of the variants that count toward the
-// verdicts (InVerdict) of an agent over all its sessions: rates over every such
+// primary rates (InPrimaryRates) of an agent over all its sessions: rates over every such
 // mutation, and the same without the tool-heavy stratum.
 func PrimaryPooled(p *Protocol, runs []RunOutput, agentName string, excludeToolHeavy bool) Tally {
 	var t Tally
@@ -390,7 +390,7 @@ func PrimaryPooled(p *Protocol, runs []RunOutput, agentName string, excludeToolH
 		}
 		for _, tl := range o.Attack.Tallies {
 			sp := specOf(tl.Variant)
-			if !sp.InVerdict() {
+			if !sp.InPrimaryRates() {
 				continue
 			}
 			tt := *tl

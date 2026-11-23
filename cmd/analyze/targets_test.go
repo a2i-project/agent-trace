@@ -36,32 +36,25 @@ func repoProtocol() *Protocol {
 	return repoProtocolVal
 }
 
-func TestRepositoryProtocolHoldsTheRegisteredTargets(t *testing.T) {
+func TestRepositoryProtocolHoldsTheAgentEntries(t *testing.T) {
 	p := repoProtocol()
-	cc, ok := p.Targets(AgentClaudeCode)
-	if !ok || cc.FaithfulBar.MinRate == nil || *cc.FaithfulBar.MinRate != 0.50 || cc.FaithfulBar.Basis != "D2" {
-		t.Fatalf("claude-code FAITHFUL bar: %+v", cc)
+	if cc, ok := p.Entry(AgentClaudeCode); !ok || cc.Label != "Claude Code" {
+		t.Fatalf("claude-code: %+v", cc)
 	}
-	if r := cc.InconclusiveRange; r.Low == nil || *r.Low != 0.30 || *r.High != 0.70 {
-		t.Errorf("claude-code pilot range: %+v", r)
+	if agy, ok := p.Entry(AgentGemini); !ok || agy.Label != "agy" {
+		t.Errorf("gemini: %+v", agy)
 	}
-	agy, ok := p.Targets(AgentGemini)
-	if !ok || agy.FaithfulBar.MinRate != nil || agy.FaithfulBar.None == "" || agy.InconclusiveRange.None == "" {
-		t.Errorf("gemini declares no bar and no range: %+v", agy)
-	}
-	// Codex and OpenCode: no bar and no range (D2 registers Claude Code
-	// only), no held-out task (D8 names none), and no tool-heavy task, since
-	// neither harness makes a read of a background command's output file
-	// that the agent's read shares (I-131).
+	// Codex and OpenCode: no held-out task (D8 names none) and no tool-heavy
+	// task, since neither harness makes a read of a background command's
+	// output file that the agent's read shares (I-131).
 	for _, name := range []string{AgentCodex, AgentOpenCode} {
-		a, ok := p.Targets(name)
-		if !ok || a.FaithfulBar.MinRate != nil || a.FaithfulBar.None == "" || a.InconclusiveRange.None == "" ||
-			len(*a.ToolHeavyTasks) != 0 || len(*a.D8HeldOutTasks) != 0 {
+		a, ok := p.Entry(name)
+		if !ok || len(*a.ToolHeavyTasks) != 0 || len(*a.D8HeldOutTasks) != 0 {
 			t.Errorf("%s: %+v", name, a)
 		}
 	}
 	if err := p.Require([]string{AgentClaudeCode, AgentGemini, AgentCodex, AgentOpenCode}); err != nil {
-		t.Errorf("every adapter with a profile has targets: %v", err)
+		t.Errorf("every adapter with a profile has an entry: %v", err)
 	}
 	for _, c := range []struct {
 		agent, task string
@@ -85,7 +78,7 @@ func TestRepositoryProtocolHoldsTheRegisteredTargets(t *testing.T) {
 	}
 }
 
-const validAgent = `{"agent": "claude-code", "label": "CC", "faithful_bar": {"min_rate": 0.5, "basis": "D2"}, "inconclusive_pilot_range": {"low": 0.3, "high": 0.7}, "tool_heavy_tasks": ["tools"], "d8_held_out_tasks": []}`
+const validAgent = `{"agent": "claude-code", "label": "CC", "tool_heavy_tasks": ["tools"], "d8_held_out_tasks": []}`
 
 func writeProtocol(t *testing.T, body string) string {
 	t.Helper()
@@ -100,8 +93,10 @@ func protocolWith(agents ...string) string {
 	return `{"schema": 1, "protocol": "test registration", "capture_user": {"none": "a test registration"}, "agents": [` + strings.Join(agents, ", ") + `]}`
 }
 
-// The loader refuses unknown fields, a target left out and malformed values,
-// so an agent is never analysed against a default.
+// The loader refuses unknown fields, a field left out and malformed values,
+// so an agent is never analysed against a default. A target field of an
+// older file (faithful_bar, inconclusive_pilot_range) is an unknown field:
+// the analysis reads none (E-11).
 func TestLoadProtocolRefusesWhatItCannotRead(t *testing.T) {
 	if _, err := LoadProtocol(writeProtocol(t, protocolWith(validAgent))); err != nil {
 		t.Fatalf("a valid file: %v", err)
@@ -131,13 +126,8 @@ func TestLoadProtocolRefusesWhatItCannotRead(t *testing.T) {
 		{"unregistered adapter", protocolWith(with(`"claude-code"`, `"nobody"`)), "no adapter is registered"},
 		{"duplicate agent", protocolWith(validAgent, validAgent), "listed twice"},
 		{"no label", protocolWith(with(`"CC"`, `""`)), "no label"},
-		{"no faithful bar", protocolWith(drop("faithful_bar")), "no faithful_bar"},
-		{"bar and none", protocolWith(with(`"basis": "D2"`, `"basis": "D2", "none": "x"`)), "either min_rate"},
-		{"bar without basis", protocolWith(with(`, "basis": "D2"`, ``)), "without the basis"},
-		{"bar out of range", protocolWith(with(`0.5`, `1.5`)), "not in (0, 1]"},
-		{"no pilot range", protocolWith(drop("inconclusive_pilot_range")), "no inconclusive_pilot_range"},
-		{"half a range", protocolWith(with(`"low": 0.3, `, ``)), "both low and high"},
-		{"inverted range", protocolWith(with(`"low": 0.3`, `"low": 0.8`)), "low <= high"},
+		{"a faithful bar", protocolWith(with(`"label": "CC"`, `"label": "CC", "faithful_bar": {"min_rate": 0.5, "basis": "D2"}`)), "unknown field \"faithful_bar\""},
+		{"a pilot range", protocolWith(with(`"label": "CC"`, `"label": "CC", "inconclusive_pilot_range": {"none": "x"}`)), "unknown field \"inconclusive_pilot_range\""},
 		{"no tool-heavy list", protocolWith(drop("tool_heavy_tasks")), "no tool_heavy_tasks"},
 		{"no held-out list", protocolWith(drop("d8_held_out_tasks")), "no d8_held_out_tasks"},
 		{"prefixed task", protocolWith(with(`["tools"]`, `["heldout:tools"]`)), "without the heldout: prefix"},
@@ -202,7 +192,7 @@ func setRunAs(t *testing.T, dir string, a *RunAsRecord) {
 
 // An agent of the campaign the protocol file does not list stops the
 // analysis with a message naming it and the file.
-func TestAnAgentWithNoTargetsStopsTheAnalysis(t *testing.T) {
+func TestAnAgentWithNoEntryStopsTheAnalysis(t *testing.T) {
 	dir := syntheticCampaign(t, pairedRuns[:3])
 	o := testOptions(t, dir)
 	o.Protocol = writeProtocol(t, protocolWith(validAgent))
@@ -212,18 +202,17 @@ func TestAnAgentWithNoTargetsStopsTheAnalysis(t *testing.T) {
 	if code := run(args, &bytes.Buffer{}, &errOut); code != exitError {
 		t.Fatalf("exit %d, want %d; stderr %s", code, exitError, errOut.String())
 	}
-	if msg := errOut.String(); !strings.Contains(msg, "no targets for agent(s) gemini") || !strings.Contains(msg, ProtocolFileName) {
+	if msg := errOut.String(); !strings.Contains(msg, "no entry for agent(s) gemini") || !strings.Contains(msg, ProtocolFileName) {
 		t.Errorf("stderr: %s", msg)
 	}
 }
 
-// The targets come from the file: a changed bar, range and label change the
-// verdicts, and results.json records the file by name and hash, with the bar
-// under the key the registration fixed.
-func TestTargetsComeFromTheProtocolFile(t *testing.T) {
+// The settings come from the file: results.json records it by name and hash,
+// and its constants hold no target (E-11).
+func TestSettingsComeFromTheProtocolFile(t *testing.T) {
 	dir := syntheticCampaign(t, pairedRuns[:2])
 	o := testOptions(t, dir)
-	o.Protocol = writeProtocol(t, protocolWith(strings.Replace(strings.Replace(validAgent, `0.5`, `0.25`, 1), `"low": 0.3`, `"low": 0.0`, 1)))
+	o.Protocol = writeProtocol(t, protocolWith(validAgent))
 	o.NoSweep, o.NoSensitivity = true, true
 	res, err := Analyze(o)
 	if err != nil {
@@ -235,17 +224,18 @@ func TestTargetsComeFromTheProtocolFile(t *testing.T) {
 	if res.Constants.Protocol != "test registration" {
 		t.Errorf("registration: %q", res.Constants.Protocol)
 	}
-	d := verdictOf(res, "H3d", AgentClaudeCode)
-	if !strings.Contains(d.Threshold, "at least 25% of honest runs (D2, CC only)") {
-		t.Errorf("H3d threshold: %q", d.Threshold)
-	}
 	data, err := json.Marshal(res)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(data)
-	if !strings.Contains(s, `"h3a_near_zero":0.05,"h3d_claude_code_bar":0.25,"h4a_max_wall_ratio":1.15`) {
-		t.Errorf("the bar is not where the registration's key was: %s", s[strings.Index(s, `"h3a_near_zero"`):][:120])
+	for _, key := range []string{"h3a_near_zero", "_bar", "h4a_max", "in_pilot_range", `"verdicts"`, `"limits"`} {
+		if strings.Contains(s, key) {
+			t.Errorf("results.json carries %s", key)
+		}
+	}
+	if !strings.Contains(s, `,"interval_slack_ms":500,"inconclusive_cause_precedence":`) {
+		t.Errorf("constants: %s", s[strings.Index(s, `"constants"`):][:400])
 	}
 	if !strings.Contains(s, `"protocol_sha256":"`+res.Inputs.ProtocolSHA256+`"`) {
 		t.Error("results.json lacks the protocol file's hash")

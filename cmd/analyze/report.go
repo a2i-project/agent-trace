@@ -117,15 +117,15 @@ func Report(res *Results) string {
 		listed(m, "Warnings", res.Warnings)
 	}
 
-	m.line("## Verdicts")
+	m.line("## Measurements")
 	m.blank()
-	m.line("One line per registered hypothesis against its registered threshold.")
+	m.line("One line per measured quantity, with its interval and counts. The analysis sets no target and gives no verdict on a hypothesis (E-11).")
 	m.blank()
-	rows := make([][]string, 0, len(res.Verdicts))
-	for _, v := range res.Verdicts {
-		rows = append(rows, []string{v.ID, v.Scope, v.Result, v.Claim, v.Threshold, v.Detail})
+	rows := make([][]string, 0, len(res.Measurements))
+	for _, v := range res.Measurements {
+		rows = append(rows, []string{v.ID, v.Scope, v.Measure, v.State, v.Value})
 	}
-	m.table([]string{"ID", "Scope", "Result", "Claim", "Registered threshold", "Evidence"}, rows)
+	m.table([]string{"ID", "Scope", "Measure", "State", "Value"}, rows)
 
 	m.line("## Runs and exclusions")
 	m.blank()
@@ -241,7 +241,7 @@ func reportH2(m *md, res *Results) {
 		m.line("**REDUCED SWEEP: seeds %d to %d, not the registered %d to %d. These are not the registered H2 numbers.**", SeedFirst, h.LastSeed, SeedFirst, SeedLast)
 		m.blank()
 	}
-	m.line("%d sessions swept. Rates are over detectable in-capture mutations (E-5), with a bootstrap over sessions; undetectable by design, out of capture (an A2 or A3 claim set aside as out of scope, V-23) and unverifiable (A3 on a value the probe did not capture, V-22, V-26) are counted apart. Primary variants use uniform selection; `-sensitive` variants are secondary and outside the verdicts.", h.Sessions)
+	m.line("%d sessions swept. Rates are over detectable in-capture mutations (E-5), with a bootstrap over sessions; undetectable by design, out of capture (an A2 or A3 claim set aside as out of scope, V-23) and unverifiable (A3 on a value the probe did not capture, V-22, V-26) are counted apart. Primary variants use uniform selection; `-sensitive` variants are secondary and outside the H2a to H2c lines.", h.Sessions)
 	m.blank()
 	listed(m, "Runs set aside from the sweep (X5)", h.Excluded)
 	var rows [][]string
@@ -391,7 +391,7 @@ func notGen(t Tally) string {
 }
 
 func reportH1(m *md, res *Results) {
-	m.line("## H1: existing tools accept the attacks")
+	m.line("## H1: acceptance of the attacks by existing tools")
 	m.blank()
 	h := res.H1
 	if h == nil {
@@ -408,7 +408,7 @@ func reportH1(m *md, res *Results) {
 			fmt.Sprintf("considered %d, not representable %d, refused %d, inapplicable %d, errors %d, unjudged %d", r.Considered, r.NotRepresentable, r.Refused, r.Inapplicable, r.Errors, r.Unjudged), st})
 	}
 	m.table([]string{"Tool", "Row", "Attacker", "Kind", "Accepted/evaluated", "Acceptance and bootstrap 95%", "Sessions", "Distinct mutations", "Counts", "Status"}, rows)
-	m.line("Control rows (they do not test H1; if one fails the matching H1 row is UNJUDGED):")
+	m.line("Control rows (they measure no acceptance; if one fails the matching H1 row is UNJUDGED):")
 	m.blank()
 	rows = nil
 	for _, c := range h.Controls {
@@ -423,7 +423,7 @@ func reportH1(m *md, res *Results) {
 	m.blank()
 	m.table([]string{"Control", "Outcomes"}, cr2)
 	if e := h.EditSplit; e != nil {
-		m.line("Also reported, not tested: the edit criterion detected %d of %d Write and Edit mutations (%s) and %d of %d others. Split by whether the mutation changes the replayed final state: %s.", e.EditDetected, e.EditMutations, pct(e.EditDetectionRate), e.NonEditDetected, e.NonEditMutations, e.NotSplitByFinalState)
+		m.line("Also measured: the edit criterion detected %d of %d Write and Edit mutations (%s) and %d of %d others. Split by whether the mutation changes the replayed final state: %s.", e.EditDetected, e.EditMutations, pct(e.EditDetectionRate), e.NonEditDetected, e.NonEditMutations, e.NotSplitByFinalState)
 		m.blank()
 	}
 	if n := h.NaiveCommandA3; n != nil {
@@ -446,10 +446,10 @@ func reportH4(m *md, res *Results) {
 		}
 		m.table([]string{"Workload", "Condition", "Runs", "Wall ratio median [q1, q3] top1", "Median bootstrap 95%", "CPU ratio", "Fixed cost s", "Watch CPU s", "Peak RSS MiB", "Runs with loss"}, rows)
 		var lrows [][]string
-		for _, l := range b.Limits {
-			lrows = append(lrows, []string{l.ID, l.Result, l.Limit, l.Detail})
+		for _, l := range b.Summary {
+			lrows = append(lrows, []string{l.ID, l.Measure, l.State, l.Value})
 		}
-		m.table([]string{"ID", "Result", "D3 limit", "Detail"}, lrows)
+		m.table([]string{"ID", "Measure", "State", "Value"}, lrows)
 		if len(b.Drift) > 0 {
 			var drows [][]string
 			for _, d := range b.Drift {

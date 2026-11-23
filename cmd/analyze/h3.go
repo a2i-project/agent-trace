@@ -135,9 +135,6 @@ type Inconclusive struct {
 	// condition. UnmatchedReasons lists those reasons once each.
 	Unattributed     []string `json:"unattributed_runs,omitempty"`
 	UnmatchedReasons []string `json:"unmatched_reasons,omitempty"`
-	// InRange says whether the agent's pilot-informed range holds
-	// (reported, never a refutation); nil when the agent has none.
-	InRange *bool `json:"in_pilot_range,omitempty"`
 }
 
 // H3Cell is the H3 numbers of one (agent version, scope, setting).
@@ -282,9 +279,6 @@ func BuildH3Cell(p *Protocol, runs []RunOutput, av AgentVersion, scope, setting 
 	inc.Rate = NewRate(considered, doneEval, inconclusive, notDone)
 	inc.Multi, inc.Details, inc.Primary = multi, details, primary
 	inc.UnmatchedReasons = sortedKeys(unmatched)
-	if t, ok := p.Targets(av.Agent); ok && inc.Rate.Rate != nil {
-		inc.InRange = t.InRange(*inc.Rate.Rate)
-	}
 	cell.Inconclusive = inc
 	cell.Faithful = NewRate(considered, doneEval, faithful, notDone)
 	return cell

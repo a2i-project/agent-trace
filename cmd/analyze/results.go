@@ -64,22 +64,9 @@ type Inputs struct {
 }
 
 // Constants snapshots the registered values the run used, so the results
-// carry the registration they were computed under. FaithfulBars are written
-// between NearZeroFP and MaxWallRatio, one h3d_<agent>_bar key per agent of
-// the protocol file with a bar, in file order (MarshalJSON).
+// carry the registration they were computed under. They hold no target, bar
+// or limit (E-11).
 type Constants struct {
-	constantsHead
-	FaithfulBars []AgentBar
-	constantsTail
-}
-
-// AgentBar is one agent's H3d bar.
-type AgentBar struct {
-	Agent string
-	Bar   float64
-}
-
-type constantsHead struct {
 	Protocol           string      `json:"protocol"`
 	BootstrapResamples int         `json:"bootstrap_resamples"`
 	BootstrapSeed      uint64      `json:"bootstrap_seed"`
@@ -89,60 +76,16 @@ type constantsHead struct {
 	SeedFirst          uint64      `json:"seed_first"`
 	SeedLast           uint64      `json:"seed_last_registered"`
 	SeedLastRun        uint64      `json:"seed_last_run"`
-	NearZeroFP         float64     `json:"h3a_near_zero"`
-}
-
-type constantsTail struct {
-	MaxWallRatio    float64  `json:"h4a_max_wall_ratio"`
-	MaxFixedCostS   float64  `json:"h4a_max_fixed_cost_s"`
-	MaxWatchRSSMiB  float64  `json:"h4a_max_watch_rss_mib"`
-	MaxLossRuns     int      `json:"h4a_max_loss_runs"`
-	IntervalSlackMS int64    `json:"interval_slack_ms"`
-	CauseOrder      []string `json:"inconclusive_cause_precedence"`
+	IntervalSlackMS    int64       `json:"interval_slack_ms"`
+	CauseOrder         []string    `json:"inconclusive_cause_precedence"`
 }
 
 func constants(p *Protocol, lastSeed uint64) Constants {
-	c := Constants{
-		constantsHead: constantsHead{
-			Protocol: p.Registration, BootstrapResamples: BootstrapResamples, BootstrapSeed: BootstrapSeed,
-			PrimaryAgreement: PrimaryAgreement, LOOAgreement: LOOAgreementLabel, AgreementGrid: AgreementGrid, SeedFirst: SeedFirst, SeedLast: SeedLast, SeedLastRun: lastSeed,
-			NearZeroFP: NearZeroFP,
-		},
-		constantsTail: constantsTail{
-			MaxWallRatio: MaxWallRatio, MaxFixedCostS: MaxFixedCostSeconds,
-			MaxWatchRSSMiB: MaxWatchRSSMiB, MaxLossRuns: MaxLossRuns, IntervalSlackMS: IntervalSlack.Milliseconds(), CauseOrder: CauseOrder,
-		},
+	return Constants{
+		Protocol: p.Registration, BootstrapResamples: BootstrapResamples, BootstrapSeed: BootstrapSeed,
+		PrimaryAgreement: PrimaryAgreement, LOOAgreement: LOOAgreementLabel, AgreementGrid: AgreementGrid, SeedFirst: SeedFirst, SeedLast: SeedLast, SeedLastRun: lastSeed,
+		IntervalSlackMS: IntervalSlack.Milliseconds(), CauseOrder: CauseOrder,
 	}
-	for _, a := range p.Agents {
-		if b := a.FaithfulBar.MinRate; b != nil {
-			c.FaithfulBars = append(c.FaithfulBars, AgentBar{a.Agent, *b})
-		}
-	}
-	return c
-}
-
-// MarshalJSON writes the head's keys, one key per FAITHFUL bar, then the
-// tail's keys, so the bars keep the place the registration's fixed key had.
-func (c Constants) MarshalJSON() ([]byte, error) {
-	head, err := json.Marshal(c.constantsHead)
-	if err != nil {
-		return nil, err
-	}
-	tail, err := json.Marshal(c.constantsTail)
-	if err != nil {
-		return nil, err
-	}
-	out := append([]byte{}, head[:len(head)-1]...)
-	for _, b := range c.FaithfulBars {
-		k, _ := json.Marshal(barKey(b.Agent))
-		v, err := json.Marshal(b.Bar)
-		if err != nil {
-			return nil, err
-		}
-		out = append(append(append(append(out, ','), k...), ':'), v...)
-	}
-	out = append(out, ',')
-	return append(out, tail[1:]...), nil
 }
 
 // RunLine is one row of the exclusion list.
@@ -191,17 +134,17 @@ type Results struct {
 	H4        *H4Results   `json:"h4,omitempty"`
 	// Trace lists the runs whose trace was tampered with or could not be
 	// read (V-59), with the primary setting's verdict.
-	Trace       []TraceRun `json:"trace_results"`
-	Verdicts    []Verdict  `json:"verdicts"`
-	Halts       []string   `json:"halt_conditions"`
-	Warnings    []string   `json:"warnings"`
-	NotComputed []string   `json:"not_computed"`
+	Trace        []TraceRun    `json:"trace_results"`
+	Measurements []Measurement `json:"measurements"`
+	Halts        []string      `json:"halt_conditions"`
+	Warnings     []string      `json:"warnings"`
+	NotComputed  []string      `json:"not_computed"`
 
-	// protocol holds the per-agent targets the verdicts and the report read.
+	// protocol holds the per-agent settings the measurements and the report read.
 	protocol *Protocol
 }
 
-const resultsSchema = 1
+const resultsSchema = 2
 
 // Analyze runs the whole analysis and returns the results.
 func Analyze(o Options) (*Results, error) {
@@ -324,7 +267,7 @@ func Analyze(o Options) (*Results, error) {
 
 	res.Runs = runs
 	res.Trace = traceRuns(runs)
-	res.Verdicts, res.Halts = BuildVerdicts(res)
+	res.Measurements, res.Halts = BuildMeasurements(res)
 	res.Warnings = append(res.Warnings, warnings(res, runs)...)
 	// The runs section keeps every per-run number except what the H2 section
 	// already holds in full.
