@@ -215,9 +215,8 @@ type connection struct {
 	datagram bool
 	// hello holds the ClientHello bytes captured so far while helloPending:
 	// the first send did not hold the whole hello and the kernel follows it
-	// into later sends (N-31). helloAt is when the first of them was sent.
+	// into later sends (N-31).
 	hello        []byte
-	helloAt      time.Time
 	helloPending bool
 }
 
@@ -1594,7 +1593,7 @@ func (o *Observer) flushOpenConnections() {
 	for _, k := range keys {
 		c := o.conns[k]
 		o.coverage.OpenAtStop++
-		o.emit(c, c.openedAt)
+		o.emit(c)
 	}
 }
 
@@ -1614,7 +1613,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		// with its connect time, like one still open at the stop.
 		if prev, ok := o.conns[key]; ok && !prev.emitted {
 			o.coverage.Replaced++
-			o.emit(prev, prev.openedAt)
+			o.emit(prev)
 		}
 		o.conns[key] = &connection{
 			tgid:     hdr.Tgid,
@@ -1642,7 +1641,6 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			o.firstHelloNs.CompareAndSwap(0, ts.UnixNano())
 		}
 		conn.hello = append(conn.hello[:0], rec.payload...)
-		conn.helloAt = ts
 		conn.helloPending = true
 		if hdr.Flags&netFlagHelloMore != 0 && !tlsparse.ClientHelloComplete(conn.hello) {
 			// The rest of the hello follows in NET_HELLO_MORE (N-31).
@@ -1650,7 +1648,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			return
 		}
 		if o.resolveHello(conn) {
-			o.emit(conn, conn.helloAt)
+			o.emit(conn)
 		}
 
 	case netHelloMore:
@@ -1663,7 +1661,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 			return
 		}
 		if o.resolveHello(conn) {
-			o.emit(conn, conn.helloAt)
+			o.emit(conn)
 		}
 
 	case netSend:
@@ -1696,7 +1694,7 @@ func (o *Observer) handleNetRecord(rec netRecord) {
 		// closes, whichever process held it.
 		conn, ok := o.conns[key]
 		if ok {
-			o.emit(conn, ts)
+			o.emit(conn)
 		}
 		delete(o.conns, key)
 	}
@@ -1768,21 +1766,23 @@ func unixTarget(payload []byte) string {
 }
 
 // emit sends one models.GroundTruthEvent for conn if it hasn't already been
-// emitted (a connection whose SNI was parsed emits once, at NET_HELLO time;
-// one that never yielded a hostname emits once, at NET_CLOSE, with a
-// peer-address fallback target). The event's PID is the process that
+// emitted (a connection whose SNI was parsed emits once, when its NET_HELLO
+// is read; one that never yielded a hostname emits once, at NET_CLOSE, with a
+// peer-address fallback target), stamped at its connect. The event's PID is the process that
 // connected, whichever process sent or closed.
-func (o *Observer) emit(conn *connection, ts time.Time) {
+func (o *Observer) emit(conn *connection) {
 	if conn.emitted {
 		return
 	}
 	// A hello still being followed when the connection ends (its close, a
-	// new connect, the end of the capture) is parsed from what arrived; a
-	// name found there stamps the connection at the hello, as a whole one
-	// does.
-	if conn.helloPending && o.resolveHello(conn) {
-		ts = conn.helloAt
+	// new connect, the end of the capture) is parsed from what arrived.
+	if conn.helloPending {
+		o.resolveHello(conn)
 	}
+	// Every event of a connection is stamped at its connect, whenever it is
+	// emitted: at the hello that named it, at its close or at the end of the
+	// capture (N-56). A datagram's connection opens at the datagram.
+	ts := conn.openedAt
 	tgid := conn.tgid
 	// Port 53 is DNS. The resolver connects to it for every name an agent
 	// looks up, so no trajectory records it and it cannot be aligned; but a
@@ -1881,7 +1881,7 @@ func (o *Observer) handleDatagram(hdr bpfNetEventHdr, payload []byte, ts time.Ti
 	if conn.port == 53 && conn.sotype == sockDgram {
 		o.coverage.Datagrams++
 		o.dnsQuery(conn, payload, ts)
-		o.emit(conn, ts) // the resolver alone, when no question parsed
+		o.emit(conn) // the resolver alone, when no question parsed
 		return
 	}
 	key := dgramKey{sock: hdr.Sock, family: hdr.Family, addr: hdr.Addr, port: hdr.Port}
@@ -1893,7 +1893,7 @@ func (o *Observer) handleDatagram(hdr bpfNetEventHdr, payload []byte, ts time.Ti
 	}
 	o.dgrams[key] = true
 	o.coverage.Datagrams++
-	o.emit(conn, ts)
+	o.emit(conn)
 }
 
 // peerAddrPort formats a fallback target for a connection whose first bytes

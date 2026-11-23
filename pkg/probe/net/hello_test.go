@@ -77,6 +77,7 @@ func TestHandleNetRecord_HelloAcrossSends(t *testing.T) {
 	}
 	frag := records(hello, 1000)
 	connect := netRec(netConnect, 1, 443, sockStream, nil)
+	connect.hdr.TsNs = 1
 	closeAt := func(ts uint64) netRecord { r := netRec(netClose, 1, 443, sockStream, nil); r.hdr.TsNs = ts; return r }
 	byName := string(models.NetConnect) + " " + host
 	byAddr := string(models.NetConnect) + " 10.0.0.53:443"
@@ -85,19 +86,19 @@ func TestHandleNetRecord_HelloAcrossSends(t *testing.T) {
 		name     string
 		recs     []netRecord
 		want     string
-		at       uint64 // the event's timestamp, in boot nanoseconds
+		at       uint64 // the event's timestamp, in boot nanoseconds: the connect's (N-56)
 		followed int
 	}{
-		{"whole in one send", []netRecord{connect, helloRec(netHello, 10, false, hello), closeAt(99)}, byName, 10, 0},
+		{"whole in one send", []netRecord{connect, helloRec(netHello, 10, false, hello), closeAt(99)}, byName, 1, 0},
 		{"record header sent alone", []netRecord{connect,
 			helloRec(netHello, 10, true, hello[:5]),
 			helloRec(netHelloMore, 11, false, hello[5:]),
-			closeAt(99)}, byName, 10, 1},
+			closeAt(99)}, byName, 1, 1},
 		{"three sends", []netRecord{connect,
 			helloRec(netHello, 10, true, hello[:700]),
 			helloRec(netHelloMore, 11, true, hello[700:1200]),
 			helloRec(netHelloMore, 12, false, hello[1200:]),
-			closeAt(99)}, byName, 10, 1},
+			closeAt(99)}, byName, 1, 1},
 		// A hello over two records: the kernel cannot tell where the second
 		// ends and keeps following; userspace stops at the end of the
 		// message and ignores what follows.
@@ -105,24 +106,24 @@ func TestHandleNetRecord_HelloAcrossSends(t *testing.T) {
 			helloRec(netHello, 10, true, frag[:1005]),
 			helloRec(netHelloMore, 11, true, frag[1005:]),
 			helloRec(netHelloMore, 12, true, []byte{0x14, 0x03, 0x03, 0x00, 0x01, 0x01}),
-			closeAt(99)}, byName, 10, 1},
+			closeAt(99)}, byName, 1, 1},
 		// The rest never came: the name is parsed from what did at the
-		// close, and the event keeps the hello's time.
+		// close, and the event keeps the connect's time.
 		{"rest never sent, name in the first part", []netRecord{connect,
 			helloRec(netHello, 10, true, cutTail(bigHello(host, 10))),
-			closeAt(99)}, byName, 10, 1},
+			closeAt(99)}, byName, 1, 1},
 		{"rest never sent, name in the missing part", []netRecord{connect,
 			helloRec(netHello, 10, true, hello[:1000]),
-			closeAt(99)}, byAddr, 99, 1},
+			closeAt(99)}, byAddr, 1, 1},
 		// Records from before N-31 carry no flag: a capture cut at 1 KiB
 		// parses at once, as before.
 		{"cut at 1 KiB without the flag", []netRecord{connect,
 			helloRec(netHello, 10, false, hello[:1024]),
-			closeAt(99)}, byAddr, 99, 0},
+			closeAt(99)}, byAddr, 1, 0},
 		{"a continuation after the hello is ignored", []netRecord{connect,
 			helloRec(netHello, 10, false, hello),
 			helloRec(netHelloMore, 11, false, []byte("stray")),
-			closeAt(99)}, byName, 10, 0},
+			closeAt(99)}, byName, 1, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

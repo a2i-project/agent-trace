@@ -956,8 +956,8 @@ func TestEmitSkipsAddressSelectionAndReportsDNS(t *testing.T) {
 			o := &Observer{events: make(chan models.GroundTruthEvent, 4)}
 			conn := &connection{tgid: 4242, family: afInet, port: tc.port, wrote: true} // a connection that carried data (N-22)
 			copy(conn.addr[:], stdnet.ParseIP("192.0.2.7").To4())
-			o.emit(conn, time.Now())
-			o.emit(conn, time.Now()) // a close must not emit again
+			o.emit(conn)
+			o.emit(conn) // a close must not emit again
 			if got := len(o.events); got != tc.want {
 				t.Fatalf("port %d emitted %d event(s), want %d", tc.port, got, tc.want)
 			}
@@ -1016,8 +1016,8 @@ func TestHandleNetRecord_DNSIsCapabilityEvidenceAndPortZeroIsCounted(t *testing.
 }
 
 // A connection without an SNI name is emitted on its close. One still open
-// when the capture stops is emitted then, stamped with its connect time, and
-// counted; one already emitted is not emitted again (N-21).
+// when the capture stops is emitted then, and counted; each is stamped with
+// its connect time (N-56); one already emitted is not emitted again (N-21).
 func TestFlushOpenConnections_EmitsWhatNeverClosed(t *testing.T) {
 	o := &Observer{events: make(chan models.GroundTruthEvent, 8), conns: map[uint64]*connection{}}
 	v4 := [16]byte{192, 0, 2, 9}
@@ -1027,7 +1027,7 @@ func TestFlushOpenConnections_EmitsWhatNeverClosed(t *testing.T) {
 	o.handleNetRecord(rec(netConnect, 3, 443, 2000))  // never closes
 	o.handleNetRecord(rec(netConnect, 4, 8080, 1000)) // never closes, connected earlier
 	o.handleNetRecord(rec(netConnect, 5, 22, 3000))
-	o.handleNetRecord(rec(netClose, 5, 22, 3500)) // closed: emitted at the close
+	o.handleNetRecord(rec(netClose, 5, 22, 3500)) // closed: emitted at the close, stamped at the connect
 	o.flushOpenConnections()
 	close(o.events)
 	var targets []string
@@ -1037,9 +1037,9 @@ func TestFlushOpenConnections_EmitsWhatNeverClosed(t *testing.T) {
 		nanos = append(nanos, e.Timestamp.UnixNano()) // bootOffsetNs is zero here
 	}
 	// the closed one first (emitted at its close), then the open ones in
-	// connect order, each stamped with its connect time
+	// connect order, each stamped with its connect time (N-56)
 	wantTargets := []string{"192.0.2.9:22", "192.0.2.9:8080", "192.0.2.9:443"}
-	wantNanos := []int64{3500, 1000, 2000}
+	wantNanos := []int64{3000, 1000, 2000}
 	if len(targets) != 3 || strings.Join(targets, ",") != strings.Join(wantTargets, ",") {
 		t.Fatalf("emitted %v, want %v", targets, wantTargets)
 	}
@@ -1157,7 +1157,7 @@ func TestHandleNetRecord_ReplacedConnectionIsEmitted(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("emitted %v, want %v", got, want)
 	}
-	if wantNanos := []int64{1000, 2000, 3500}; !slices.Equal(nanos, wantNanos) {
+	if wantNanos := []int64{1000, 2000, 3000}; !slices.Equal(nanos, wantNanos) {
 		t.Errorf("stamps %v ns, want %v", nanos, wantNanos)
 	}
 	if o.coverage.Replaced != 2 || o.coverage.Connections != 3 || o.coverage.OpenAtStop != 0 {
