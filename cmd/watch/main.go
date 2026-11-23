@@ -94,6 +94,10 @@ type watchConfig struct {
 	// (--fs-kernel-hash, P-48).
 	FSKernelHash bool
 
+	// FSKernelClock asks the fs probe to stamp its events with kernel times
+	// on the proc and net probes' timeline (--fs-kernel-clock, P-55).
+	FSKernelClock bool
+
 	// ProcRingbufBytes overrides the proc probe's kernel ring buffer size.
 	// Zero keeps the default. Set from tests only, to force event loss; there
 	// is deliberately no command-line flag for it.
@@ -115,6 +119,7 @@ var probeBuilders = map[string]builderFunc{
 			AllFilesystems: true,
 			EventBufSize:   cfg.EventBufSize,
 			KernelHash:     cfg.FSKernelHash,
+			KernelClock:    cfg.FSKernelClock,
 		})
 	},
 	"proc": func(cfg watchConfig) (probe.Observer, error) {
@@ -494,7 +499,7 @@ func main() {
 	var netExePath, netCachePath string
 	var netContent contentMethodsFlag
 	var agentName, agentHome string
-	var fsKernelHash bool
+	var fsKernelHash, fsKernelClock bool
 
 	flag.StringVar(&workspace, "workspace", "", "Path to the workspace to watch (fs probe)")
 	flag.StringVar(&probesFlag, "probes", "fs,proc", "Comma-separated probes to run (available: "+availableProbes()+")")
@@ -507,6 +512,7 @@ func main() {
 	flag.StringVar(&netCachePath, "net-cache-path", "", "JSON cache file for pre-computed TLS offsets (net probe). Defaults to $TMPDIR/agent-trace-tlsoffset-cache.json.")
 	flag.StringVar(&agentName, "agent", "", "Adapter whose security-sensitive harness files are snapshotted at start and stop ("+strings.Join(agent.Names(), ", ")+"). Default: the files of every adapter")
 	flag.BoolVar(&fsKernelHash, "fs-kernel-hash", false, "Hash a written file's content as the kernel copies it at its last close (fs probe; needs kernel 7.0 with the BPF LSM active, else the userspace path runs and the coverage record says why)")
+	flag.BoolVar(&fsKernelClock, "fs-kernel-clock", false, "Stamp file events with kernel times on the proc and net probes' timeline (fs probe; needs root and a kernel that can attach tracing programs to fanotify's functions, else the read-time clock runs and watch says why)")
 	flag.StringVar(&agentHome, "agent-home", "", "Home directory of the user the agent runs as, which a declared ~/ file resolves against. Default: the home of the user who ran sudo ($SUDO_UID), else root's")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -525,7 +531,7 @@ func main() {
 		log.Fatal(err)
 	}
 	opts := watchOptions{
-		cfg:       watchConfig{Workspace: workspace, ProcFilter: procFilter, EventBufSize: bufSize, NetExePath: netExePath, NetContent: netContent, NetCachePath: netCachePath, FSKernelHash: fsKernelHash},
+		cfg:       watchConfig{Workspace: workspace, ProcFilter: procFilter, EventBufSize: bufSize, NetExePath: netExePath, NetContent: netContent, NetCachePath: netCachePath, FSKernelHash: fsKernelHash, FSKernelClock: fsKernelClock},
 		probes:    probesFlag,
 		out:       out,
 		rootPID:   rootPID,
@@ -667,6 +673,11 @@ func runWatch(opts watchOptions) error {
 		if name == "fs" {
 			if f, ok := obs.(*fs.Observer); ok {
 				fsObs = f
+				if running, why := f.KernelClockState(); running {
+					log.Printf("fs probe: events are stamped with kernel times (P-55)")
+				} else if opts.cfg.FSKernelClock {
+					log.Printf("fs probe: the kernel clock could not start, events are stamped at read time: %s", why)
+				}
 			}
 		}
 		others = append(others, obs)

@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -76,6 +77,14 @@ type rawEvent struct {
 	HandleData []byte
 	// FSID is the filesystem the FID handle belongs to.
 	FSID fsID
+	// Stamps holds the kernel times of the record's events, nil without the
+	// kernel clock or when the join gave none (P-55).
+	Stamps *recordStamps
+	// readStamp is the record's read-time stamp on the events' timeline:
+	// the batch's reading plus the record's position, on the kernel
+	// timeline when the kernel clock runs. Zero in tests, which pass the
+	// stamp to processRawEvent.
+	readStamp time.Time
 }
 
 // --- Kernel interaction (requires CAP_SYS_ADMIN) --------------------------

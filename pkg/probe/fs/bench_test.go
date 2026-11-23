@@ -182,6 +182,18 @@ func newBenchRig(tb testing.TB, ws string, tools []string) *benchRig {
 	if err != nil {
 		tb.Skipf("fanotify_init with the probe's flags: %v", err)
 	}
+	// With AGENT_TRACE_BENCH_KERNEL_CLOCK=1, as root, the kernel clock
+	// stamps the records (P-55). Its programs run in the workload's
+	// processes, so their cost shows in ns/op, the workload's time, and the
+	// join's in cpu/iter.
+	var kc *kernelClock
+	if os.Getenv("AGENT_TRACE_BENCH_KERNEL_CLOCK") == "1" {
+		var why string
+		if kc, why = startKernelClock(fd, DefaultKernelClockRing); kc == nil {
+			_ = unix.Close(fd)
+			tb.Skipf("kernel clock: %s", why)
+		}
+	}
 	dirs := append([]string{ws}, tools...)
 	set := markedSet{fds: map[fsID]int{}, unmarked: map[string]string{}}
 	for _, d := range dirs {
@@ -207,6 +219,9 @@ func newBenchRig(tb testing.TB, ws string, tools []string) *benchRig {
 	obs, err := assemble(Config{Path: ws, EventBufSize: 4096}, fd, set, set.fds[wsID], cache)
 	if err != nil {
 		tb.Fatal(err)
+	}
+	if kc != nil {
+		obs.kclock, obs.kclockOffset = kc, kc.offset
 	}
 	opener := newPathOpener(dirs[1:], []string{ws})
 	obs.openHandle = opener.open

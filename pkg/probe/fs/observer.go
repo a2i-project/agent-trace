@@ -15,6 +15,7 @@ import (
 
 	"github.com/agent-trace/agent-trace/pkg/content"
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe/ktime"
 )
 
 // watchMask is the set of fanotify events the observer monitors.
@@ -78,6 +79,19 @@ type Config struct {
 	// KernelHashRing is the copy ring's size in bytes, a power of two times
 	// the page size. Defaults to DefaultKernelHashRing.
 	KernelHashRing uint64
+
+	// KernelClock asks for the kernel time of every record (P-55): tracing
+	// programs on fanotify's own functions stamp each event as the kernel
+	// queues or merges it, and every file event carries the kernel time of
+	// its first event of its kind, on the proc and net probes' timeline,
+	// with NotBefore equal to it. It needs root and a kernel whose BTF
+	// describes the fanotify functions and which can attach them; elsewhere
+	// the probe stamps at read time as without it, and KernelClockState says
+	// why. Off by default.
+	KernelClock bool
+	// KernelClockRing is the time ring's size in bytes, a power of two times
+	// the page size. Defaults to DefaultKernelClockRing.
+	KernelClockRing uint64
 }
 
 // Observer watches filesystem events via fanotify and emits GroundTruthEvents.
@@ -289,6 +303,16 @@ type Observer struct {
 	khashLost     uint64
 	khashTimeouts uint64
 
+	// kclock is the kernel clock of the records, nil when it was not asked
+	// for or could not start, and kclockWhy says why it could not (P-55).
+	// kclockOffset converts its times; the tests set it with records'
+	// stamps and no kclock. kclockRing is the ring's diagnostics, read at
+	// Stop.
+	kclock       *kernelClock
+	kclockWhy    string
+	kclockOffset int64
+	kclockRing   *models.RingStats
+
 	mu sync.Mutex
 }
 
@@ -375,9 +399,23 @@ func New(cfg Config) (*Observer, error) {
 
 	// Taken before the queue exists, so it bounds every record's events.
 	created := time.Now()
+	createdWall := created
 	fd, err := initFanotify()
 	if err != nil {
 		return nil, err
+	}
+	// The kernel clock numbers the group's records from the first, so it
+	// starts before anything is marked (P-55).
+	var kc *kernelClock
+	var kcWhy string
+	if cfg.KernelClock {
+		ring := cfg.KernelClockRing
+		if ring == 0 {
+			ring = DefaultKernelClockRing
+		}
+		if kc, kcWhy = startKernelClock(fd, ring); kc != nil {
+			created = kc.now()
+		}
 	}
 
 	// The mount table is read before anything is marked, and its fd stays
@@ -385,6 +423,9 @@ func New(cfg Config) (*Observer, error) {
 	tableFD, table := readMountTable()
 	fail := func(set markedSet, err error) (*Observer, error) {
 		set.close()
+		if kc != nil {
+			kc.close()
+		}
 		_ = unix.Close(fd)
 		if tableFD >= 0 {
 			_ = unix.Close(tableFD)
@@ -411,6 +452,11 @@ func New(cfg Config) (*Observer, error) {
 		return fail(set, err)
 	}
 	o.emptyAt, o.clock = created, wallClockWatch{start: created}
+	o.kclockWhy = kcWhy
+	if kc != nil {
+		o.kclock, o.kclockOffset = kc, kc.offset
+		o.clock = wallClockWatch{start: createdWall}
+	}
 	if cfg.KernelHash {
 		o.startKernelHash(set.fds)
 	}
@@ -566,6 +612,14 @@ func (o *Observer) CaptureCoverage() models.ProbeCoverage {
 	if o.hashes != nil {
 		cov.Diagnostics = &models.ProbeDiagnostics{FileHashes: o.hashes.counts(o.khashLost, o.khashTimeouts)}
 	}
+	if o.kclockRing != nil {
+		// The ring's presence says the kernel clock ran (P-55). Its drops
+		// lose times, not events, so they stay out of RingbufDrops.
+		if cov.Diagnostics == nil {
+			cov.Diagnostics = &models.ProbeDiagnostics{}
+		}
+		cov.Diagnostics.Rings = map[string]models.RingStats{kclockRingName: *o.kclockRing}
+	}
 	return cov
 }
 
@@ -626,6 +680,11 @@ func (o *Observer) Stop() error {
 	if o.khash != nil {
 		o.khashLost, o.khashTimeouts = o.khash.losses()
 		o.khash.close()
+	}
+	if o.kclock != nil {
+		ring := o.kclock.stats()
+		o.kclockRing = &ring
+		o.kclock.close()
 	}
 	_ = unix.Close(o.fanotifyFD)
 	if o.mountTableFD >= 0 {
@@ -774,6 +833,7 @@ func (o *Observer) drainAtStop(buf []byte) {
 		now := time.Now()
 		o.batchNotBefore = o.emptyAt
 		raw := parseEvents(buf, n, resolve, o.dirs)
+		o.stampBatch(raw, now)
 		for i := range raw {
 			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
 		}
@@ -794,7 +854,7 @@ func (o *Observer) drainAtStop(buf []byte) {
 func (o *Observer) readReady(buf []byte) int {
 	pollFDs := []unix.PollFd{{Fd: int32(o.fanotifyFD), Events: unix.POLLIN}}
 	for {
-		before := time.Now()
+		before := o.stampNow()
 		_, err := unix.Poll(pollFDs, 0)
 		if err == unix.EINTR {
 			continue
@@ -857,7 +917,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 	}
 
 	for {
-		before := time.Now()
+		before := o.stampNow()
 		_, err := unix.Poll(pollFDs, 0)
 		if err != nil {
 			if err == unix.EINTR {
@@ -889,6 +949,7 @@ func (o *Observer) drainNonBlocking(buf []byte) bool {
 		now := time.Now()
 		o.batchNotBefore = o.emptyAt
 		raw := parseEvents(buf, n, newKernelResolver(o.mounts, o.openHandle), o.dirs)
+		o.stampBatch(raw, now)
 		for i := range raw {
 			o.processRawEvent(&raw[i], now.Add(time.Duration(i)))
 		}
@@ -992,34 +1053,47 @@ func (o *Observer) processRawEvent(e *rawEvent, ts time.Time) {
 		o.mu.Unlock()
 	}
 
-	o.placeHeld(e, ts)
+	stamp := o.recordStamp(e, ts)
+	o.placeHeld(e, stamp)
 	o.locateHeld(e)
-	o.lastStamp = ts
+	o.lastStamp = stamp
 	hold := holdRemoval(e.Mask)
+	var prev time.Time
 	for _, actionType := range maskToActionTypes(e.Mask) {
+		at, notBefore := o.eventStamp(e, actionType, ts, prev)
+		if e.Stamps != nil {
+			prev = at
+		}
 		if actionType == hold {
-			o.held = append(o.held, heldRemoval{ev: models.GroundTruthEvent{
+			held := models.GroundTruthEvent{
 				ActionType:      actionType,
 				Target:          e.Path,
 				PathIsAmbiguous: e.Ambiguous,
 				PID:             pidOf(e),
-				NotBefore:       o.notBefore(),
-			}})
+				NotBefore:       notBefore,
+			}
+			// A removal the kernel timed keeps its own time wherever it is
+			// placed; otherwise it takes the stamp of the record it
+			// precedes (P-27).
+			if notBefore != nil && at.Equal(*notBefore) && e.Stamps != nil {
+				held.Timestamp = at
+			}
+			o.held = append(o.held, heldRemoval{ev: held})
 			continue
 		}
 		if o.repeats(e.Path, actionType, pidOf(e)) {
 			continue
 		}
 		if actionType == models.FileClose {
-			o.registerClose(e.Path, ts, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData, handle)
+			o.registerClose(e.Path, at, notBefore, pidOf(e), e.Ambiguous, o.mountFor(e.FSID), e.HandleType, e.HandleData, handle)
 		} else {
 			event := models.GroundTruthEvent{
-				Timestamp:       ts,
+				Timestamp:       at,
 				ActionType:      actionType,
 				Target:          e.Path,
 				PathIsAmbiguous: e.Ambiguous,
 				PID:             pidOf(e),
-				NotBefore:       o.notBefore(),
+				NotBefore:       notBefore,
 			}
 			if actionType == models.FileOpen {
 				// No hash at all when the probe never measured the file's
@@ -1112,7 +1186,9 @@ func (o *Observer) placeHeld(e *rawEvent, ts time.Time) {
 // emitHeld emits a held removal at ts unless it repeats its path's last
 // event (P-18).
 func (o *Observer) emitHeld(h models.GroundTruthEvent, ts time.Time) {
-	h.Timestamp = ts
+	if h.Timestamp.IsZero() {
+		h.Timestamp = ts
+	}
 	if !o.repeats(h.Target, h.ActionType, h.PID) {
 		o.events <- h
 	}
@@ -1510,7 +1586,7 @@ func fdFlags(pid uint32, fd string) (int, bool) {
 // This, not pathGeneration, is what actually guarantees a hash the observer
 // does attach reflects the eventual final content: a close is never hashed
 // until it has survived a full settle cycle with nothing superseding it.
-func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguous bool, mountFD int, handleType int32, handleData []byte, handle string) {
+func (o *Observer) registerClose(path string, ts time.Time, notBefore *time.Time, pid uint32, ambiguous bool, mountFD int, handleType int32, handleData []byte, handle string) {
 	pathFD := -1
 	if handleData != nil && mountFD >= 0 {
 		var err error
@@ -1523,7 +1599,7 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 	if o.khash != nil {
 		digest, sh, reason := o.kernelHashFor(pid, pathFD, mountFD, handleType, handleData)
 		if reason == "" {
-			o.emitKernelHashed(path, ts, pid, ambiguous, pathFD, digest, sh)
+			o.emitKernelHashed(path, ts, notBefore, pid, ambiguous, pathFD, digest, sh)
 			return
 		}
 		o.hashes.fallback(reason)
@@ -1533,7 +1609,7 @@ func (o *Observer) registerClose(path string, ts time.Time, pid uint32, ambiguou
 		o.pendingCloses = make(map[string]*pendingClose)
 	}
 	superseded, existed := o.pendingCloses[path]
-	o.pendingCloses[path] = &pendingClose{ts: ts, notBefore: o.notBefore(), pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle], opens: o.openedSince(path, handle, pid)}
+	o.pendingCloses[path] = &pendingClose{ts: ts, notBefore: notBefore, pid: pid, ambiguous: ambiguous, pathFD: pathFD, gen: o.pathGeneration[path], handle: handle, hgen: o.handleGeneration[handle], opens: o.openedSince(path, handle, pid)}
 	o.mu.Unlock()
 
 	if existed {
@@ -1563,7 +1639,7 @@ func (o *Observer) emitSuperseded(path string, superseded *pendingClose) {
 // renames and deletions cannot change content already copied (P-48). A
 // close still pending for the path is superseded, as by any newer close.
 // The hash becomes the file's settled hash for later opens.
-func (o *Observer) emitKernelHashed(path string, ts time.Time, pid uint32, ambiguous bool, pathFD int, digest string, sh shadowHash) {
+func (o *Observer) emitKernelHashed(path string, ts time.Time, notBefore *time.Time, pid uint32, ambiguous bool, pathFD int, digest string, sh shadowHash) {
 	o.mu.Lock()
 	if o.pendingCloses == nil {
 		o.pendingCloses = make(map[string]*pendingClose)
@@ -1595,7 +1671,7 @@ func (o *Observer) emitKernelHashed(path string, ts time.Time, pid uint32, ambig
 		OutputHash:      &digest,
 		PathIsAmbiguous: ambiguous,
 		PID:             pid,
-		NotBefore:       o.notBefore(),
+		NotBefore:       notBefore,
 	}
 }
 
@@ -1919,8 +1995,91 @@ func (o *Observer) queueEmpty(before time.Time) {
 	if o.emptyAt.IsZero() {
 		return
 	}
-	o.clock.check(before)
+	if o.kclock != nil {
+		// before is on the kernel timeline; the step check needs the wall
+		// clock.
+		o.clock.check(time.Now())
+	} else {
+		o.clock.check(before)
+	}
 	o.emptyAt = before
+}
+
+// stampNow is a reading of the clock the events are stamped with: the wall
+// clock, or the kernel timeline when the kernel clock runs (P-55).
+func (o *Observer) stampNow() time.Time {
+	if o.kclock != nil {
+		return o.kclock.now()
+	}
+	return time.Now()
+}
+
+// stampBatch gives the records of one fanotify read their read-time stamps
+// on the events' timeline and, with the kernel clock, their kernel times.
+// now is the batch's reading of the wall clock, which the read-time stamps
+// take without the kernel clock.
+func (o *Observer) stampBatch(raw []rawEvent, now time.Time) {
+	if o.kclock == nil {
+		for i := range raw {
+			raw[i].readStamp = now.Add(time.Duration(i))
+		}
+		return
+	}
+	base := o.kclock.now()
+	for i := range raw {
+		raw[i].readStamp = base.Add(time.Duration(i))
+	}
+	o.kclock.sync()
+	o.kclock.join(raw)
+}
+
+// eventStamp returns the Timestamp and NotBefore of the event of action
+// type a of record e, whose read-time stamp is ts. With the record's
+// kernel times it is the kernel time of the record's first event of that
+// kind, later than prev, the stamp of the record's previous event, by at
+// least a nanosecond, so the record's events keep their causal order (P-13),
+// and NotBefore equals it (P-55). Otherwise it is the read-time stamp and
+// the batch's bound (P-18, P-52).
+func (o *Observer) eventStamp(e *rawEvent, a models.ActionType, ts time.Time, prev time.Time) (time.Time, *time.Time) {
+	if e.Stamps != nil {
+		if k, ok := e.Stamps.at(a); ok {
+			t := ktime.Wall(k, o.kclockOffset)
+			if !prev.IsZero() && !t.After(prev) {
+				t = prev.Add(time.Nanosecond)
+			}
+			return t, &t
+		}
+	}
+	if !e.readStamp.IsZero() {
+		ts = e.readStamp
+	}
+	return ts, o.notBefore()
+}
+
+// recordStamp is the stamp of record e as a whole, for the removals it
+// places: the kernel time of its first event, or its read-time stamp.
+func (o *Observer) recordStamp(e *rawEvent, ts time.Time) time.Time {
+	if e.Stamps != nil {
+		var first uint64
+		for _, k := range e.Stamps.first {
+			if k != 0 && (first == 0 || k < first) {
+				first = k
+			}
+		}
+		if first != 0 {
+			return ktime.Wall(first, o.kclockOffset)
+		}
+	}
+	if !e.readStamp.IsZero() {
+		return e.readStamp
+	}
+	return ts
+}
+
+// KernelClockState reports whether the kernel clock stamps the records,
+// and why not when it was asked for and could not start (P-55).
+func (o *Observer) KernelClockState() (running bool, why string) {
+	return o.kclock != nil || o.kclockRing != nil, o.kclockWhy
 }
 
 // maxSlew is the fastest the kernel lets time synchronisation slew the wall

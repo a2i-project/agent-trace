@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 6c12c18 on 2026-11-23.
+Checked against commit afebc31 on 2026-11-23.
 
 ## Objective
 
@@ -35,6 +35,7 @@ Launches or attaches to an agent, runs the selected probes, prints each event as
 | `--net-cache-path PATH` | `$TMPDIR/agent-trace-tlsoffset-cache.json` | Cache of computed TLS offsets |
 | `--agent NAME` | every adapter | Adapter whose security-sensitive harness files are snapshotted (I-59); an unknown name is an error. Without it, the files every registered adapter declares |
 | `--fs-kernel-hash` | off | Hash a written file's content as the kernel copies it at its last close (P-48); needs kernel 7.0 with the BPF LSM active, otherwise the userspace path runs and `diagnostics.file_hashes` says why. A `fileHashes` part on the `fs probe diagnostics:` line counts the hashes by source |
+| `--fs-kernel-clock` | off | Stamp file events with kernel times on the proc and net probes' timeline (P-55); needs root and a kernel that can attach tracing programs to fanotify's functions, otherwise the read-time clock runs and `watch` logs why. `diagnostics.rings.fs_clock` in the coverage record shows that it ran |
 | `--agent-home DIR` | home of `$SUDO_UID`, else root's | Home of the user the agent runs as, which a declared `~/` file resolves against; every snapshotted file must belong to its owner |
 
 Modes: with a trailing `-- <command> [args]`, `watch` starts the command stopped before its exec, makes its pid the proc probe's ancestry root and the net probe's tracked pid, then lets it run (P-23), waits for it to exit (Ctrl+C kills it) and writes the file; the agent gets watch's stdout and stderr through a pipe, or, when one is a terminal, the terminal itself (I-159), and then `watch` prints no line per event on it (I-160); the launch sequence, the output pipe and the wait for trailing events are in [10_probes_common.md](10_probes_common.md#how-cmdwatch-builds-and-starts-probes). With `--root-pid N` it attaches to that process and records until Ctrl+C; anything the process did before is invisible to the proc probe. With neither it records host-wide until Ctrl+C and writes `root_pid` as zero, which the verifier treats as INCONCLUSIVE.
