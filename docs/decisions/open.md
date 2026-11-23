@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 0dc0cf7 on 2026-10-31.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-5 (V-105), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60), O-37 (V-75, V-76), O-38 (I-116), O-39 (P-48, P-49, P-50).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-5 (V-105), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-16 (I-22, I-23, I-50, I-61, I-176), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60), O-37 (V-75, V-76), O-38 (I-116), O-39 (P-48, P-49, P-50).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29), O-20 (N-31), O-21 (P-39) and O-23 (P-36) are closed; the others are undecided.
 
@@ -77,13 +77,6 @@ Question: With no level-1 exec per command (D7), what does a command claim verif
 Options: (a) declare the degradation and verify only level 0; (b) align level-2 roots against command claims; (c) refuse to verify.
 Current behaviour: Gemini `RunPersistent` commands are not claimed (I-17), so their effects appear unexplained.
 Blocked by: An agent that uses a persistent shell in practice.
-
-### O-16: File-tool claim shapes and fanotify multiplicity
-Status: Partly decided. Claude Code is settled by I-22 and I-23. Gemini is settled by I-50 for `view_file`, `write_to_file` and `replace_file_content`; for `multi_replace_file_content` I-61 found that agy 1.3.4 offers it under no configuration and proposes closing the Gemini part.
-Date: 2026-10-06, updated 2026-10-07, 2026-10-14 and 2026-10-17.
-Question: Which kernel events does a real file tool produce, and how many?
-Current behaviour: For Claude Code 2.1.286 the shapes were measured on the first paired capture (**Verified**, see I-22) and hold on the eight later ones (nine fixtures in all, versions 2.1.286 and 2.1.296, one machine), including five Edits whose content hashes are corroborated (I-31). The capture of 2.1.306 (`paired-2.1.306-tools`) shows the same shapes for Read, Edit, Write and NotebookEdit as `paired-2.1.296-tools-named` (I-63). Whether other Claude Code versions behave the same is **Unverified**. For agy 1.3.4 the shapes of `view_file`, `write_to_file` (creating a file and over an existing one) and `replace_file_content` were measured on the paired `basic` capture (I-50). `multi_replace_file_content` is claimed like `replace_file_content` and its session reports that its shape is unmeasured. The paired `search` capture of agy 1.3.4 (2026-10-13) asked for one call of it: the custom agent listed the tool, but the CLI declared to the model only the agent's other five tools and `manage_task`, and the call failed tool validation (`unknown tool: "multi_replace_file_content"`), so no shape was measured (**Verified** on that run). The 1.3.4 binary registers the tool as deprecated with no effect, whatever the replace-tool variant, and every run of that capture logged so; the user's conversations show the same model with the same variant (`SINGLE_MULTI`) declaring the tool in June 2026 and not in September, so a version removed it, not a setting, model or server flag (I-61, **Verified** on the logs and conversations, **Reported** from the binary).
-Blocked by: For Gemini, a ruling on I-61's proposal to close it (no capture can measure the tool on agy 1.3.4; a later version that declares it again would need a paired capture); for Claude Code, captures of other versions.
 
 ### O-13: Out-of-tree tagging (part 3 of P-14, delegation)
 Status: Open. Premise changed.
