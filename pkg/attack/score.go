@@ -110,7 +110,7 @@ func unaccounted(rec Record, v verification.Verdict) int {
 // explains it.
 type Finding struct {
 	// Kind is unrecorded, unexplained_subtree, unwitnessed, mismatched,
-	// outside_interval or lifetime.
+	// outside_interval, lifetime or order.
 	Kind string `json:"kind"`
 	// ClaimIndex is the position, in the mutated trajectory, of the claim the
 	// finding names (unwitnessed, mismatched, outside_interval), or -1 when it
@@ -119,8 +119,8 @@ type Finding struct {
 	Claim      *models.TrajectoryEntry `json:"claim,omitempty"`
 	// Event is the observed side: the unrecorded event, the paired event of a
 	// mismatched or outside-interval pair, or the exec of an unexplained
-	// subtree. Nil for a lifetime finding, whose observed side is Lifetime.
-	// Diffs holds a lifetime finding's kind.
+	// subtree, or the later claim's last event of an order finding. Nil for
+	// a lifetime finding. Diffs holds a lifetime finding's kind.
 	Event *models.GroundTruthEvent `json:"event,omitempty"`
 	Diffs []string                 `json:"diffs,omitempty"`
 	// Candidates is, for a finding that names several interchangeable
@@ -133,7 +133,8 @@ type Finding struct {
 }
 
 // findingsOf lists the verdict's findings in a fixed order (unrecorded,
-// unexplained subtrees, unwitnessed, mismatched, outside interval, lifetime), each
+// unexplained subtrees, unwitnessed, mismatched, outside interval, lifetime,
+// order), each
 // marked accounted when a mutation of the record explains it. mutated, when
 // given, locates each named claim by position.
 func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) []Finding {
@@ -231,6 +232,16 @@ func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) [
 		}
 		c := l.Entry
 		out = append(out, Finding{Kind: "lifetime", ClaimIndex: claimAt(c), Claim: &c, Diffs: []string{l.Kind}, Accounted: ok})
+	}
+	for _, o := range v.OrderViolations {
+		ok := false
+		for _, m := range rec.Mutations {
+			if m.Kind == Reordering && (swappedClaim(m, o.Later) || swappedClaim(m, o.Earlier)) {
+				ok = true
+			}
+		}
+		c, ev := o.Later, o.LaterEvent
+		out = append(out, Finding{Kind: "order", ClaimIndex: claimAt(c), Claim: &c, Event: &ev, Accounted: ok})
 	}
 	return out
 }
@@ -366,12 +377,13 @@ func scoreSubstitution(m Mutation, v verification.Verdict) MutationResult {
 
 // scoreReorder scores one swap (A5). Detected: some finding names either
 // claim of the swap, or is an Unrecorded event of the type and target of
-// either. Classified: an order finding names either claim. Located: the
-// order finding names one of the two, not a neighbour; until the verifier
-// reports order findings (orderFindings), neither is ever set.
+// either. Classified and located: an order finding (V-106) is about one of
+// the two, its later claim being a swapped one and not a neighbour. An order
+// finding about a neighbour whose earlier claim is a swapped one detects the
+// swap only.
 func scoreReorder(m Mutation, v verification.Verdict) MutationResult {
 	mr := MutationResult{Mutation: m}
-	swapped := func(c models.TrajectoryEntry) bool { return sameClaim(c, m.After) || sameClaim(c, m.With) }
+	swapped := func(c models.TrajectoryEntry) bool { return swappedClaim(m, c) }
 	sets := v.CandidateSets()
 	for _, u := range v.Unwitnessed {
 		members := membersOf(sets, "unwitnessed", u, nil)
@@ -390,12 +402,20 @@ func scoreReorder(m Mutation, v verification.Verdict) MutationResult {
 	for _, ev := range v.Unrecorded {
 		mr.Detected = mr.Detected || reorderEvent(m, ev)
 	}
+	for _, o := range v.OrderViolations {
+		mr.Detected = mr.Detected || swapped(o.Earlier)
+	}
 	for _, c := range orderFindings(v) {
 		if swapped(c) {
 			mr.Detected, mr.Classified, mr.Located = true, true, true
 		}
 	}
 	return mr
+}
+
+// swappedClaim reports whether c is either claim of the swap m.
+func swappedClaim(m Mutation, c models.TrajectoryEntry) bool {
+	return sameClaim(c, m.After) || sameClaim(c, m.With)
 }
 
 // reorderEvent reports whether an observed event is of the type and target
@@ -409,12 +429,18 @@ func reorderEvent(m Mutation, ev models.GroundTruthEvent) bool {
 	return false
 }
 
-// orderFindings returns the claims the verdict's order findings name. The
-// verifier reports none yet: the order layers (one timeline across the
-// probes' streams, the grouping of calls from the model traffic) add them,
-// and this is the one place the scorer reads them, so a reordering is
-// classified and located only once they exist.
-func orderFindings(verification.Verdict) []models.TrajectoryEntry { return nil }
+// orderFindings returns the claims the verdict's order findings are about:
+// the later claim of each violated pair (V-106), whose events all ended
+// before an event of the claim it follows began. It is the one place the
+// scorer reads which claim an order finding names, so a later order layer
+// (the grouping of calls from the model traffic) adds its findings here.
+func orderFindings(v verification.Verdict) []models.TrajectoryEntry {
+	out := make([]models.TrajectoryEntry, 0, len(v.OrderViolations))
+	for _, o := range v.OrderViolations {
+		out = append(out, o.Later)
+	}
+	return out
+}
 
 // scoreWidening scores one widened claim (A4, E-12). Detected, classified
 // and located: a lifetime finding that widening can cause, a claimed start

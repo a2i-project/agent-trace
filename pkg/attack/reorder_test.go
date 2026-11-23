@@ -166,7 +166,8 @@ func verificationLane(e models.TrajectoryEntry) verification.Lane {
 
 // A swap is detected when a finding names either of its claims or is an
 // unrecorded event of either; it is classified and located only by an order
-// finding, which the verifier does not report yet.
+// finding about one of them, and an order finding about a neighbour that
+// follows one of them detects it only.
 func TestScoreReorder(t *testing.T) {
 	in := reorderInput()
 	_, rec, err := Reorder(in, ReorderOptions{Options: Options{N: 1, Seed: 1}, Variant: ReorderLane})
@@ -174,22 +175,31 @@ func TestScoreReorder(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := rec.Mutations[0]
+	order := func(earlier, later models.TrajectoryEntry) verification.Verdict {
+		return verification.Verdict{OrderViolations: []verification.OrderViolation{{Earlier: earlier, Later: later}}}
+	}
 	for name, tc := range map[string]struct {
-		v    verification.Verdict
-		want bool
+		v                          verification.Verdict
+		detected, located, counted bool
 	}{
-		"nothing":                       {verification.Verdict{}, false},
-		"the moved claim unwitnessed":   {verification.Verdict{Unwitnessed: []models.TrajectoryEntry{*m.After}}, true},
-		"the partner mismatched":        {verification.Verdict{Mismatched: []verification.MatchedPair{{Entry: *m.With}}}, true},
-		"the moved claim's event alone": {verification.Verdict{Unrecorded: models.GroundTruth{{ActionType: m.Before.ActionType, Target: m.Before.Target}}}, true},
-		"another claim unwitnessed":     {verification.Verdict{Unwitnessed: []models.TrajectoryEntry{in[1]}}, false},
+		"nothing":                       {verification.Verdict{}, false, false, true},
+		"the moved claim unwitnessed":   {verification.Verdict{Unwitnessed: []models.TrajectoryEntry{*m.After}}, true, false, true},
+		"the partner mismatched":        {verification.Verdict{Mismatched: []verification.MatchedPair{{Entry: *m.With}}}, true, false, true},
+		"the moved claim's event alone": {verification.Verdict{Unrecorded: models.GroundTruth{{ActionType: m.Before.ActionType, Target: m.Before.Target}}}, true, false, true},
+		"another claim unwitnessed":     {verification.Verdict{Unwitnessed: []models.TrajectoryEntry{in[1]}}, false, false, false},
+		"the partner's lifetime":        {verification.Verdict{Lifetimes: verification.LifetimeCheck{Findings: []verification.LifetimeFinding{{Entry: *m.With}}}}, true, false, true},
+		// An order finding is about its later claim (V-106).
+		"out of order, the moved claim later":    {order(*m.With, *m.After), true, true, true},
+		"out of order, the partner later":        {order(*m.After, *m.With), true, true, true},
+		"out of order, a neighbour after them":   {order(*m.After, in[0]), true, false, true},
+		"out of order, between two other claims": {order(in[0], in[1]), false, false, false},
 	} {
 		r := Score(rec, tc.v)
 		mr := r.Mutations[0]
-		if mr.Detected != tc.want || mr.Classified || mr.Located {
+		if mr.Detected != tc.detected || mr.Classified != tc.located || mr.Located != tc.located {
 			t.Errorf("%s: %+v", name, mr)
 		}
-		if tc.want && r.Unaccounted != 0 {
+		if (r.Unaccounted == 0) != tc.counted {
 			t.Errorf("%s: %d unaccounted", name, r.Unaccounted)
 		}
 	}
