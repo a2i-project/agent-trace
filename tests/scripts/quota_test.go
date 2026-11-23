@@ -12,7 +12,7 @@ import (
 
 // quotaClaude wraps the fake claude: while $FAKE_DIR/quota.n is below
 // FAKE_QUOTA_TIMES, a task run (not a control, not the warm-up) prints
-// FAKE_QUOTA, with @RESET@ replaced by the epoch two seconds ahead, on stderr
+// FAKE_QUOTA, with @RESET@ replaced by the epoch 30 seconds ahead (a reset still to come when the campaign reads it, on a slow runner too), on stderr
 // and exits 1, as an agent stopped by its account's quota does.
 const quotaClaude = `#!/usr/bin/env bash
 if [ "$1" != --version ] && [ -n "${FAKE_QUOTA:-}" ]; then
@@ -22,7 +22,7 @@ if [ "$1" != --version ] && [ -n "${FAKE_QUOTA:-}" ]; then
       n=$(cat "$FAKE_DIR/quota.n" 2>/dev/null || echo 0)
       if [ "$n" -lt "${FAKE_QUOTA_TIMES:-1}" ]; then
         echo $((n + 1)) >"$FAKE_DIR/quota.n"
-        echo "${FAKE_QUOTA//@RESET@/$(( $(date +%s) + 2 ))}" >&2
+        echo "${FAKE_QUOTA//@RESET@/$(( $(date +%s) + 30 ))}" >&2
         echo '[]' >"$FAKE_DIR/events.json"
         exit 1
       fi ;;
