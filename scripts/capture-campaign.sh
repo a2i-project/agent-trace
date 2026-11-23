@@ -147,9 +147,32 @@
 # and not replaced, and on a rerun it is skipped. X6, an interruption (Ctrl+C):
 # the run is excluded and recorded again on the rerun. X3, a version change.
 # X1, loss, is decided later by the analysis from the counters in the manifest.
-# A login or quota error, or a model mismatch, ends the campaign at once, since
-# the next run would fail the same way. After --stop-after-failures
-# consecutive failed runs (default 4) the campaign stops.
+# A login error or a model mismatch ends the campaign at once, since the next
+# run would fail the same way. After --stop-after-failures consecutive failed
+# runs (default 4) the campaign stops.
+#
+# Quota (I-169). A quota or rate-limit error (the QUOTA patterns in a failed
+# run, ACCOUNT_QUOTA in one that ended) makes the attempt quota-interrupted:
+# rule XQ, status quota-interrupted, with the error line and the reset time
+# it states (when the helper's reset_of reads one) in run.json. XQ is not X4:
+# it is not counted in the slot's attempt budget nor as a failure, and the
+# attempt is kept aside as development data, never a result. Only that
+# agent's queue pauses (OUTPUT_DIR/quota/AGENT.json, every pause and resume
+# in OUTPUT_DIR/quota/events.jsonl); the other agents' slots go on. The
+# pause lasts until the stated reset time plus CAMPAIGN_QUOTA_MARGIN seconds
+# (default 60); without one it lasts a back-off of CAMPAIGN_QUOTA_BACKOFF_MIN
+# seconds (default 900), after which the profile's quota.preflight command
+# (an argument list, {binary} the profile's binary, run as the run-as user
+# in its home; exit 0 means the quota is back) probes, the back-off doubling
+# up to CAMPAIGN_QUOTA_BACKOFF_MAX (default 3600) while it fails; a profile
+# with no preflight lets the slot's next attempt probe. The slot is then
+# recorded again from scratch. When every slot left belongs to a paused
+# agent the campaign sleeps until the earliest pause ends. An attempt the
+# campaign finds without a run.json (the campaign, the VM or the host went
+# down inside it) is recorded as XQ, reason host-down, and its slot recorded
+# again. The pauses are on disk, so a rerun after a reboot keeps them.
+# summary.txt and the manifest (quota_interrupted, quota_paused) count the
+# quota-interrupted attempts.
 #
 # Rerunning the same command resumes: complete and failed-out slots are
 # skipped, and the directory of an interrupted or failed run is moved aside
@@ -332,6 +355,72 @@ EVENT_LINE = re.compile(r"^\d\d:\d\d:\d\d\.\d{3}  \S")
 # rate limit in passing.
 ACCOUNT_AUTH = re.compile(r"not logged in|not logged into|please run /login|oauth token has expired|invalid api key|authentication_error|401 unauthorized", re.I)
 ACCOUNT_QUOTA = re.compile(r"RESOURCE_EXHAUSTED|quota (?:reached|exceeded)|usage limit (?:reached|exceeded)|you(?:'ve| have) (?:hit|reached) your (?:usage )?limit|credit balance is too low|rate limit exceeded", re.I)
+# A quota-interrupted attempt (I-169): the account's quota or a rate limit
+# stopped it. Not X4, not counted in a slot's attempt budget, kept aside as
+# development data and never a result; "host-down" is an attempt the VM or
+# the host cut (no run.json when the campaign started again).
+XQ = "XQ"
+
+
+def reset_of(log, now=None):
+    """The time a quota error says the limit resets, as an aware datetime, or
+    None when the log states none this parser reads (Unverified: the forms
+    are the vendors' documented and reported ones, none measured here): an
+    epoch after a bar (Claude Code's "limit reached|1700000000"), "try again
+    in" / "resets in" / "reset after" / "retry after" a duration
+    (1h2m3s, 2 hours 5 minutes, 30 seconds), or "resets at" / "try again at"
+    an ISO time or a clock time (3pm, 15:04, 3:04 PM, today or tomorrow).
+    The last stated time in the log wins."""
+    now = now or datetime.datetime.now().astimezone()
+    found = None
+    for m in re.finditer(r"(?:limit|quota)[^|\n]{0,80}\|(\d{10})\b", log, re.I):
+        found = datetime.datetime.fromtimestamp(int(m.group(1))).astimezone()
+    dur = re.compile(r"(?:(?:try again|resets?|available again)\s+in|reset after|retry after)\s+", re.I)
+    part = re.compile(r"(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])[\s,]*(?:and\s+)?", re.I)
+    for m in dur.finditer(log):
+        pos, secs, any_ = m.end(), 0, False
+        while True:
+            p = part.match(log, pos)
+            if not p:
+                break
+            u = p.group(2).lower()
+            secs += int(p.group(1)) * (86400 if u[0] == "d" else 3600 if u[0] == "h" else 60 if u[0] == "m" else 1)
+            any_, pos = True, p.end()
+        if any_:
+            found = now + datetime.timedelta(seconds=secs)
+    for m in re.finditer(r"(?:resets?|try again|available again)\s+(?:at|on)?\s*(\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?)", log, re.I):
+        t = datetime.datetime.fromisoformat(m.group(1).replace("Z", "+00:00"))
+        found = t if t.tzinfo else t.astimezone()
+    for m in re.finditer(r"(?:resets?|try again|available again)\s+(?:at\s+)?(\d{1,2})(?::(\d\d))?\s*(am|pm)?\b(?!\s*(?:hours?|h|minutes?|m|seconds?|s)\b)(?:\s*\(([A-Za-z_]+(?:/[A-Za-z_+-]+)+|UTC)\))?", log, re.I):
+        h, mi, ap = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or "").lower()
+        base = now
+        if m.group(4):
+            try:
+                import zoneinfo
+                base = now.astimezone(zoneinfo.ZoneInfo(m.group(4)))
+            except (ImportError, KeyError, ValueError):
+                pass
+        if not ap and not m.group(2):
+            continue  # a bare number is no clock time
+        if ap == "pm" and h < 12:
+            h += 12
+        if ap == "am" and h == 12:
+            h = 0
+        if h > 23 or mi > 59:
+            continue
+        t = base.replace(hour=h, minute=mi, second=0, microsecond=0)
+        if t <= now:
+            t += datetime.timedelta(days=1)
+        found = t
+    return found
+
+
+def quota_line(log):
+    """The first line that names the quota error, for the record."""
+    for line in log.splitlines():
+        if ACCOUNT_QUOTA.search(line) or QUOTA.search(line):
+            return line.strip()[:300]
+    return None
 
 
 def label(task):
@@ -844,6 +933,14 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
         exclusion = {"rule": "X4", "reason": account}
     else:
         exclusion = classify(exit_status, log, version, version_after)
+    reset = None
+    if exclusion and exclusion["reason"] == "quota":
+        # Quota-interrupted (I-169): set aside, the slot is recorded again
+        # from scratch once the agent's quota is back.
+        reset = reset_of(log)
+        exclusion = {"rule": XQ, "reason": "quota", "message": quota_line(log),
+                     "reset": reset.isoformat(timespec="seconds") if reset else None}
+        r["status"] = "quota-interrupted"
     if exclusion:
         r["exclusion"] = exclusion
     with open(os.path.join(run_dir, "run.json"), "w", encoding="utf-8") as fh:
@@ -865,7 +962,66 @@ def summarize(run_dir, agent, version, task, idx, mode, start, end, exit_status,
         auto["trace"] = "%s, %d piece(s) of tampering evidence, %s%s" % (
             tr["state"], tr["tampering"], tr["outcome"], (": " + tr["detail"]) if tr.get("detail") else "")
     update_annotations(out_root, os.path.relpath(run_dir, out_root), auto)
-    print("\t".join([r["status"], exclusion["rule"] if exclusion else "-", exclusion["reason"] if exclusion else "-"]))
+    print("\t".join([r["status"], exclusion["rule"] if exclusion else "-", exclusion["reason"] if exclusion else "-",
+                     str(int(reset.timestamp())) if reset else "-"]))
+
+
+def mark_cut(run_dir, agent, version, task, mode, idx):
+    """Record an attempt the VM or the host cut (no run.json when the campaign
+    started again) as quota-interrupted, host-down (I-169): set aside like a
+    quota stop, not counted in the slot's attempt budget."""
+    r = {"agent": agent, "version": version, "task": task, "run": int(idx), "mode": mode, "dir": run_dir,
+         "status": "interrupted", "exit_status": None,
+         "exclusion": {"rule": XQ, "reason": "host-down", "message": "no run.json: the campaign, the VM or the host stopped inside this run"}}
+    with open(os.path.join(run_dir, "run.json"), "w", encoding="utf-8") as fh:
+        json.dump(r, fh, indent=2)
+        fh.write("\n")
+
+
+def quota_path(out, agent):
+    return os.path.join(out, "quota", agent + ".json")
+
+
+def quota_get(out, agent):
+    """Print the agent's pause as: until (epoch), back-off (s), kind (reset or
+    probe), probes made; nothing when it is not paused."""
+    q = load(quota_path(out, agent))
+    if q:
+        print(q["until"], q["backoff"], q["kind"], q.get("probes", 0))
+
+
+def quota_set(out, agent, until, backoff, kind, probes, why):
+    """Pause the agent's queue until the epoch until (I-169), on disk so a
+    restarted campaign keeps the pause."""
+    os.makedirs(os.path.join(out, "quota"), exist_ok=True)
+    q = load(quota_path(out, agent)) or {"since": datetime.datetime.now().astimezone().isoformat(timespec="seconds")}
+    q.update({"until": int(until), "until_iso": datetime.datetime.fromtimestamp(int(until)).astimezone().isoformat(timespec="seconds"),
+              "backoff": int(backoff), "kind": kind, "probes": int(probes), "why": why})
+    tmp = quota_path(out, agent) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(q, fh, indent=2)
+        fh.write("\n")
+    os.replace(tmp, quota_path(out, agent))
+    with open(os.path.join(out, "quota", "events.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(q, agent=agent, event="pause")) + "\n")
+
+
+def quota_clear(out, agent, how):
+    q = load(quota_path(out, agent))
+    if q is None:
+        return
+    with open(os.path.join(out, "quota", "events.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(q, agent=agent, event="resume", how=how,
+                                 at=datetime.datetime.now().astimezone().isoformat(timespec="seconds"))) + "\n")
+    os.remove(quota_path(out, agent))
+
+
+def preflight(agent):
+    """Print the profile's quota.preflight argv, NUL-separated, {binary}
+    replaced; nothing when the profile names none."""
+    p = PROFILES.get(agent) or {}
+    argv = (p.get("quota") or {}).get("preflight") or []
+    sys.stdout.write("".join(str(a).replace("{binary}", p.get("binary", "")) + "\0" for a in argv))
 
 
 def read_kv_pairs(path):
@@ -904,6 +1060,7 @@ def manifest(out, plan_path, commit, dirty, seed):
                                  "run": r["run"], "attempts": 0, "x4": 0, "state": "pending"})
         s["attempts"] += 1
         s["x4"] += (r.get("exclusion") or {}).get("rule") == "X4"
+        s["quota_interrupted"] = s.get("quota_interrupted", 0) + ((r.get("exclusion") or {}).get("rule") == XQ)
     for r in runs:
         k = (r["agent"], r["version"], r["task"], r["mode"], r["run"])
         slots[k]["state"] = "ok" if r["status"] == "ok" else slots[k]["state"]
@@ -930,6 +1087,8 @@ def manifest(out, plan_path, commit, dirty, seed):
          "runs": runs, "attempts": attempts,
          "slots": sorted(slots.values(), key=lambda s: (s["agent"], s["task"], s["mode"], s["run"])),
          "exclusions": {"by_rule": dict(by_rule), "list": excluded},
+         "quota_interrupted": by_rule.get(XQ, 0),
+         "quota_paused": {os.path.basename(a)[:-5]: load(a) for a in sorted(glob.glob(os.path.join(out, "quota", "*.json")))},
          # Runs whose trace was tampered with or could not be read: results,
          # never exclusions (V-59, I-75).
          "trace_results": [{"dir": r.get("dir"), "agent": r.get("agent"), "task": r.get("task"), "run": r.get("run"),
@@ -974,6 +1133,13 @@ def manifest(out, plan_path, commit, dirty, seed):
             fh.write("  ".join(c.ljust(w) for c, w in zip(row, widths)).rstrip() + "\n")
         failed = [s for s in m["slots"] if s["state"] == "failed"]
         fh.write(f"\nattempts excluded: {dict(by_rule) or 'none'}; slots failed three times: {len(failed)}\n")
+        # Quota-interrupted attempts (I-169): development data, never results.
+        fh.write(f"quota-interrupted attempts (XQ, set aside, not in the attempt budget): {by_rule.get(XQ, 0)}"
+                 f" (quota {sum(1 for e in excluded if e.get('rule') == XQ and e.get('reason') == 'quota')},"
+                 f" host-down {sum(1 for e in excluded if e.get('rule') == XQ and e.get('reason') == 'host-down')})\n")
+        for a in sorted(glob.glob(os.path.join(out, "quota", "*.json"))):
+            q = load(a) or {}
+            fh.write(f"  paused: {os.path.basename(a)[:-5]} until {q.get('until_iso')} ({q.get('kind')}, {q.get('why')})\n")
         fh.write(f"trace deleted, damaged or tampered with (results, not exclusions, V-59): {len(m['trace_results'])}\n")
         for t in m["trace_results"]:
             fh.write(f"  trace: {os.path.relpath(t['dir'], out)} {t['state']}, {t['tampering']} piece(s) of tampering evidence, {t['outcome']}\n")
@@ -1114,7 +1280,8 @@ args = sys.argv[2:]
 {"plan": plan, "slot-state": slot_state, "permute": permute, "seed": seed_of, "versions": versions_in,
  "summarize": summarize, "manifest": manifest, "estimate": estimate, "invocation": invocation,
  "judge": judge, "validation-write": validation_write, "null-check": null_check, "power": power,
- "baseline-rules": baseline_rules}[cmd](*args)
+ "baseline-rules": baseline_rules, "mark-cut": mark_cut, "quota-get": quota_get, "quota-set": quota_set,
+ "quota-clear": quota_clear, "preflight": preflight}[cmd](*args)
 PY
 helper() { python3 "$helper" "$@"; }
 
@@ -1439,30 +1606,114 @@ trap 'interrupted=1' INT
 failures=0
 declare -A stopped=()
 abandoned=()
-for line in "${pending_order[@]}"; do
-  IFS=$'\t' read -r pos total agent task mode i split model <<<"$line"
-  if [ -n "${stopped[$agent]:-}" ]; then
-    echo "skipped: $agent $task $mode run $i ($agent's campaign is stopped: ${stopped[$agent]})"
-    continue
+
+# Quota-safe scheduling (I-169). A quota or rate-limit error marks the
+# attempt quota-interrupted (XQ) and pauses only that agent's queue, on disk
+# (OUTPUT_DIR/quota/AGENT.json): until the reset time the error states (plus a
+# margin), else until a probe. A probe runs the profile's quota.preflight
+# command, as the run-as user, when it names one (exit 0: the quota is back),
+# else lets the slot's next attempt be the probe; a failed probe waits again,
+# the back-off doubling from 15 minutes to an hour. The other agents' slots
+# go on meanwhile, and the slot is recorded again from scratch when its agent
+# resumes. The variables below shorten the waits for tests only.
+q_min=${CAMPAIGN_QUOTA_BACKOFF_MIN:-900}
+q_max=${CAMPAIGN_QUOTA_BACKOFF_MAX:-3600}
+q_margin=${CAMPAIGN_QUOTA_MARGIN:-60}
+now() { date +%s; }
+# pause AGENT RESET_EPOCH|- WHY: pause after a quota error.
+pause() {
+  local agent=$1 reset=$2 why=$3 until backoff=$q_min kind=probe
+  if [ "$reset" != - ] && [ "$reset" -gt "$(now)" ] && [ "$reset" -lt $(( $(now) + 8 * 86400 )) ]; then
+    until=$((reset + q_margin)) kind=reset
+  else
+    until=$(( $(now) + backoff ))
   fi
+  helper quota-set "$out" "$agent" "$until" "$backoff" "$kind" 0 "$why"
+  echo "=== quota: $agent's queue is paused until $(date -d "@$until" --iso-8601=seconds) ($kind); the other agents' slots go on"
+}
+# ready AGENT: 0 when the agent is not paused or its pause has ended and a
+# probe (when it is one) passed; on a failed probe the pause is extended.
+ready() {
+  local agent=$1 q until backoff kind probes args rc
+  q=$(helper quota-get "$out" "$agent")
+  [ -n "$q" ] || return 0
+  read -r until backoff kind probes <<<"$q"
+  [ "$(now)" -ge "$until" ] || return 1
+  mapfile -d '' -t args < <(helper preflight "$agent")
+  if [ "$kind" = reset ] || [ "${#args[@]}" -eq 0 ]; then
+    # The stated reset has passed, or no preflight: the slot's next attempt
+    # is the probe (a new quota error pauses it again, with a longer wait).
+    helper quota-clear "$out" "$agent" "$([ "$kind" = reset ] && echo "reset time passed" || echo "back-off ended, no preflight: the next attempt probes")"
+    echo "=== quota: $agent resumes"
+    return 0
+  fi
+  rc=0
+  if [ -n "$run_uid" ]; then
+    sudo -n setpriv --reuid "$run_uid" --regid "$run_gid" --init-groups --reset-env env -C / HOME="$run_home" \
+      PATH="$run_home/.local/bin:/usr/local/bin:/usr/bin:/bin" "${args[@]}" >>"$out/quota/$agent.preflight.log" 2>&1 || rc=$?
+  else
+    "${args[@]}" >>"$out/quota/$agent.preflight.log" 2>&1 || rc=$?
+  fi
+  if [ "$rc" -eq 0 ]; then
+    helper quota-clear "$out" "$agent" "preflight passed"
+    echo "=== quota: $agent's preflight passed; it resumes"
+    return 0
+  fi
+  backoff=$((backoff * 2))
+  [ "$backoff" -le "$q_max" ] || backoff=$q_max
+  helper quota-set "$out" "$agent" $(( $(now) + backoff )) "$backoff" probe $((probes + 1)) "preflight exit $rc"
+  echo "=== quota: $agent's preflight failed (exit $rc); next probe in ${backoff}s"
+  return 1
+}
+# next_wake: the earliest end of a pause among the agents still queued.
+next_wake() {
+  local w= a q until
+  for a in "$@"; do
+    q=$(helper quota-get "$out" "$a")
+    [ -n "$q" ] || { now; return; }
+    read -r until _ <<<"$q"
+    [ -n "$w" ] && [ "$w" -le "$until" ] || w=$until
+  done
+  echo "${w:-$(now)}"
+}
+# A pause of an earlier invocation that the plan's agents no longer need is
+# left on disk; one that matters is honoured (a reboot does not end a wait).
+for a in "${!agent_version_of[@]}"; do
+  q=$(helper quota-get "$out" "$a")
+  [ -z "$q" ] || echo "=== quota: $a is paused from an earlier invocation (until $(date -d "@${q%% *}" --iso-8601=seconds))"
+done
+
+# run_slot LINE: record one slot until it is complete, failed out, stopped
+# or quota-interrupted. Sets slot_result: done, quota or stop.
+run_slot() {
+  local line=$1 pos total agent task mode i split model version before st attempts x4 d moved args start end status after
+  local result rule reason reset
+  IFS=$'\t' read -r pos total agent task mode i split model <<<"$line"
   version=${agent_version_of[$agent]}
   before=$(before_of "$split")
   read -r st attempts x4 <<<"$(helper slot-state "$out" "$agent" "$version" "$task" "$mode" "$i")"
+  slot_result=done
+  [ "$st" = pending ] || return 0
   while :; do
     attempts=$((attempts + 1))
     # Repeat the check: the version may have changed since the campaign began.
     if ! info=$(check "$agent" "$task" "$mode" "$model" "$before"); then
       echo "$agent $task ($mode): the check now refuses, see above" >&2
       stopped[$agent]="the check refused before run $i"
-      break
+      slot_result=stop
+      return 0
     fi
     if [ "$(field version "$info")" != "$version" ]; then
       echo "$agent changed during the campaign (now $(field version "$info"), was $version): its campaign stops (protocol 6.1); onboard the new version, then rerun" >&2
       stopped[$agent]="version changed to $(field version "$info")"
-      break
+      slot_result=stop
+      return 0
     fi
     d=$(run_dir "$agent" "$version" "$task" "$mode" "$i")
     if [ -e "$d" ]; then
+      # An attempt with no record was cut by the campaign's end, the VM or
+      # the host: quota-interrupted, host-down (I-169).
+      [ -e "$d/run.json" ] || { helper mark-cut "$d" "$agent" "$version" "$task" "$mode" "$i"; echo "an attempt without a record (cut by a stop of the campaign, the VM or the host) is set aside as XQ host-down"; }
       moved="$d.failed-$(date +%Y%m%d-%H%M%S)-a$((attempts - 1))"
       mv "$d" "$moved"
       echo "moved the earlier attempt aside to $moved"
@@ -1488,37 +1739,87 @@ for line in "${pending_order[@]}"; do
     end=$(date --iso-8601=seconds)
     [ -z "$interrupted" ] || [ "$status" -ne 0 ] || status=130
     after=$(agent_version "$agent")
-    IFS=$'\t' read -r result rule reason <<<"$(helper summarize "$d" "$agent" "$version" "$task" "$i" "$mode" "$start" "$end" "$status" "$seed" "$pos" "$total" "$attempts" "$model" "$after")"
+    IFS=$'\t' read -r result rule reason reset <<<"$(helper summarize "$d" "$agent" "$version" "$task" "$i" "$mode" "$start" "$end" "$status" "$seed" "$pos" "$total" "$attempts" "$model" "$after")"
     helper manifest "$out" "$plan" "$commit" "$dirty" "$seed"
     if [ "$result" = ok ]; then echo "=== ok (exit $status)"; else echo "=== $result $rule $reason (exit $status)"; fi
     if [ "$result" = ok ]; then
       failures=0
-      break
+      return 0
     fi
-    failures=$((failures + 1))
     if [ -n "$interrupted" ]; then
       echo "interrupted: rerun the same command to resume"
       exit 130
     fi
+    if [ "$rule" = XQ ]; then
+      # Not a failure of the run: the quota stopped it (I-169).
+      pause "$agent" "$reset" "quota error in $task run $i"
+      slot_result=quota
+      return 0
+    fi
+    failures=$((failures + 1))
     case $rule in
-      X3) stopped[$agent]="the version changed during a run"; break ;;
+      X3) stopped[$agent]="the version changed during a run"; slot_result=stop; return 0 ;;
     esac
     case $reason in
       model-mismatch) die "a run recorded another model than the pinned $model: the campaign stops; read $d/campaign.log" ;;
       auth) die "$agent is not logged in or its login failed: log in, then rerun the same command to resume" ;;
-      quota) die "the quota or a rate limit stopped $agent: pause (protocol 10.2), then rerun the same command to resume" ;;
     esac
     x4=$((x4 + 1))
     if [ "$x4" -ge 3 ]; then
       echo "slot failed: $agent $task $mode run $i failed 3 times (X4); it is reported failed and not replaced"
       abandoned+=("$agent $task $mode run $i")
-      break
+      return 0
     fi
     if [ "$failures" -ge "$stop_after" ]; then
       die "$failures run(s) failed in a row; read their campaign.log, then rerun the same command to resume"
     fi
     echo "retrying in the same slot (X4, attempt $((attempts + 1)) of 3)"
   done
+}
+
+# The queue: the pending slots in their order. A pass records every slot
+# whose agent is not paused; a quota-interrupted slot goes back into the
+# queue, in its place. When every slot left belongs to a paused agent, the
+# campaign sleeps until the earliest pause ends.
+queue=("${pending_order[@]}")
+while [ "${#queue[@]}" -gt 0 ]; do
+  next=()
+  ran=
+  declare -A checked=()
+  for line in "${queue[@]}"; do
+    IFS=$'\t' read -r _ _ agent task mode i _ _ <<<"$line"
+    if [ -n "${stopped[$agent]:-}" ]; then
+      echo "skipped: $agent $task $mode run $i ($agent's campaign is stopped: ${stopped[$agent]})"
+      continue
+    fi
+    # One readiness check (and probe) per agent per pass.
+    if [ -z "${checked[$agent]:-}" ]; then
+      if ready "$agent"; then checked[$agent]=ready; else checked[$agent]=paused; fi
+    fi
+    if [ "${checked[$agent]}" = paused ]; then
+      next+=("$line")
+      continue
+    fi
+    run_slot "$line"
+    ran=1
+    if [ "$slot_result" = quota ]; then
+      checked[$agent]=paused
+      next+=("$line")
+    fi
+  done
+  unset checked
+  queue=("${next[@]}")
+  [ "${#queue[@]}" -gt 0 ] || break
+  if [ -z "$ran" ]; then
+    mapfile -t qa < <(for line in "${queue[@]}"; do IFS=$'\t' read -r _ _ agent _ <<<"$line"; echo "$agent"; done | sort -u)
+    wake=$(next_wake "${qa[@]}")
+    helper manifest "$out" "$plan" "$commit" "$dirty" "$seed"
+    echo "=== quota: every slot left (${#queue[@]}) belongs to a paused agent (${qa[*]}); waiting until $(date -d "@$wake" --iso-8601=seconds)"
+    while [ "$(now)" -lt "$wake" ]; do
+      [ -z "$interrupted" ] || { echo "interrupted while waiting: rerun the same command to resume"; exit 130; }
+      sleep $(( wake - $(now) > 30 ? 30 : (wake - $(now) > 0 ? wake - $(now) : 1) ))
+    done
+  fi
 done
 echo
 cat "$out/summary.txt"
