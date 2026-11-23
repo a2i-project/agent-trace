@@ -42,9 +42,10 @@ type Exclusion struct {
 }
 
 // Exclusions returns every exclusion rule that applies to a run, in rule
-// order. A run with any of X1, X3, X4 or X6 is out of H3a, H3b and H2; X1
-// stays in H3c and H3d (they count completed runs); X3, X4 and X6 stay out of
-// everything. X5 never excludes a run from H3: it sets a run aside from H2
+// order. A run with any of X1, X3, X4, X6 or XQ is out of H3a, H3b and H2; X1
+// stays in H3c and H3d (they count completed runs); X3, X4, X6 and XQ stay
+// out of everything. XQ is a quota-interrupted attempt the runner left in
+// place because its agent's queue never resumed (I-169, I-175). X5 never excludes a run from H3: it sets a run aside from H2
 // only when it has fewer than MinClaimsForSweep claims (see H2Excluded).
 func Exclusions(f RunFacts) []Exclusion {
 	var out []Exclusion
@@ -61,7 +62,10 @@ func Exclusions(f RunFacts) []Exclusion {
 		// The runner's own classification wins where it gives one of the
 		// rules a non-completed run can have; anything else is X4.
 		rule, reason := X4, "the runner's status for the run is "+quoteOr(f.Status, "absent")
-		if r := f.Recorded; r != nil && (r.Rule == X3 || r.Rule == X4 || r.Rule == X6) {
+		if f.Status == "quota-interrupted" {
+			rule = XQ
+		}
+		if r := f.Recorded; r != nil && (r.Rule == X3 || r.Rule == X4 || r.Rule == X6 || r.Rule == XQ) {
 			rule, reason = r.Rule, fmt.Sprintf("the runner recorded %s: %s", r.Rule, quoteOr(r.Reason, "no reason"))
 		}
 		if rule != X3 || !hasRule(out, X3) {
@@ -100,15 +104,15 @@ func hasRule(ex []Exclusion, rule string) bool {
 
 // Scope of a run in the analyses, derived from its exclusions.
 type Scope struct {
-	// Kept: in H3a, H3b and H2 (no X1, X3, X4 or X6).
+	// Kept: in H3a, H3b and H2 (no X1, X3, X4, X6 or XQ).
 	Kept bool
-	// Completed: in H3c and H3d (no X3, X4 or X6; X1 stays in).
+	// Completed: in H3c and H3d (no X3, X4, X6 or XQ; X1 stays in).
 	Completed bool
 }
 
 // ScopeOf applies the effect column of protocol 10.1.
 func ScopeOf(ex []Exclusion) Scope {
-	hard := hasRule(ex, X3) || hasRule(ex, X4) || hasRule(ex, X6)
+	hard := hasRule(ex, X3) || hasRule(ex, X4) || hasRule(ex, X6) || hasRule(ex, XQ)
 	return Scope{Kept: !hard && !hasRule(ex, X1), Completed: !hard}
 }
 
@@ -147,9 +151,9 @@ func Slots(c *Campaign) []SlotReport {
 		}
 		s.Slots++
 		s.MovedAside += c.FailedAttempts[c.ID(r)]
-		// X4's line counts harness errors; a run the runner classified X3
-		// or X6 is excluded but is not a failed slot.
-		if r.Status != "ok" && (r.Exclusion == nil || (r.Exclusion.Rule != X3 && r.Exclusion.Rule != X6)) {
+		// X4's line counts harness errors; a run the runner classified X3,
+		// X6 or XQ (quota) is excluded but is not a failed slot.
+		if r.Status != "ok" && r.Status != "quota-interrupted" && (r.Exclusion == nil || (r.Exclusion.Rule != X3 && r.Exclusion.Rule != X6 && r.Exclusion.Rule != XQ)) {
 			s.FailedSlots++
 			s.FailedSlotID = append(s.FailedSlotID, c.ID(r))
 		}

@@ -259,6 +259,10 @@ func TestExclusionRulesOfProtocol101(t *testing.T) {
 		{"X3 recorded by the runner", RunFacts{Status: "failed", ManifestVersion: "2.1.306", VersionAfter: "2.1.307", Recorded: &RecordedExclude{X3, "version changed"}}, []string{X3}, false, false},
 		{"X4 recorded by the runner", RunFacts{Status: "failed", Recorded: &RecordedExclude{X4, "quota"}}, []string{X4}, false, false},
 		{"an unclassified failure is X4", RunFacts{Status: "failed", Recorded: &RecordedExclude{"unclassified", "no run.json"}}, []string{X4}, false, false},
+		// A quota-interrupted attempt the runner left in place (I-169) is XQ,
+		// out of everything, never X4 (I-175).
+		{"XQ recorded by the runner", RunFacts{Status: "quota-interrupted", Recorded: &RecordedExclude{XQ, "usage limit reached"}}, []string{XQ}, false, false},
+		{"XQ from the status alone", RunFacts{Status: "quota-interrupted"}, []string{XQ}, false, false},
 		{"version read after the run differs", RunFacts{Status: "ok", ManifestVersion: "1.3.4", VersionAfter: "1.3.5"}, []string{X3}, false, false},
 		// X5: not completed is never an exclusion from H3.
 		{"X5 not completed", RunFacts{Status: "ok", Annotation: Annotation{Completed: new(bool)}}, nil, true, true},
@@ -319,6 +323,12 @@ func TestSlotsReportTheFailedShare(t *testing.T) {
 	c.Manifest.Runs[1].Exclusion = &RecordedExclude{X6, "interrupted"}
 	if got := Slots(c); got[0].FailedSlots != 1 {
 		t.Errorf("an X6 run is not a harness error: %+v", got)
+	}
+	// Nor is a quota-interrupted one (XQ, I-175).
+	c.Manifest.Runs[1].Status = "quota-interrupted"
+	c.Manifest.Runs[1].Exclusion = &RecordedExclude{XQ, "usage limit reached"}
+	if got := Slots(c); got[0].FailedSlots != 1 {
+		t.Errorf("an XQ run is not a harness error: %+v", got)
 	}
 }
 

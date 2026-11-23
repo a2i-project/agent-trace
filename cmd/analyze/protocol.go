@@ -79,6 +79,7 @@ const (
 	X4 = "X4" // harness error
 	X5 = "X5" // task not completed, or fewer than two claims for the sweep
 	X6 = "X6" // user intervened
+	XQ = "XQ" // quota-interrupted attempt (I-169): excluded, rerun, never a result
 )
 
 // MaxFailedSlotShare is X4's feasibility line: more failed slots than this
