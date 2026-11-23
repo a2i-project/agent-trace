@@ -86,6 +86,13 @@ func TestWithImpliedPutsTheAdaptersClaimsBack(t *testing.T) {
 			}
 		})
 	}
+	// A swap: each claim takes its implied claims along.
+	swapped := clone(own)
+	swapped[0], swapped[1] = own[1], own[0]
+	swap := Record{Kind: Reordering, Mutations: []Mutation{{Kind: Reordering, OriginalIndex: 0, Index: 1, Before: &own[0], After: &swapped[1], With: &swapped[0]}}}
+	if got, want := targets(WithImplied(full, swapped, swap)), []string{"/w/b", "GET https://check/h", "cat a", "/w/a", "h", "GET https://h/x", "/w/c"}; !sameTargets(got, want) {
+		t.Errorf("swap: got %v, want %v", got, want)
+	}
 	// A fabrication keeps every implied claim after its own claim, and the
 	// agent's claims are the mutated trajectory, in order.
 	for seed := uint64(0); seed < 50; seed++ {

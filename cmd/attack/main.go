@@ -1,7 +1,7 @@
 // Command attack mutates a trajectory the way the threat model says an
 // untrustworthy agent would, for evaluation. It reads a session through an
 // adapter (or normalized JSON), applies one generator (omission, fabrication,
-// substitution or interval widening), writes the mutated trajectory as
+// substitution, interval widening or reorder), writes the mutated trajectory as
 // normalized JSON and writes a record of what it changed. verify --normalized
 // then checks the mutated trajectory against a capture, and the record says
 // which entry any finding should name.
@@ -41,11 +41,11 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 func run(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("attack", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	var kind, trajectoryPath, outPath, recordPath, agentName, groundTruth, field, selectFlag string
+	var kind, trajectoryPath, outPath, recordPath, agentName, groundTruth, field, selectFlag, variant string
 	var n int
 	var seed uint64
 	var retime, normalized bool
-	fs.StringVar(&kind, "kind", "", "Attack: omission, fabrication, substitution or interval-widening")
+	fs.StringVar(&kind, "kind", "", "Attack: omission, fabrication, substitution, interval-widening or reorder")
 	fs.IntVar(&n, "n", 1, "How many entries to mutate or insert")
 	fs.Uint64Var(&seed, "seed", 1, "Seed: the same trajectory, flags and seed give the same mutation")
 	fs.StringVar(&trajectoryPath, "trajectory", "", "The honest trajectory: a session file an adapter reads, or normalized JSON with --normalized")
@@ -55,6 +55,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.StringVar(&recordPath, "record", "record.json", "Where to write the record of the mutation")
 	fs.StringVar(&selectFlag, "select", "all", "Which entries may be chosen: all, or sensitive (credential and key files, data-moving commands, external connections)")
 	fs.StringVar(&field, "field", "", "Substitution only: change this field (target, output_hash, exit_code, request_hash)")
+	fs.StringVar(&variant, "variant", "", "Reorder only: "+strings.Join(attack.ReorderVariants, ", "))
 	fs.BoolVar(&retime, "retime", false, "Omission only: move later claims earlier to close the hole in the timeline, which misplaces them against the real clock")
 	fs.StringVar(&groundTruth, "avoid-ground-truth", "", "A capture's ground truth file: no fabricated or substituted target will equal anything observed in it, so a mutation cannot be true by accident")
 	if err := fs.Parse(args); err != nil {
@@ -127,8 +128,10 @@ func run(args []string, out, errOut io.Writer) int {
 		mutated, rec, err = attack.Substitute(tr, attack.SubstituteOptions{Options: opt, Field: field})
 	case attack.IntervalWidening:
 		mutated, rec, err = attack.Widen(tr, opt)
+	case attack.Reordering:
+		mutated, rec, err = attack.Reorder(tr, attack.ReorderOptions{Options: opt, Variant: variant})
 	default:
-		_, _ = fmt.Fprintf(errOut, "attack: unknown kind %q (omission, fabrication, substitution, interval-widening)\n", kind)
+		_, _ = fmt.Fprintf(errOut, "attack: unknown kind %q (omission, fabrication, substitution, interval-widening, reorder)\n", kind)
 		return exitError
 	}
 	if err != nil {
@@ -148,7 +151,11 @@ func run(args []string, out, errOut io.Writer) int {
 		_, _ = fmt.Fprintf(errOut, "attack: %v\n", err)
 		return exitError
 	}
-	_, _ = fmt.Fprintf(out, "%s: %d mutation(s), seed %d, %d claims in, %d out\n", rec.Kind, len(rec.Mutations), rec.Seed, len(tr), len(mutated))
+	name := string(rec.Kind)
+	if rec.Variant != "" {
+		name += " (" + rec.Variant + ")"
+	}
+	_, _ = fmt.Fprintf(out, "%s: %d mutation(s), seed %d, %d claims in, %d out\n", name, len(rec.Mutations), rec.Seed, len(tr), len(mutated))
 	for _, m := range rec.Mutations {
 		_, _ = fmt.Fprintf(out, "  %s\n", describe(m))
 	}
@@ -164,6 +171,8 @@ func describe(m attack.Mutation) string {
 		return fmt.Sprintf("inserted at %d: %s %q", m.Index, m.After.ActionType, m.After.Target)
 	case attack.Substitution:
 		return fmt.Sprintf("entry %d %s: %q -> %q", m.OriginalIndex, m.Field, m.Old, m.New)
+	case attack.Reordering:
+		return fmt.Sprintf("swapped entries %d and %d: %s %q and %s %q", m.OriginalIndex, m.Index, m.Before.ActionType, m.Before.Target, m.With.ActionType, m.With.Target)
 	default:
 		return fmt.Sprintf("entry %d interval: %s -> %s", m.OriginalIndex, m.Old, m.New)
 	}

@@ -1,6 +1,6 @@
 # Command-line tools
 
-Checked against commit 710fac7 on 2026-11-23.
+Checked against commit 91799f3 on 2026-11-23.
 
 ## Objective
 
@@ -153,9 +153,10 @@ It also prints the kernel release (`uname`) against each minimum a probe page st
 Mutates a trajectory with one of the generators in `pkg/attack` and writes the result and a record of the change.
 
 ```
-attack --kind omission|fabrication|substitution|interval-widening [--n N] [--seed S]
+attack --kind omission|fabrication|substitution|interval-widening|reorder [--n N] [--seed S]
        --trajectory FILE [--agent NAME | --normalized] [--select all|sensitive]
-       [--field F] [--retime] [--avoid-ground-truth FILE] [--out FILE] [--record FILE]
+       [--field F] [--retime] [--variant lane|cross_lane|cross_lane_retimed|regroup]
+       [--avoid-ground-truth FILE] [--out FILE] [--record FILE]
 ```
 
 The mutated trajectory is normalized JSON (it keeps each claim's `tool`, which the adapter's per-tool declaration needs), so it is verified with `verify --normalized --agent NAME`. Harness-implied claims the adapter derived are dropped before the mutation, with a note on standard error, since they are not the agent's and normalized JSON cannot carry them (V-33). Exit 0 when both files are written, 3 for usage and I/O errors and for a mutation the trajectory does not admit; nothing is written then. The same seed and flags give the same mutation.

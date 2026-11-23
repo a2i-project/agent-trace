@@ -81,11 +81,17 @@ type Mutation struct {
 	// mutated or inserted one (nil for an omission).
 	Before *models.TrajectoryEntry `json:"before,omitempty"`
 	After  *models.TrajectoryEntry `json:"after,omitempty"`
+	// With is, for a reordering, the claim that moved from Index to
+	// OriginalIndex, as it now reads. Nil for every other kind.
+	With *models.TrajectoryEntry `json:"with,omitempty"`
 }
 
 // Record is what a generator did.
 type Record struct {
-	Kind      Kind       `json:"kind"`
+	Kind Kind `json:"kind"`
+	// Variant names a reordering's variant (ReorderVariants); empty for
+	// every other kind.
+	Variant   string     `json:"variant,omitempty"`
 	Seed      uint64     `json:"seed"`
 	Mutations []Mutation `json:"mutations"`
 }
@@ -124,7 +130,9 @@ func WithoutImplied(t models.Trajectory) (models.Trajectory, int) {
 // adapter would derive none, when its call (the own claims with its tool and
 // timestamp) was omitted entirely, or when a substitution changed the target
 // of one of that call's claims, the text the adapter derives it from.
-// WithImplied(full, WithoutImplied(full), Record{}) is full.
+// A reordering's swapped claims each keep their own implied claims, which
+// follow them to their new positions. WithImplied(full, WithoutImplied(full),
+// Record{}) is full.
 func WithImplied(full, mutated models.Trajectory, rec Record) models.Trajectory {
 	type call struct {
 		tool string
@@ -149,6 +157,9 @@ func WithImplied(full, mutated models.Trajectory, rec Record) models.Trajectory 
 	}
 	omitted := map[int]bool{}
 	fabricated := map[int]bool{}
+	// moved maps an output position a reordering filled to the input
+	// position of the claim now there.
+	moved := map[int]int{}
 	gone := map[call]bool{}
 	for _, m := range rec.Mutations {
 		switch {
@@ -156,6 +167,9 @@ func WithImplied(full, mutated models.Trajectory, rec Record) models.Trajectory 
 			fabricated[m.Index] = true
 		case m.After == nil && m.OriginalIndex >= 0:
 			omitted[m.OriginalIndex] = true
+		}
+		if m.Kind == Reordering {
+			moved[m.Index], moved[m.OriginalIndex] = m.OriginalIndex, m.Index
 		}
 		if m.Kind == Substitution && m.Field == FieldTarget && m.Before != nil {
 			gone[callOf(*m.Before)] = true
@@ -198,7 +212,11 @@ func WithImplied(full, mutated models.Trajectory, rec Record) models.Trajectory 
 		for next < len(own) && omitted[next] {
 			next++
 		}
-		for _, x := range after[next] {
+		k := next
+		if q, ok := moved[p]; ok {
+			k = q
+		}
+		for _, x := range after[k] {
 			if keep(x) {
 				out = append(out, x)
 			}

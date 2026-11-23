@@ -81,6 +81,8 @@ func Score(rec Record, v verification.Verdict) Result {
 			mr = scoreSubstitution(m, v)
 		case IntervalWidening:
 			mr = scoreWidening(m, v)
+		case Reordering:
+			mr = scoreReorder(m, v)
 		default:
 			mr = MutationResult{Mutation: m}
 		}
@@ -149,6 +151,8 @@ func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) [
 			switch m.Kind {
 			case Omission, Substitution:
 				ok = ok || (m.Before.ActionType == ev.ActionType && matching.TargetsMatch(*m.Before, ev))
+			case Reordering:
+				ok = ok || reorderEvent(m, ev)
 			}
 		}
 		ev := ev
@@ -183,7 +187,7 @@ func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) [
 		members := membersOf(sets, "unwitnessed", u, nil)
 		ok := false
 		for _, m := range rec.Mutations {
-			if (m.Kind == Fabrication || m.Kind == Substitution) && names(members, m.After) {
+			if (m.Kind == Fabrication || m.Kind == Substitution) && names(members, m.After) || m.Kind == Reordering && (names(members, m.After) || names(members, m.With)) {
 				ok = true
 			}
 		}
@@ -194,7 +198,7 @@ func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) [
 		members := membersOf(sets, "mismatched", p.Entry, &p.Event)
 		ok := false
 		for _, m := range rec.Mutations {
-			if (m.Kind == Substitution || m.Kind == Fabrication) && names(members, m.After) {
+			if (m.Kind == Substitution || m.Kind == Fabrication) && names(members, m.After) || m.Kind == Reordering && (names(members, m.After) || names(members, m.With)) {
 				ok = true
 			}
 		}
@@ -206,6 +210,9 @@ func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) [
 		ok := false
 		for _, m := range rec.Mutations {
 			if m.Kind == IntervalWidening && p.Entry.ActionType == m.After.ActionType && p.Entry.Target == m.After.Target {
+				ok = true
+			}
+			if m.Kind == Reordering && (sameClaim(p.Entry, m.After) || sameClaim(p.Entry, m.With)) {
 				ok = true
 			}
 		}
@@ -342,6 +349,55 @@ func scoreSubstitution(m Mutation, v verification.Verdict) MutationResult {
 	}
 	return mr
 }
+
+// scoreReorder scores one swap (A5). Detected: some finding names either
+// claim of the swap, or is an Unrecorded event of the type and target of
+// either. Classified: an order finding names either claim. Located: the
+// order finding names one of the two, not a neighbour; until the verifier
+// reports order findings (orderFindings), neither is ever set.
+func scoreReorder(m Mutation, v verification.Verdict) MutationResult {
+	mr := MutationResult{Mutation: m}
+	swapped := func(c models.TrajectoryEntry) bool { return sameClaim(c, m.After) || sameClaim(c, m.With) }
+	sets := v.CandidateSets()
+	for _, u := range v.Unwitnessed {
+		members := membersOf(sets, "unwitnessed", u, nil)
+		mr.Detected = mr.Detected || names(members, m.After) || names(members, m.With)
+	}
+	for _, p := range v.Mismatched {
+		members := membersOf(sets, "mismatched", p.Entry, &p.Event)
+		mr.Detected = mr.Detected || names(members, m.After) || names(members, m.With)
+	}
+	for _, p := range v.OutsideInterval {
+		mr.Detected = mr.Detected || swapped(p.Entry)
+	}
+	for _, ev := range v.Unrecorded {
+		mr.Detected = mr.Detected || reorderEvent(m, ev)
+	}
+	for _, c := range orderFindings(v) {
+		if swapped(c) {
+			mr.Detected, mr.Classified, mr.Located = true, true, true
+		}
+	}
+	return mr
+}
+
+// reorderEvent reports whether an observed event is of the type and target
+// of either claim of a swap.
+func reorderEvent(m Mutation, ev models.GroundTruthEvent) bool {
+	for _, c := range []*models.TrajectoryEntry{m.Before, m.With} {
+		if c != nil && c.ActionType == ev.ActionType && matching.TargetsMatch(*c, ev) {
+			return true
+		}
+	}
+	return false
+}
+
+// orderFindings returns the claims the verdict's order findings name. The
+// verifier reports none yet: the order layers (one timeline across the
+// probes' streams, the grouping of calls from the model traffic) add them,
+// and this is the one place the scorer reads them, so a reordering is
+// classified and located only once they exist.
+func orderFindings(verification.Verdict) []models.TrajectoryEntry { return nil }
 
 func scoreWidening(m Mutation, v verification.Verdict) MutationResult {
 	mr := MutationResult{Mutation: m}

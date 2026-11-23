@@ -178,3 +178,34 @@ func TestErrorsAreExitThreeAndWriteNothing(t *testing.T) {
 		})
 	}
 }
+
+// Every reorder variant writes the swapped trajectory and a record naming
+// the variant; a variant the trajectory does not admit, or none, is exit 3.
+func TestReorderVariantsWriteAValidTrajectoryAndARecord(t *testing.T) {
+	for _, v := range attack.ReorderVariants {
+		t.Run(v, func(t *testing.T) {
+			dir := t.TempDir()
+			outPath, recPath := filepath.Join(dir, "m.json"), filepath.Join(dir, "r.json")
+			code, out, errOut := attackCmd(t, "--kind", "reorder", "--variant", v, "--seed", "5", "--trajectory", session, "--out", outPath, "--record", recPath)
+			if code != 0 {
+				// Said, not hidden: the capture may not admit the variant.
+				if code == exitError && strings.Contains(errOut, "does not admit") {
+					t.Logf("%s: %s", v, errOut)
+					return
+				}
+				t.Fatalf("exit %d: %s %s", code, out, errOut)
+			}
+			tr := readTrajectory(t, outPath)
+			rec := readRecord(t, recPath)
+			if len(tr) != 7 || rec.Kind != attack.Reordering || rec.Variant != v || len(rec.Mutations) != 1 || rec.Mutations[0].With == nil {
+				t.Errorf("%d claims out, record %+v", len(tr), rec)
+			}
+			if !strings.Contains(out, "reorder ("+v+")") {
+				t.Errorf("output: %s", out)
+			}
+		})
+	}
+	if code, _, _ := attackCmd(t, "--kind", "reorder", "--trajectory", session, "--out", filepath.Join(t.TempDir(), "m.json")); code != exitError {
+		t.Errorf("reorder without a variant: exit %d", code)
+	}
+}
