@@ -2,6 +2,8 @@ package attack
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/agent-trace/agent-trace/pkg/matching"
 	"github.com/agent-trace/agent-trace/pkg/models"
@@ -21,8 +23,15 @@ type MutationResult struct {
 	// under the wrong name, such as a substitution read as a fabrication plus an
 	// omission.
 	Classified bool `json:"classified"`
-	// Located: the finding names exactly the mutated entry, and not a neighbour.
+	// Located: the finding names exactly the mutated entry, and not a
+	// neighbour, or names a set of interchangeable claims that holds it
+	// (V-109).
 	Located bool `json:"located"`
+	// LocatedInSet is, for a mutation Located through a finding that names
+	// several interchangeable claims (V-109), how many claims that finding
+	// names. Zero when the finding names the mutated entry alone, or the
+	// mutation is not located.
+	LocatedInSet int `json:"located_in_set,omitempty"`
 	// UndetectableByDesign: an omission whose observed action the verifier's
 	// documented design explains, so no finding can arise (E-5). It is set by
 	// MarkUndetectableByDesign from the honest run, never from whether this
@@ -111,6 +120,10 @@ type Finding struct {
 	// subtree.
 	Event *models.GroundTruthEvent `json:"event,omitempty"`
 	Diffs []string                 `json:"diffs,omitempty"`
+	// Candidates is, for a finding that names several interchangeable
+	// claims (V-109), the position of each in the mutated trajectory, -1
+	// where not found. Nil when the finding names one claim.
+	Candidates []int `json:"candidates,omitempty"`
 	// Accounted: a mutation of the record explains the finding, by the same
 	// rules as Result.Unaccounted.
 	Accounted bool `json:"accounted"`
@@ -155,24 +168,39 @@ func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) [
 		}
 		out = append(out, f)
 	}
+	sets := v.CandidateSets()
+	positions := func(members []models.TrajectoryEntry) []int {
+		if len(members) < 2 {
+			return nil
+		}
+		var at []int
+		for _, c := range members {
+			at = append(at, claimAt(c))
+		}
+		return at
+	}
 	for _, u := range v.Unwitnessed {
+		members := membersOf(sets, "unwitnessed", u, nil)
 		ok := false
 		for _, m := range rec.Mutations {
-			if (m.Kind == Fabrication || m.Kind == Substitution) && sameClaim(u, m.After) {
+			if (m.Kind == Fabrication || m.Kind == Substitution) && names(members, m.After) {
 				ok = true
 			}
 		}
 		u := u
-		out = append(out, Finding{Kind: "unwitnessed", ClaimIndex: claimAt(u), Claim: &u, Accounted: ok})
+		out = append(out, Finding{Kind: "unwitnessed", ClaimIndex: claimAt(u), Claim: &u, Candidates: positions(members), Accounted: ok})
 	}
 	for _, p := range v.Mismatched {
+		members := membersOf(sets, "mismatched", p.Entry, &p.Event)
 		ok := false
 		for _, m := range rec.Mutations {
-			if (m.Kind == Substitution || m.Kind == Fabrication) && sameClaim(p.Entry, m.After) {
+			if (m.Kind == Substitution || m.Kind == Fabrication) && names(members, m.After) {
 				ok = true
 			}
 		}
-		out = append(out, pairFinding("mismatched", p, claimAt(p.Entry), ok))
+		f := pairFinding("mismatched", p, claimAt(p.Entry), ok)
+		f.Candidates = positions(members)
+		out = append(out, f)
 	}
 	for _, p := range v.OutsideInterval {
 		ok := false
@@ -193,6 +221,47 @@ func pairFinding(kind string, p verification.MatchedPair, at int, ok bool) Findi
 
 func sameClaim(a models.TrajectoryEntry, b *models.TrajectoryEntry) bool {
 	return b != nil && a.ActionType == b.ActionType && a.Target == b.Target && a.Tool == b.Tool && a.Timestamp.Equal(b.Timestamp)
+}
+
+// membersOf returns the claims a finding names: the set of the verdict's
+// candidate sets for that finding (V-109), or the finding's own claim alone.
+// event is the observed side of a mismatched pair, nil for an unwitnessed
+// claim.
+func membersOf(sets []verification.CandidateSet, finding string, claim models.TrajectoryEntry, event *models.GroundTruthEvent) []models.TrajectoryEntry {
+	for _, cs := range sets {
+		if cs.Finding != finding || !sameClaim(cs.Claim, &claim) {
+			continue
+		}
+		if event != nil && (cs.Event == nil || cs.Event.Target != event.Target || cs.Event.ActionType != event.ActionType || !cs.Event.Timestamp.Equal(event.Timestamp)) {
+			continue
+		}
+		return cs.Claims
+	}
+	return []models.TrajectoryEntry{claim}
+}
+
+// names reports whether one of members is the claim b.
+func names(members []models.TrajectoryEntry, b *models.TrajectoryEntry) bool {
+	for _, c := range members {
+		if sameClaim(c, b) {
+			return true
+		}
+	}
+	return false
+}
+
+// locatedBy records that a finding naming members locates mr's mutation.
+// When several do, LocatedInSet keeps the smallest set, a finding naming the
+// entry alone (zero) above all.
+func locatedBy(mr *MutationResult, members []models.TrajectoryEntry) {
+	n := 0
+	if len(members) > 1 {
+		n = len(members)
+	}
+	if !mr.Located || mr.LocatedInSet != 0 && (n == 0 || n < mr.LocatedInSet) {
+		mr.LocatedInSet = n
+	}
+	mr.Located = true
 }
 
 func scoreOmission(m Mutation, v verification.Verdict) MutationResult {
@@ -224,14 +293,16 @@ func scoreOmission(m Mutation, v verification.Verdict) MutationResult {
 
 func scoreFabrication(m Mutation, v verification.Verdict) MutationResult {
 	mr := MutationResult{Mutation: m}
+	sets := v.CandidateSets()
 	for _, u := range v.Unwitnessed {
-		if sameClaim(u, m.After) {
-			mr.Detected, mr.Classified, mr.Located = true, true, true
+		if members := membersOf(sets, "unwitnessed", u, nil); names(members, m.After) {
+			locatedBy(&mr, members)
+			mr.Detected, mr.Classified = true, true
 		}
 	}
 	if !mr.Detected {
 		for _, p := range v.Mismatched {
-			if sameClaim(p.Entry, m.After) {
+			if names(membersOf(sets, "mismatched", p.Entry, &p.Event), m.After) {
 				mr.Detected = true // consumed an event and read as a disagreement
 			}
 		}
@@ -241,24 +312,30 @@ func scoreFabrication(m Mutation, v verification.Verdict) MutationResult {
 
 func scoreSubstitution(m Mutation, v verification.Verdict) MutationResult {
 	mr := MutationResult{Mutation: m}
+	sets := v.CandidateSets()
 	for _, p := range v.Mismatched {
-		if !sameClaim(p.Entry, m.After) {
+		members := membersOf(sets, "mismatched", p.Entry, &p.Event)
+		if !names(members, m.After) {
 			continue
 		}
 		mr.Detected = true
+		classified := false
 		for _, d := range p.Diffs {
 			if d == m.Field {
-				mr.Classified = true
+				classified = true
 			}
 		}
+		mr.Classified = mr.Classified || classified
 		// Located: the observed side of the pair is what the claim was before the
 		// substitution, so the finding names this entry and not a neighbour.
-		mr.Located = mr.Classified && matching.TargetsMatch(*m.Before, p.Event) && p.Event.ActionType == m.Before.ActionType
+		if classified && matching.TargetsMatch(*m.Before, p.Event) && p.Event.ActionType == m.Before.ActionType {
+			locatedBy(&mr, members)
+		}
 	}
 	if !mr.Detected {
 		// The split reading: the new claim unwitnessed, the real event unrecorded.
 		for _, u := range v.Unwitnessed {
-			if sameClaim(u, m.After) {
+			if names(membersOf(sets, "unwitnessed", u, nil), m.After) {
 				mr.Detected = true
 			}
 		}
@@ -404,9 +481,13 @@ type Tally struct {
 	Detected          int
 	Classified        int
 	Located           int
-	Ambiguous         int // runs whose alignment was ambiguous
-	Unaccounted       int // findings no mutation explains, summed over runs
-	Inconclusive      int
+	// SetSizes counts the located mutations by how many claims the finding
+	// that located them names (V-109): 1 for the mutated entry alone. The
+	// counts sum to Located.
+	SetSizes     map[int]int
+	Ambiguous    int // runs whose alignment was ambiguous
+	Unaccounted  int // findings no mutation explains, summed over runs
+	Inconclusive int
 	// Distinct counts different mutations among those added. Seeds repeat
 	// mutations when a trajectory admits few of them (seven single omissions
 	// of a seven-claim trajectory), so a rate over a hundred seeds is a rate
@@ -454,8 +535,40 @@ func (t *Tally) Add(r Result) {
 		}
 		if m.Located {
 			t.Located++
+			if t.SetSizes == nil {
+				t.SetSizes = map[int]int{}
+			}
+			t.SetSizes[max(1, m.LocatedInSet)]++
 		}
 	}
+}
+
+// AddSetSizes folds another tally's set sizes into t's.
+func (t *Tally) AddSetSizes(o Tally) {
+	for k, n := range o.SetSizes {
+		if t.SetSizes == nil {
+			t.SetSizes = map[int]int{}
+		}
+		t.SetSizes[k] += n
+	}
+}
+
+// SetSizesString renders SetSizes in increasing size, as "1:40 2:3", or
+// "none" when nothing was located.
+func (t Tally) SetSizesString() string {
+	if len(t.SetSizes) == 0 {
+		return "none"
+	}
+	keys := make([]int, 0, len(t.SetSizes))
+	for k := range t.SetSizes {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("%d:%d", k, t.SetSizes[k])
+	}
+	return strings.Join(parts, " ")
 }
 
 // Detectable is the number of mutations not undetectable by design.

@@ -133,3 +133,86 @@ func TestDiagnoseNamesFindingsAndLanes(t *testing.T) {
 		t.Error("a clean result needs a diagnosis")
 	}
 }
+
+// V-109: a fabrication or a substitution whose finding the verdict shows on
+// an interchangeable claim is located when the finding's set holds the
+// mutated claim, and the set's size is recorded and tallied.
+func TestLocatedAgainstTheCandidateSet(t *testing.T) {
+	ls := func(sec int, block string) models.TrajectoryEntry {
+		return models.TrajectoryEntry{Timestamp: at(sec), ActionType: models.ProcessExec, Target: "ls", Tool: "Bash", BlockID: block}
+	}
+	event := func(sec int, target string) models.GroundTruthEvent {
+		return models.GroundTruthEvent{Timestamp: at(sec), ActionType: models.ProcessExec, Target: target}
+	}
+	verdictOf := func(c models.Trajectory, o models.GroundTruth) verification.Verdict {
+		as, err := verification.Align(c, o, verification.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := verification.Verdict{Alignments: as}
+		for _, la := range as {
+			for _, e := range la.Edits {
+				switch e.Kind {
+				case verification.EditInsertion:
+					v.Unwitnessed = append(v.Unwitnessed, *e.Claim)
+				case verification.EditSubstitution:
+					v.Mismatched = append(v.Mismatched, verification.MatchedPair{Entry: *e.Claim, Event: *e.Event, Diffs: e.Diffs})
+				}
+			}
+		}
+		return v
+	}
+
+	// Two equal claims, one observed: whichever was fabricated, the
+	// unwitnessed finding names both.
+	c := models.Trajectory{ls(1, ""), ls(2, "")}
+	v := verdictOf(c, models.GroundTruth{event(1, "ls")})
+	var tally Tally
+	for k := range c {
+		f := c[k]
+		rec := Record{Kind: Fabrication, Mutations: []Mutation{{Kind: Fabrication, OriginalIndex: -1, Index: k, After: &f}}}
+		r := Score(rec, v)
+		m := r.Mutations[0]
+		if !m.Detected || !m.Classified || !m.Located || m.LocatedInSet != 2 || r.Unaccounted != 0 {
+			t.Errorf("fabricated claim %d: %+v, unaccounted %d", k, m, r.Unaccounted)
+		}
+		if d := Diagnose(rec, r, v, c); len(d.Findings) != 1 || len(d.Findings[0].Candidates) != 2 {
+			t.Errorf("fabricated claim %d: diagnosis findings %+v", k, d.Findings)
+		}
+		tally.Add(r)
+	}
+	if tally.SetSizesString() != "2:2" {
+		t.Errorf("set sizes %s, want 2:2", tally.SetSizesString())
+	}
+
+	// A block of two equal claims, one of them substituted from "date": the
+	// mismatched pair names both members.
+	c = models.Trajectory{ls(1, "m"), ls(2, "m")}
+	v = verdictOf(c, models.GroundTruth{event(1, "date"), event(2, "ls")})
+	for k := range c {
+		before := c[k]
+		before.Target = "date"
+		after := c[k]
+		rec := Record{Kind: Substitution, Mutations: []Mutation{{Kind: Substitution, OriginalIndex: k, Index: k, Field: FieldTarget, Old: "date", New: "ls", Before: &before, After: &after}}}
+		m := Score(rec, v).Mutations[0]
+		if !m.Detected || !m.Classified || !m.Located || m.LocatedInSet != 2 {
+			t.Errorf("substituted claim %d: %+v", k, m)
+		}
+	}
+
+	// The order decides: "ls", "pwd", "ls" against "ls", "pwd". Only the last
+	// claim can be unwitnessed, so a fabricated first claim is not located
+	// there.
+	c = models.Trajectory{ls(1, ""), {Timestamp: at(2), ActionType: models.ProcessExec, Target: "pwd", Tool: "Bash"}, ls(3, "")}
+	v = verdictOf(c, models.GroundTruth{event(1, "ls"), event(2, "pwd")})
+	first := c[0]
+	m := Score(Record{Kind: Fabrication, Mutations: []Mutation{{Kind: Fabrication, OriginalIndex: -1, Index: 0, After: &first}}}, v).Mutations[0]
+	if m.Located || m.LocatedInSet != 0 {
+		t.Errorf("a fabrication the order excludes was located: %+v", m)
+	}
+	last := c[2]
+	m = Score(Record{Kind: Fabrication, Mutations: []Mutation{{Kind: Fabrication, OriginalIndex: -1, Index: 2, After: &last}}}, v).Mutations[0]
+	if !m.Located || m.LocatedInSet != 0 {
+		t.Errorf("the fabrication the finding names alone: %+v", m)
+	}
+}

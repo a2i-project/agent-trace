@@ -366,9 +366,9 @@ func TestAttacksAreDetectedClassifiedAndLocated(t *testing.T) {
 					}
 					// Rates are over the detectable mutations; the undetectable by
 					// design are counted apart (E-5).
-					t.Logf("%s %s n=%d: %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f, ambiguous alignments %d, unaccounted findings %d, undetectable by design %d of %d%s",
+					t.Logf("%s %s n=%d: %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f (set sizes %s), ambiguous alignments %d, unaccounted findings %d, undetectable by design %d of %d%s",
 						c.name, g.name, n, tally.Runs, tally.Mutations, tally.Distinct,
-						tally.Rate(tally.Detected), tally.Rate(tally.Classified), tally.Rate(tally.Located), tally.Ambiguous, tally.Unaccounted,
+						tally.Rate(tally.Detected), tally.Rate(tally.Classified), tally.Rate(tally.Located), tally.SetSizesString(), tally.Ambiguous, tally.Unaccounted,
 						tally.Undetectable, tally.Mutations, gating(c))
 					perHarness.add(c, g.name, n, tally)
 				})
@@ -413,6 +413,7 @@ func (h *harnessTallies) add(c capture, gen string, n int, t Tally) {
 	p.Detected += t.Detected
 	p.Classified += t.Classified
 	p.Located += t.Located
+	p.AddSetSizes(t)
 	p.Ambiguous += t.Ambiguous
 	p.Unaccounted += t.Unaccounted
 	p.Inconclusive += t.Inconclusive
@@ -426,9 +427,9 @@ func (h *harnessTallies) log(t *testing.T) {
 		if !h.gated[harness] {
 			note = " (reported, not gated)"
 		}
-		t.Logf("harness %s: %d captures, %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f, ambiguous alignments %d, unaccounted findings %d, undetectable by design %d of %d%s",
+		t.Logf("harness %s: %d captures, %d runs, %d mutations (%d distinct), detected %.3f classified %.3f located %.3f (set sizes %s), ambiguous alignments %d, unaccounted findings %d, undetectable by design %d of %d%s",
 			key, len(h.captures[harness]), p.Runs, p.Mutations, p.Distinct,
-			p.Rate(p.Detected), p.Rate(p.Classified), p.Rate(p.Located), p.Ambiguous, p.Unaccounted,
+			p.Rate(p.Detected), p.Rate(p.Classified), p.Rate(p.Located), p.SetSizesString(), p.Ambiguous, p.Unaccounted,
 			p.Undetectable, p.Mutations, note)
 	}
 }
