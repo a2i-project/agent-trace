@@ -74,6 +74,7 @@ type A4Summary struct {
 	Sessions             int      `json:"sessions"`
 	Positions            int      `json:"positions"`
 	Violations           []string `json:"violations,omitempty"`
+	LifetimeDetected     int      `json:"lifetime_detected"`
 	ComposedPositions    int      `json:"composed_positions"`
 	ComposedUndetectable int      `json:"composed_undetectable_by_design"`
 	ComposedDetectable   int      `json:"composed_detectable"`
@@ -299,6 +300,7 @@ func buildA4(runs []RunOutput, agentName string) A4Summary {
 		for _, v := range a.Violations {
 			s.Violations = append(s.Violations, o.ID+": "+v)
 		}
+		s.LifetimeDetected += a.LifetimeDetected
 		s.ComposedPositions += a.ComposedPositions
 		s.ComposedUndetectable += a.ComposedUndetectable
 		s.ComposedDetectable += a.ComposedDetectable

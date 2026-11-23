@@ -1591,7 +1591,7 @@ func TestOrderAndLifetimeFindingsAreReported(t *testing.T) {
 	long := writeJSON(t, dir, "long.json", models.GroundTruthFile{Events: models.GroundTruth{fork, exec, exit}, RootPID: 100, Coverage: completeCov()})
 	cmds := writeJSON(t, dir, "cmd.json", models.Trajectory{cmd})
 	code, out, _ = verify(t, "--trajectory", cmds, "--ground-truth", long, "--ignore-exits", "--json", jsonPath)
-	if code != 0 || !strings.Contains(out, "Lifetime: 1") || !strings.Contains(out, "of 1 command claim(s) compared") || !strings.Contains(out, "    ran_longer by 19m58.5s\n") {
+	if code != 1 || !strings.Contains(out, "Lifetime: 1") || !strings.Contains(out, "\nLifetime:\n  claimed:  process_exec /bin/job") || !strings.Contains(out, "of 1 command claim(s) compared") || !strings.Contains(out, "    ran_longer by 19m58.5s\n") {
 		t.Errorf("exit %d, output:\n%s", code, out)
 	}
 	if data, _ := os.ReadFile(jsonPath); !bytes.Contains(data, []byte(`"lifetimes"`)) {

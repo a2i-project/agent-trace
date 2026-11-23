@@ -840,17 +840,17 @@ func printLifetimeSummary(w io.Writer, l verification.LifetimeCheck) {
 	case l.SharedShell:
 		_, _ = fmt.Fprintf(w, "  Lifetime: not compared  (the adapter declares that its commands share a persistent shell, so no claim has a command of its own, V-105)\n")
 	case len(l.Findings) > 0:
-		_, _ = fmt.Fprintf(w, "  Lifetime: %d  (claimed intervals that disagree with their command's observed lifetime, exec to exit, by more than %s plus the slack of %s: reported, not counted, V-105)\n", len(l.Findings), verification.LifetimeTolerance, l.Slack)
+		_, _ = fmt.Fprintf(w, "  Lifetime: %d  (claimed intervals that disagree with their command's observed lifetime, exec to exit, by more than %s plus the slack of %s: a finding, V-105, V-110)\n", len(l.Findings), verification.LifetimeTolerance, l.Slack)
 		_, _ = fmt.Fprintf(w, "    of %d command claim(s) compared and %d compared by their start only (background calls and commands without an exit); %d point claim(s) and %d claim(s) without a command of their own not compared\n", l.Compared, l.StartOnly, l.NoEnd, l.NoSubtree)
 	}
 }
 
-// printLifetimes lists the lifetime findings (V-105).
+// printLifetimes lists the lifetime findings (V-105, V-110).
 func printLifetimes(w io.Writer, fs []verification.LifetimeFinding) {
 	if len(fs) == 0 {
 		return
 	}
-	_, _ = fmt.Fprintf(w, "\nLifetime (reported, not counted):\n")
+	_, _ = fmt.Fprintf(w, "\nLifetime:\n")
 	for _, f := range fs {
 		end := "no end"
 		if f.Entry.End != nil {

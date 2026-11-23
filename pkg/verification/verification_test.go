@@ -1435,7 +1435,7 @@ func commandRun(fromMS, toMS, execMS, exitMS int, background bool) (models.Traje
 // A claimed interval is compared with its command's observed lifetime: a
 // claim of a one-second command where twenty minutes ran, and an interval
 // wider than the command's by more than the tolerance at either end, are
-// reported; harness start-up and reporting delays within it are not. A
+// findings (V-110); harness start-up and reporting delays within it are not. A
 // background call is compared by its start only, a point claim and a
 // command without an exit as far as they say, and nothing is compared for an
 // adapter whose commands share a persistent shell (V-105, V-108).
@@ -1470,10 +1470,9 @@ func TestVerify_AClaimedIntervalIsComparedWithItsCommandsLifetime(t *testing.T) 
 		case c.kind != "" && (len(lc.Findings) != 1 || lc.Findings[0].Kind != c.kind || lc.Findings[0].By <= 0):
 			t.Errorf("%s: findings %+v, want one %s", c.name, lc.Findings, c.kind)
 		}
-		// Reported, not yet counted: the attack evaluation's widening check
-		// reads the findings it scores (V-105).
-		if v.Findings() != 0 {
-			t.Errorf("%s: %d findings counted", c.name, v.Findings())
+		// Each discrepancy is a finding about the claim (V-110).
+		if v.Findings() != len(lc.Findings) || (len(lc.Findings) > 0) != (v.Outcome == OutcomeNotFaithful) {
+			t.Errorf("%s: %d findings counted, outcome %s", c.name, v.Findings(), v.Outcome)
 		}
 	}
 	// A persistent shell: nothing to measure.

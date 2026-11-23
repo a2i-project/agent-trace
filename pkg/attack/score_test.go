@@ -216,3 +216,49 @@ func TestLocatedAgainstTheCandidateSet(t *testing.T) {
 		t.Errorf("the fabrication the finding names alone: %+v", m)
 	}
 }
+
+// E-12: a widened command claim is detected, classified and located by a
+// lifetime finding on it that widening can cause (V-110), detected only by
+// one it cannot; a lifetime finding on another claim is unaccounted. What A4
+// must not do is still checked: the outcome may turn NOT FAITHFUL only
+// through more lifetime findings, and no other finding may disappear.
+func TestWideningIsScoredThroughLifetimeFindings(t *testing.T) {
+	end := at(9)
+	widened := models.TrajectoryEntry{Timestamp: at(0), End: &end, ActionType: models.ProcessExec, Target: "make", Tool: "Bash"}
+	other := models.TrajectoryEntry{Timestamp: at(10), ActionType: models.ProcessExec, Target: "ls", Tool: "Bash"}
+	rec := Record{Kind: IntervalWidening, Mutations: []Mutation{{Kind: IntervalWidening, Index: 0, After: &widened}}}
+	verdict := func(fs ...verification.LifetimeFinding) verification.Verdict {
+		return verification.Verdict{Outcome: verification.OutcomeNotFaithful, Lifetimes: verification.LifetimeCheck{Findings: fs}}
+	}
+	for _, c := range []struct {
+		name                         string
+		finding                      verification.LifetimeFinding
+		detected, located, accounted bool
+	}{
+		{"starts early", verification.LifetimeFinding{Entry: widened, Kind: verification.LifetimeStartsEarly}, true, true, true},
+		{"ends late", verification.LifetimeFinding{Entry: widened, Kind: verification.LifetimeEndsLate}, true, true, true},
+		{"ran longer", verification.LifetimeFinding{Entry: widened, Kind: verification.LifetimeRanLonger}, true, false, true},
+		{"another claim", verification.LifetimeFinding{Entry: other, Kind: verification.LifetimeStartsEarly}, false, false, false},
+	} {
+		res := Score(rec, verdict(c.finding))
+		m := res.Mutations[0]
+		if m.Detected != c.detected || m.Classified != c.located || m.Located != c.located || (res.Unaccounted == 0) != c.accounted {
+			t.Errorf("%s: %+v, %d unaccounted", c.name, m, res.Unaccounted)
+		}
+		if d := Diagnose(rec, res, verdict(c.finding), models.Trajectory{widened, other}); len(d.Findings) != 1 || d.Findings[0].Kind != "lifetime" || d.Findings[0].Diffs[0] != c.finding.Kind {
+			t.Errorf("%s: diagnosis %+v", c.name, d.Findings)
+		}
+	}
+
+	honest := verification.Verdict{Outcome: verification.OutcomeFaithful}
+	if !SuppressedNothing(honest, verdict(verification.LifetimeFinding{Entry: widened, Kind: verification.LifetimeStartsEarly})) {
+		t.Error("a lifetime finding on the widened claim read as a suppression")
+	}
+	if SuppressedNothing(honest, verification.Verdict{Outcome: verification.OutcomeNotFaithful, Unrecorded: []models.GroundTruthEvent{{}}}) {
+		t.Error("an outcome changed by another finding read as nothing suppressed")
+	}
+	omitted := verification.Verdict{Outcome: verification.OutcomeNotFaithful, Unrecorded: []models.GroundTruthEvent{{}}}
+	if SuppressedNothing(omitted, verdict(verification.LifetimeFinding{Entry: widened, Kind: verification.LifetimeStartsEarly})) {
+		t.Error("an unrecorded event hidden behind a lifetime finding read as nothing suppressed")
+	}
+}

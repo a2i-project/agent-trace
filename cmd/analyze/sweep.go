@@ -172,6 +172,9 @@ type A4Result struct {
 	// widening changes); Violations lists those that changed the verdict.
 	Positions  int      `json:"positions"`
 	Violations []string `json:"violations,omitempty"`
+	// LifetimeDetected counts the single widenings detected by a lifetime
+	// finding on the widened claim (V-110, E-12).
+	LifetimeDetected int `json:"lifetime_detected"`
 	// The composed check: an omission with both neighbours widened over it,
 	// at every position with a neighbour on each side.
 	ComposedPositions    int `json:"composed_positions"`
@@ -605,7 +608,10 @@ func (r *AttackRun) a4(claims models.Trajectory, honest verification.Verdict, ve
 		}
 		r.A4.Positions++
 		v, _ := verify(mut, rec)
-		if !suppressedNothing(honest, v) {
+		if attack.LifetimeFindingsOnWidened(rec, v) > 0 {
+			r.A4.LifetimeDetected++
+		}
+		if !suppressedNothing(honest, v, rec) {
 			r.A4.Violations = append(r.A4.Violations, fmt.Sprintf("claim %d (%s %s): outcome %s (honest %s), %d findings (honest %d), %d outside interval (honest %d)",
 				i, claims[i].ActionType, claims[i].Target, v.Outcome, honest.Outcome, v.Findings(), honest.Findings(), len(v.OutsideInterval), len(honest.OutsideInterval)))
 		}
@@ -658,10 +664,12 @@ func (r *AttackRun) a4(claims models.Trajectory, honest verification.Verdict, ve
 // suppressedNothing is H2d's first clause: widening an honest trajectory
 // changes neither the outcome nor the set of unexplained events and raises no
 // interval finding. attack.SuppressedNothing says no count shrank; this also
-// requires none grew.
-func suppressedNothing(honest, with verification.Verdict) bool {
+// requires none grew. A lifetime finding on the widened claim is the
+// widening detected (V-110, E-12), not a change it made: it is set aside, and
+// the outcome it turns NOT FAITHFUL is attack.SuppressedNothing's to accept.
+func suppressedNothing(honest, with verification.Verdict, rec attack.Record) bool {
 	return attack.SuppressedNothing(honest, with) &&
-		with.Findings() == honest.Findings() &&
+		with.Findings()-attack.LifetimeFindingsOnWidened(rec, with) == honest.Findings() &&
 		len(with.Unrecorded) == len(honest.Unrecorded) &&
 		len(with.Coverage.UnexplainedSubtrees) == len(honest.Coverage.UnexplainedSubtrees) &&
 		len(with.OutsideInterval) <= len(honest.OutsideInterval)

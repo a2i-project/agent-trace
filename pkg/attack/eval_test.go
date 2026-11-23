@@ -512,26 +512,41 @@ func TestSubstitutionIsClassifiedByTheFieldThatChanged(t *testing.T) {
 	}
 }
 
-// A4: widening explains nothing that was not already explained. On the honest
-// control it stays FAITHFUL with no interval finding, and composed with an
-// omission, whose widened neighbours claim to span the moment the omitted
-// action happened, the omission is still found.
+// A4: widening explains nothing that was not already explained (E-4). On
+// the honest control it raises no interval finding and no finding but a
+// lifetime finding on a widened claim, and a run without one keeps the
+// honest verdict; composed with an omission, whose widened neighbours claim
+// to span the moment the omitted action happened, the omission is still
+// found. A lifetime finding on a widened command claim is how the verifier
+// detects the widening (V-110, E-12): its rate is logged, over the widened
+// claims and over the widened command claims, the only ones it can catch.
 func TestIntervalWideningSuppressesNothing(t *testing.T) {
 	for _, c := range captures {
 		s := loadSession(t, c)
 		honest := s.verify(s.claims)
 		for n := 1; n <= 3; n++ {
+			var tally, commands Tally
 			for seed := uint64(0); seed < 50; seed++ {
 				mut, rec, err := Widen(s.claims, Options{N: n, Seed: seed})
 				if err != nil {
 					t.Fatal(err)
 				}
 				v := s.verify(mut)
-				if !SuppressedNothing(honest, v) || !honestVerdict(v) || len(v.OutsideInterval) != 0 {
-					c.check(t, "%s n=%d seed %d: widening changed the verdict: %s, %d outside interval", c.name, n, seed, v.Outcome, len(v.OutsideInterval))
+				res := Score(rec, v)
+				tally.Add(res)
+				for _, m := range res.Mutations {
+					if m.Mutation.After.ActionType == models.ProcessExec {
+						commands.Add(Result{Mutations: []MutationResult{m}})
+					}
 				}
-				_ = rec
+				lifetimes := LifetimeFindingsOnWidened(rec, v)
+				if !SuppressedNothing(honest, v) || len(v.OutsideInterval) != 0 || Findings(v)-lifetimes != Findings(honest) || res.Unaccounted != 0 || lifetimes == 0 && !honestVerdict(v) {
+					c.check(t, "%s n=%d seed %d: widening changed the verdict: %s, %d findings, %d outside interval, %d lifetime, %d unaccounted", c.name, n, seed, v.Outcome, Findings(v), len(v.OutsideInterval), lifetimes, res.Unaccounted)
+				}
 			}
+			t.Logf("%s n=%d: %d widened claims (%d distinct), detected by a lifetime finding %.3f; %d widened command claims, detected %.3f, classified %.3f, located %.3f%s",
+				c.name, n, tally.Mutations, tally.Distinct, tally.Rate(tally.Detected), commands.Mutations,
+				commands.Rate(commands.Detected), commands.Rate(commands.Classified), commands.Rate(commands.Located), gating(c))
 		}
 	}
 }
@@ -566,13 +581,14 @@ func TestOmissionIsStillFoundWhenItsNeighboursAreWidened(t *testing.T) {
 // Re-timing an omission closes the hole in the trajectory's timeline and moves
 // every later claim off its real time. Time never pairs a claim with an event,
 // so the omission is still found, classified and located. The side effect is the
-// interval check: later claims that state an interval now fall outside it. This
-// is the measurement behind the default of not re-timing (V-12).
+// interval check: later claims that state an interval now fall outside it, and
+// a later command claim's interval can disagree with its command's lifetime
+// (V-110). This is the measurement behind the default of not re-timing (V-12).
 func TestRetimedOmissionIsStillFoundAndTripsTheIntervalCheck(t *testing.T) {
 	for _, c := range captures {
 		s := loadSession(t, c)
 		var tally Tally
-		outside := 0
+		outside, lifetime := 0, 0
 		for seed := uint64(0); seed < 100; seed++ {
 			mut, rec, err := Omit(s.claims, Options{N: 1, Seed: seed, Retime: true})
 			if err != nil {
@@ -585,14 +601,17 @@ func TestRetimedOmissionIsStillFoundAndTripsTheIntervalCheck(t *testing.T) {
 			if !m.UndetectableByDesign && (!res.Detected || !m.Detected || !m.Classified || !m.Located) {
 				c.check(t, "%s seed %d: %+v", c.name, seed, m)
 			}
-			if res.Unaccounted != len(v.OutsideInterval) {
-				c.check(t, "%s seed %d: %d unaccounted findings, %d of them interval findings: some other side effect", c.name, seed, res.Unaccounted, len(v.OutsideInterval))
+			if res.Unaccounted != len(v.OutsideInterval)+len(v.Lifetimes.Findings) {
+				c.check(t, "%s seed %d: %d unaccounted findings, %d of them interval and %d lifetime findings: some other side effect", c.name, seed, res.Unaccounted, len(v.OutsideInterval), len(v.Lifetimes.Findings))
 			}
 			if len(v.OutsideInterval) > 0 {
 				outside++
 			}
+			if len(v.Lifetimes.Findings) > 0 {
+				lifetime++
+			}
 		}
-		t.Logf("%s: retimed omissions detected %.3f, %d of %d runs also reported claims outside their interval, undetectable by design %d%s", c.name, tally.Rate(tally.Detected), outside, tally.Runs, tally.Undetectable, gating(c))
+		t.Logf("%s: retimed omissions detected %.3f, %d of %d runs also reported claims outside their interval and %d a command claim whose interval disagrees with its command's lifetime, undetectable by design %d%s", c.name, tally.Rate(tally.Detected), outside, tally.Runs, lifetime, tally.Undetectable, gating(c))
 	}
 }
 

@@ -267,9 +267,10 @@ func h2Measurements(res *Results) ([]Measurement, []string) {
 	// with an omission. An omission with widened neighbours that is still
 	// found (detected) but not classified or located is counted apart, as
 	// H2b and H2c read those.
-	viol, comp, partial, positions := 0, 0, 0, 0
+	viol, comp, partial, positions, lifetime := 0, 0, 0, 0, 0
 	for _, a := range h.A4 {
 		viol += len(a.Violations)
+		lifetime += a.LifetimeDetected
 		comp += len(a.ComposedNotFound)
 		partial += len(a.ComposedMisses) - len(a.ComposedNotFound)
 		positions += a.Positions + a.ComposedPositions
@@ -279,7 +280,7 @@ func h2Measurements(res *Results) ([]Measurement, []string) {
 		d.State, d.Value = NotMeasured, "no position was checked"+note
 	} else {
 		d.State = Measured
-		d.Value = fmt.Sprintf("%d positions checked: %d widening(s) changed the verdict and %d omission(s) with widened neighbours were not found; %d found but not classified or not located", positions, viol, comp, partial)
+		d.Value = fmt.Sprintf("%d positions checked: %d widening(s) changed the verdict and %d omission(s) with widened neighbours were not found; %d found but not classified or not located; %d widening(s) detected by a lifetime finding on the widened claim", positions, viol, comp, partial, lifetime)
 	}
 	v = append(v, d)
 	// H2e: findings about a mutation marked undetectable by design. Any is a

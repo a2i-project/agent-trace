@@ -62,12 +62,12 @@ type Result struct {
 func Findings(v verification.Verdict) int { return v.Findings() }
 
 // Score checks a verdict against the record of the mutation that produced the
-// trajectory it was computed for. Interval widening has no finding of its own
-// (it is an attack on the interval check, and attribution does not use
-// intervals), so its mutations are scored Detected, Classified and Located only
-// when the verdict names the widened entry in OutsideInterval, which an honest
-// widening does not trigger. Use SuppressedNothing to judge what A4 is meant to
-// show.
+// trajectory it was computed for. Interval widening explains no event
+// (attribution does not use intervals); its mutations are scored Detected,
+// Classified and Located when a lifetime finding that the widening can cause
+// (starts_early or ends_late) names the widened entry, or when the verdict
+// names it in OutsideInterval (E-12). Use SuppressedNothing to judge what A4
+// must not do.
 func Score(rec Record, v verification.Verdict) Result {
 	res := Result{Kind: rec.Kind, Outcome: v.Outcome, Detected: v.Outcome == verification.OutcomeNotFaithful, Ambiguous: v.Ambiguous}
 	for _, m := range rec.Mutations {
@@ -109,8 +109,8 @@ func unaccounted(rec Record, v verification.Verdict) int {
 // what kind it is, what it names, and whether a mutation of the record
 // explains it.
 type Finding struct {
-	// Kind is unrecorded, unexplained_subtree, unwitnessed, mismatched or
-	// outside_interval.
+	// Kind is unrecorded, unexplained_subtree, unwitnessed, mismatched,
+	// outside_interval or lifetime.
 	Kind string `json:"kind"`
 	// ClaimIndex is the position, in the mutated trajectory, of the claim the
 	// finding names (unwitnessed, mismatched, outside_interval), or -1 when it
@@ -119,7 +119,8 @@ type Finding struct {
 	Claim      *models.TrajectoryEntry `json:"claim,omitempty"`
 	// Event is the observed side: the unrecorded event, the paired event of a
 	// mismatched or outside-interval pair, or the exec of an unexplained
-	// subtree.
+	// subtree. Nil for a lifetime finding, whose observed side is Lifetime.
+	// Diffs holds a lifetime finding's kind.
 	Event *models.GroundTruthEvent `json:"event,omitempty"`
 	Diffs []string                 `json:"diffs,omitempty"`
 	// Candidates is, for a finding that names several interchangeable
@@ -132,7 +133,7 @@ type Finding struct {
 }
 
 // findingsOf lists the verdict's findings in a fixed order (unrecorded,
-// unexplained subtrees, unwitnessed, mismatched, outside interval), each
+// unexplained subtrees, unwitnessed, mismatched, outside interval, lifetime), each
 // marked accounted when a mutation of the record explains it. mutated, when
 // given, locates each named claim by position.
 func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) []Finding {
@@ -217,6 +218,19 @@ func findingsOf(rec Record, v verification.Verdict, mutated models.Trajectory) [
 			}
 		}
 		out = append(out, pairFinding("outside_interval", p, claimAt(p.Entry), ok))
+	}
+	for _, l := range v.Lifetimes.Findings {
+		ok := false
+		for _, m := range rec.Mutations {
+			if m.Kind == IntervalWidening && sameClaim(l.Entry, m.After) {
+				ok = true
+			}
+			if m.Kind == Reordering && (sameClaim(l.Entry, m.After) || sameClaim(l.Entry, m.With)) {
+				ok = true
+			}
+		}
+		c := l.Entry
+		out = append(out, Finding{Kind: "lifetime", ClaimIndex: claimAt(c), Claim: &c, Diffs: []string{l.Kind}, Accounted: ok})
 	}
 	return out
 }
@@ -370,6 +384,9 @@ func scoreReorder(m Mutation, v verification.Verdict) MutationResult {
 	for _, p := range v.OutsideInterval {
 		mr.Detected = mr.Detected || swapped(p.Entry)
 	}
+	for _, l := range v.Lifetimes.Findings {
+		mr.Detected = mr.Detected || swapped(l.Entry)
+	}
 	for _, ev := range v.Unrecorded {
 		mr.Detected = mr.Detected || reorderEvent(m, ev)
 	}
@@ -399,6 +416,12 @@ func reorderEvent(m Mutation, ev models.GroundTruthEvent) bool {
 // classified and located only once they exist.
 func orderFindings(verification.Verdict) []models.TrajectoryEntry { return nil }
 
+// scoreWidening scores one widened claim (A4, E-12). Detected, classified
+// and located: a lifetime finding that widening can cause, a claimed start
+// before the command's exec or a claimed end after its exit by more than the
+// tolerance (V-105, V-110), names the widened claim, or an interval finding
+// names it. A ran_longer finding on it is detected only: widening never
+// shortens a claim.
 func scoreWidening(m Mutation, v verification.Verdict) MutationResult {
 	mr := MutationResult{Mutation: m}
 	for _, p := range v.OutsideInterval {
@@ -406,15 +429,47 @@ func scoreWidening(m Mutation, v verification.Verdict) MutationResult {
 			mr.Detected, mr.Classified, mr.Located = true, true, true
 		}
 	}
+	for _, l := range v.Lifetimes.Findings {
+		if !sameClaim(l.Entry, m.After) {
+			continue
+		}
+		mr.Detected = true
+		if l.Kind == verification.LifetimeStartsEarly || l.Kind == verification.LifetimeEndsLate {
+			mr.Classified, mr.Located = true, true
+		}
+	}
 	return mr
 }
 
-// SuppressedNothing is the claim A4 exists to test: widening intervals explains
-// no event that was not already explained, so the verdict of an attacked run
-// has every finding the same run would have had without the widening. It
-// compares the finding counts and the outcome of the two verdicts.
+// LifetimeFindingsOnWidened counts the verdict's lifetime findings that name
+// a claim the record widened: the findings by which the verifier detects a
+// widening (V-110, E-12), which a check that widening suppressed nothing sets
+// aside from the run's other findings.
+func LifetimeFindingsOnWidened(rec Record, v verification.Verdict) int {
+	n := 0
+	for _, l := range v.Lifetimes.Findings {
+		for _, m := range rec.Mutations {
+			if m.Kind == IntervalWidening && sameClaim(l.Entry, m.After) {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+// SuppressedNothing is what A4 must not do (E-4, E-12): widening intervals
+// explains no event that was not already explained, so the verdict of an
+// attacked run has every finding the same run would have had without the
+// widening. It compares the finding counts of the two verdicts and their
+// outcomes. The outcome may change only to NOT FAITHFUL, and only when the
+// widened run has more lifetime findings: a lifetime finding is how the
+// verifier detects a widened command claim (V-110), not something widening
+// suppressed.
 func SuppressedNothing(without, with verification.Verdict) bool {
-	return with.Outcome == without.Outcome &&
+	outcome := with.Outcome == without.Outcome ||
+		with.Outcome == verification.OutcomeNotFaithful && len(with.Lifetimes.Findings) > len(without.Lifetimes.Findings)
+	return outcome &&
 		len(with.Unrecorded) >= len(without.Unrecorded) &&
 		len(with.Unwitnessed) >= len(without.Unwitnessed) &&
 		len(with.Mismatched) >= len(without.Mismatched) &&

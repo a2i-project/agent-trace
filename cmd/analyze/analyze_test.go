@@ -172,6 +172,11 @@ func TestEndToEndOnPairedFixtures(t *testing.T) {
 		if len(a.Violations) != 0 || len(a.ComposedMisses) != 0 || a.Positions == 0 || a.ComposedPositions == 0 {
 			t.Errorf("A4 on %s: %+v", a.Agent, a)
 		}
+		// agy's search capture has two command claims whose widening passes
+		// their command's exec by more than the tolerance (V-110, E-12).
+		if want := map[string]int{AgentGemini: 2}[a.Agent]; a.LifetimeDetected != want {
+			t.Errorf("A4 on %s: %d widenings detected by a lifetime finding, want %d", a.Agent, a.LifetimeDetected, want)
+		}
 	}
 	// The gated gemini captures: every detectable mutation detected, classified, located.
 	t3 := PrimaryPooled(repoProtocol(), res.Runs, AgentGemini, false)

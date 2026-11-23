@@ -119,7 +119,8 @@ type Verdict struct {
 	// Lifetimes is the comparison of each claim paired with a command's own
 	// exec with that command's observed lifetime, exec to exit (V-105):
 	// its findings are claims that report a shorter command than ran, or
-	// an interval wider than the command's by more than the tolerance.
+	// an interval wider than the command's by more than the tolerance. A
+	// finding about the claim (V-110).
 	Lifetimes LifetimeCheck
 	// OrderViolations: claims whose observed events all happened, certainly
 	// by the probes' time bounds, before an observed event of the claim
@@ -287,7 +288,7 @@ type Verdict struct {
 // Findings reports how many discrepancies the run found.
 func (v Verdict) Findings() int {
 	return len(v.Mismatched) + len(v.Unwitnessed) + len(v.Unrecorded) +
-		len(v.OutsideInterval) + len(v.OrderViolations) + len(v.Coverage.UnexplainedSubtrees) +
+		len(v.OutsideInterval) + len(v.Lifetimes.Findings) + len(v.OrderViolations) + len(v.Coverage.UnexplainedSubtrees) +
 		len(v.UnexplainedSensitiveChanges) + len(v.TraceTampering)
 }
 
