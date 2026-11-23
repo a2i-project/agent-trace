@@ -263,7 +263,11 @@
 #   control-mode.txt          only for interactive controls (I-163): interactive driven
 #                             prompts_sha256=<hash of the driver's prompts>
 #   control-N.pty.log         the screen of an interactive control, as the driver cleaned it
-#   task-meta.txt             the task, the SHA-256 of its prompt and seed, its tools, the model
+#   task-meta.txt             the task, the SHA-256 of its prompt and seed, its tools, the model,
+#                             and the environment (I-166): the kernel release and the
+#                             active LSMs, and inside a VM of vm/run.sh the image, its
+#                             SHA-256, the recipe commit and the run ($AGENT_TRACE_VM_INFO,
+#                             default /run/agent-trace/vm.json; vm=none elsewhere)
 #   order.tsv                 each run in the order it was recorded: number, label, role
 #                             (task or control), start, end, the model check and the models
 #                             the transcript recorded, watch's exit status, and the number of
@@ -2068,6 +2072,21 @@ fi
   [ -z "$warm_up_line" ] || echo "warm_up=$warm_up_line"
   # The fs probe's kernel copy (I-154).
   echo "fs_kernel_hash=$([ -n "$fs_kernel_hash" ] && echo on || echo off)"
+  # The environment the runs had (I-166): the kernel, its LSMs, and the VM
+  # image and recipe when vm/run.sh started this machine.
+  echo "kernel=$(uname -r)"
+  echo "lsm=$(cat /sys/kernel/security/lsm 2>/dev/null || echo unknown)"
+  vm_info=${AGENT_TRACE_VM_INFO:-/run/agent-trace/vm.json}
+  if [ -f "$vm_info" ]; then
+    python3 - "$vm_info" <<'PY' || echo "vm=unreadable $vm_info"
+import json, sys
+v = json.load(open(sys.argv[1]))
+print("vm=%s image_sha256=%s recipe_commit=%s%s run=%s" % (v["image"], v["image_sha256"], v["recipe_commit"],
+      " (dirty)" if v.get("recipe_dirty") else "", v.get("run", "")))
+PY
+  else
+    echo "vm=none"
+  fi
   # A task run the operator typed into (I-159): its prompt was not sent.
   if [ -n "$controls_only" ]; then
     echo "controls_only=on no task run"

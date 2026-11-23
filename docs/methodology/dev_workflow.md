@@ -116,7 +116,8 @@ in [`../README.md`](../README.md).
    its helpers `scripts/measure-watch.py` and `scripts/annotate-run.sh`, the
    terminal driver `scripts/pty-drive.py`, the baseline review
    `scripts/baseline-review.py`, and
-   the capture seeds `scripts/seed/` to the tools page). Remove a known limit the commit
+   the capture seeds `scripts/seed/` to the tools page, and the VM recipe `vm/` to
+   the environment page). Remove a known limit the commit
    fixes; add one it introduces. Set the page's `Checked against commit` line
    to the commit's parent.
 2. **Design changes are decisions.** A new design choice gets an entry in

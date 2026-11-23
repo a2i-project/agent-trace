@@ -60,6 +60,7 @@ PAGE_OF = [
     ("scripts/annotate-run.sh", "docs/architecture/40_tools.md"),
     ("scripts/seed/", "docs/architecture/40_tools.md"),
     ("Makefile", "docs/architecture/40_tools.md"),
+    ("vm/", "docs/architecture/60_environment.md"),
     ("scripts/check-docs.py", "docs/methodology/dev_workflow.md"),
     ("scripts/test-privileged-local.sh", "docs/methodology/dev_workflow.md"),
     ("scripts/hooks/", "docs/methodology/dev_workflow.md"),

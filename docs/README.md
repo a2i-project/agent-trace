@@ -33,6 +33,7 @@ them for a fact a reader needs.
 | [30_agent_adapters.md](architecture/30_agent_adapters.md) | adapters for Claude Code, Gemini and the generic format, harness baseline, configured agent versions |
 | [40_tools.md](architecture/40_tools.md) | `watch`, `verify`, `baseline`, `status`, `attack`, `simagent`, `analyze`; capture and campaign scripts, overhead benchmark, comparison tools |
 | [50_attack_generators.md](architecture/50_attack_generators.md) | attack generators A1 to A4, scoring against a mutation record |
+| [60_environment.md](architecture/60_environment.md) | the capture environment: the VM image recipe, runs, logins and results disks |
 
 ## Decision files
 
