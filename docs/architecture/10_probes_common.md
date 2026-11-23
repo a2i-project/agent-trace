@@ -1,6 +1,6 @@
 # Probes: common contract
 
-Checked against commit 4e2ea05 on 2026-11-23.
+Checked against commit 36d6ed5 on 2026-11-23.
 
 ## Objective
 
@@ -11,6 +11,7 @@ agent-trace records what an agent did with three independent host probes: proces
 | File | Role |
 |---|---|
 | `pkg/probe/probe.go` | `probe.Observer` and `probe.CoverageReporter` interfaces |
+| `pkg/probe/ktime/ktime.go` | `BootOffsetNs`, `Wall`: the one conversion of `bpf_ktime_get_ns()` readings to wall time that every probe uses |
 | `cmd/watch/main.go` | `probeBuilders` registry, `runWatch`, `buildCoverage`; writes `ground_truth.json` |
 | `pkg/models/action.go` | `ActionType` values, `IsClaimable`, `IsStructural` |
 | `pkg/models/models.go` | `GroundTruthEvent`, `GroundTruth`, `ParseGroundTruth`; the claim side in the same file (`TrajectoryEntry` with its harness-implied markers on an open, a request or a connection, V-33 and V-52, its background marker, V-108, `ParseTrajectory`) is described in [20_verifier.md](20_verifier.md#inputs) |
@@ -61,7 +62,7 @@ The fs probe uses fanotify through `golang.org/x/sys/unix`; it has no eBPF compo
 
 ### Clocks
 
-proc and net stamp records in the kernel with `bpf_ktime_get_ns()`, which counts from boot on `CLOCK_MONOTONIC`. Each observer computes `bootOffsetNs` once in `New` (`computeBootOffsetNs`: one `CLOCK_MONOTONIC` read followed by one wall-clock read) and converts every record with `time.Unix(0, ts_ns + bootOffsetNs)`. The offset is fixed for the probe's life, so NTP adjustments made during a run are not reflected. The fs probe stamps an event with `time.Now()` when userspace reads the batch from the fanotify fd, plus one nanosecond per record of the batch, so its timestamps carry read latency and order the records as the kernel delivered them, and a `FileClose` keeps the stamp of its record even though it is emitted after the settle window (P-18).
+proc and net stamp records in the kernel with `bpf_ktime_get_ns()`, which counts from boot on `CLOCK_MONOTONIC`. Each observer takes `bootOffsetNs` in `New` from `ktime.BootOffsetNs` (`pkg/probe/ktime`), which measures it once per process (one `CLOCK_MONOTONIC` read followed by one wall-clock read) and returns that value to every later caller, and converts every record with `time.Unix(0, ts_ns + bootOffsetNs)`. All probes of a capture therefore convert with the same offset, so two kernel readings keep their order after conversion whichever probe made them (P-54). The offset is fixed for the process's life, so NTP adjustments made during a run are not reflected. The fs probe stamps an event with `time.Now()` when userspace reads the batch from the fanotify fd, plus one nanosecond per record of the batch, so its timestamps carry read latency and order the records as the kernel delivered them, and a `FileClose` keeps the stamp of its record even though it is emitted after the settle window (P-18).
 
 The two time sources differ in origin and latency, so the order of a file event against a process or network event is not reliable. The verifier therefore aligns each [lane](00_overview.md#terms) separately (`pkg/verification.LaneOf`, `Align`) and uses timestamps only to choose between incarnations of a reused pid (`Forest.Resolve`), never to pair events.
 

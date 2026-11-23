@@ -34,9 +34,9 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
-	"golang.org/x/sys/unix"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe/ktime"
 	"github.com/agent-trace/agent-trace/pkg/tlsoffset"
 	"github.com/agent-trace/agent-trace/pkg/tlsparse"
 )
@@ -468,7 +468,7 @@ func New(cfg Config) (*Observer, error) {
 		return nil, fmt.Errorf("remove memlock rlimit: %w", err)
 	}
 
-	bootOffsetNs, err := computeBootOffsetNs()
+	bootOffsetNs, err := ktime.BootOffsetNs()
 	if err != nil {
 		return nil, fmt.Errorf("compute boot offset: %w", err)
 	}
@@ -974,21 +974,6 @@ func decodeSSLRecord(raw []byte) (sslRecord, bool) {
 		return sslRecord{}, false
 	}
 	return sslRecord{hdr: hdr, payload: append([]byte(nil), raw[hdrSize:payloadEnd]...)}, true
-}
-
-// computeBootOffsetNs pairs a CLOCK_MONOTONIC read with a wall-clock read
-// taken immediately after, so any later bpf_ktime_get_ns() reading can be
-// converted to wall-clock time. Identical in method to pkg/probe/proc's
-// helper of the same name; kept as a separate copy since each probe package
-// is self-contained and independently attachable.
-func computeBootOffsetNs() (int64, error) {
-	var ts unix.Timespec
-	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
-		return 0, fmt.Errorf("clock_gettime CLOCK_MONOTONIC: %w", err)
-	}
-	monoNs := ts.Nano()
-	wallNs := time.Now().UnixNano()
-	return wallNs - monoNs, nil
 }
 
 // TrackPID adds a PID to tracked_pids so its connections are observed. Safe

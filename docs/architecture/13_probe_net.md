@@ -1,6 +1,6 @@
 # Network probe
 
-Checked against commit 99c6f71 on 2026-11-06.
+Checked against commit 36d6ed5 on 2026-11-23.
 
 ## Objective
 
@@ -57,7 +57,7 @@ Every program in both objects starts with `is_tracked(tgid)`. There is no host-w
 
 7. `trace_iouring_submit`, a raw tracepoint on `io_uring_submit_req`, runs once per operation a tracked process submits through io_uring, in the submitting task or the ring's SQPOLL thread (same thread group), before the operation runs (N-25). It counts every operation in `iouring_ops_count`, and a network operation in `iouring_net_count`: an opcode that works only on sockets (`SENDMSG`, `RECVMSG`, `ACCEPT`, `CONNECT`, `SEND`, `RECV`, `SHUTDOWN`, `SOCKET`, `SEND_ZC`, `SENDMSG_ZC`, `BIND`, `LISTEN`, `RECV_ZC`), or a data opcode (`READV`, `WRITEV`, `READ_FIXED`, `WRITE_FIXED`, `READ`, `WRITE`, `SPLICE`, `TEE`, `READ_MULTISHOT`, `READV_FIXED`, `WRITEV_FIXED`) whose target may be a socket. The opcode is read from the request (`req->opcode`, CO-RE, guarded by `bpf_core_field_exists`); a request whose opcode cannot be read counts as network. `iouring_target_may_be_socket` reads the low byte of `req->flags` and `req->cqe.fd` (CO-RE, each guarded the same way): a registered file (`IOSQE_FIXED_FILE`), a missing field or a failed read counts, a negative fd does not, and otherwise `fd_socket` decides. The dispatcher counts the rings tracked processes set up (`io_uring_setup`, step 0). Nothing is emitted: the operations are not recorded (O-18). `New` skips `io_uring_submit_req` when the kernel has no such tracepoint; when it is missing and tracefs shows io_uring events (`kernelHasIOURing`, which says yes when tracefs is not mounted), `Coverage` adds every ring to `IOURingNetOps`.
 
-Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps a `connection` per socket inode number (the header's `sock`), holding the tgid that connected. Every event of a connection carries that tgid as `PID`, whichever process sent or closed (`TestHandleNetRecord_RecordsFromAnotherProcessFollowTheSocket`).
+Userspace (`correlate`, a single goroutine fed by `netFeed` and `sslFeed`) keeps a `connection` per socket inode number (the header's `sock`), holding the tgid that connected. Every event of a connection carries that tgid as `PID`, whichever process sent or closed (`TestHandleNetRecord_RecordsFromAnotherProcessFollowTheSocket`). Kernel timestamps are converted to wall time with the offset `pkg/probe/ktime` measures once per process, the one the proc and fs probes use (P-54).
 
 - `NET_CONNECT` opens the entry and counts `Connections`. An entry already open for the same socket and not yet emitted belongs to a socket connected again (a datagram socket pointed at a new peer); it is emitted first, stamped with its connect time and by the same rules as at a close, and counted in `Coverage.Replaced` (`TestHandleNetRecord_ReplacedConnectionIsEmitted`).
 - `NET_SEND` marks the entry as written (`wrote`).

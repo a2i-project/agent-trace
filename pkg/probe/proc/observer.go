@@ -19,9 +19,9 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
-	"golang.org/x/sys/unix"
 
 	"github.com/agent-trace/agent-trace/pkg/models"
+	"github.com/agent-trace/agent-trace/pkg/probe/ktime"
 )
 
 // The -I flag points clang at the multiarch UAPI headers (<asm/types.h>);
@@ -140,7 +140,7 @@ func New(cfg Config) (*Observer, error) {
 		return nil, fmt.Errorf("remove memlock rlimit: %w", err)
 	}
 
-	bootOffsetNs, err := computeBootOffsetNs()
+	bootOffsetNs, err := ktime.BootOffsetNs()
 	if err != nil {
 		return nil, fmt.Errorf("compute boot offset: %w", err)
 	}
@@ -263,20 +263,6 @@ func closeLinksReverse(ls []link.Link) {
 	for i := len(ls) - 1; i >= 0; i-- {
 		_ = ls[i].Close()
 	}
-}
-
-// computeBootOffsetNs pairs a CLOCK_MONOTONIC read with a wall-clock read
-// taken immediately after, and returns the constant such that
-// wallNs = monotonicNs + bootOffsetNs for any later bpf_ktime_get_ns()
-// reading (which is also CLOCK_MONOTONIC-based).
-func computeBootOffsetNs() (int64, error) {
-	var ts unix.Timespec
-	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
-		return 0, fmt.Errorf("clock_gettime CLOCK_MONOTONIC: %w", err)
-	}
-	monoNs := ts.Nano()
-	wallNs := time.Now().UnixNano()
-	return wallNs - monoNs, nil
 }
 
 // Events returns the channel on which GroundTruthEvents are delivered.
