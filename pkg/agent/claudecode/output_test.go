@@ -43,7 +43,13 @@ func TestParseStatesEachBashCallsOutputAndItsEnd(t *testing.T) {
 	if bg.OutputName != "big785dos.output" || bg.OutputDone == nil || !bg.OutputDone.Equal(wantBg) {
 		t.Errorf("background call: name %q, end %v, want big785dos.output and %v", bg.OutputName, bg.OutputDone, wantBg)
 	}
+	if !bg.Background {
+		t.Error("background call not marked as one (V-108)")
+	}
 	fg := execClaim(t, tr, "true")
+	if fg.Background {
+		t.Error("foreground call marked as a background one")
+	}
 	wantFg := time.Date(2026, 11, 6, 16, 16, 0, 250999999, time.UTC)
 	if fg.OutputName != "" || fg.OutputDone == nil || !fg.OutputDone.Equal(wantFg) {
 		t.Errorf("foreground call: name %q, end %v, want none and %v", fg.OutputName, fg.OutputDone, wantFg)
@@ -66,8 +72,8 @@ func TestParseStatesNoEndItCannotRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bg := execClaim(t, tr, "sleep 10"); bg.OutputName != "" || bg.OutputDone != nil {
-		t.Errorf("background call with no task id: name %q, end %v", bg.OutputName, bg.OutputDone)
+	if bg := execClaim(t, tr, "sleep 10"); bg.OutputName != "" || bg.OutputDone != nil || !bg.Background {
+		t.Errorf("background call with no task id: name %q, end %v, background %v", bg.OutputName, bg.OutputDone, bg.Background)
 	}
 	// A call with no result reports no end.
 	tr, _, err = Adapter{}.Parse(writeLines(t, recFgCall))

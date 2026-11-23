@@ -74,6 +74,14 @@ type TrajectoryEntry struct {
 	// resolution added (V-101). Nil when the format reports no end. Only an
 	// adapter's derivation sets it: it has no JSON form.
 	OutputDone *time.Time `json:"-"`
+	// Background marks a call the format says the harness ran in the
+	// background: the call returned while its command kept running, so its
+	// interval says when the command started and nothing about when it
+	// ended (V-108), such as Claude Code's Bash with run_in_background or
+	// agy's run_command the harness moved to a background task. Only an
+	// adapter's derivation sets it: it has no JSON form. The agent writes
+	// the record it is read from, so it is a hint, never a basis for trust.
+	Background bool `json:"-"`
 }
 
 // impliedByKey and impliedBeforeKey are the names the harness-implied

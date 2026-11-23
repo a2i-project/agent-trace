@@ -909,7 +909,10 @@ func Prepare(a Adapter, claims models.Trajectory, g models.GroundTruthFile, meas
 		FSScope:   g.FSScope,
 		Workspace: g.Workspace,
 		Sensitive: SensitiveInput(a, g, nil),
-		Options:   opts,
+		// A persistent shell gives no claim a command of its own to measure
+		// (V-105).
+		SharedShell: !a.Process().ShellPerCommand,
+		Options:     opts,
 	}
 }
 

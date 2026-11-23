@@ -458,7 +458,7 @@ func readConversation(path, thread string) (*conversation, error) {
 				return c, fmt.Errorf("step %d: %w", idx, err)
 			}
 			c.tl.fallbackTime = c.tl.fallbackTime || usedCreated
-			base := models.TrajectoryEntry{Timestamp: start, Tool: cl.name, ThreadID: thread}
+			base := models.TrajectoryEntry{Timestamp: start, Tool: cl.name, ThreadID: thread, Background: movedToBackground(cl, payload)}
 			if !end.IsZero() && !end.Before(start) {
 				e := end
 				base.End = &e
@@ -525,6 +525,17 @@ func readConversation(path, thread string) (*conversation, error) {
 // with no task record, stays unclaimed (I-17).
 func startedTask(cl call, status int, payload []byte) bool {
 	if cl.name != toolRunCommand || status != statusCanceled {
+		return false
+	}
+	task, ok, err := bytesField(payload, fieldTask)
+	return err == nil && ok && len(task) > 0
+}
+
+// movedToBackground reports whether a run_command step's command became a
+// background task (its task record, fieldTask): the harness returned the
+// step after WaitMsBeforeAsync while the command kept running (V-108).
+func movedToBackground(cl call, payload []byte) bool {
+	if cl.name != toolRunCommand {
 		return false
 	}
 	task, ok, err := bytesField(payload, fieldTask)

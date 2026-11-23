@@ -495,7 +495,9 @@ func readRollout(path string, rep *agent.Report, contents bool) (rollout, error)
 			if c != nil {
 				end := c.end
 				if outlived[i] {
-					end = ef.at
+					// The cell returned while the command kept running
+					// beside the cells after it (V-108).
+					end, cl.Background = ef.at, true
 				}
 				cl.Timestamp, cl.End = c.start, &end
 				if c.effects > 1 {

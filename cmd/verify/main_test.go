@@ -1533,3 +1533,68 @@ func TestAFindingOnOneOfEqualClaimsIsReportedWithItsSet(t *testing.T) {
 		t.Errorf("a finding on one claim shows a set:\n%s", out)
 	}
 }
+
+// An order finding is printed and written to the JSON report, and a run in
+// the claimed order prints nothing new (V-106). The lifetime comparison
+// prints only when it finds something (V-105).
+func TestOrderAndLifetimeFindingsAreReported(t *testing.T) {
+	dir := t.TempDir()
+	ms := func(n int) time.Time { return t0.Add(time.Duration(n) * time.Millisecond) }
+	read := claim(models.FileOpen, "/w/secret")
+	send := claim(models.NetRequest, "POST https://x.example/up")
+	send.Timestamp = ms(10)
+	request := event(models.NetRequest, "POST https://x.example/up")
+	request.Timestamp = ms(150)
+	open := event(models.FileOpen, "/w/secret")
+	open.Timestamp, open.NotBefore = ms(260), func() *time.Time { nb := ms(250); return &nb }()
+	g := writeJSON(t, dir, "g.json", models.GroundTruthFile{Events: models.GroundTruth{request, open}, RootPID: 100, Coverage: completeCov()})
+	inverted := writeJSON(t, dir, "inverted.json", models.Trajectory{read, send})
+	jsonPath := filepath.Join(dir, "report.json")
+	code, out, _ := verify(t, "--trajectory", inverted, "--ground-truth", g, "--json", jsonPath)
+	if code != 1 || !strings.Contains(out, "Out of order: 1") || !strings.Contains(out, "\nOut of order:\n  claimed:  net_request POST https://x.example/up\n    after:  file_open /w/secret\n") {
+		t.Errorf("exit %d, output:\n%s", code, out)
+	}
+	if strings.Contains(out, "  Lifetime:") {
+		t.Errorf("a lifetime line without a lifetime finding:\n%s", out)
+	}
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep struct {
+		Findings        int                           `json:"findings"`
+		OrderViolations []verification.OrderViolation `json:"order_violations"`
+		Lifetimes       json.RawMessage               `json:"lifetimes"`
+	}
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Findings != 1 || len(rep.OrderViolations) != 1 || rep.Lifetimes != nil {
+		t.Errorf("JSON report: %+v", rep)
+	}
+
+	inOrder := writeJSON(t, dir, "in-order.json", models.Trajectory{func() models.TrajectoryEntry { s := send; s.Timestamp = t0; return s }(), func() models.TrajectoryEntry { r := read; r.Timestamp = ms(10); return r }()})
+	code, out, _ = verify(t, "--trajectory", inOrder, "--ground-truth", g, "--json", jsonPath)
+	if code != 0 || strings.Contains(out, "Out of order") || strings.Contains(out, "  Lifetime:") {
+		t.Errorf("exit %d, output:\n%s", code, out)
+	}
+	if data, _ := os.ReadFile(jsonPath); bytes.Contains(data, []byte("order_violations")) || bytes.Contains(data, []byte("lifetimes")) {
+		t.Errorf("JSON report of a run in order names the new checks:\n%s", data)
+	}
+
+	// A command claimed as one second that ran twenty minutes.
+	end := ms(1000)
+	cmd := models.TrajectoryEntry{Timestamp: t0, End: &end, ActionType: models.ProcessExec, Target: "/bin/job"}
+	fork := models.GroundTruthEvent{Timestamp: ms(100), ActionType: models.ProcessFork, Target: "x", PID: 200, PPID: 100}
+	exec := models.GroundTruthEvent{Timestamp: ms(200), ActionType: models.ProcessExec, Target: "/bin/job", PID: 200, PPID: 100}
+	exit := models.GroundTruthEvent{Timestamp: ms(20 * 60 * 1000), ActionType: models.ProcessExit, Target: "/bin/job", PID: 200}
+	long := writeJSON(t, dir, "long.json", models.GroundTruthFile{Events: models.GroundTruth{fork, exec, exit}, RootPID: 100, Coverage: completeCov()})
+	cmds := writeJSON(t, dir, "cmd.json", models.Trajectory{cmd})
+	code, out, _ = verify(t, "--trajectory", cmds, "--ground-truth", long, "--ignore-exits", "--json", jsonPath)
+	if code != 0 || !strings.Contains(out, "Lifetime: 1") || !strings.Contains(out, "of 1 command claim(s) compared") || !strings.Contains(out, "    ran_longer by 19m58.5s\n") {
+		t.Errorf("exit %d, output:\n%s", code, out)
+	}
+	if data, _ := os.ReadFile(jsonPath); !bytes.Contains(data, []byte(`"lifetimes"`)) {
+		t.Errorf("JSON report without the lifetime finding:\n%s", data)
+	}
+}

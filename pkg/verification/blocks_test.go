@@ -618,7 +618,9 @@ func TestVerify_AParallelBlockStartedOutOfOrderIsFaithful(t *testing.T) {
 // one block outlives the next block: its descendants and its file events come
 // after the next block's command started, and its exit later still. They are
 // the command's content and, for a format without exits, not aligned, so
-// nothing reads as out of order.
+// nothing reads as out of order. The order check reads a background call by
+// its start only (V-108); a call not marked as one is still running when
+// the next claim's command ran, which its claims deny (V-106).
 func TestVerify_ABackgroundCallMayOutliveItsBlock(t *testing.T) {
 	g := models.GroundTruth{
 		fork(10, 801, agentPID), execEv(11, 801, agentPID, "sleep 3; echo done > bg.txt"),
@@ -630,6 +632,10 @@ func TestVerify_ABackgroundCallMayOutliveItsBlock(t *testing.T) {
 	}
 	tr := models.Trajectory{claimAt(0, models.ProcessExec, "sleep 3; echo done > bg.txt"), claimAt(5, models.ProcessExec, "cat notes.txt")}
 	tr[0].BlockID, tr[1].BlockID = "m1", "m2"
+	if v := Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{IgnoreExits: true}}); len(v.OrderViolations) != 1 {
+		t.Errorf("not marked as a background call: order violations %+v, want one", v.OrderViolations)
+	}
+	tr[0].Background = true
 	v := Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{IgnoreExits: true}})
 	wantOutcome(t, v, OutcomeFaithful)
 	if len(v.Corroborated) != 2 || v.Coverage.Explained == 0 {

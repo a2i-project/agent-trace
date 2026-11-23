@@ -6,7 +6,7 @@ Statuses reconciled with the code at commit 0dc0cf7 on 2026-10-31.
 
 Entries O-1 and O-29 are **contradictions**: a design document says one thing and the code does another. Each is recorded as the code currently behaves, and needs an explicit ruling. On 2026-10-11 the user ruled on O-3 (now V-27), O-4 (I-15), O-26 (V-28) and O-27 (N-23).
 
-Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60), O-37 (V-75, V-76), O-38 (I-116), O-39 (P-48, P-49, P-50).
+Closed: O-2 (V-32), O-3 (V-27), O-4 (I-15), O-5 (V-105), O-9 (I-25, I-54), O-14 (V-45), O-15 (N-20), O-17 (I-31), O-19 (N-29), O-20 (N-27, N-28, N-31), O-21 (P-39), O-23 (P-36, V-51), O-24 (V-31), O-25 (V-34, its process part is O-30), O-26 (V-28), O-27 (N-23), O-28 (P-22, V-29), O-30 (V-43), O-31 (P-33, V-46), O-32 (I-66), O-34 (N-37), O-35 (I-71), O-36 (V-60), O-37 (V-75, V-76), O-38 (I-116), O-39 (P-48, P-49, P-50).
 
 Entries are grouped by area, so IDs are not in sequence. Entries O-18 to O-23 are **proposals** from the observer status review of 2026-10-06 (docs/archive/10_observer_status.md, local only). O-19 (N-29), O-20 (N-31), O-21 (P-39) and O-23 (P-36) are closed; the others are undecided.
 
@@ -25,18 +25,10 @@ Status: Open. Contradiction.
 Date: 2026-10-13 (the thread part of O-2, whose parallel-block part is decided as V-32 in [verification.md](verification.md)).
 Question: How should the alignment treat claims of different threads (`ThreadID`, flattened subagents, D9) that run concurrently with the main thread or with each other, and a command that keeps running after the step that started it?
 Options: (a) linearization checking over the order `ThreadID` induces: each thread's claims in order, threads interleaved freely; (b) keep the total order and report claims of several threads as a degradation; (c) per-thread alignment, accepting that the thread id is attacker-controlled.
-Current behaviour: `Align` does not read `ThreadID`. Claims of all threads are aligned in the adapter's sort order (the Claude Code adapter sorts by timestamp), with V-32's freedom inside each parallel block only, so a subagent whose actions interleave with the main thread's in an order other than the sorted claims' reads as order findings. Gemini's `WaitMsBeforeAsync` lets a command keep running after its step: its later subtree is its command's content, not a position, and Gemini claims no exits, so this is harmless while the command starts inside its step, which the fence of V-32 still requires.
+Current behaviour: `Align` does not read `ThreadID`; the order check across lanes reads each thread apart (V-106, V-107), which decides the order-check part of this question. Claims of all threads are aligned in the adapter's sort order (the Claude Code adapter sorts by timestamp), with V-32's freedom inside each parallel block only, so a subagent whose actions interleave with the main thread's in an order other than the sorted claims' reads as order findings. Gemini's `WaitMsBeforeAsync` lets a command keep running after its step: its later subtree is its command's content, not a position, and Gemini claims no exits, so this is harmless while the command starts inside its step, which the fence of V-32 still requires.
 Blocked by: A paired capture in which a subagent's actions and the main thread's, or two subagents', run concurrently and are observed in an order the sorted claims do not give. The parallel and tools fixtures each have a subagent, but it ran in an order a total-order alignment accepts. Gemini's concurrency is unmeasured (no real capture).
 
 ## Verification model
-
-### O-5: Should G carry an observed interval?
-Status: Open (deferred).
-Date: raised 2026-09; recommendation to defer.
-Question: Should exec-to-exit (or first exec to last descendant exit) be compared with the claimed interval?
-Options: (a) add it as a consistency finding on claims with a subtree; (b) do not add it.
-Current behaviour: Not built. Ancestry attribution already makes a widened interval suppress nothing; what remains is catching duration misreports and interval evasion of V-12.
-Blocked by: Nothing; the forest now exists, which was the stated trigger. Needs a priority call.
 
 ### O-6: Does ancestry attribution expire?
 Status: Open.

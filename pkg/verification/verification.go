@@ -65,8 +65,13 @@ type Input struct {
 	// Trace is the adapter's declaration of the session's own trace files
 	// and what the reader found when it read them (V-59). The zero value
 	// declares nothing and says the trace was read.
-	Trace   TraceInput
-	Options Options
+	Trace TraceInput
+	// SharedShell is the adapter's declaration that its commands run in one
+	// persistent shell, so that no claim has a level-1 process of its own
+	// (agent.ProcessModel.ShellPerCommand false): the lifetime comparison
+	// has nothing to measure and is not run (V-105).
+	SharedShell bool
+	Options     Options
 }
 
 // Verdict is the result of a verification run. The finding lists derive from
@@ -111,6 +116,15 @@ type Verdict struct {
 	// OutsideInterval: corroborated or mismatched pairs whose observed action
 	// falls outside the claim's interval (V6). A finding about the claim.
 	OutsideInterval []MatchedPair
+	// Lifetimes is the comparison of each claim paired with a command's own
+	// exec with that command's observed lifetime, exec to exit (V-105):
+	// its findings are claims that report a shorter command than ran, or
+	// an interval wider than the command's by more than the tolerance.
+	Lifetimes LifetimeCheck
+	// OrderViolations: claims whose observed events all happened, certainly
+	// by the probes' time bounds, before an observed event of the claim
+	// they follow in their thread (V-106). A finding about the later claim.
+	OrderViolations []OrderViolation
 	// Unverified: corroborated or mismatched pairs whose claim states a
 	// content field the probe did not capture (a close published without a
 	// hash, an exit without a code, a request without a body hash). The pair
@@ -273,7 +287,7 @@ type Verdict struct {
 // Findings reports how many discrepancies the run found.
 func (v Verdict) Findings() int {
 	return len(v.Mismatched) + len(v.Unwitnessed) + len(v.Unrecorded) +
-		len(v.OutsideInterval) + len(v.Coverage.UnexplainedSubtrees) +
+		len(v.OutsideInterval) + len(v.OrderViolations) + len(v.Coverage.UnexplainedSubtrees) +
 		len(v.UnexplainedSensitiveChanges) + len(v.TraceTampering)
 }
 
@@ -677,6 +691,11 @@ func Verify(in Input) Verdict {
 	sort.SliceStable(v.BaselinedWritesOutsideHarness, func(i, j int) bool {
 		return v.BaselinedWritesOutsideHarness[i].Timestamp.Before(v.BaselinedWritesOutsideHarness[j].Timestamp)
 	})
+	// The claimed intervals against the commands' observed lifetimes
+	// (V-105), and the claim order against the events' time bounds across
+	// lanes (V-106).
+	v.Lifetimes = checkLifetimes(claims, alignments, part, in.SharedShell, in.Options.IntervalSlack)
+	v.OrderViolations = checkOrder(claims, alignments, part)
 	v.Coverage = CheckCoverage(part, alignments)
 	v.Coverage.UnexplainedActions = withoutExplainedLevelZero(v.Coverage.UnexplainedActions, in.Baseline, owned, hosts)
 	v.Coverage.BaselinedLevelZero = baselinedLevelZero

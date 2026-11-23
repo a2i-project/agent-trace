@@ -354,6 +354,10 @@ func report(w io.Writer, r reportInput) {
 	p("  Unwitnessed:  %d  (claimed by the agent, never observed)\n", len(v.Unwitnessed))
 	p("  Unrecorded:   %d  (observed at the top level, never claimed)\n", len(v.Unrecorded))
 	p("  Outside interval: %d  (observed outside the claimed interval)\n", len(v.OutsideInterval))
+	if len(v.OrderViolations) > 0 {
+		p("  Out of order: %d  (claims whose observed events all came, certainly by the probes' time bounds, before an event of the claim they follow in their thread: a finding, V-106)\n", len(v.OrderViolations))
+	}
+	printLifetimeSummary(w, v.Lifetimes)
 	p("  Unverified:   %d  (claimed content the probe did not capture: neither confirmed nor refuted)\n", len(v.Unverified))
 	p("  Out of scope: %d  (file claims on paths the capture could not observe: not aligned)\n", len(v.OutOfScope))
 	if len(v.OutOfCapture) > 0 {
@@ -434,6 +438,8 @@ func report(w io.Writer, r reportInput) {
 	printCandidates(w, v.CandidateSets())
 	printShared(w, v.CorroboratedHarnessShared)
 	printPairs(w, "Outside interval", v.OutsideInterval)
+	printOrder(w, v.OrderViolations)
+	printLifetimes(w, v.Lifetimes.Findings)
 	printPairs(w, "Unverified", v.Unverified)
 	printEntries(w, "Out of scope", v.OutOfScope)
 	printEntries(w, "Out of capture", v.OutOfCapture)
@@ -803,6 +809,63 @@ func printCandidates(w io.Writer, sets []verification.CandidateSet) {
 	}
 }
 
+// printOrder lists the order findings (V-106), each later claim with the
+// claim it follows and the two events that show the inversion.
+func printOrder(w io.Writer, vs []verification.OrderViolation) {
+	if len(vs) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "\nOut of order:\n")
+	for _, o := range vs {
+		_, _ = fmt.Fprintf(w, "  claimed:  %s %s\n", o.Later.ActionType, o.Later.Target)
+		_, _ = fmt.Fprintf(w, "    after:  %s %s\n", o.Earlier.ActionType, o.Earlier.Target)
+		_, _ = fmt.Fprintf(w, "    observed: %s %s ended by %s\n", o.LaterEvent.ActionType, o.LaterEvent.Target, o.LaterEvent.Timestamp.Format(time.RFC3339Nano))
+		_, _ = fmt.Fprintf(w, "    before:   %s %s began %s\n", o.EarlierEvent.ActionType, o.EarlierEvent.Target, earliest(o.EarlierEvent).Format(time.RFC3339Nano))
+	}
+}
+
+// earliest is the earliest moment an event can have happened: its NotBefore
+// when the probe recorded one (P-52), else its timestamp.
+func earliest(e models.GroundTruthEvent) time.Time {
+	if e.NotBefore != nil && e.NotBefore.Before(e.Timestamp) {
+		return *e.NotBefore
+	}
+	return e.Timestamp
+}
+
+// printLifetimeSummary prints the lifetime comparison's line (V-105), only
+// when it found something or had nothing to compare.
+func printLifetimeSummary(w io.Writer, l verification.LifetimeCheck) {
+	switch {
+	case l.SharedShell:
+		_, _ = fmt.Fprintf(w, "  Lifetime: not compared  (the adapter declares that its commands share a persistent shell, so no claim has a command of its own, V-105)\n")
+	case len(l.Findings) > 0:
+		_, _ = fmt.Fprintf(w, "  Lifetime: %d  (claimed intervals that disagree with their command's observed lifetime, exec to exit, by more than %s plus the slack of %s: reported, not counted, V-105)\n", len(l.Findings), verification.LifetimeTolerance, l.Slack)
+		_, _ = fmt.Fprintf(w, "    of %d command claim(s) compared and %d compared by their start only (background calls and commands without an exit); %d point claim(s) and %d claim(s) without a command of their own not compared\n", l.Compared, l.StartOnly, l.NoEnd, l.NoSubtree)
+	}
+}
+
+// printLifetimes lists the lifetime findings (V-105).
+func printLifetimes(w io.Writer, fs []verification.LifetimeFinding) {
+	if len(fs) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "\nLifetime (reported, not counted):\n")
+	for _, f := range fs {
+		end := "no end"
+		if f.Entry.End != nil {
+			end = f.Entry.End.Format(time.RFC3339Nano)
+		}
+		ran := "still running"
+		if f.Lifetime.Ended {
+			ran = f.Lifetime.End.Format(time.RFC3339Nano)
+		}
+		_, _ = fmt.Fprintf(w, "  claimed:  %s %s from %s to %s\n", f.Entry.ActionType, f.Entry.Target, f.Entry.Timestamp.Format(time.RFC3339Nano), end)
+		_, _ = fmt.Fprintf(w, "  observed: exec %s, exit %s\n", f.Lifetime.Start.Format(time.RFC3339Nano), ran)
+		_, _ = fmt.Fprintf(w, "    %s by %s\n", f.Kind, f.By)
+	}
+}
+
 // impliedCount returns how many harness-implied claims of a lane the run
 // holds and how many of them paired.
 func impliedCount(v verification.Verdict, lane verification.Lane) (all, paired int) {
@@ -1168,6 +1231,12 @@ type jsonReport struct {
 	// StartupWindow is present only when --startup-window switched the
 	// start-up rule on (V-82).
 	StartupWindow *jsonStartup `json:"startup_window,omitempty"`
+
+	// OrderViolations is present only when some claim is out of order
+	// (V-106), and Lifetimes only when the lifetime comparison found
+	// something or had nothing to compare (V-105).
+	OrderViolations []verification.OrderViolation `json:"order_violations,omitempty"`
+	Lifetimes       *verification.LifetimeCheck   `json:"lifetimes,omitempty"`
 }
 
 type jsonAlignment struct {
@@ -1308,6 +1377,10 @@ func writeJSONReport(path string, r reportInput) error {
 	}
 	rep.TraceTampering = v.TraceTampering
 	rep.StartupWindow = r.startup
+	rep.OrderViolations = v.OrderViolations
+	if l := v.Lifetimes; l.SharedShell || len(l.Findings) > 0 {
+		rep.Lifetimes = &l
+	}
 	if r.baseline != nil {
 		rep.RestingWrites = restingWrites(*r.baseline, r.gt.Workspace)
 	}

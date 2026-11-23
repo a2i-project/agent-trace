@@ -197,3 +197,40 @@ func TestForest_CorruptCycleTerminates(t *testing.T) {
 		t.Errorf("zone = %s, want outside", a.Zone)
 	}
 }
+
+func exitAt(ms int, pid uint32) models.GroundTruthEvent {
+	return models.GroundTruthEvent{Timestamp: at(ms), ActionType: models.ProcessExit, Target: "x", PID: pid}
+}
+
+// A command's lifetime runs from its own exec to its own exit: a descendant
+// that outlives it does not extend it, a command whose exit the capture lacks
+// has no end, and a fork that never exec'd has no lifetime (V-105).
+func TestCommandLifetimeIsItsOwnExecToItsOwnExit(t *testing.T) {
+	g := models.GroundTruth{
+		fork(1, 200, agentPID), execEv(2, 200, agentPID, "/bin/sh -c 'srv &'"),
+		fork(3, 201, 200), execEv(4, 201, 200, "/bin/srv"),
+		exitAt(50, 200),
+		fsEv(70, 201, "/w/log"), exitAt(80, 201), // the server outlives its command
+		fork(100, 300, agentPID), execEv(101, 300, agentPID, "/bin/sleep 60"), // still running
+		fork(200, 400, agentPID), fsEv(201, 400, "/w/forked"), exitAt(202, 400), // never exec'd
+	}
+	part := BuildForest(g, agentPID).Partition(g)
+	if len(part.Commands) != 3 {
+		t.Fatalf("commands = %d, want 3", len(part.Commands))
+	}
+	l, ok := part.Commands[0].Lifetime()
+	if !ok || !l.Ended || !l.Start.Equal(at(2)) || !l.End.Equal(at(50)) {
+		t.Errorf("command with a lingering descendant: lifetime %+v ok %v, want 2 ms to 50 ms", l, ok)
+	}
+	l, ok = part.Commands[1].Lifetime()
+	if !ok || l.Ended || !l.Start.Equal(at(101)) {
+		t.Errorf("command without an exit: lifetime %+v ok %v, want a start at 101 ms and no end", l, ok)
+	}
+	if _, ok := part.Commands[2].Lifetime(); ok {
+		t.Error("a fork that never exec'd has a lifetime")
+	}
+	var none *Command
+	if _, ok := none.Lifetime(); ok {
+		t.Error("a nil command has a lifetime")
+	}
+}

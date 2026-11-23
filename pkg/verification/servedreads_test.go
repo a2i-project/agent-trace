@@ -107,7 +107,12 @@ func TestVerify_DeclaredServedReadIsExplained(t *testing.T) {
 		}
 	})
 	t.Run("on a path a claim names the read stays for the claim", func(t *testing.T) {
-		v := verify(models.Trajectory{fetch(10, 30), claimAt(14, models.FileOpen, gai)}, served, nil, read, connect)
+		// The read ran during the fetch, so the two are claimed as one
+		// parallel block: claimed in sequence, the fetch's connection after
+		// the read would be out of order (V-106).
+		claims := models.Trajectory{fetch(10, 30), claimAt(14, models.FileOpen, gai)}
+		claims[0].BlockID, claims[1].BlockID = "m1", "m1"
+		v := verify(claims, served, nil, read, connect)
 		wantOutcome(t, v, OutcomeFaithful)
 		if len(v.HarnessServedReads) != 0 || len(v.Corroborated) != 2 {
 			t.Errorf("served=%v corroborated=%v", v.HarnessServedReads, v.Corroborated)

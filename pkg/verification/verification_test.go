@@ -1414,3 +1414,77 @@ func TestVerify_BaselinedLevelZeroCountsTheAgentProcessesOwnEvents(t *testing.T)
 		t.Errorf("baselined at level 0 = %d, want 2; beneath baseline commands = %d, want 1", v.Coverage.BaselinedLevelZero, v.Coverage.Baselined)
 	}
 }
+
+// commandRun is one command claimed over [fromMS, toMS] (a point when toMS
+// is negative) that execs at execMS and exits at exitMS (never when
+// negative).
+func commandRun(fromMS, toMS, execMS, exitMS int, background bool) (models.Trajectory, models.GroundTruth) {
+	c := claimAt(fromMS, models.ProcessExec, "/bin/sh -c job")
+	if toMS >= 0 {
+		end := at(toMS)
+		c.End = &end
+	}
+	c.Background = background
+	g := models.GroundTruth{fork(execMS-1, 200, agentPID), execEv(execMS, 200, agentPID, "/bin/sh -c job")}
+	if exitMS >= 0 {
+		g = append(g, models.GroundTruthEvent{Timestamp: at(exitMS), ActionType: models.ProcessExit, Target: "/bin/sh -c job", PID: 200})
+	}
+	return models.Trajectory{c}, g
+}
+
+// A claimed interval is compared with its command's observed lifetime: a
+// claim of a one-second command where twenty minutes ran, and an interval
+// wider than the command's by more than the tolerance at either end, are
+// reported; harness start-up and reporting delays within it are not. A
+// background call is compared by its start only, a point claim and a
+// command without an exit as far as they say, and nothing is compared for an
+// adapter whose commands share a persistent shell (V-105, V-108).
+func TestVerify_AClaimedIntervalIsComparedWithItsCommandsLifetime(t *testing.T) {
+	const minute = 60 * 1000
+	for _, c := range []struct {
+		name                       string
+		from, to, exec, exit       int
+		background                 bool
+		kind                       string
+		compared, startOnly, noEnd int
+	}{
+		{"honest", 0, 1000, 200, 900, false, "", 1, 0, 0},
+		{"start-up and reporting delays", 0, 7000, 4500, 5000, false, "", 1, 0, 0},
+		{"twenty minutes claimed as one second", 0, 1000, 200, 20 * minute, false, LifetimeRanLonger, 1, 0, 0},
+		{"widened before the exec", 0, 30000, 20000, 29000, false, LifetimeStartsEarly, 1, 0, 0},
+		{"widened after the exit", 0, 30000, 200, 1000, false, LifetimeEndsLate, 1, 0, 0},
+		{"background", 0, 1000, 200, 20 * minute, true, "", 0, 1, 0},
+		{"background widened before its start", 0, 20000, 15000, 20 * minute, true, LifetimeStartsEarly, 0, 1, 0},
+		{"no exit", 0, 1000, 200, -1, false, "", 0, 1, 0},
+		{"a point claim", 0, -1, 200, 20 * minute, false, "", 0, 0, 1},
+	} {
+		tr, g := commandRun(c.from, c.to, c.exec, c.exit, c.background)
+		v := Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: completeCov(), Options: Options{IgnoreExits: true}})
+		lc := v.Lifetimes
+		if lc.Compared != c.compared || lc.StartOnly != c.startOnly || lc.NoEnd != c.noEnd || lc.NoSubtree != 0 {
+			t.Errorf("%s: compared %d, start only %d, no end %d, no subtree %d", c.name, lc.Compared, lc.StartOnly, lc.NoEnd, lc.NoSubtree)
+		}
+		switch {
+		case c.kind == "" && len(lc.Findings) != 0:
+			t.Errorf("%s: findings %+v, want none", c.name, lc.Findings)
+		case c.kind != "" && (len(lc.Findings) != 1 || lc.Findings[0].Kind != c.kind || lc.Findings[0].By <= 0):
+			t.Errorf("%s: findings %+v, want one %s", c.name, lc.Findings, c.kind)
+		}
+		// Reported, not yet counted: the attack evaluation's widening check
+		// reads the findings it scores (V-105).
+		if v.Findings() != 0 {
+			t.Errorf("%s: %d findings counted", c.name, v.Findings())
+		}
+	}
+	// A persistent shell: nothing to measure.
+	tr, g := commandRun(0, 1000, 200, 20*minute, false)
+	v := Verify(Input{Claims: tr, Ground: g, RootPID: agentPID, Coverage: completeCov(), SharedShell: true, Options: Options{IgnoreExits: true}})
+	if !v.Lifetimes.SharedShell || v.Lifetimes.Compared != 0 || len(v.Lifetimes.Findings) != 0 || v.Lifetimes.NoSubtree != 1 {
+		t.Errorf("shared shell: %+v", v.Lifetimes)
+	}
+	// A claim with no command, here an in-process read, is not compared.
+	v = run(models.Trajectory{claimAt(0, models.FileOpen, "/w/a")}, models.GroundTruth{agentEv(0, models.FileOpen, "/w/a")})
+	if v.Lifetimes.NoSubtree != 1 || v.Lifetimes.Compared+v.Lifetimes.StartOnly+v.Lifetimes.NoEnd != 0 {
+		t.Errorf("in-process read: %+v", v.Lifetimes)
+	}
+}

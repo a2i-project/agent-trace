@@ -182,7 +182,11 @@ func TestParseClaimsAnOutlivingCommandFromTheCellThatStartedIt(t *testing.T) {
 		if c.End != nil {
 			end = c.End.Format("05.000")
 		}
-		return c.Target + " " + c.Timestamp.Format("05.000") + " " + end + " " + c.BlockID
+		s := c.Target + " " + c.Timestamp.Format("05.000") + " " + end + " " + c.BlockID
+		if c.Background {
+			s += " background" // it ran beside the cells after its own (V-108)
+		}
+		return s
 	}
 	var got []string
 	for _, c := range tr {
@@ -190,9 +194,9 @@ func TestParseClaimsAnOutlivingCommandFromTheCellThatStartedIt(t *testing.T) {
 	}
 	block := thread + "/c2"
 	want := []string{
-		"sleep 2; echo a 20.000 22.000 ",
+		"sleep 2; echo a 20.000 22.000  background",
 		"echo b 21.000 21.200 " + block,
-		"sleep 2; echo c 21.000 23.050 " + block,
+		"sleep 2; echo c 21.000 23.050 " + block + " background",
 		"/ws/x 22.100 none ",
 		"/ws/x 22.100 none ",
 		"early 23.000 23.100 ",

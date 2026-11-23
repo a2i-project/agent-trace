@@ -765,6 +765,7 @@ func (Adapter) Parse(path string) (models.Trajectory, agent.Report, error) {
 		entries, why := claimsFor(u, base, res)
 		if why == "" && u.name == toolBash && len(entries) > 0 {
 			entries[0].OutputName, entries[0].OutputDone = bashOutput(u.input, res, hasResult, ended[u.id])
+			entries[0].Background = bashBackground(u.input, res)
 		}
 		if why == "" && u.name == toolBash && hasResult && harnessReadVersions[rep.AgentVersion] {
 			entries = append(entries, harnessReadClaims(u, base, res)...)
@@ -1119,6 +1120,19 @@ func bashOutput(input json.RawMessage, res toolResult, hasResult bool, ended tim
 		return "", nil
 	}
 	return "", latest(res.ts)
+}
+
+// bashBackground reports whether a Bash call ran its command in the
+// background (V-108): its input asks for it, or its result names the
+// background task it became.
+func bashBackground(input json.RawMessage, res toolResult) bool {
+	if b := res.bash; b != nil && b.backgroundTask != "" {
+		return true
+	}
+	var in struct {
+		Background bool `json:"run_in_background"`
+	}
+	return json.Unmarshal(input, &in) == nil && in.Background
 }
 
 // taskID is the shape of a background command's task id, as the output

@@ -465,6 +465,9 @@ func TestParseClaimsACanceledBackgroundCommand(t *testing.T) {
 	if len(tr) != 1 || tr[0].ActionType != models.ProcessExec || tr[0].Target != "grep -r x /" || tr[0].End == nil || !tr[0].End.Equal(*at(9)) {
 		t.Fatalf("claims %+v, want the canceled background command from its start to its cancel", tr)
 	}
+	if !tr[0].Background {
+		t.Error("a command moved to the background is not marked as a background call (V-108)")
+	}
 	if rep.UnmappedByTool["run_command (status 6)"] != 1 || rep.UnmappedByTool["run_command (status 7)"] != 1 || rep.UnmappedByTool["view_file (status 6)"] != 1 {
 		t.Errorf("unmapped %v", rep.UnmappedByTool)
 	}
