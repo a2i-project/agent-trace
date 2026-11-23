@@ -1499,3 +1499,37 @@ func TestABaselineOfAnotherModeIsAWarningOnly(t *testing.T) {
 		})
 	}
 }
+
+// An unwitnessed claim among equal ones names them all (V-109), in the text
+// report and in the JSON alignment; a run whose findings name one claim
+// shows neither.
+func TestAFindingOnOneOfEqualClaimsIsReportedWithItsSet(t *testing.T) {
+	dir := t.TempDir()
+	second := claim(models.FileWrite, "/w/a")
+	second.Timestamp = t0.Add(time.Second)
+	tr := writeJSON(t, dir, "t.json", models.Trajectory{claim(models.FileWrite, "/w/a"), second})
+	g := writeJSON(t, dir, "g.json", models.GroundTruthFile{Events: models.GroundTruth{event(models.FileWrite, "/w/a")}, RootPID: 100, Coverage: completeCov()})
+	js := filepath.Join(dir, "v.json")
+	_, out, _ := verify(t, "--trajectory", tr, "--ground-truth", g, "--json", js)
+	if !strings.Contains(out, "unwitnessed: file_write /w/a, one of 2 claims at:") {
+		t.Errorf("the report does not name the set:\n%s", out)
+	}
+	data, err := os.ReadFile(js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Alignment struct {
+			Candidates []verification.CandidateSet `json:"candidates"`
+		} `json:"alignment"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil || len(doc.Alignment.Candidates) != 1 || len(doc.Alignment.Candidates[0].Claims) != 2 {
+		t.Errorf("JSON candidates %+v, %v", doc.Alignment.Candidates, err)
+	}
+
+	tr = writeJSON(t, dir, "t1.json", models.Trajectory{claim(models.FileWrite, "/w/b")})
+	_, out, _ = verify(t, "--trajectory", tr, "--ground-truth", g, "--json", js)
+	if data, _ := os.ReadFile(js); strings.Contains(out, "one of") || strings.Contains(string(data), `"candidates"`) {
+		t.Errorf("a finding on one claim shows a set:\n%s", out)
+	}
+}

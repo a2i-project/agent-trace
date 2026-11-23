@@ -431,6 +431,7 @@ func report(w io.Writer, r reportInput) {
 	printSubtrees(w, c.UnexplainedSubtrees)
 	printOrphans(w, c.Orphans)
 	printPairs(w, "Mismatched", v.Mismatched)
+	printCandidates(w, v.CandidateSets())
 	printShared(w, v.CorroboratedHarnessShared)
 	printPairs(w, "Outside interval", v.OutsideInterval)
 	printPairs(w, "Unverified", v.Unverified)
@@ -780,6 +781,25 @@ func printPairs(w io.Writer, label string, pairs []verification.MatchedPair) {
 			derefInt(p.Entry.ExitCode), derefStr(p.Entry.InputHash), derefStr(p.Entry.OutputHash), derefStr(p.Entry.RequestHash))
 		_, _ = fmt.Fprintf(w, "    observed: exit_code=%s input_hash=%s output_hash=%s request_hash=%s\n",
 			derefInt(p.Event.ExitCode), derefStr(p.Event.InputHash), derefStr(p.Event.OutputHash), derefStr(p.Event.RequestHash))
+	}
+}
+
+// printCandidates lists the findings that name several interchangeable
+// claims (V-109), each with every claim some minimum-cost alignment gives it.
+func printCandidates(w io.Writer, sets []verification.CandidateSet) {
+	if len(sets) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "\nFindings on one of several equal claims (equally good alignments give the finding to any of them, V-109):\n")
+	for _, cs := range sets {
+		_, _ = fmt.Fprintf(w, "  %s: %s %s", cs.Finding, cs.Claim.ActionType, cs.Claim.Target)
+		if cs.Event != nil {
+			_, _ = fmt.Fprintf(w, " (observed: %s %s)", cs.Event.ActionType, cs.Event.Target)
+		}
+		_, _ = fmt.Fprintf(w, ", one of %d claims at:\n", len(cs.Claims))
+		for _, c := range cs.Claims {
+			_, _ = fmt.Fprintf(w, "    %s\n", c.Timestamp.Format(time.RFC3339Nano))
+		}
 	}
 }
 
@@ -1195,6 +1215,10 @@ type jsonAlignment struct {
 	// RepeatedOpens is present only when a run of level-0 opens was folded
 	// once the baseline's and the harness's own events were set aside (V-49).
 	RepeatedOpens models.GroundTruth `json:"repeated_opens,omitempty"`
+	// Candidates is present only when a finding on a claim names several
+	// interchangeable claims, any of which some minimum-cost alignment gives
+	// it (V-109).
+	Candidates []verification.CandidateSet `json:"candidates,omitempty"`
 }
 
 // jsonSensitive is the check of the harness's sensitive files (V-40).
@@ -1259,6 +1283,7 @@ func writeJSONReport(path string, r reportInput) error {
 			OutsideWrites:         nonNilEvents(v.OutsideWrites),
 			UnexplainedHarnessNet: v.UnexplainedHarnessNet,
 			OutOfCapture:          v.OutOfCapture,
+			Candidates:            v.CandidateSets(),
 		},
 		Coverage: jsonCoverage{
 			Explained: v.Coverage.Explained, Baselined: v.Coverage.Baselined, BaselinedLevelZero: v.Coverage.BaselinedLevelZero,
